@@ -1051,4 +1051,19 @@ describe("bundle manifest consistency", () => {
     }
     expect(ns[1]).toBe("dsh-opencode");
   });
+
+  it("registers the client bundle under the npm package name", async () => {
+    const pkgRaw: unknown = JSON.parse(await readText("package.json"));
+    if (!isRecord(pkgRaw) || typeof pkgRaw.name !== "string") {
+      throw new Error("package.json has no string name");
+    }
+    // The web loader drops bundles whose __ModuleLoader__.load id differs
+    // from the npm package name ("loaded without registering ...").
+    const config = await readText("vite.config.ts");
+    const banner = /id:\s*"([^"]+)"/.exec(config);
+    if (banner === null || banner[1] === undefined) {
+      throw new Error("client banner id not found in vite.config.ts");
+    }
+    expect(banner[1]).toBe(pkgRaw.name);
+  });
 });
