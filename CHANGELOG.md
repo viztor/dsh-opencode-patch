@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.3.0](https://github.com/viztor/dsh-opencode/compare/v0.2.1...v0.3.0) (2026-09-30)
+
+
+### Features
+
+* auto releases, GitHub Packages mirror, and verified-compat docs ([e42b427](https://github.com/viztor/dsh-opencode/commit/e42b427365c63a35c5ed1c419c71a55d76c3b72f))
+
 ## [0.2.1] - 2026-10-01
 
 ### Changed
