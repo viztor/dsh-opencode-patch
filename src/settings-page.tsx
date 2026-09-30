@@ -18,6 +18,15 @@ import React from "react";
 
 export const NS = "dsh-opencode";
 
+/**
+ * The bundle's npm package name, spelled rather than imported.
+ *
+ * `plugins.bundle.config` entries are keyed by npm package name (not the
+ * cordis row id), so this must equal `package.json`'s `name`. The client
+ * half must not depend on the host half, hence the duplication.
+ */
+export const PKG = "@viztor/dsh-opencode";
+
 export const inject = ["slots", "locale", "configForms"];
 
 const en = {
@@ -128,7 +137,7 @@ interface CardProps {
   save: () => void;
   t: Translate;
   useOpencodeCard: (selector: (snapshot: CardState) => CardState) => CardState;
-  view: "summary" | "form";
+  view: "summary" | "page";
 }
 
 const formLabels = (t: Translate) => ({
@@ -243,7 +252,6 @@ const isSettingsFormScope = (
 };
 
 export const apply = (ctx: ClientContext): void => {
-  const t = ctx.locale?.bind?.(NS) ?? ((k: string) => k);
   ctx.effect?.(() => {
     ctx.locale?.register?.(NS, { en, zh });
   }, "dsh-opencode: dictionaries");
@@ -262,19 +270,28 @@ export const apply = (ctx: ClientContext): void => {
     shell: model.shell(),
   }));
 
+  ctx.effect?.(
+    () => () => {
+      model.dispose();
+    },
+    "dsh-opencode: form subscription"
+  );
+
   ctx.configForms?.whileServed?.([NS], () => {
-    ctx.slots?.inject?.("plugins.item", () => {
+    // `plugins.bundle.config` (NOT `plugins.item`): third-party bundles
+    // render their own configuration on the bundle's page, keyed by npm
+    // package name. The hook key becomes the `useOpencodeCard` prop; the
+    // actions spread in as `edit` / `resetField` / `save` / `discard`.
+    ctx.slots?.inject?.("plugins.bundle.config", () => {
       ctx.slots?.register?.(
         {
-          id: "opencode",
           inject: () => ({
             hooks: { opencodeCard: store },
             ...model.actions(),
           }),
-          label: () => t("title"),
+          key: PKG,
           locale: NS,
-          name: "plugins.item",
-          order: 50,
+          name: "plugins.bundle.config",
         },
         OpencodeCard
       );
