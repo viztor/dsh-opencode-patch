@@ -9,6 +9,8 @@ export default defineConfig({
       ...(ultraciteFmt.ignorePatterns ?? []),
       "lib/**",
       "coverage/**",
+      // Bot-owned: release-please appends entries its own way every release.
+      "CHANGELOG.md",
     ],
     sortPackageJson: true,
   },
