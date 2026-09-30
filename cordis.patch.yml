@@ -1,0 +1,29 @@
+# dsh-opencode-session layer.
+#
+# Adds one host plugin row that attaches `x-opencode-session` to model
+# requests routed to OpenCode / OpenCode Go provider profiles.
+#
+# Configuration (row `config`, all optional):
+#   providers: [string]  provider route keys to attach the header to.
+#                        Defaults to the pi-ai catalog ids ['opencode', 'opencode-go'].
+#                        Add your own route key when the OpenCode endpoint is
+#                        served under a custom provider name.
+#   mode: 'session-id' | 'uuid'   header value derivation.
+#                        'session-id' (default): reuse the DSH session id that
+#                        already travels with each model call — stable across
+#                        turns and restarts, unique per conversation.
+#                        'uuid': a process-stable random uuid per DSH session.
+#   debug: true|false    log every streamed call that receives the header
+#                        (via ctx.logger, i.e. the dsh process console).
+#   debugFile: path      optional: append one JSON line per streamed call that
+#                        receives the header to the given file (handy when the
+#                        process console is not visible).
+- insert:
+    - id: opencode-go-session-header
+      name: dsh-opencode
+      config:
+        providers:
+          - opencode
+          - opencode-go
+        mode: session-id
+        debug: false
