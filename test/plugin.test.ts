@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -1057,6 +1057,18 @@ describe("bundle manifest consistency", () => {
     // Package (@viztor/dsh-opencode) ≠ row id (dsh-opencode) ≠ row name,
     // but the component identity matches the default row id by convention.
     expect(PLUGIN_NAME).toBe("dsh-opencode");
+  });
+
+  it("ships a manifest icon the host can display", async () => {
+    const pkgRaw: unknown = JSON.parse(await readText("package.json"));
+    if (!isRecord(pkgRaw) || typeof pkgRaw.icon !== "string") {
+      throw new Error("package.json has no string icon field");
+    }
+    // Relative to the manifest directory, within the 256 KiB host limit.
+    expect(pkgRaw.icon.startsWith("./")).toBe(true);
+    const iconStat = await stat(path.join(root, pkgRaw.icon));
+    expect(iconStat.size).toBeGreaterThan(0);
+    expect(iconStat.size).toBeLessThanOrEqual(256 * 1024);
   });
 
   it("registers the client bundle under the npm package name", async () => {
