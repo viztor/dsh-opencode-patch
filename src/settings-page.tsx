@@ -23,20 +23,21 @@ export const inject = ["slots", "locale", "configForms"];
 const en = {
   description:
     "OpenCode Zen gateway origin headers, session affinity, and free-tier compatibility.",
-  injectCoreTools: "Inject Core Tools",
+  injectCoreTools: "Inject Core Tools (default on)",
   injectCoreToolsHint:
-    "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation.",
-  injectOriginHeaders: "Inject Origin Headers",
+    "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
+  injectOriginHeaders: "Inject Origin Headers (default on)",
   injectOriginHeadersHint:
-    "Injects x-opencode-client and x-opencode-project headers.",
-  injectUserAgent: "Inject User-Agent",
+    "Injects x-opencode-client and x-opencode-project headers. Empty inherits the default.",
+  injectUserAgent: "Inject User-Agent (default on)",
   injectUserAgentHint:
-    "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter.",
+    "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter. Empty inherits the default.",
   invalidBoolean: "Enter true or false, or leave blank for default.",
   invalidText: "This value was not accepted; leave blank for default.",
   overridden: "Overridden",
   providers: "Providers",
-  providersHint: "Comma-separated list of route IDs to intercept.",
+  providersHint:
+    "Comma-separated list of route IDs to intercept. Default: opencode, opencode-go.",
   readOnly: "This deployment stores settings read-only.",
   reset: "Reset to default",
   save: "Save",
@@ -51,20 +52,20 @@ const en = {
 
 const zh = {
   description: "OpenCode Zen 网关来源头恢复、会话保持与免费模型兼容支持。",
-  injectCoreTools: "自动补全核心工具",
+  injectCoreTools: "自动补全核心工具（默认开启）",
   injectCoreToolsHint:
-    "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。",
-  injectOriginHeaders: "注入客户端来源头",
+    "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。留空沿用默认值。",
+  injectOriginHeaders: "注入客户端来源头（默认开启）",
   injectOriginHeadersHint:
-    "注入 x-opencode-client 与 x-opencode-project 头部信息。",
-  injectUserAgent: "恢复 User-Agent",
+    "注入 x-opencode-client 与 x-opencode-project 头部信息。留空沿用默认值。",
+  injectUserAgent: "恢复 User-Agent（默认开启）",
   injectUserAgentHint:
-    "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。",
+    "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。留空沿用默认值。",
   invalidBoolean: "请输入 true 或 false，留空使用默认值。",
   invalidText: "该值未被接受，留空使用默认值。",
   overridden: "已覆盖",
   providers: "生效提供方",
-  providersHint: "逗号分隔的提供方路由 ID 列表。",
+  providersHint: "逗号分隔的提供方路由 ID 列表。默认：opencode, opencode-go。",
   readOnly: "当前部署配置为只读。",
   reset: "恢复默认",
   save: "保存",
