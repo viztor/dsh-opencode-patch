@@ -59,13 +59,11 @@ jobs:
           else
             npm publish --access public
           fi
-      # Mirror to GitHub Packages so the repo sidebar populates. setup-node
-      # redirects npm to a temp userconfig (NPM_CONFIG_USERCONFIG), so the
-      # token must be mapped there, not ~/.npmrc. Installs still come from
-      # npmjs.org unless a consumer repoints the scope.
+      # Mirror to GitHub Packages so the repo sidebar populates. Auth rides
+      # on the command line (file appends proved unreliable across
+      # setup-node's temp userconfig). Installs still come from npmjs.org
+      # unless a consumer repoints the scope.
       - name: mirror to GitHub Packages
-        run: |
-          printf '%s' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          npm publish --registry=https://npm.pkg.github.com --access public
+        run: npm publish --registry=https://npm.pkg.github.com --access public --//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
