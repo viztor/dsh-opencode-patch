@@ -30,6 +30,12 @@ export const PKG = "@viztor/dsh-opencode";
 export const inject = ["slots", "locale", "configForms"];
 
 const en = {
+  debug: "Debug Logging (default off)",
+  debugFile: "Debug File",
+  debugFileHint:
+    "Absolute server-side path the plugin appends JSONL stream-debug entries to. Leave blank for none.",
+  debugHint:
+    "Logs every streamed call receiving the header via ctx.logger. Empty inherits the default.",
   description:
     "OpenCode Zen gateway origin headers, session affinity, and free-tier compatibility.",
   injectCoreTools: "Inject Core Tools (default on)",
@@ -43,6 +49,9 @@ const en = {
     "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter. Empty inherits the default.",
   invalidBoolean: "Enter true or false, or leave blank for default.",
   invalidText: "This value was not accepted; leave blank for default.",
+  mode: "Session Mode (default session-id)",
+  modeHint:
+    "session-id derives gateway-compliant ses_… IDs; uuid passes the DSH session through for gateways that accept raw UUIDs.",
   overridden: "Overridden",
   providers: "Providers",
   providersHint:
@@ -60,6 +69,10 @@ const en = {
 };
 
 const zh = {
+  debug: "调试日志（默认关闭）",
+  debugFile: "调试文件",
+  debugFileHint: "插件追加 JSONL 流调试记录的服务端绝对路径。留空表示不记录。",
+  debugHint: "通过 ctx.logger 记录每次注入会话头的流式调用。留空沿用默认值。",
   description: "OpenCode Zen 网关来源头恢复、会话保持与免费模型兼容支持。",
   injectCoreTools: "自动补全核心工具（默认开启）",
   injectCoreToolsHint:
@@ -72,6 +85,9 @@ const zh = {
     "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。留空沿用默认值。",
   invalidBoolean: "请输入 true 或 false，留空使用默认值。",
   invalidText: "该值未被接受，留空使用默认值。",
+  mode: "会话模式（默认 session-id）",
+  modeHint:
+    "session-id 派生网关兼容的 ses_… ID；uuid 直接透传 DSH 会话 ID，仅用于接受原始 UUID 的网关。",
   overridden: "已覆盖",
   providers: "生效提供方",
   providersHint: "逗号分隔的提供方路由 ID 列表。默认：opencode, opencode-go。",
@@ -87,9 +103,12 @@ const zh = {
 };
 
 const FIELD = {
+  debug: "debug",
+  debugFile: "debugFile",
   injectCoreTools: "injectCoreTools",
   injectOriginHeaders: "injectOriginHeaders",
   injectUserAgent: "injectUserAgent",
+  mode: "mode",
   providers: "providers",
   userAgent: "userAgent",
 };
@@ -109,12 +128,30 @@ const settingsBooleanField = (field: string): SettingsFieldSpec => ({
   parse: (text: string) => BOOLEAN_DRAFTS[text.trim().toLowerCase()],
 });
 
+const MODES: Record<
+  string,
+  { kind: "set"; value: string } | { kind: "clear" }
+> = {
+  "": { kind: "clear" },
+  "session-id": { kind: "set", value: "session-id" },
+  uuid: { kind: "set", value: "uuid" },
+};
+
+const settingsModeField = (field: string): SettingsFieldSpec => ({
+  field,
+  format: (value: unknown) => (typeof value === "string" ? value : ""),
+  parse: (text: string) => MODES[text.trim().toLowerCase()],
+});
+
 const SPECS: SettingsFieldSpec[] = [
   settingsBooleanField(FIELD.injectUserAgent),
   settingsTextField(FIELD.userAgent),
   settingsBooleanField(FIELD.injectOriginHeaders),
   settingsBooleanField(FIELD.injectCoreTools),
   settingsTextField(FIELD.providers),
+  settingsModeField(FIELD.mode),
+  settingsBooleanField(FIELD.debug),
+  settingsTextField(FIELD.debugFile),
 ];
 
 type Translate = (key: keyof typeof en) => string;
@@ -208,6 +245,25 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         hint={t("providersHint")}
         label={t("providers")}
         placeholder="opencode, opencode-go"
+      />
+      <SettingsValueField
+        {...field(FIELD.mode)}
+        hint={t("modeHint")}
+        invalidLabel={t("invalidText")}
+        label={t("mode")}
+        placeholder="session-id"
+      />
+      <SettingsValueField
+        {...field(FIELD.debug)}
+        hint={t("debugHint")}
+        invalidLabel={t("invalidBoolean")}
+        label={t("debug")}
+      />
+      <SettingsValueField
+        {...field(FIELD.debugFile)}
+        hint={t("debugFileHint")}
+        label={t("debugFile")}
+        placeholder="/tmp/dsh-opencode-debug.jsonl"
       />
     </SettingsForm>
   );
