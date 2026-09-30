@@ -19,6 +19,13 @@ aliases:
 2. **Fetch patch** — `patchFetch()` intercepts only OpenCode traffic (`isOpenCodeRequest`: `opencode.ai/zen` URL or matching provider in turn state). It always sets `x-opencode-session`, optionally restores `User-Agent` / `x-opencode-client` / `x-opencode-project`, and injects fallback `read`+`bash` schemas into free-tier `/responses` bodies. Non-OpenCode requests return via the original fetch untouched.
 3. **Settings UI** — `src/settings-page.tsx` builds `lib/client.js`, contributing the OpenCode Integration card under DSH Settings → Plugins (toggles for every injection + provider list + UA override).
 
+## Package vs component (do not conflate)
+
+- **npm package** `@viztor/dsh-opencode`: the installable unit (host `main` + `lib/client.js`). The host resolves a row to `node_modules/<row name>`, so the row's `name` must equal this exactly.
+- **cordis row**: one _instance_ of the package. `id` (`dsh-opencode`) is the instance id and doubles as the settings namespace the client card binds. One package can back N rows with different ids/configs — the card currently binds the default `dsh-opencode` row (single-row assumption; a second row would need its own NS binding).
+- **plugin `name` export** (`src/index.ts`): the component identity (log lines, service scoping). Matches the default row id by convention only.
+- **client slot key** (`PKG` in `src/settings-page.tsx`): bundle-level page key, always the npm package name.
+
 ## Repo map
 
 - `src/index.ts` — host plugin: config, session hashing, ALS store, fetch patch, `apply`. No `as`, arrow consts, sync Promise wrappers (ALS-safe by design).

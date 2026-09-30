@@ -2,6 +2,18 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 
+/**
+ * Package vs component identity (do not conflate):
+ *
+ * - npm package `@viztor/dsh-opencode`: the installable unit. The host
+ *   resolves a cordis row to `node_modules/<row name>`, so the row's `name`
+ *   must equal this string exactly (see cordis.patch.yml).
+ * - cordis row: one *instance* of the package. `id` is the instance id and
+ *   doubles as the settings namespace the client card binds (`dsh-opencode`).
+ *   One package can back N rows with different ids/configs.
+ * - `name` below: this component's cordis plugin identity (log lines,
+ *   service scoping). It matches the default row id by convention only.
+ */
 export const name = "dsh-opencode";
 
 export const inject = ["llm"];
