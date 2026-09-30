@@ -1015,3 +1015,40 @@ describe("apply (plugin lifecycle)", () => {
     }
   });
 });
+
+describe("bundle manifest consistency", () => {
+  const root = path.dirname(import.meta.dirname);
+
+  const readText = (rel: string): Promise<string> =>
+    readFile(path.join(root, rel), "utf-8");
+
+  it("ships a cordis row whose name equals the npm package name", async () => {
+    const pkgRaw: unknown = JSON.parse(await readText("package.json"));
+    if (!isRecord(pkgRaw) || typeof pkgRaw.name !== "string") {
+      throw new Error("package.json has no string name");
+    }
+    const patch = await readText("cordis.patch.yml");
+    const row =
+      /^\s*-\s*id:\s*dsh-opencode\s*\n\s*name:\s*["']?([^"'\s]+)/m.exec(patch);
+    if (row === null || row[1] === undefined) {
+      throw new Error("dsh-opencode row not found in cordis.patch.yml");
+    }
+    // The host resolves row names to node_modules paths: an unscoped name
+    // fails the entry with "failed to import".
+    expect(row[1]).toBe(pkgRaw.name);
+  });
+
+  it("keeps the settings namespace equal to the cordis row id", async () => {
+    const patch = await readText("cordis.patch.yml");
+    expect(patch).toContain("id: dsh-opencode");
+    // Read the NS constant textually: importing settings-page.tsx would
+    // drag the React + ui-primitives runtime chain (whose own deps are
+    // incomplete for node) into a hermetic suite.
+    const page = await readText("src/settings-page.tsx");
+    const ns = /^export const NS = "([^"]+)";/m.exec(page);
+    if (ns === null || ns[1] === undefined) {
+      throw new Error("NS constant not found in src/settings-page.tsx");
+    }
+    expect(ns[1]).toBe("dsh-opencode");
+  });
+});

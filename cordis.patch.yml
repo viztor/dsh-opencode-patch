@@ -3,6 +3,11 @@
 # Adds one host plugin row that manages session affinity, OpenCode Zen gateway
 # origin headers, and free-tier compatibility for OpenCode, OpenCode Go, and OpenCode Zen routes.
 #
+# NOTE: `name` must equal this package's npm name (@viztor/dsh-opencode) —
+# the host resolves row names to node_modules paths, so an unscoped name
+# fails the entry with "failed to import". `id` stays short: it is the
+# settings namespace and the plugin's own `name` export.
+#
 # Configuration (row `config`, all optional):
 #   providers: [string]         provider route keys to intercept (default ['opencode', 'opencode-go']).
 #   injectUserAgent: boolean    restore OpenCode CLI User-Agent stripped by DSH adapter (default true).
@@ -14,7 +19,7 @@
 #   debugFile: path             optional append target for stream debug JSONL.
 - insert:
     - id: dsh-opencode
-      name: dsh-opencode
+      name: "@viztor/dsh-opencode"
       config:
         providers:
           - opencode
