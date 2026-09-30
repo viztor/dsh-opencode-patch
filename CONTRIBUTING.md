@@ -1,0 +1,44 @@
+# Contributing to dsh-opencode
+
+## Prerequisites
+
+- Node.js `>= 24`, `pnpm` (v12)
+- A checkout of this repo; for live testing, a DeepSeek Harness profile (see README for the `link:` setup)
+
+## Commands
+
+All tasks go through `pnpm` (which delegates to the Vite+ toolchain):
+
+```sh
+pnpm install     # install dependencies
+pnpm run check   # format + lint + types, must be zero warnings/errors
+pnpm run test    # Vitest suite, must be fully green and deterministic
+pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, lib/client.js
+```
+
+> Note: in some shells `pnpm exec` stalls; invoke the binary directly if so: `node node_modules/.pnpm/vite-plus@*/node_modules/vite-plus/bin/vp <cmd>`.
+
+## Code conventions
+
+- **100% strict TypeScript.** No `any` leaks, no `as` assertions in `src/` — narrow `unknown` with `in`-operator type guards (`isRecord`, `isUnknownArray`, …).
+- **Zero-warning policy.** `vp check` must report no errors _and_ no warnings. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
+- **Sync-over-async for context propagation.** `withStore` iterators and the `fetch` patch intentionally return promises from non-`async` functions so `als.run()` keeps turn context without an extra tick. Don't "fix" these into `async`.
+- **Style:** arrow-function consts (not `function` declarations), dot notation, explicit `=== undefined` checks, `oxfmt` formatting.
+
+## Test conventions
+
+- **Deterministic only.** No `Math.random()`, no fixed `sleep()` waits. Async file assertions poll with a deadline (`waitForFileContent`).
+- **No secret fixtures.** Session IDs are derived at runtime (`openCodeSessionIdFor`) or read from `OPENCODE_SESSION_ID`; never hardcode `ses_…` or API keys. `lib/` and `*.log` stay gitignored.
+- **Restore globals.** Tests that touch `globalThis.fetch` or `process.env` must restore them in `afterEach` (`vi.unstubAllGlobals()`, `delete process.env.…`).
+- **Meaningful coverage.** Every toggle (`injectUserAgent`, `injectOriginHeaders`, `injectCoreTools`, `providers`, `userAgent`) needs both the on and off path; every passthrough claim needs a non-OpenCode URL test proving headers are untouched.
+
+## Release process (maintainers)
+
+1. Bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit.
+2. `git tag vX.Y.Z && git push origin vX.Y.Z` — the `release` workflow verifies tag == version, runs check + tests, builds, and publishes to npm via OIDC trusted publishing. No tokens involved.
+3. CI (`ci.yml`) runs check + test + build on every push to `main` and every PR. Keep it green.
+
+## Docs
+
+- `README.md` is consumer-facing: problem-first, install, UI config, troubleshooting. No dev internals.
+- `CHANGELOG.md` is the per-version record. `AGENTS.md` is the agent-facing project brief — keep it specific to this repo.

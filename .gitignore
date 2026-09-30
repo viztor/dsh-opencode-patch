@@ -1,0 +1,7 @@
+lib/
+node_modules/
+coverage/
+.build-check/
+.DS_Store
+*.log
+*.tgz

@@ -1,0 +1,27 @@
+# dsh-opencode layer.
+#
+# Adds one host plugin row that manages session affinity, OpenCode Zen gateway
+# origin headers, and free-tier compatibility for OpenCode, OpenCode Go, and OpenCode Zen routes.
+#
+# Configuration (row `config`, all optional):
+#   providers: [string]         provider route keys to intercept (default ['opencode', 'opencode-go']).
+#   injectUserAgent: boolean    restore OpenCode CLI User-Agent stripped by DSH adapter (default true).
+#   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
+#   injectOriginHeaders: bool   inject x-opencode-client & x-opencode-project (default true).
+#   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
+#   mode: 'session-id' | 'uuid' session derivation mode (default 'session-id').
+#   debug: true|false           log every streamed call that receives the header.
+#   debugFile: path             optional append target for stream debug JSONL.
+- insert:
+    - id: dsh-opencode
+      name: dsh-opencode
+      config:
+        providers:
+          - opencode
+          - opencode-go
+        injectUserAgent: true
+        userAgent: ""
+        injectOriginHeaders: true
+        injectCoreTools: true
+        mode: session-id
+        debug: false

@@ -1,0 +1,99 @@
+{
+  "name": "@viztor/dsh-opencode",
+  "version": "0.2.1",
+  "description": "DeepSeek Harness plugin: automatically adds stable per-conversation x-opencode-session and OpenCode gateway origin headers to OpenCode / OpenCode Go / OpenCode Zen requests — fixes 400 MissingSessionID and 403 FreeTierError, keeping session affinity and free-tier access working.",
+  "keywords": [
+    "cordis",
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "llm",
+    "missing-session-id",
+    "opencode",
+    "opencode-go",
+    "opencode-zen",
+    "prompt-cache",
+    "session-affinity",
+    "x-opencode-session"
+  ],
+  "homepage": "https://github.com/viztor/dsh-opencode",
+  "bugs": {
+    "url": "https://github.com/viztor/dsh-opencode/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "viztor"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/viztor/dsh-opencode.git"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "lib/index.mjs",
+  "types": "lib/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.mts",
+      "import": "./lib/index.mjs",
+      "default": "./lib/index.mjs"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack && node --experimental-strip-types scripts/name-client-bundle.ts",
+    "check": "vp check",
+    "clean": "rm -rf lib",
+    "format": "vp fmt --check",
+    "format:fix": "vp fmt --write",
+    "lint": "vp lint",
+    "lint:fix": "vp lint --fix",
+    "prepare": "pnpm run build",
+    "prepublishOnly": "pnpm run release:gate",
+    "release:gate": "pnpm run build && pnpm run test",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-store": "0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.1",
+    "@types/node": "^26.6.3",
+    "@types/react": "^18.3.31",
+    "react": "^18.3.1",
+    "typescript": "^7.0.2",
+    "ultracite": "^7.12.1",
+    "vite-plus": "catalog:",
+    "vitest": "^5.0.2"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
+    }
+  }
+}
