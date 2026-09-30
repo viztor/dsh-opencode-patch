@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.3.4](https://github.com/viztor/dsh-opencode/compare/v0.3.3...v0.3.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* register client bundle under npm package name ([d052c84](https://github.com/viztor/dsh-opencode/commit/d052c84f840c6af662deede084439cc699a1058b))
+
 ## [0.3.3](https://github.com/viztor/dsh-opencode/compare/v0.3.2...v0.3.3) (2026-09-30)
 
 
