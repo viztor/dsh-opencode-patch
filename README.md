@@ -1,6 +1,6 @@
 # dsh-opencode
 
-A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) host plugin that manages session affinity, OpenCode Zen gateway origin verification, and free-tier compatibility for OpenCode, OpenCode Go, and OpenCode Zen routes.
+A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) host plugin and Web settings UI that manages session affinity, OpenCode Zen gateway origin verification, and free-tier compatibility for OpenCode, OpenCode Go, and OpenCode Zen routes.
 
 ## Origin & Attribution
 
@@ -8,19 +8,11 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 - **Original Foundation:** `dsh-opencode-session` solved the initial `400 MissingSessionID` issue on OpenCode's relay by attaching `x-opencode-session` headers during `llm/stream` waterfall events.
 - **Expanded Capabilities in `dsh-opencode`:**
-  1. **OpenCode Zen Free-Tier Compatibility (`403 FreeTierError` fix):** The OpenCode Zen gateway (`https://opencode.ai/zen/v1`) enforces client origin and tool validation for free community models (such as `muse-spark-1.3-contributor-free`).
+  1. **OpenCode Zen Free-Tier Compatibility (`403 FreeTierError` fix):** The OpenCode Zen gateway (`https://opencode.ai/zen/v1`) enforces client origin and tool validation for free community models (such as `muse-spark-1.3-contributor-free` and `space-bunny-free`).
   2. **DSH Header Stripping Bypass:** DeepSeek Harness's internal adapter (`dsh-llm-pi-ai`) classifies `user-agent` as a reserved header and strips it from outbound requests. `dsh-opencode` restores `User-Agent: opencode/1.18.33 ...`, `x-opencode-client: cli`, and `x-opencode-project: global` at the network layer.
   3. **Deterministic Session ID Hashing:** Converts DSH conversation UUIDs into OpenCode-compliant `ses_<12hex><14base62>` session IDs, preserving prompt cache routing and turn affinity without failing format validation.
   4. **Core Tool Schema Fallback:** Guarantees that free-tier `/responses` requests carry the required `read` (`filePath`) and `bash` (`command`) tool schemas so tool-less queries or subagent invocations pass origin verification.
-
----
-
-## Contributing Upstream
-
-We encourage upstream adoption! If you are maintaining or contributing to `nobu121/dsh-opencode-session`:
-
-- The deterministic session mapping (`openCodeSessionIdFor`) and `patchFetch` gateway origin restoration in `src/index.ts` can be ported directly into the upstream repository.
-- Upstream pull requests and issue discussions: [nobu121/dsh-opencode-session Issues](https://github.com/nobu121/dsh-opencode-session/issues).
+  5. **Native Web Client Settings UI:** Contributes a settings card under **Settings → Plugins** in the DSH Web interface for graphical configuration.
 
 ---
 
@@ -35,53 +27,75 @@ We encourage upstream adoption! If you are maintaining or contributing to `nobu1
 
 ## Installation & Setup
 
-### In DeepSeek Harness Profiles
+### 1. In DeepSeek Harness Profile
 
-1. **Link or install in your profile's `package.json`:**
+Add `dsh-opencode` to your profile's `package.json`:
 
-   ```json
-   {
-     "dependencies": {
-       "dsh-opencode": "link:../../../dev/dsh-opencode"
-     },
-     "dsh": {
-       "profile": {
-         "bundles": [
-           "@deepseek-ai/dsh-base",
-           "@deepseek-ai/dsh-web-app",
-           "dsh-opencode"
-         ]
-       }
-     }
-   }
-   ```
+```json
+{
+  "dependencies": {
+    "dsh-opencode": "link:../../../dev/dsh-opencode"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "dsh-opencode"
+      ]
+    }
+  }
+}
+```
 
-2. **Add to `cordis.patch.yml`:**
+Or from npm (once published):
 
-   ```yaml
-   - insert:
-       - id: opencode-go-session-header
-         name: dsh-opencode
-         config:
-           providers: [opencode, opencode-go]
-           mode: session-id
-           debug: false
-   ```
+```sh
+dsh plugin --profile web add dsh-opencode
+```
 
-3. **Install with `pnpm`:**
-   ```sh
-   pnpm install
-   ```
+Run `pnpm install` in your profile directory.
+
+### 2. Graphical Configuration (No Manual YAML Required)
+
+Because `dsh-opencode` is a self-contained bundle, its configuration layer is **automatically mounted at startup**. You do not need to manually edit `cordis.patch.yml`.
+
+Open the DSH Web UI and navigate to **Settings → Plugins → OpenCode Integration**:
+
+- **Inject User-Agent**: Toggle whether the OpenCode CLI User-Agent is restored (default: `true`).
+- **User-Agent Override**: Specify a custom User-Agent string if desired (leave empty to use default).
+- **Inject Origin Headers**: Toggle injection of `x-opencode-client` and `x-opencode-project` (default: `true`).
+- **Inject Core Tools**: Toggle fallback injection of standard `read` & `bash` tool schemas on free-tier `/responses` requests (default: `true`).
+- **Providers**: Comma-separated list of route IDs to intercept (default: `opencode, opencode-go`).
+
+Click **Save** — DSH persists your preferences through its built-in configuration form service.
 
 ---
 
-## Configuration
+## Configuration Reference
 
-All configuration keys in `cordis.patch.yml` are optional:
+For headless deployments or declarative overlays in `cordis.patch.yml`:
+
+```yaml
+- id: dsh-opencode
+  name: dsh-opencode
+  config:
+    providers: [opencode, opencode-go]
+    injectUserAgent: true
+    userAgent: ""
+    injectOriginHeaders: true
+    injectCoreTools: true
+    mode: session-id
+    debug: false
+```
 
 | Option | Type | Default | Description |
 | :-- | :-- | :-- | :-- |
-| `providers` | `string[]` | `['opencode', 'opencode-go']` | Provider route keys to attach headers and patches to |
+| `providers` | `string[]` | `['opencode', 'opencode-go']` | Provider route keys to intercept |
+| `injectUserAgent` | `boolean` | `true` | Restore OpenCode User-Agent stripped by DSH transport |
+| `userAgent` | `string` | `""` | Optional User-Agent override; empty uses canonical OpenCode CLI string |
+| `injectOriginHeaders` | `boolean` | `true` | Inject `x-opencode-client: cli` and `x-opencode-project: global` |
+| `injectCoreTools` | `boolean` | `true` | Auto-inject fallback `read` and `bash` schemas on free `/responses` |
 | `mode` | `'session-id' \| 'uuid'` | `'session-id'` | Session derivation mode (deterministic hash of DSH session ID) |
 | `debug` | `boolean` | `false` | Log streaming calls receiving session headers to `ctx.logger` |
 | `debugFile` | `string` | `undefined` | Optional absolute path to append NDJSON stream debug entries |
@@ -96,7 +110,7 @@ Use `pnpm` for all tasks:
 pnpm install     # install dependencies
 pnpm run check   # format, lint, and type check in one pass (vp check)
 pnpm run test    # run unit test suite with Vitest (vp test)
-pnpm run build   # build library with tsdown (vp pack -> lib/index.mjs + lib/index.d.mts)
+pnpm run build   # build library with tsdown (vp pack -> lib/index.mjs + lib/index.d.mts + lib/client.js)
 ```
 
 ---

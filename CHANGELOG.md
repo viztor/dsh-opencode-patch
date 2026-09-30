@@ -63,13 +63,3 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 | **Language** | Plain JavaScript (untyped `.js` / `.mjs`) | 100% Strict TypeScript |
 | **Runtime Target** | Node 20+ | Node 24+ (`ES2024`) |
 | **Toolchain** | Bare Node scripts | Vite+ (`vp pack`, `vp check`, `vp test`, Oxlint, Oxfmt) |
-
----
-
-## Upstream Contribution Plan
-
-All enhancements developed in `dsh-opencode` are modular and designed to be easily backported to [`nobu121/dsh-opencode-session`](https://github.com/nobu121/dsh-opencode-session):
-
-1. **Session Hashing**: `openCodeSessionIdFor()` can be added directly to upstream's `lib/index.js` to fix the `403 FreeTierError` on OpenCode Zen without breaking OpenCode Go compatibility.
-2. **User-Agent Restoration**: The `patchFetch` logic for `User-Agent` restoration and `x-opencode-client` can be submitted as an upstream PR with an optional config flag.
-3. **Tool Injection**: The `/responses` tool schema fallback can be isolated into an opt-in hook for upstream users accessing free models.
