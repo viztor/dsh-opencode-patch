@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.3.2](https://github.com/viztor/dsh-opencode/compare/v0.3.1...v0.3.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* register settings card on plugins.bundle.config keyed by package name ([9409a30](https://github.com/viztor/dsh-opencode/commit/9409a30917f3408f345a260375396d95182426fb))
+
 ## [0.3.1](https://github.com/viztor/dsh-opencode/compare/v0.3.0...v0.3.1) (2026-09-30)
 
 
