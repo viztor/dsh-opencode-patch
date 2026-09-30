@@ -2,9 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@viztor/dsh-opencode)](https://www.npmjs.com/package/@viztor/dsh-opencode) [![CI](https://github.com/viztor/dsh-opencode/actions/workflows/ci.yml/badge.svg)](https://github.com/viztor/dsh-opencode/actions/workflows/ci.yml) [![Release](https://github.com/viztor/dsh-opencode/actions/workflows/release.yml/badge.svg)](https://github.com/viztor/dsh-opencode/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/npm/l/@viztor/dsh-opencode)](LICENSE) [![Node >= 24](https://img.shields.io/node/v/@viztor/dsh-opencode)](https://nodejs.org) [![Last commit](https://img.shields.io/github/last-commit/viztor/dsh-opencode)](https://github.com/viztor/dsh-opencode/commits/main)
 
-Run free OpenCode Zen models (like `muse-spark-1.3-contributor-free`) inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) without `403 FreeTierError` or `400 MissingSessionID` errors.
+Run free OpenCode models — Zen (`muse-spark-1.3-contributor-free`, `space-bunny-free`) and Go (`deepseek-v4.1-flash`) — inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) without `403 FreeTierError` or `400 MissingSessionID` errors.
 
-**Why this exists:** OpenCode's gateway only serves free-tier models to requests that look like the OpenCode CLI (specific `User-Agent`, client headers, and `ses_…` session IDs) and carry `read`/`bash` tool definitions. DeepSeek Harness strips the user agent, uses UUID session IDs the gateway rejects, and can send tool-less requests — so free-tier calls fail. This plugin restores what's needed at the network layer, **only for OpenCode traffic**. Everything else (DeepSeek, OpenAI, GitHub, tools) passes through byte-for-byte untouched.
+**Why this exists:** OpenCode's gateways only serve requests carrying a valid `x-opencode-session`, and the Zen gateway additionally demands CLI origin proof (`User-Agent`, client headers, `ses_…` IDs) plus `read`/`bash` tool definitions on free-tier calls. DeepSeek Harness strips the user agent, uses UUID session IDs the gateways reject, and can send tool-less requests — so calls fail. This plugin restores what's needed at the network layer, **only for OpenCode traffic** (`opencode` and `opencode-go` routes, `zen/v1` and `zen/go/v1` URLs). Everything else (DeepSeek, OpenAI, GitHub, tools) passes through byte-for-byte untouched.
 
 ## Install
 
@@ -83,8 +83,8 @@ Full option reference (types, `debug`/`debugFile`, `mode`): see [cordis.patch.ym
 | Plugin | `@viztor/dsh-opencode@0.3.0` (npm + GitHub Packages) |
 | Host | DSH Web profile (`dsh-profile-web`, `patchReload: live`) |
 | Runtime | Node 24+ |
-| Gateway | `https://opencode.ai/zen/v1` (`/responses` + chat completions) |
-| Model | `muse-spark-1.3-contributor-free` |
+| Gateway | `zen/v1` (`/responses` + chat completions) and `zen/go/v1` (chat completions) |
+| Models | `muse-spark-1.3-contributor-free`, `space-bunny-free`, `deepseek-v4.1-flash` (Go) |
 | Checks | `vp check` clean, 44/44 deterministic tests, registry install resolves |
 
 ## Links
