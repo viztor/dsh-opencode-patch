@@ -48,11 +48,24 @@ jobs:
       - run: pnpm run build
       # OIDC trusted publishing: no token needed. Requires the
       # viztor/dsh-opencode + release.yml publisher registered on npmjs.com
-      # with `npm publish` allowed. Provenance is automatic.
-      - run: npm publish --access public
-      # Mirror to GitHub Packages so the repo sidebar populates; auth is the
-      # built-in GITHUB_TOKEN (packages: write above), no secret needed.
-      # Installs still come from npmjs.org unless a consumer repoints the scope.
-      - run: npm publish --registry=https://npm.pkg.github.com --access public
+      # with `npm publish` allowed. Provenance is automatic. The version
+      # guard keeps re-runs idempotent (a published version is skipped,
+      # so a failed mirror step can be retried by re-pushing the tag).
+      - name: publish to npmjs (OIDC)
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          if npm view "@viztor/dsh-opencode@$VER" version 2>/dev/null; then
+            echo "$VER already on npmjs, skipping"
+          else
+            npm publish --access public
+          fi
+      # Mirror to GitHub Packages so the repo sidebar populates. setup-node
+      # only maps auth to registry.npmjs.org, so map GITHUB_TOKEN to the
+      # GitHub registry explicitly (masked in logs). Installs still come
+      # from npmjs.org unless a consumer repoints the scope.
+      - name: mirror to GitHub Packages
+        run: |
+          printf '%s' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
+          npm publish --registry=https://npm.pkg.github.com --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
