@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.3.1](https://github.com/viztor/dsh-opencode/compare/v0.3.0...v0.3.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* surface effective defaults in settings UI labels and hints ([76d768d](https://github.com/viztor/dsh-opencode/commit/76d768d2755ce24c8367e6103f05d067bc3f4c43))
+
 ## [0.3.0](https://github.com/viztor/dsh-opencode/compare/v0.2.1...v0.3.0) (2026-09-30)
 
 
