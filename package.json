@@ -1,6 +1,6 @@
 {
   "name": "@viztor/dsh-opencode",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "DeepSeek Harness plugin: automatically adds stable per-conversation x-opencode-session and OpenCode gateway origin headers to OpenCode / OpenCode Go / OpenCode Zen requests — fixes 400 MissingSessionID and 403 FreeTierError, keeping session affinity and free-tier access working.",
   "keywords": [
     "cordis",
