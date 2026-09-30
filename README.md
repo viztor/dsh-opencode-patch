@@ -47,6 +47,8 @@ Open DSH Web → **Settings → Plugins → OpenCode Integration**, flip toggles
 | Inject Core Tools | on | Adds fallback `read`/`bash` schemas to free-tier `/responses` calls |
 | Providers | `opencode, opencode-go` | Which route IDs get the treatment |
 
+The Defaults above live in **code** (`resolveConfig` in `src/index.ts` — e.g. `DEFAULT_PROVIDERS`, toggles defaulting to on, empty override meaning "use canonical"). `cordis.patch.yml` pins the same values explicitly so a deployment's effective config reads in one place; the UI clearing a field falls back to the file value, then the code default. Single source of truth stays in code — the file mirrors, never contradicts.
+
 ## Headless / declarative config
 
 For servers or `cordis.patch.yml` overlays:
