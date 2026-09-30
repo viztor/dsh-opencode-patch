@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.3.3](https://github.com/viztor/dsh-opencode/compare/v0.3.2...v0.3.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* cordis row name must equal npm package name ([4907117](https://github.com/viztor/dsh-opencode/commit/49071171703f0a7e025beb5319b6ebac37077240))
+
 ## [0.3.2](https://github.com/viztor/dsh-opencode/compare/v0.3.1...v0.3.2) (2026-09-30)
 
 
