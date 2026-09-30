@@ -15,6 +15,7 @@ import {
   headerValueFor,
   hasSessionHeader,
   isOpenCodeRequest,
+  name as PLUGIN_NAME,
   openCodeSessionIdFor,
   OPENCODE_UA,
   patchFetch,
@@ -1050,6 +1051,12 @@ describe("bundle manifest consistency", () => {
       throw new Error("NS constant not found in src/settings-page.tsx");
     }
     expect(ns[1]).toBe("dsh-opencode");
+  });
+
+  it("keeps the component name aligned with the default row id", () => {
+    // Package (@viztor/dsh-opencode) ≠ row id (dsh-opencode) ≠ row name,
+    // but the component identity matches the default row id by convention.
+    expect(PLUGIN_NAME).toBe("dsh-opencode");
   });
 
   it("registers the client bundle under the npm package name", async () => {
