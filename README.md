@@ -29,29 +29,39 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ### 1. In DeepSeek Harness Profile
 
-Add `dsh-opencode` to your profile's `package.json`:
+From npm (recommended):
+
+```sh
+dsh plugin --profile web add @viztor/dsh-opencode
+```
+
+Or declare it directly in your profile's `package.json`:
 
 ```json
 {
   "dependencies": {
-    "dsh-opencode": "link:../../../dev/dsh-opencode"
+    "@viztor/dsh-opencode": "^0.2.0"
   },
   "dsh": {
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "dsh-opencode"
+        "@viztor/dsh-opencode"
       ]
     }
   }
 }
 ```
 
-Or from npm (once published):
+For local development, link the checkout instead:
 
-```sh
-dsh plugin --profile web add dsh-opencode
+```json
+{
+  "dependencies": {
+    "@viztor/dsh-opencode": "link:../../../dev/dsh-opencode"
+  }
+}
 ```
 
 Run `pnpm install` in your profile directory.

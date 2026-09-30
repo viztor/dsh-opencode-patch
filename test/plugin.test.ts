@@ -102,21 +102,30 @@ const collectUnknown = async (
 
 const waitForFileContent = async (
   file: string,
-  timeoutMs = 2000
+  minLines = 1,
+  timeoutMs = 5000
 ): Promise<string> => {
   const start = Date.now();
+  let last = "";
   while (Date.now() - start < timeoutMs) {
     try {
       const content = await readFile(file, "utf-8");
-      if (content.trim().length > 0) {
+      const lines = content
+        .trim()
+        .split("\n")
+        .filter((l) => l.length > 0);
+      if (lines.length >= minLines) {
         return content;
       }
+      last = content;
     } catch {
       // not yet written
     }
     await sleep(25);
   }
-  throw new Error(`timed out waiting for file content: ${file}`);
+  throw new Error(
+    `timed out waiting for ${minLines} line(s) in ${file} (last: ${JSON.stringify(last)})`
+  );
 };
 
 interface Capture {
@@ -991,7 +1000,7 @@ describe("apply (plugin lifecycle)", () => {
       };
       await driveTurn("turn-0");
       await driveTurn("turn-1");
-      const content = await waitForFileContent(debugFile);
+      const content = await waitForFileContent(debugFile, 2);
       const values: unknown[] = [];
       for (const line of content.trim().split("\n")) {
         const parsed: unknown = JSON.parse(line);
