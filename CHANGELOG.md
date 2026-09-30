@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.5.0](https://github.com/viztor/dsh-opencode/compare/v0.4.0...v0.5.0) (2026-09-30)
+
+
+### Features
+
+* complete settings UI coverage and drop session cache table ([7ac8b3c](https://github.com/viztor/dsh-opencode/commit/7ac8b3c2cf32148d80a593d638489432ca931249))
+
 ## [0.4.0](https://github.com/viztor/dsh-opencode/compare/v0.3.4...v0.4.0) (2026-09-30)
 
 
