@@ -149,10 +149,8 @@ const recordDebug = async (
 
 export const headerValueFor = (
   sessionId: string | number | undefined | null,
-  _mode: string,
-  table: Map<string, string>
+  mode: string
 ): string | undefined => {
-  void _mode;
   if (sessionId === undefined || sessionId === null) {
     return undefined;
   }
@@ -160,13 +158,15 @@ export const headerValueFor = (
   if (raw.length === 0) {
     return undefined;
   }
-  const cached = table.get(raw);
-  if (cached !== undefined) {
-    return cached;
+  // Pure derivation, no table: identical sessions map identically across
+  // turns and restarts (better cache affinity) with no per-process growth.
+  // uuid mode passes the DSH session through untouched (for gateways that
+  // accept raw UUIDs); session-id mode derives a gateway-compliant ses_…
+  // value.
+  if (mode === "uuid") {
+    return raw;
   }
-  const value = openCodeSessionIdFor(raw);
-  table.set(raw, value);
-  return value;
+  return openCodeSessionIdFor(raw);
 };
 
 export interface ActiveTurnState {
@@ -526,7 +526,6 @@ export const apply = (
   const config = resolveConfig(rawConfig);
   const { debug, debugFile, mode, providers } = config;
   const als = new AsyncLocalStorage<ActiveTurnState>();
-  const uuidBySession = new Map<string, string>();
 
   const originalFetch: unknown = globalThis.fetch;
   if (!isFetchFunction(originalFetch)) {
@@ -577,7 +576,7 @@ export const apply = (
       if (rawSession.length === 0) {
         return next();
       }
-      const value = headerValueFor(rawSession, mode, uuidBySession);
+      const value = headerValueFor(rawSession, mode);
       if (value === undefined) {
         return next();
       }

@@ -340,29 +340,38 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
 });
 
 describe("headerValueFor", () => {
-  it("returns mapped session id and caches it in the provided table", () => {
-    const table = new Map<string, string>();
-    const val1 = headerValueFor("dsh-uuid-1", "session-id", table);
+  it("derives the same session id on every call without a table", () => {
+    const val1 = headerValueFor("dsh-uuid-1", "session-id");
     expect(val1).toMatch(/^ses_/);
-    expect(table.get("dsh-uuid-1")).toBe(val1);
 
-    const val2 = headerValueFor("dsh-uuid-1", "session-id", table);
+    const val2 = headerValueFor("dsh-uuid-1", "session-id");
     expect(val2).toBe(val1);
   });
 
   it("returns undefined for empty, null, or undefined session inputs", () => {
-    const table = new Map<string, string>();
-    expect(headerValueFor("", "session-id", table)).toBeUndefined();
-    expect(headerValueFor(undefined, "session-id", table)).toBeUndefined();
-    expect(headerValueFor(null, "session-id", table)).toBeUndefined();
-    expect(table.size).toBe(0);
+    expect(headerValueFor("", "session-id")).toBeUndefined();
+    expect(headerValueFor(undefined, "session-id")).toBeUndefined();
+    expect(headerValueFor(null, "session-id")).toBeUndefined();
   });
 
   it("accepts numeric session IDs", () => {
-    const table = new Map<string, string>();
-    const value = headerValueFor(987_654, "session-id", table);
+    const value = headerValueFor(987_654, "session-id");
     expect(value).toMatch(/^ses_/);
-    expect(table.get("987654")).toBe(value);
+  });
+
+  it("passes the raw session through in uuid mode", () => {
+    const raw = "c2a51fb0-578c-4019-80c4-868eff95fd08";
+    expect(headerValueFor(raw, "uuid")).toBe(raw);
+    // Stable across turns, and distinct sessions stay distinct.
+    expect(headerValueFor(raw, "uuid")).toBe(raw);
+    expect(headerValueFor("other-session", "uuid")).toBe("other-session");
+  });
+
+  it("derives ses_ IDs in session-id mode even for UUID-shaped input", () => {
+    const raw = "c2a51fb0-578c-4019-80c4-868eff95fd08";
+    const value = headerValueFor(raw, "session-id");
+    expect(value).toMatch(SESSION_RE);
+    expect(value).not.toBe(raw);
   });
 });
 
