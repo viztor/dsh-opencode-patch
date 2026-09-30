@@ -19,7 +19,7 @@ Or declare it in your profile's `package.json`:
 ```json
 {
   "dependencies": {
-    "@viztor/dsh-opencode": "^0.2.1"
+    "@viztor/dsh-opencode": "^0.3.0"
   },
   "dsh": {
     "profile": {
@@ -80,7 +80,7 @@ Full option reference (types, `debug`/`debugFile`, `mode`): see [cordis.patch.ym
 
 | Component | Verified version |
 | :-- | :-- |
-| Plugin | `@viztor/dsh-opencode@0.2.1` (npm + GitHub Packages) |
+| Plugin | `@viztor/dsh-opencode@0.3.0` (npm + GitHub Packages) |
 | Host | DSH Web profile (`dsh-profile-web`, `patchReload: live`) |
 | Runtime | Node 24+ |
 | Gateway | `https://opencode.ai/zen/v1` (`/responses` + chat completions) |
