@@ -1,29 +1,27 @@
-# dsh-opencode-session layer.
+# dsh-opencode layer.
 #
-# Adds one host plugin row that attaches `x-opencode-session` to model
-# requests routed to OpenCode / OpenCode Go provider profiles.
+# Adds one host plugin row that manages session affinity, OpenCode Zen gateway
+# origin headers, and free-tier compatibility for OpenCode, OpenCode Go, and OpenCode Zen routes.
 #
 # Configuration (row `config`, all optional):
-#   providers: [string]  provider route keys to attach the header to.
-#                        Defaults to the pi-ai catalog ids ['opencode', 'opencode-go'].
-#                        Add your own route key when the OpenCode endpoint is
-#                        served under a custom provider name.
-#   mode: 'session-id' | 'uuid'   header value derivation.
-#                        'session-id' (default): reuse the DSH session id that
-#                        already travels with each model call — stable across
-#                        turns and restarts, unique per conversation.
-#                        'uuid': a process-stable random uuid per DSH session.
-#   debug: true|false    log every streamed call that receives the header
-#                        (via ctx.logger, i.e. the dsh process console).
-#   debugFile: path      optional: append one JSON line per streamed call that
-#                        receives the header to the given file (handy when the
-#                        process console is not visible).
+#   providers: [string]         provider route keys to intercept (default ['opencode', 'opencode-go']).
+#   injectUserAgent: boolean    restore OpenCode CLI User-Agent stripped by DSH adapter (default true).
+#   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
+#   injectOriginHeaders: bool   inject x-opencode-client & x-opencode-project (default true).
+#   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
+#   mode: 'session-id' | 'uuid' session derivation mode (default 'session-id').
+#   debug: true|false           log every streamed call that receives the header.
+#   debugFile: path             optional append target for stream debug JSONL.
 - insert:
-    - id: opencode-go-session-header
+    - id: dsh-opencode
       name: dsh-opencode
       config:
         providers:
           - opencode
           - opencode-go
+        injectUserAgent: true
+        userAgent: ""
+        injectOriginHeaders: true
+        injectCoreTools: true
         mode: session-id
         debug: false

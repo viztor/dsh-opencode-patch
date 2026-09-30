@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 
-export const name = "opencode-go-session-header";
+export const name = "dsh-opencode";
 
 export const inject = ["llm"];
 
@@ -60,15 +60,23 @@ export const DEFAULT_PROVIDERS = ["opencode", "opencode-go"];
 export interface PluginConfig {
   debug?: boolean;
   debugFile?: string;
+  injectCoreTools?: boolean;
+  injectOriginHeaders?: boolean;
+  injectUserAgent?: boolean;
   mode?: "session-id" | "uuid";
   providers?: string[];
+  userAgent?: string;
 }
 
 export interface ResolvedPluginConfig {
   debug: boolean;
   debugFile?: string;
+  injectCoreTools: boolean;
+  injectOriginHeaders: boolean;
+  injectUserAgent: boolean;
   mode: "session-id" | "uuid";
   providers: Set<string>;
+  userAgent?: string;
 }
 
 export const resolveConfig = (
@@ -84,7 +92,24 @@ export const resolveConfig = (
     typeof config.debugFile === "string" && config.debugFile.length > 0
       ? config.debugFile
       : undefined;
-  return { debug, debugFile, mode, providers: new Set(providers) };
+  const injectUserAgent = config.injectUserAgent !== false;
+  const userAgent =
+    typeof config.userAgent === "string" && config.userAgent.trim().length > 0
+      ? config.userAgent.trim()
+      : undefined;
+  const injectOriginHeaders = config.injectOriginHeaders !== false;
+  const injectCoreTools = config.injectCoreTools !== false;
+
+  return {
+    debug,
+    debugFile,
+    injectCoreTools,
+    injectOriginHeaders,
+    injectUserAgent,
+    mode,
+    providers: new Set(providers),
+    userAgent,
+  };
 };
 
 const recordDebug = async (
@@ -96,10 +121,7 @@ const recordDebug = async (
     await appendFile(file, `${JSON.stringify(entry)}\n`, "utf-8");
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    ctx.logger?.warn?.(
-      "[opencode-go-session-header] debugFile write failed: %s",
-      msg
-    );
+    ctx.logger?.warn?.("[dsh-opencode] debugFile write failed: %s", msg);
   }
 };
 
@@ -123,10 +145,16 @@ export const headerValueFor = (
   return value;
 };
 
+export interface ActiveTurnState {
+  model?: string;
+  provider: string;
+  value: string;
+}
+
 export const withStore = <T>(
   iterable: AsyncIterable<T>,
-  store: { value: string },
-  als: AsyncLocalStorage<{ value: string }>
+  store: ActiveTurnState,
+  als: AsyncLocalStorage<ActiveTurnState>
 ): AsyncIterable<T> => {
   const iterator = (
     iterable as unknown as Record<symbol, () => AsyncIterator<T>>
@@ -188,9 +216,25 @@ export const hasSessionHeader = (
   }
 };
 
+/** Determines if a request targets an OpenCode API endpoint. */
+export const isOpenCodeRequest = (
+  url: string,
+  state: ActiveTurnState | undefined,
+  providers: Set<string>
+): boolean => {
+  if (url.includes("opencode.ai/zen")) {
+    return true;
+  }
+  if (state && providers.has(state.provider)) {
+    return true;
+  }
+  return false;
+};
+
 export const patchFetch = (
   original: typeof fetch,
-  als: AsyncLocalStorage<{ value: string }>
+  als: AsyncLocalStorage<ActiveTurnState>,
+  config: ResolvedPluginConfig
 ): typeof fetch =>
   function patchedFetch(
     this: unknown,
@@ -205,83 +249,85 @@ export const patchFetch = (
       url = String((input as { url: unknown }).url);
     }
 
-    if (url.includes("opencode.ai/zen")) {
-      const headers = new Headers(
-        init?.headers ??
-          (typeof Request !== "undefined" && input instanceof Request
-            ? input.headers
-            : undefined)
-      );
-      headers.set("User-Agent", OPENCODE_UA);
+    if (!isOpenCodeRequest(url, state, config.providers)) {
+      return original.call(this, input, init);
+    }
+
+    const headers = new Headers(
+      init?.headers ??
+        (typeof Request !== "undefined" && input instanceof Request
+          ? input.headers
+          : undefined)
+    );
+
+    // 1. Session header: ALWAYS injected for OpenCode requests
+    if (state) {
+      headers.set(SESSION_HEADER, state.value);
+    } else {
+      const existing = headers.get(SESSION_HEADER);
+      if (!existing?.startsWith("ses_")) {
+        headers.set(
+          SESSION_HEADER,
+          process.env.OPENCODE_SESSION_ID ?? openCodeSessionIdFor("default")
+        );
+      }
+    }
+
+    // 2. User-Agent: injected / restored when enabled, with user override support
+    if (config.injectUserAgent) {
+      headers.set("User-Agent", config.userAgent ?? OPENCODE_UA);
+    }
+
+    // 3. Client & Project origin headers: injected when enabled
+    if (config.injectOriginHeaders) {
       headers.set("x-opencode-client", "cli");
       headers.set("x-opencode-project", "global");
-      if (state) {
-        headers.set(SESSION_HEADER, state.value);
-      } else {
-        const existing = headers.get(SESSION_HEADER);
-        if (!existing?.startsWith("ses_")) {
-          headers.set(
-            SESSION_HEADER,
-            process.env.OPENCODE_SESSION_ID ?? openCodeSessionIdFor("default")
-          );
-        }
-      }
+    }
 
-      const newInit: RequestInit = { ...init, headers };
-      if (url.includes("/responses") && init?.body) {
-        try {
-          let bodyStr: string | null = null;
-          if (typeof init.body === "string") {
-            bodyStr = init.body;
-          } else if (Buffer.isBuffer(init.body)) {
-            bodyStr = (init.body as Buffer).toString("utf-8");
-          }
-          if (bodyStr && bodyStr.length > 0) {
-            const bodyObj = JSON.parse(bodyStr) as {
-              model?: unknown;
-              tools?: { name?: unknown }[];
-            };
-            if (
-              typeof bodyObj.model === "string" &&
-              bodyObj.model.includes("free")
-            ) {
-              if (!Array.isArray(bodyObj.tools)) {
-                bodyObj.tools = [];
-              }
-              const hasRead = bodyObj.tools.some((t) => t.name === "read");
-              const hasBash = bodyObj.tools.some((t) => t.name === "bash");
-              if (!hasRead) {
-                bodyObj.tools.push(DUMMY_READ_TOOL);
-              }
-              if (!hasBash) {
-                bodyObj.tools.push(DUMMY_BASH_TOOL);
-              }
-              const newBodyStr = JSON.stringify(bodyObj);
-              newInit.body = newBodyStr;
-              headers.set(
-                "content-length",
-                Buffer.byteLength(newBodyStr).toString()
-              );
+    const newInit: RequestInit = { ...init, headers };
+
+    // 4. Core tool schema fallback for free-tier /responses models
+    if (config.injectCoreTools && url.includes("/responses") && init?.body) {
+      try {
+        let bodyStr: string | null = null;
+        if (typeof init.body === "string") {
+          bodyStr = init.body;
+        } else if (Buffer.isBuffer(init.body)) {
+          bodyStr = (init.body as Buffer).toString("utf-8");
+        }
+        if (bodyStr && bodyStr.length > 0) {
+          const bodyObj = JSON.parse(bodyStr) as {
+            model?: unknown;
+            tools?: { name?: unknown }[];
+          };
+          if (
+            typeof bodyObj.model === "string" &&
+            bodyObj.model.includes("free")
+          ) {
+            if (!Array.isArray(bodyObj.tools)) {
+              bodyObj.tools = [];
             }
+            const hasRead = bodyObj.tools.some((t) => t.name === "read");
+            const hasBash = bodyObj.tools.some((t) => t.name === "bash");
+            if (!hasRead) {
+              bodyObj.tools.push(DUMMY_READ_TOOL);
+            }
+            if (!hasBash) {
+              bodyObj.tools.push(DUMMY_BASH_TOOL);
+            }
+            const newBodyStr = JSON.stringify(bodyObj);
+            newInit.body = newBodyStr;
+            headers.set(
+              "content-length",
+              Buffer.byteLength(newBodyStr).toString()
+            );
           }
-        } catch {
-          // ignore parsing error
         }
+      } catch {
+        // ignore parsing error
       }
-      return original.call(this, input, newInit);
     }
-
-    if (state && !hasSessionHeader(input, init)) {
-      const headers = new Headers(
-        init?.headers ??
-          (typeof Request !== "undefined" && input instanceof Request
-            ? input.headers
-            : undefined)
-      );
-      headers.set(SESSION_HEADER, state.value);
-      return original.call(this, input, { ...init, headers });
-    }
-    return original.call(this, input, init);
+    return original.call(this, input, newInit);
   };
 
 export interface CordisContext {
@@ -301,25 +347,29 @@ export interface CordisContext {
   ) => void;
 }
 
-export const apply = (ctx: CordisContext, config: PluginConfig = {}): void => {
-  const { debug, debugFile, mode, providers } = resolveConfig(config);
-  const als = new AsyncLocalStorage<{ value: string }>();
+export const apply = (
+  ctx: CordisContext,
+  rawConfig: PluginConfig = {}
+): void => {
+  const config = resolveConfig(rawConfig);
+  const { debug, debugFile, mode, providers } = config;
+  const als = new AsyncLocalStorage<ActiveTurnState>();
   const uuidBySession = new Map<string, string>();
 
   const originalFetch = globalThis.fetch;
   if (typeof originalFetch !== "function") {
     ctx.logger?.warn?.(
-      "[opencode-go-session-header] globalThis.fetch is unavailable; cannot inject x-opencode-session"
+      "[dsh-opencode] globalThis.fetch is unavailable; cannot inject x-opencode-session"
     );
     return;
   }
 
-  const patched = patchFetch(originalFetch, als);
+  const patched = patchFetch(originalFetch, als, config);
 
   ctx.effect?.(() => {
     globalThis.fetch = patched;
     ctx.logger?.info?.(
-      "[opencode-go-session-header] active for providers [%s] with mode %s",
+      "[dsh-opencode] active for providers [%s] with mode %s",
       [...providers].join(", "),
       mode
     );
@@ -328,7 +378,7 @@ export const apply = (ctx: CordisContext, config: PluginConfig = {}): void => {
         globalThis.fetch = originalFetch;
       }
     };
-  }, "opencode-go-session-header.fetch-patch");
+  }, "dsh-opencode.fetch-patch");
 
   ctx.on?.(
     "llm/stream",
@@ -378,14 +428,22 @@ export const apply = (ctx: CordisContext, config: PluginConfig = {}): void => {
         }
         if (debug) {
           ctx.logger?.info?.(
-            '[opencode-go-session-header] streaming provider "%s" with %s=%s',
+            '[dsh-opencode] streaming provider "%s" with %s=%s',
             String(provider),
             SESSION_HEADER,
             value
           );
         }
       }
-      return withStore(downstream, { value }, als);
+      return withStore(
+        downstream,
+        {
+          model: typeof model === "string" ? model : undefined,
+          provider: String(provider),
+          value,
+        },
+        als
+      );
     },
     { prepend: true }
   );

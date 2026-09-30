@@ -7,16 +7,18 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { describe, it } from "vitest";
 
-import type { PluginConfig } from "../src/index.ts";
 import {
+  type ActiveTurnState,
   apply,
   DUMMY_BASH_TOOL,
   DUMMY_READ_TOOL,
   headerValueFor,
   hasSessionHeader,
+  isOpenCodeRequest,
   openCodeSessionIdFor,
   OPENCODE_UA,
   patchFetch,
+  type PluginConfig,
   resolveConfig,
   SESSION_HEADER,
   withStore,
@@ -27,7 +29,7 @@ const createMockStream = async function* createMockStream(chunk: string) {
 };
 
 const createMockStoreStream = async function* createMockStoreStream(
-  als: AsyncLocalStorage<{ value: string }>
+  als: AsyncLocalStorage<ActiveTurnState>
 ) {
   yield als.getStore()?.value;
   yield als.getStore()?.value;
@@ -65,20 +67,28 @@ describe("openCodeSessionIdFor", () => {
 });
 
 describe("resolveConfig", () => {
-  it("fills default providers, mode, and debug flags", () => {
+  it("fills default providers, mode, toggles, and debug flags", () => {
     const resolved = resolveConfig({});
     assert.deepEqual([...resolved.providers], ["opencode", "opencode-go"]);
     assert.equal(resolved.mode, "session-id");
     assert.equal(resolved.debug, false);
     assert.equal(resolved.debugFile, undefined);
+    assert.equal(resolved.injectUserAgent, true);
+    assert.equal(resolved.userAgent, undefined);
+    assert.equal(resolved.injectOriginHeaders, true);
+    assert.equal(resolved.injectCoreTools, true);
   });
 
-  it("preserves custom providers list", () => {
+  it("preserves custom providers and configuration overrides", () => {
     const resolved = resolveConfig({
       debug: true,
       debugFile: "/tmp/debug.log",
+      injectCoreTools: false,
+      injectOriginHeaders: false,
+      injectUserAgent: false,
       mode: "uuid",
       providers: ["custom-opencode", "opencode-dev"],
+      userAgent: "my-custom-ua/1.0",
     });
     assert.deepEqual(
       [...resolved.providers],
@@ -87,6 +97,10 @@ describe("resolveConfig", () => {
     assert.equal(resolved.mode, "uuid");
     assert.equal(resolved.debug, true);
     assert.equal(resolved.debugFile, "/tmp/debug.log");
+    assert.equal(resolved.injectUserAgent, false);
+    assert.equal(resolved.userAgent, "my-custom-ua/1.0");
+    assert.equal(resolved.injectOriginHeaders, false);
+    assert.equal(resolved.injectCoreTools, false);
   });
 
   it("falls back to session-id mode when unknown mode is provided", () => {
@@ -94,6 +108,71 @@ describe("resolveConfig", () => {
       mode: "unknown" as unknown as PluginConfig["mode"],
     });
     assert.equal(resolved.mode, "session-id");
+  });
+});
+
+describe("isOpenCodeRequest (endpoint differentiation)", () => {
+  const providers = new Set(["opencode", "opencode-go"]);
+
+  it("identifies opencode.ai/zen endpoints", () => {
+    assert.equal(
+      isOpenCodeRequest(
+        "https://opencode.ai/zen/v1/responses",
+        undefined,
+        providers
+      ),
+      true
+    );
+    assert.equal(
+      isOpenCodeRequest(
+        "https://opencode.ai/zen/go/v1/chat/completions",
+        undefined,
+        providers
+      ),
+      true
+    );
+  });
+
+  it("identifies active turn state when routed to matching provider", () => {
+    const state: ActiveTurnState = {
+      provider: "opencode",
+      value: "ses_123",
+    };
+    assert.equal(
+      isOpenCodeRequest("https://my-custom-relay.example/v1", state, providers),
+      true
+    );
+  });
+
+  it("rejects non-OpenCode requests", () => {
+    assert.equal(
+      isOpenCodeRequest(
+        "https://api.deepseek.com/v1/chat/completions",
+        undefined,
+        providers
+      ),
+      false
+    );
+    assert.equal(
+      isOpenCodeRequest(
+        "https://api.openai.com/v1/chat/completions",
+        undefined,
+        providers
+      ),
+      false
+    );
+    const nonOpencodeState: ActiveTurnState = {
+      provider: "deepseek",
+      value: "ses_456",
+    };
+    assert.equal(
+      isOpenCodeRequest(
+        "https://api.deepseek.com/v1",
+        nonOpencodeState,
+        providers
+      ),
+      false
+    );
   });
 });
 
@@ -147,10 +226,10 @@ describe("hasSessionHeader", () => {
 
 describe("withStore", () => {
   it("wraps and drives an async iterable inside AsyncLocalStorage context", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     const wrapped = withStore(
       createMockStoreStream(als),
-      { value: "store-context-42" },
+      { provider: "opencode", value: "store-context-42" },
       als
     );
     const results: (string | undefined)[] = [];
@@ -162,7 +241,7 @@ describe("withStore", () => {
   });
 
   it("handles early return on the wrapped iterator", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     let returned = false;
 
     const mockIterable: AsyncIterable<number> = {
@@ -179,7 +258,11 @@ describe("withStore", () => {
       },
     };
 
-    const wrapped = withStore(mockIterable, { value: "test" }, als);
+    const wrapped = withStore(
+      mockIterable,
+      { provider: "opencode", value: "test" },
+      als
+    );
     const iterator = wrapped[Symbol.asyncIterator]();
     const first = await iterator.next();
     assert.equal(first.value, 1);
@@ -190,7 +273,7 @@ describe("withStore", () => {
 
 describe("patchFetch", () => {
   it("passes non-OpenCode requests through completely untouched", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     let capturedInit: RequestInit | undefined;
     let capturedUrl = "";
 
@@ -212,29 +295,30 @@ describe("patchFetch", () => {
       return new Response("upstream-ok");
     };
 
-    const patched = patchFetch(mockFetch, als);
+    const config = resolveConfig();
+    const patched = patchFetch(mockFetch, als, config);
 
-    const res = await patched("https://api.external.com/v1/chat", {
+    const res = await patched("https://api.deepseek.com/v1/chat/completions", {
       body: JSON.stringify({ message: "hello" }),
       headers: { "X-Custom-Header": "original" },
       method: "POST",
     });
 
     assert.equal(await res.text(), "upstream-ok");
-    assert.equal(capturedUrl, "https://api.external.com/v1/chat");
+    assert.equal(capturedUrl, "https://api.deepseek.com/v1/chat/completions");
     assert.ok(capturedInit);
     const headers = new Headers(capturedInit.headers);
     assert.equal(headers.get("X-Custom-Header"), "original");
     assert.equal(headers.get("User-Agent"), null);
     assert.equal(headers.get("x-opencode-client"), null);
+    assert.equal(headers.get("x-opencode-project"), null);
+    assert.equal(headers.get(SESSION_HEADER), null);
   });
 
   it("injects OpenCode origin headers and dynamic session ID for opencode.ai/zen requests", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     let capturedInit: RequestInit | undefined;
-    const testSession =
-      process.env.TEST_OPENCODE_SESSION ??
-      openCodeSessionIdFor("test-dynamic-turn");
+    const testSession = openCodeSessionIdFor("test-dynamic-turn");
 
     const mockFetch = async (
       _input: RequestInfo | URL,
@@ -245,9 +329,10 @@ describe("patchFetch", () => {
       return Response.json({ status: "success" });
     };
 
-    const patched = patchFetch(mockFetch, als);
+    const config = resolveConfig();
+    const patched = patchFetch(mockFetch, als, config);
 
-    await als.run({ value: testSession }, async () => {
+    await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/chat/completions", {
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -262,12 +347,100 @@ describe("patchFetch", () => {
     assert.equal(headers.get(SESSION_HEADER), testSession);
   });
 
-  it("injects DUMMY_READ_TOOL and DUMMY_BASH_TOOL when missing for free-tier /responses models", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+  it("respects injectUserAgent: false by leaving User-Agent untouched", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     let capturedInit: RequestInit | undefined;
-    const testSession =
-      process.env.TEST_OPENCODE_SESSION ??
-      openCodeSessionIdFor("test-free-turn");
+
+    const mockFetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      capturedInit = init;
+      await Promise.resolve();
+      return Response.json({ status: "success" });
+    };
+
+    const config = resolveConfig({ injectUserAgent: false });
+    const patched = patchFetch(mockFetch, als, config);
+
+    await als.run({ provider: "opencode", value: "ses_test" }, async () => {
+      await patched("https://opencode.ai/zen/v1/chat/completions", {
+        headers: { "User-Agent": "custom-unmodified-ua" },
+        method: "POST",
+      });
+    });
+
+    assert.ok(capturedInit);
+    const headers = new Headers(capturedInit.headers);
+    assert.equal(headers.get("User-Agent"), "custom-unmodified-ua");
+    // Session is still always injected!
+    assert.equal(headers.get(SESSION_HEADER), "ses_test");
+  });
+
+  it("allows overriding User-Agent with custom userAgent string", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    let capturedInit: RequestInit | undefined;
+
+    const mockFetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      capturedInit = init;
+      await Promise.resolve();
+      return Response.json({ status: "success" });
+    };
+
+    const config = resolveConfig({
+      injectUserAgent: true,
+      userAgent: "my-custom-cli/3.0.0",
+    });
+    const patched = patchFetch(mockFetch, als, config);
+
+    await als.run({ provider: "opencode", value: "ses_test" }, async () => {
+      await patched("https://opencode.ai/zen/v1/chat/completions", {
+        method: "POST",
+      });
+    });
+
+    assert.ok(capturedInit);
+    const headers = new Headers(capturedInit.headers);
+    assert.equal(headers.get("User-Agent"), "my-custom-cli/3.0.0");
+    assert.equal(headers.get(SESSION_HEADER), "ses_test");
+  });
+
+  it("respects injectOriginHeaders: false by omitting client and project headers", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    let capturedInit: RequestInit | undefined;
+
+    const mockFetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      capturedInit = init;
+      await Promise.resolve();
+      return Response.json({ status: "success" });
+    };
+
+    const config = resolveConfig({ injectOriginHeaders: false });
+    const patched = patchFetch(mockFetch, als, config);
+
+    await als.run({ provider: "opencode", value: "ses_test" }, async () => {
+      await patched("https://opencode.ai/zen/v1/chat/completions", {
+        method: "POST",
+      });
+    });
+
+    assert.ok(capturedInit);
+    const headers = new Headers(capturedInit.headers);
+    assert.equal(headers.get("x-opencode-client"), null);
+    assert.equal(headers.get("x-opencode-project"), null);
+    assert.equal(headers.get(SESSION_HEADER), "ses_test");
+  });
+
+  it("injects DUMMY_READ_TOOL and DUMMY_BASH_TOOL when missing for free-tier /responses models", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    let capturedInit: RequestInit | undefined;
+    const testSession = openCodeSessionIdFor("test-free-turn");
 
     const mockFetch = async (
       _input: RequestInfo | URL,
@@ -278,9 +451,10 @@ describe("patchFetch", () => {
       return Response.json({ ok: true });
     };
 
-    const patched = patchFetch(mockFetch, als);
+    const config = resolveConfig();
+    const patched = patchFetch(mockFetch, als, config);
 
-    await als.run({ value: testSession }, async () => {
+    await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/responses", {
         body: JSON.stringify({
           input: [{ content: "hi", role: "user" }],
@@ -307,12 +481,9 @@ describe("patchFetch", () => {
     assert.equal(body.tools[1]?.name, DUMMY_BASH_TOOL.name);
   });
 
-  it("does not duplicate read or bash tools when one is already provided", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+  it("respects injectCoreTools: false by not injecting tools", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     let capturedInit: RequestInit | undefined;
-    const testSession =
-      process.env.TEST_OPENCODE_SESSION ??
-      openCodeSessionIdFor("test-partial-turn");
 
     const mockFetch = async (
       _input: RequestInfo | URL,
@@ -323,9 +494,48 @@ describe("patchFetch", () => {
       return Response.json({ ok: true });
     };
 
-    const patched = patchFetch(mockFetch, als);
+    const config = resolveConfig({ injectCoreTools: false });
+    const patched = patchFetch(mockFetch, als, config);
 
-    await als.run({ value: testSession }, async () => {
+    await als.run({ provider: "opencode", value: "ses_test" }, async () => {
+      await patched("https://opencode.ai/zen/v1/responses", {
+        body: JSON.stringify({
+          input: [{ content: "hi", role: "user" }],
+          model: "muse-spark-1.3-contributor-free",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+    });
+
+    assert.ok(capturedInit);
+    assert.equal(typeof capturedInit.body, "string");
+    const bodyStr =
+      typeof capturedInit.body === "string" ? capturedInit.body : "{}";
+    const body = JSON.parse(bodyStr) as {
+      tools?: unknown;
+    };
+    assert.equal(body.tools, undefined);
+  });
+
+  it("does not duplicate read or bash tools when one is already provided", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    let capturedInit: RequestInit | undefined;
+    const testSession = openCodeSessionIdFor("test-partial-turn");
+
+    const mockFetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      capturedInit = init;
+      await Promise.resolve();
+      return Response.json({ ok: true });
+    };
+
+    const config = resolveConfig();
+    const patched = patchFetch(mockFetch, als, config);
+
+    await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/responses", {
         body: JSON.stringify({
           input: [{ content: "run command", role: "user" }],
@@ -350,51 +560,10 @@ describe("patchFetch", () => {
     assert.equal(body.tools.filter((t) => t.name === "read").length, 1);
   });
 
-  it("does not inject dummy tools for non-free models", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
-    let capturedInit: RequestInit | undefined;
-    const testSession =
-      process.env.TEST_OPENCODE_SESSION ??
-      openCodeSessionIdFor("test-paid-turn");
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ ok: true });
-    };
-
-    const patched = patchFetch(mockFetch, als);
-
-    await als.run({ value: testSession }, async () => {
-      await patched("https://opencode.ai/zen/v1/responses", {
-        body: JSON.stringify({
-          input: [{ content: "hello", role: "user" }],
-          model: "claude-sonnet-5",
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-    });
-
-    assert.ok(capturedInit);
-    assert.equal(typeof capturedInit.body, "string");
-    const bodyStr =
-      typeof capturedInit.body === "string" ? capturedInit.body : "{}";
-    const body = JSON.parse(bodyStr) as {
-      tools?: unknown;
-    };
-    assert.equal(body.tools, undefined);
-  });
-
   it("handles Buffer bodies correctly without breaking", async () => {
-    const als = new AsyncLocalStorage<{ value: string }>();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     let capturedInit: RequestInit | undefined;
-    const testSession =
-      process.env.TEST_OPENCODE_SESSION ??
-      openCodeSessionIdFor("test-buffer-turn");
+    const testSession = openCodeSessionIdFor("test-buffer-turn");
 
     const mockFetch = async (
       _input: RequestInfo | URL,
@@ -405,7 +574,8 @@ describe("patchFetch", () => {
       return Response.json({ ok: true });
     };
 
-    const patched = patchFetch(mockFetch, als);
+    const config = resolveConfig();
+    const patched = patchFetch(mockFetch, als, config);
 
     const payload = Buffer.from(
       JSON.stringify({
@@ -415,7 +585,7 @@ describe("patchFetch", () => {
       "utf-8"
     );
 
-    await als.run({ value: testSession }, async () => {
+    await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/responses", {
         body: payload,
         headers: { "Content-Type": "application/json" },

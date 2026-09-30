@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 //#region src/index.d.ts
-export declare const name = "opencode-go-session-header";
+export declare const name = "dsh-opencode";
 export declare const inject: string[];
 export declare const SESSION_HEADER = "x-opencode-session";
 export declare const OPENCODE_UA = "opencode/1.18.33 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
@@ -40,26 +40,35 @@ export declare const DEFAULT_PROVIDERS: string[];
 export interface PluginConfig {
   debug?: boolean;
   debugFile?: string;
+  injectCoreTools?: boolean;
+  injectOriginHeaders?: boolean;
+  injectUserAgent?: boolean;
   mode?: "session-id" | "uuid";
   providers?: string[];
+  userAgent?: string;
 }
 export interface ResolvedPluginConfig {
   debug: boolean;
   debugFile?: string;
+  injectCoreTools: boolean;
+  injectOriginHeaders: boolean;
+  injectUserAgent: boolean;
   mode: "session-id" | "uuid";
   providers: Set<string>;
+  userAgent?: string;
 }
 export declare const resolveConfig: (config?: PluginConfig) => ResolvedPluginConfig;
 export declare const headerValueFor: (sessionId: string | number | undefined | null, _mode: string, table: Map<string, string>) => string | undefined;
-export declare const withStore: <T>(iterable: AsyncIterable<T>, store: {
+export interface ActiveTurnState {
+  model?: string;
+  provider: string;
   value: string;
-}, als: AsyncLocalStorage<{
-  value: string;
-}>) => AsyncIterable<T>;
+}
+export declare const withStore: <T>(iterable: AsyncIterable<T>, store: ActiveTurnState, als: AsyncLocalStorage<ActiveTurnState>) => AsyncIterable<T>;
 export declare const hasSessionHeader: (input: RequestInfo | URL, init?: RequestInit) => boolean;
-export declare const patchFetch: (original: typeof fetch, als: AsyncLocalStorage<{
-  value: string;
-}>) => typeof fetch;
+/** Determines if a request targets an OpenCode API endpoint. */
+export declare const isOpenCodeRequest: (url: string, state: ActiveTurnState | undefined, providers: Set<string>) => boolean;
+export declare const patchFetch: (original: typeof fetch, als: AsyncLocalStorage<ActiveTurnState>, config: ResolvedPluginConfig) => typeof fetch;
 export interface CordisContext {
   effect?: (fn: () => unknown, name?: string) => void;
   logger?: {
@@ -70,7 +79,7 @@ export interface CordisContext {
     prepend?: boolean;
   }) => void;
 }
-export declare const apply: (ctx: CordisContext, config?: PluginConfig) => void;
+export declare const apply: (ctx: CordisContext, rawConfig?: PluginConfig) => void;
 declare const _default: {
   apply: typeof apply;
   inject: string[];

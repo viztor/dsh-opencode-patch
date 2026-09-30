@@ -21,7 +21,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ["test/**/*.ts"],
+        files: ["test/**/*.ts", "scripts/**/*.ts"],
         rules: {
           "import/namespace": "off",
           "no-console": "off",
@@ -88,6 +88,25 @@ export default defineConfig({
       platform: "node",
       sourcemap: false,
       target: "node24",
+    },
+    {
+      banner:
+        'window.__ModuleLoader__.load({\n  id: "dsh-opencode",\n  factory: (require) => {\n    var module = { exports: {} };\n    var exports = module.exports;',
+      clean: false,
+      deps: {
+        neverBundle: [
+          "react",
+          "react/jsx-runtime",
+          "@deepseek-ai/dsh-client-ui-primitives",
+        ],
+      },
+      dts: false,
+      entry: { client: "src/settings-page.tsx" },
+      footer: "    return module.exports;\n  },\n});",
+      format: ["cjs"],
+      outDir: "lib",
+      platform: "browser",
+      sourcemap: false,
     },
   ],
   test: {
