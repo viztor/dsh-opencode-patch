@@ -1,14 +1,14 @@
-import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { describe, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type ActiveTurnState,
+  type CordisContext,
   apply,
   DUMMY_BASH_TOOL,
   DUMMY_READ_TOOL,
@@ -18,11 +18,12 @@ import {
   openCodeSessionIdFor,
   OPENCODE_UA,
   patchFetch,
-  type PluginConfig,
   resolveConfig,
   SESSION_HEADER,
   withStore,
 } from "../src/index.ts";
+
+const SESSION_RE = /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 
 const createMockStream = async function* createMockStream(chunk: string) {
   yield chunk;
@@ -35,48 +36,175 @@ const createMockStoreStream = async function* createMockStoreStream(
   yield als.getStore()?.value;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  return !Array.isArray(value);
+};
+
+const toolNamesOf = (body: unknown): string[] | undefined => {
+  if (!isRecord(body)) {
+    return undefined;
+  }
+  const tools: unknown = body.tools;
+  if (!Array.isArray(tools)) {
+    return undefined;
+  }
+  const names: string[] = [];
+  for (const tool of tools) {
+    if (isRecord(tool) && typeof tool.name === "string") {
+      names.push(tool.name);
+    }
+  }
+  return names;
+};
+
+const parseJsonBody = (body: unknown): unknown => {
+  if (typeof body !== "string") {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return parsed;
+  } catch {
+    return undefined;
+  }
+};
+
+const isAsyncIterableLike = (
+  value: unknown
+): value is AsyncIterable<unknown> => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== "object" && typeof value !== "function") {
+    return false;
+  }
+  if (!(Symbol.asyncIterator in value)) {
+    return false;
+  }
+  return typeof value[Symbol.asyncIterator] === "function";
+};
+
+const collectUnknown = async (
+  iterable: AsyncIterable<unknown>
+): Promise<unknown[]> => {
+  const out: unknown[] = [];
+  for await (const chunk of iterable) {
+    out.push(chunk);
+  }
+  return out;
+};
+
+const waitForFileContent = async (
+  file: string,
+  timeoutMs = 2000
+): Promise<string> => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const content = await readFile(file, "utf-8");
+      if (content.trim().length > 0) {
+        return content;
+      }
+    } catch {
+      // not yet written
+    }
+    await sleep(25);
+  }
+  throw new Error(`timed out waiting for file content: ${file}`);
+};
+
+interface Capture {
+  init: RequestInit | undefined;
+  url: string;
+}
+
+const replacementFetch = (): Promise<Response> =>
+  Promise.resolve(new Response("replacement"));
+
+const createCaptureFetch = (text = "ok") => {
+  const capture: Capture = { init: undefined, url: "" };
+  const mockFetch = (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    if (typeof input === "string") {
+      capture.url = input;
+    } else if (input instanceof URL) {
+      capture.url = input.toString();
+    } else {
+      capture.url = input.url;
+    }
+    capture.init = init;
+    return Promise.resolve(new Response(text));
+  };
+  return { capture, mockFetch };
+};
+
+const headerOf = (init: RequestInit | undefined, field: string) =>
+  new Headers(init?.headers).get(field);
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete process.env.OPENCODE_SESSION_ID;
+});
+
 describe("openCodeSessionIdFor", () => {
   it("generates a valid OpenCode session ID matching the exact regex format", () => {
     const id = openCodeSessionIdFor("c2a51fb0-578c-4019-80c4-868eff95fd08");
-    assert.match(id, /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
-    assert.equal(id.length, 30);
+    expect(id).toMatch(SESSION_RE);
+    expect(id.length).toBe(30);
   });
 
   it("is deterministic for identical inputs", () => {
-    const id1 = openCodeSessionIdFor("conversation-alpha-123");
-    const id2 = openCodeSessionIdFor("conversation-alpha-123");
-    assert.equal(id1, id2);
+    expect(openCodeSessionIdFor("conversation-alpha-123")).toBe(
+      openCodeSessionIdFor("conversation-alpha-123")
+    );
   });
 
-  it("handles numeric session IDs correctly", () => {
-    const id1 = openCodeSessionIdFor(123_456_789);
-    const id2 = openCodeSessionIdFor("123456789");
-    assert.equal(id1, id2);
-    assert.match(id1, /^ses_/);
+  it("handles numeric session IDs identically to their string form", () => {
+    const id = openCodeSessionIdFor(123_456_789);
+    expect(id).toBe(openCodeSessionIdFor("123456789"));
+    expect(id).toMatch(/^ses_/);
   });
 
-  it("generates unique session IDs without collision across diverse inputs", () => {
+  it("produces a valid ID for empty input without throwing", () => {
+    expect(openCodeSessionIdFor("")).toMatch(SESSION_RE);
+  });
+
+  it("generates unique session IDs across deterministic inputs", () => {
     const seen = new Set<string>();
     for (let i = 0; i < 200; i += 1) {
-      const id = openCodeSessionIdFor(`session-turn-${i}-${Math.random()}`);
-      assert.equal(seen.has(id), false, `Collision detected at index ${i}`);
+      const id = openCodeSessionIdFor(`deterministic-session-${i}`);
+      expect(seen.has(id)).toBe(false);
       seen.add(id);
     }
-    assert.equal(seen.size, 200);
+    expect(seen.size).toBe(200);
+  });
+
+  it("maps distinct conversations to distinct session IDs", () => {
+    expect(openCodeSessionIdFor("session-a")).not.toBe(
+      openCodeSessionIdFor("session-b")
+    );
   });
 });
 
 describe("resolveConfig", () => {
   it("fills default providers, mode, toggles, and debug flags", () => {
     const resolved = resolveConfig({});
-    assert.deepEqual([...resolved.providers], ["opencode", "opencode-go"]);
-    assert.equal(resolved.mode, "session-id");
-    assert.equal(resolved.debug, false);
-    assert.equal(resolved.debugFile, undefined);
-    assert.equal(resolved.injectUserAgent, true);
-    assert.equal(resolved.userAgent, undefined);
-    assert.equal(resolved.injectOriginHeaders, true);
-    assert.equal(resolved.injectCoreTools, true);
+    expect([...resolved.providers]).toEqual(["opencode", "opencode-go"]);
+    expect(resolved.mode).toBe("session-id");
+    expect(resolved.debug).toBe(false);
+    expect(resolved.debugFile).toBeUndefined();
+    expect(resolved.injectUserAgent).toBe(true);
+    expect(resolved.userAgent).toBeUndefined();
+    expect(resolved.injectOriginHeaders).toBe(true);
+    expect(resolved.injectCoreTools).toBe(true);
   });
 
   it("preserves custom providers and configuration overrides", () => {
@@ -90,24 +218,45 @@ describe("resolveConfig", () => {
       providers: ["custom-opencode", "opencode-dev"],
       userAgent: "my-custom-ua/1.0",
     });
-    assert.deepEqual(
-      [...resolved.providers],
-      ["custom-opencode", "opencode-dev"]
-    );
-    assert.equal(resolved.mode, "uuid");
-    assert.equal(resolved.debug, true);
-    assert.equal(resolved.debugFile, "/tmp/debug.log");
-    assert.equal(resolved.injectUserAgent, false);
-    assert.equal(resolved.userAgent, "my-custom-ua/1.0");
-    assert.equal(resolved.injectOriginHeaders, false);
-    assert.equal(resolved.injectCoreTools, false);
+    expect([...resolved.providers]).toEqual([
+      "custom-opencode",
+      "opencode-dev",
+    ]);
+    expect(resolved.mode).toBe("uuid");
+    expect(resolved.debug).toBe(true);
+    expect(resolved.debugFile).toBe("/tmp/debug.log");
+    expect(resolved.injectUserAgent).toBe(false);
+    expect(resolved.userAgent).toBe("my-custom-ua/1.0");
+    expect(resolved.injectOriginHeaders).toBe(false);
+    expect(resolved.injectCoreTools).toBe(false);
   });
 
   it("falls back to session-id mode when unknown mode is provided", () => {
     const resolved = resolveConfig({
-      mode: "unknown" as unknown as PluginConfig["mode"],
+      // @ts-expect-error -- intentionally invalid mode to verify fallback
+      mode: "unknown",
     });
-    assert.equal(resolved.mode, "session-id");
+    expect(resolved.mode).toBe("session-id");
+  });
+
+  it("falls back to defaults when providers list is empty or blank", () => {
+    expect([...resolveConfig({ providers: [] }).providers]).toEqual([
+      "opencode",
+      "opencode-go",
+    ]);
+    expect([...resolveConfig({ providers: [""] }).providers]).toEqual([
+      "opencode",
+      "opencode-go",
+    ]);
+  });
+
+  it("trims userAgent and treats blank debugFile as unset", () => {
+    const resolved = resolveConfig({
+      debugFile: "",
+      userAgent: "  custom-ua/2.0  ",
+    });
+    expect(resolved.userAgent).toBe("custom-ua/2.0");
+    expect(resolved.debugFile).toBeUndefined();
   });
 });
 
@@ -115,22 +264,30 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
   const providers = new Set(["opencode", "opencode-go"]);
 
   it("identifies opencode.ai/zen endpoints", () => {
-    assert.equal(
+    expect(
       isOpenCodeRequest(
         "https://opencode.ai/zen/v1/responses",
         undefined,
         providers
-      ),
-      true
-    );
-    assert.equal(
+      )
+    ).toBe(true);
+    expect(
       isOpenCodeRequest(
         "https://opencode.ai/zen/go/v1/chat/completions",
         undefined,
         providers
-      ),
-      true
-    );
+      )
+    ).toBe(true);
+  });
+
+  it("identifies zen endpoints even when providers set is empty", () => {
+    expect(
+      isOpenCodeRequest(
+        "https://opencode.ai/zen/v1/responses",
+        undefined,
+        new Set()
+      )
+    ).toBe(true);
   });
 
   it("identifies active turn state when routed to matching provider", () => {
@@ -138,41 +295,37 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
       provider: "opencode",
       value: "ses_123",
     };
-    assert.equal(
-      isOpenCodeRequest("https://my-custom-relay.example/v1", state, providers),
-      true
-    );
+    expect(
+      isOpenCodeRequest("https://my-custom-relay.example/v1", state, providers)
+    ).toBe(true);
   });
 
   it("rejects non-OpenCode requests", () => {
-    assert.equal(
+    expect(
       isOpenCodeRequest(
         "https://api.deepseek.com/v1/chat/completions",
         undefined,
         providers
-      ),
-      false
-    );
-    assert.equal(
+      )
+    ).toBe(false);
+    expect(
       isOpenCodeRequest(
         "https://api.openai.com/v1/chat/completions",
         undefined,
         providers
-      ),
-      false
-    );
+      )
+    ).toBe(false);
     const nonOpencodeState: ActiveTurnState = {
       provider: "deepseek",
       value: "ses_456",
     };
-    assert.equal(
+    expect(
       isOpenCodeRequest(
         "https://api.deepseek.com/v1",
         nonOpencodeState,
         providers
-      ),
-      false
-    );
+      )
+    ).toBe(false);
   });
 });
 
@@ -180,20 +333,26 @@ describe("headerValueFor", () => {
   it("returns mapped session id and caches it in the provided table", () => {
     const table = new Map<string, string>();
     const val1 = headerValueFor("dsh-uuid-1", "session-id", table);
-    assert.ok(val1?.startsWith("ses_"));
-    assert.equal(table.get("dsh-uuid-1"), val1);
+    expect(val1).toMatch(/^ses_/);
+    expect(table.get("dsh-uuid-1")).toBe(val1);
 
-    // Second call should return the exact cached value from table
     const val2 = headerValueFor("dsh-uuid-1", "session-id", table);
-    assert.equal(val2, val1);
+    expect(val2).toBe(val1);
   });
 
   it("returns undefined for empty, null, or undefined session inputs", () => {
     const table = new Map<string, string>();
-    assert.equal(headerValueFor("", "session-id", table), undefined);
-    assert.equal(headerValueFor(undefined, "session-id", table), undefined);
-    assert.equal(headerValueFor(null, "session-id", table), undefined);
-    assert.equal(table.size, 0);
+    expect(headerValueFor("", "session-id", table)).toBeUndefined();
+    expect(headerValueFor(undefined, "session-id", table)).toBeUndefined();
+    expect(headerValueFor(null, "session-id", table)).toBeUndefined();
+    expect(table.size).toBe(0);
+  });
+
+  it("accepts numeric session IDs", () => {
+    const table = new Map<string, string>();
+    const value = headerValueFor(987_654, "session-id", table);
+    expect(value).toMatch(/^ses_/);
+    expect(table.get("987654")).toBe(value);
   });
 });
 
@@ -201,26 +360,31 @@ describe("hasSessionHeader", () => {
   it("detects x-opencode-session in Headers object case-insensitively", () => {
     const headers = new Headers();
     headers.set("X-OpenCode-Session", "ses_mock_header");
-    assert.equal(hasSessionHeader("http://example.com", { headers }), true);
+    expect(hasSessionHeader("http://example.com", { headers })).toBe(true);
   });
 
   it("detects x-opencode-session in plain object headers", () => {
-    assert.equal(
+    expect(
       hasSessionHeader("http://example.com", {
         headers: { [SESSION_HEADER]: "ses_mock_header" },
-      }),
-      true
-    );
+      })
+    ).toBe(true);
+  });
+
+  it("detects x-opencode-session carried by a Request object", () => {
+    const req = new Request("http://example.com", {
+      headers: { [SESSION_HEADER]: "ses_from_request" },
+    });
+    expect(hasSessionHeader(req)).toBe(true);
   });
 
   it("returns false when header is absent", () => {
-    assert.equal(
+    expect(
       hasSessionHeader("http://example.com", {
         headers: { "Content-Type": "application/json" },
-      }),
-      false
-    );
-    assert.equal(hasSessionHeader("http://example.com"), false);
+      })
+    ).toBe(false);
+    expect(hasSessionHeader("http://example.com")).toBe(false);
   });
 });
 
@@ -232,12 +396,11 @@ describe("withStore", () => {
       { provider: "opencode", value: "store-context-42" },
       als
     );
-    const results: (string | undefined)[] = [];
-    for await (const val of wrapped) {
-      results.push(val);
+    const results: unknown[] = [];
+    for await (const value of wrapped) {
+      results.push(value);
     }
-
-    assert.deepEqual(results, ["store-context-42", "store-context-42"]);
+    expect(results).toEqual(["store-context-42", "store-context-42"]);
   });
 
   it("handles early return on the wrapped iterator", async () => {
@@ -247,10 +410,8 @@ describe("withStore", () => {
     const mockIterable: AsyncIterable<number> = {
       [Symbol.asyncIterator]() {
         return {
-          next() {
-            return Promise.resolve({ done: false, value: 1 });
-          },
-          return() {
+          next: () => Promise.resolve({ done: false, value: 1 }),
+          return: () => {
             returned = true;
             return Promise.resolve({ done: true, value: undefined });
           },
@@ -265,73 +426,75 @@ describe("withStore", () => {
     );
     const iterator = wrapped[Symbol.asyncIterator]();
     const first = await iterator.next();
-    assert.equal(first.value, 1);
+    expect(first.value).toBe(1);
     await iterator.return?.();
-    assert.equal(returned, true);
+    expect(returned).toBe(true);
+  });
+
+  it("propagates throw through the wrapped iterator with context", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const failure = new Error("downstream-boom");
+    const mockIterable: AsyncIterable<number> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () => Promise.resolve({ done: false, value: 1 }),
+          throw: () => Promise.reject(failure),
+        };
+      },
+    };
+    const wrapped = withStore(
+      mockIterable,
+      { provider: "opencode", value: "throw-ctx" },
+      als
+    );
+    const iterator = wrapped[Symbol.asyncIterator]();
+    await expect(iterator.throw?.(failure)).rejects.toBe(failure);
+  });
+
+  it("passes through iterables whose factory yields no iterator", () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const passthrough: AsyncIterable<string> = {
+      // @ts-expect-error -- intentionally broken factory to verify passthrough
+      [Symbol.asyncIterator]() {
+        return null;
+      },
+    };
+    const wrapped = withStore(
+      passthrough,
+      { provider: "opencode", value: "x" },
+      als
+    );
+    expect(wrapped).toBe(passthrough);
   });
 });
 
 describe("patchFetch", () => {
   it("passes non-OpenCode requests through completely untouched", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
-    let capturedUrl = "";
+    const { capture, mockFetch } = createCaptureFetch("upstream-ok");
 
-    const mockFetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      let targetUrl = "";
-      if (typeof input === "string") {
-        targetUrl = input;
-      } else if (input instanceof URL) {
-        targetUrl = input.toString();
-      } else {
-        targetUrl = input.url;
-      }
-      capturedUrl = targetUrl;
-      capturedInit = init;
-      await Promise.resolve();
-      return new Response("upstream-ok");
-    };
-
-    const config = resolveConfig();
-    const patched = patchFetch(mockFetch, als, config);
-
+    const patched = patchFetch(mockFetch, als, resolveConfig());
     const res = await patched("https://api.deepseek.com/v1/chat/completions", {
       body: JSON.stringify({ message: "hello" }),
       headers: { "X-Custom-Header": "original" },
       method: "POST",
     });
 
-    assert.equal(await res.text(), "upstream-ok");
-    assert.equal(capturedUrl, "https://api.deepseek.com/v1/chat/completions");
-    assert.ok(capturedInit);
-    const headers = new Headers(capturedInit.headers);
-    assert.equal(headers.get("X-Custom-Header"), "original");
-    assert.equal(headers.get("User-Agent"), null);
-    assert.equal(headers.get("x-opencode-client"), null);
-    assert.equal(headers.get("x-opencode-project"), null);
-    assert.equal(headers.get(SESSION_HEADER), null);
+    expect(await res.text()).toBe("upstream-ok");
+    expect(capture.url).toBe("https://api.deepseek.com/v1/chat/completions");
+    expect(headerOf(capture.init, "X-Custom-Header")).toBe("original");
+    expect(headerOf(capture.init, "User-Agent")).toBeNull();
+    expect(headerOf(capture.init, "x-opencode-client")).toBeNull();
+    expect(headerOf(capture.init, "x-opencode-project")).toBeNull();
+    expect(headerOf(capture.init, SESSION_HEADER)).toBeNull();
   });
 
-  it("injects OpenCode origin headers and dynamic session ID for opencode.ai/zen requests", async () => {
+  it("injects origin headers and dynamic session ID for zen requests", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
+    const { capture, mockFetch } = createCaptureFetch();
     const testSession = openCodeSessionIdFor("test-dynamic-turn");
 
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ status: "success" });
-    };
-
-    const config = resolveConfig();
-    const patched = patchFetch(mockFetch, als, config);
-
+    const patched = patchFetch(mockFetch, als, resolveConfig());
     await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/chat/completions", {
         headers: { "Content-Type": "application/json" },
@@ -339,120 +502,138 @@ describe("patchFetch", () => {
       });
     });
 
-    assert.ok(capturedInit);
-    const headers = new Headers(capturedInit.headers);
-    assert.equal(headers.get("User-Agent"), OPENCODE_UA);
-    assert.equal(headers.get("x-opencode-client"), "cli");
-    assert.equal(headers.get("x-opencode-project"), "global");
-    assert.equal(headers.get(SESSION_HEADER), testSession);
+    expect(headerOf(capture.init, "User-Agent")).toBe(OPENCODE_UA);
+    expect(headerOf(capture.init, "x-opencode-client")).toBe("cli");
+    expect(headerOf(capture.init, "x-opencode-project")).toBe("global");
+    expect(headerOf(capture.init, SESSION_HEADER)).toBe(testSession);
   });
 
-  it("respects injectUserAgent: false by leaving User-Agent untouched", async () => {
+  it("injects for configured custom relays when turn state matches", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ status: "success" });
-    };
-
-    const config = resolveConfig({ injectUserAgent: false });
+    const { capture, mockFetch } = createCaptureFetch();
+    const config = resolveConfig({ providers: ["my-relay"] });
     const patched = patchFetch(mockFetch, als, config);
 
+    await als.run({ provider: "my-relay", value: "ses_relay_1" }, async () => {
+      await patched("https://relay.internal/v1/chat", { method: "POST" });
+    });
+    expect(headerOf(capture.init, SESSION_HEADER)).toBe("ses_relay_1");
+
+    const { capture: capture2, mockFetch: mockFetch2 } = createCaptureFetch();
+    const patched2 = patchFetch(mockFetch2, als, config);
+    await als.run({ provider: "other", value: "ses_other" }, async () => {
+      await patched2("https://relay.internal/v1/chat", { method: "POST" });
+    });
+    expect(headerOf(capture2.init, SESSION_HEADER)).toBeNull();
+  });
+
+  it("supports Request and URL inputs", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const testSession = openCodeSessionIdFor("input-shapes");
+    const config = resolveConfig();
+    const { capture: c1, mockFetch: m1 } = createCaptureFetch();
+    const patched1 = patchFetch(m1, als, config);
+    await als.run({ provider: "opencode", value: testSession }, async () => {
+      await patched1(
+        new Request("https://opencode.ai/zen/v1/responses", {
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        })
+      );
+    });
+    expect(headerOf(c1.init, SESSION_HEADER)).toBe(testSession);
+
+    const { capture: c2, mockFetch: m2 } = createCaptureFetch();
+    const patched2 = patchFetch(m2, als, config);
+    await als.run({ provider: "opencode", value: testSession }, async () => {
+      await patched2(new URL("https://opencode.ai/zen/v1/responses"), {
+        method: "POST",
+      });
+    });
+    expect(c2.url).toBe("https://opencode.ai/zen/v1/responses");
+    expect(headerOf(c2.init, SESSION_HEADER)).toBe(testSession);
+  });
+
+  it("preserves an existing valid session header and uses env fallback otherwise", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const config = resolveConfig();
+
+    const { capture: keep, mockFetch: keepFetch } = createCaptureFetch();
+    await patchFetch(
+      keepFetch,
+      als,
+      config
+    )("https://opencode.ai/zen/v1/responses", {
+      headers: { [SESSION_HEADER]: "ses_existing_valid_01" },
+    });
+    expect(headerOf(keep.init, SESSION_HEADER)).toBe("ses_existing_valid_01");
+
+    process.env.OPENCODE_SESSION_ID = "ses_env_fallback_02";
+    const { capture: envCap, mockFetch: envFetch } = createCaptureFetch();
+    await patchFetch(
+      envFetch,
+      als,
+      config
+    )("https://opencode.ai/zen/v1/responses", {
+      headers: { [SESSION_HEADER]: "bogus" },
+    });
+    expect(headerOf(envCap.init, SESSION_HEADER)).toBe("ses_env_fallback_02");
+  });
+
+  it("respects injectUserAgent false and custom userAgent override", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+
+    const { capture: kept, mockFetch: keptFetch } = createCaptureFetch();
     await als.run({ provider: "opencode", value: "ses_test" }, async () => {
-      await patched("https://opencode.ai/zen/v1/chat/completions", {
+      await patchFetch(
+        keptFetch,
+        als,
+        resolveConfig({ injectUserAgent: false })
+      )("https://opencode.ai/zen/v1/chat/completions", {
         headers: { "User-Agent": "custom-unmodified-ua" },
         method: "POST",
       });
     });
+    expect(headerOf(kept.init, "User-Agent")).toBe("custom-unmodified-ua");
+    expect(headerOf(kept.init, SESSION_HEADER)).toBe("ses_test");
 
-    assert.ok(capturedInit);
-    const headers = new Headers(capturedInit.headers);
-    assert.equal(headers.get("User-Agent"), "custom-unmodified-ua");
-    // Session is still always injected!
-    assert.equal(headers.get(SESSION_HEADER), "ses_test");
+    const { capture: over, mockFetch: overFetch } = createCaptureFetch();
+    await als.run({ provider: "opencode", value: "ses_test" }, async () => {
+      await patchFetch(
+        overFetch,
+        als,
+        resolveConfig({
+          injectUserAgent: true,
+          userAgent: "my-custom-cli/3.0.0",
+        })
+      )("https://opencode.ai/zen/v1/chat/completions", { method: "POST" });
+    });
+    expect(headerOf(over.init, "User-Agent")).toBe("my-custom-cli/3.0.0");
   });
 
-  it("allows overriding User-Agent with custom userAgent string", async () => {
+  it("respects injectOriginHeaders false", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ status: "success" });
-    };
-
-    const config = resolveConfig({
-      injectUserAgent: true,
-      userAgent: "my-custom-cli/3.0.0",
-    });
-    const patched = patchFetch(mockFetch, als, config);
-
+    const { capture, mockFetch } = createCaptureFetch();
+    const patched = patchFetch(
+      mockFetch,
+      als,
+      resolveConfig({ injectOriginHeaders: false })
+    );
     await als.run({ provider: "opencode", value: "ses_test" }, async () => {
       await patched("https://opencode.ai/zen/v1/chat/completions", {
         method: "POST",
       });
     });
-
-    assert.ok(capturedInit);
-    const headers = new Headers(capturedInit.headers);
-    assert.equal(headers.get("User-Agent"), "my-custom-cli/3.0.0");
-    assert.equal(headers.get(SESSION_HEADER), "ses_test");
+    expect(headerOf(capture.init, "x-opencode-client")).toBeNull();
+    expect(headerOf(capture.init, "x-opencode-project")).toBeNull();
+    expect(headerOf(capture.init, SESSION_HEADER)).toBe("ses_test");
   });
 
-  it("respects injectOriginHeaders: false by omitting client and project headers", async () => {
+  it("injects read and bash tools for free-tier /responses models", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ status: "success" });
-    };
-
-    const config = resolveConfig({ injectOriginHeaders: false });
-    const patched = patchFetch(mockFetch, als, config);
-
-    await als.run({ provider: "opencode", value: "ses_test" }, async () => {
-      await patched("https://opencode.ai/zen/v1/chat/completions", {
-        method: "POST",
-      });
-    });
-
-    assert.ok(capturedInit);
-    const headers = new Headers(capturedInit.headers);
-    assert.equal(headers.get("x-opencode-client"), null);
-    assert.equal(headers.get("x-opencode-project"), null);
-    assert.equal(headers.get(SESSION_HEADER), "ses_test");
-  });
-
-  it("injects DUMMY_READ_TOOL and DUMMY_BASH_TOOL when missing for free-tier /responses models", async () => {
-    const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
+    const { capture, mockFetch } = createCaptureFetch();
     const testSession = openCodeSessionIdFor("test-free-turn");
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ ok: true });
-    };
-
-    const config = resolveConfig();
-    const patched = patchFetch(mockFetch, als, config);
+    const patched = patchFetch(mockFetch, als, resolveConfig());
 
     await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/responses", {
@@ -465,38 +646,58 @@ describe("patchFetch", () => {
       });
     });
 
-    assert.ok(capturedInit);
-    const headers = new Headers(capturedInit.headers);
-    assert.ok(headers.get("content-length"));
-
-    assert.equal(typeof capturedInit.body, "string");
-    const bodyStr =
-      typeof capturedInit.body === "string" ? capturedInit.body : "{}";
-    const body = JSON.parse(bodyStr) as {
-      tools?: { name?: string }[];
-    };
-    assert.ok(Array.isArray(body.tools));
-    assert.equal(body.tools.length, 2);
-    assert.equal(body.tools[0]?.name, DUMMY_READ_TOOL.name);
-    assert.equal(body.tools[1]?.name, DUMMY_BASH_TOOL.name);
+    expect(headerOf(capture.init, "content-length")).not.toBeNull();
+    expect(typeof capture.init?.body).toBe("string");
+    const names = toolNamesOf(parseJsonBody(capture.init?.body));
+    expect(names).toEqual([DUMMY_READ_TOOL.name, DUMMY_BASH_TOOL.name]);
   });
 
-  it("respects injectCoreTools: false by not injecting tools", async () => {
+  it("skips tool injection for paid models, other paths, and invalid JSON", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ ok: true });
+    const testSession = openCodeSessionIdFor("skip-cases");
+    const run = async (url: string, body: string) => {
+      const { capture, mockFetch } = createCaptureFetch();
+      await als.run({ provider: "opencode", value: testSession }, async () => {
+        await patchFetch(
+          mockFetch,
+          als,
+          resolveConfig()
+        )(url, {
+          body,
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+      });
+      return capture.init?.body;
     };
 
-    const config = resolveConfig({ injectCoreTools: false });
-    const patched = patchFetch(mockFetch, als, config);
+    const paid = await run(
+      "https://opencode.ai/zen/v1/responses",
+      JSON.stringify({ input: "hi", model: "gpt-5-paid" })
+    );
+    expect(toolNamesOf(parseJsonBody(paid))).toBeUndefined();
 
+    const chat = await run(
+      "https://opencode.ai/zen/v1/chat/completions",
+      JSON.stringify({ input: "hi", model: "muse-spark-1.3-contributor-free" })
+    );
+    expect(toolNamesOf(parseJsonBody(chat))).toBeUndefined();
+
+    const invalid = await run(
+      "https://opencode.ai/zen/v1/responses",
+      "{not-json"
+    );
+    expect(invalid).toBe("{not-json");
+  });
+
+  it("respects injectCoreTools false", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture, mockFetch } = createCaptureFetch();
+    const patched = patchFetch(
+      mockFetch,
+      als,
+      resolveConfig({ injectCoreTools: false })
+    );
     await als.run({ provider: "opencode", value: "ses_test" }, async () => {
       await patched("https://opencode.ai/zen/v1/responses", {
         body: JSON.stringify({
@@ -507,38 +708,19 @@ describe("patchFetch", () => {
         method: "POST",
       });
     });
-
-    assert.ok(capturedInit);
-    assert.equal(typeof capturedInit.body, "string");
-    const bodyStr =
-      typeof capturedInit.body === "string" ? capturedInit.body : "{}";
-    const body = JSON.parse(bodyStr) as {
-      tools?: unknown;
-    };
-    assert.equal(body.tools, undefined);
+    expect(toolNamesOf(parseJsonBody(capture.init?.body))).toBeUndefined();
   });
 
-  it("does not duplicate read or bash tools when one is already provided", async () => {
+  it("does not duplicate tools and handles Buffer bodies", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
     const testSession = openCodeSessionIdFor("test-partial-turn");
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ ok: true });
-    };
-
-    const config = resolveConfig();
-    const patched = patchFetch(mockFetch, als, config);
+    const { capture, mockFetch } = createCaptureFetch();
+    const patched = patchFetch(mockFetch, als, resolveConfig());
 
     await als.run({ provider: "opencode", value: testSession }, async () => {
       await patched("https://opencode.ai/zen/v1/responses", {
         body: JSON.stringify({
-          input: [{ content: "run command", role: "user" }],
+          input: "run command",
           model: "muse-spark-1.3-contributor-free",
           tools: [{ name: "bash", type: "function" }],
         }),
@@ -546,91 +728,97 @@ describe("patchFetch", () => {
         method: "POST",
       });
     });
+    const names = toolNamesOf(parseJsonBody(capture.init?.body));
+    expect(names?.filter((n) => n === "bash")).toHaveLength(1);
+    expect(names?.filter((n) => n === "read")).toHaveLength(1);
 
-    assert.ok(capturedInit);
-    assert.equal(typeof capturedInit.body, "string");
-    const bodyStr =
-      typeof capturedInit.body === "string" ? capturedInit.body : "{}";
-    const body = JSON.parse(bodyStr) as {
-      tools?: { name?: string }[];
-    };
-    assert.ok(Array.isArray(body.tools));
-    assert.equal(body.tools.length, 2);
-    assert.equal(body.tools.filter((t) => t.name === "bash").length, 1);
-    assert.equal(body.tools.filter((t) => t.name === "read").length, 1);
-  });
-
-  it("handles Buffer bodies correctly without breaking", async () => {
-    const als = new AsyncLocalStorage<ActiveTurnState>();
-    let capturedInit: RequestInit | undefined;
-    const testSession = openCodeSessionIdFor("test-buffer-turn");
-
-    const mockFetch = async (
-      _input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      capturedInit = init;
-      await Promise.resolve();
-      return Response.json({ ok: true });
-    };
-
-    const config = resolveConfig();
-    const patched = patchFetch(mockFetch, als, config);
-
+    const { capture: bufCap, mockFetch: bufFetch } = createCaptureFetch();
+    const bufPatched = patchFetch(bufFetch, als, resolveConfig());
     const payload = Buffer.from(
       JSON.stringify({
-        input: [{ content: "test buffer", role: "user" }],
+        input: "test buffer",
         model: "muse-spark-1.3-contributor-free",
       }),
       "utf-8"
     );
-
     await als.run({ provider: "opencode", value: testSession }, async () => {
-      await patched("https://opencode.ai/zen/v1/responses", {
+      await bufPatched("https://opencode.ai/zen/v1/responses", {
         body: payload,
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
     });
+    expect(typeof bufCap.init?.body).toBe("string");
+    expect(toolNamesOf(parseJsonBody(bufCap.init?.body))).toHaveLength(2);
 
-    assert.ok(capturedInit);
-    assert.equal(typeof capturedInit.body, "string");
-    const bodyStr =
-      typeof capturedInit.body === "string" ? capturedInit.body : "{}";
-    const body = JSON.parse(bodyStr) as {
-      tools?: { name?: string }[];
-    };
-    assert.ok(Array.isArray(body.tools));
-    assert.equal(body.tools.length, 2);
+    const { capture: fullCap, mockFetch: fullFetch } = createCaptureFetch();
+    await als.run({ provider: "opencode", value: testSession }, async () => {
+      await patchFetch(
+        fullFetch,
+        als,
+        resolveConfig()
+      )("https://opencode.ai/zen/v1/responses", {
+        body: JSON.stringify({
+          input: "hi",
+          model: "muse-spark-1.3-contributor-free",
+          tools: [
+            { name: "read", type: "function" },
+            { name: "bash", type: "function" },
+          ],
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+    });
+    expect(toolNamesOf(parseJsonBody(fullCap.init?.body))).toHaveLength(2);
   });
 });
 
 describe("apply (plugin lifecycle)", () => {
-  it("registers ctx.effect, patches globalThis.fetch, and restores it on disposer call", () => {
+  it("patches globalThis.fetch and restores it on disposer call", () => {
     const originalFetch = globalThis.fetch;
-    let effectDisposer: (() => void) | undefined;
+    let disposer: unknown;
 
-    const ctx = {
+    const ctx: CordisContext = {
       effect: (fn: () => unknown) => {
-        effectDisposer = fn() as () => void;
+        disposer = fn();
       },
       on: () => {},
     };
 
     apply(ctx);
-    assert.notEqual(globalThis.fetch, originalFetch);
+    expect(globalThis.fetch).not.toBe(originalFetch);
 
-    // Call disposer
-    effectDisposer?.();
-    assert.equal(globalThis.fetch, originalFetch);
+    if (typeof disposer === "function") {
+      disposer();
+    }
+    expect(globalThis.fetch).toBe(originalFetch);
   });
 
-  it("attaches to llm/stream event and derives session ID", async () => {
+  it("disposer does not clobber a replacement fetch", () => {
+    const originalFetch = globalThis.fetch;
+    let disposer: unknown;
+    const ctx: CordisContext = {
+      effect: (fn: () => unknown) => {
+        disposer = fn();
+      },
+      on: () => {},
+    };
+    apply(ctx);
+    globalThis.fetch = replacementFetch;
+    if (typeof disposer === "function") {
+      disposer();
+    }
+    expect(globalThis.fetch).toBe(replacementFetch);
+    globalThis.fetch = originalFetch;
+  });
+
+  it("attaches to llm/stream and derives session ID", async () => {
     let streamHandler:
       | ((options: unknown, next: () => unknown) => unknown)
       | undefined;
 
-    const ctx = {
+    const ctx: CordisContext = {
       effect: () => {},
       on: (
         _event: string,
@@ -641,36 +829,30 @@ describe("apply (plugin lifecycle)", () => {
     };
 
     apply(ctx);
-    assert.ok(streamHandler);
-
-    const result = streamHandler(
+    expect(typeof streamHandler).toBe("function");
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+    const result: unknown = streamHandler(
       {
         model: "muse-spark-1.3-contributor-free",
         provider: "opencode",
         sessionId: "dsh-session-test-888",
       },
       () => createMockStream("stream-chunk-1")
-    ) as AsyncIterable<string>;
-
-    assert.ok(result);
-    const chunks: string[] = [];
-    for await (const chunk of result) {
-      chunks.push(chunk);
+    );
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
     }
-    assert.deepEqual(chunks, ["stream-chunk-1"]);
+    expect(await collectUnknown(result)).toEqual(["stream-chunk-1"]);
   });
 
-  it("records debug entries to debugFile when configured", async () => {
-    const tmpDir = await mkdtemp(path.join(tmpdir(), "dsh-opencode-test-"));
-    const debugFile = path.join(tmpDir, "stream-debug.jsonl");
-
+  it("ignores non-opencode providers and invalid session IDs", () => {
     let streamHandler:
       | ((options: unknown, next: () => unknown) => unknown)
       | undefined;
-
-    const ctx = {
+    const ctx: CordisContext = {
       effect: () => {},
-      logger: { info: () => {} },
       on: (
         _event: string,
         handler: (options: unknown, next: () => unknown) => unknown
@@ -678,41 +860,149 @@ describe("apply (plugin lifecycle)", () => {
         streamHandler = handler;
       },
     };
-
-    apply(ctx, { debug: true, debugFile });
-    assert.ok(streamHandler);
-
-    const result = streamHandler(
-      {
-        model: "muse-spark-1.3-contributor-free",
-        provider: "opencode",
-        sessionId: "session-debug-999",
-      },
-      () => createMockStream("done")
-    ) as AsyncIterable<string>;
-
-    for await (const _ of result) {
-      // consume
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
     }
+    const handler = streamHandler;
+    const passthrough = (options: unknown) =>
+      handler(options, () => "next-value");
 
-    // Give file append a moment
-    await sleep(50);
+    expect(passthrough({ provider: "deepseek", sessionId: "abc" })).toBe(
+      "next-value"
+    );
+    expect(passthrough({ provider: "opencode" })).toBe("next-value");
+    expect(passthrough({ provider: "opencode", sessionId: "" })).toBe(
+      "next-value"
+    );
+    expect(passthrough(null)).toBe("next-value");
+    expect(passthrough("nope")).toBe("next-value");
+  });
 
-    const content = await readFile(debugFile, "utf-8");
-    const entry = JSON.parse(content.trim()) as {
-      header: string;
-      model: string;
-      provider: string;
-      session: string;
-      value: string;
+  it("warns and skips when globalThis.fetch is unavailable", () => {
+    const warnings: string[] = [];
+    vi.stubGlobal("fetch", null);
+    const ctx: CordisContext = {
+      effect: () => {},
+      logger: {
+        warn: (msg: string) => {
+          warnings.push(msg);
+        },
+      },
+      on: () => {
+        throw new Error("on must not be called without fetch");
+      },
     };
+    apply(ctx);
+    expect(
+      warnings.some((w) => w.includes("globalThis.fetch is unavailable"))
+    ).toBe(true);
+  });
 
-    assert.equal(entry.header, "x-opencode-session");
-    assert.equal(entry.model, "muse-spark-1.3-contributor-free");
-    assert.equal(entry.provider, "opencode");
-    assert.equal(entry.session, "session-debug-999");
-    assert.ok(entry.value.startsWith("ses_"));
+  it("records debug entries to debugFile when configured", async () => {
+    const tmpDir = await mkdtemp(path.join(tmpdir(), "dsh-opencode-test-"));
+    try {
+      const debugFile = path.join(tmpDir, "stream-debug.jsonl");
+      let streamHandler:
+        | ((options: unknown, next: () => unknown) => unknown)
+        | undefined;
 
-    await rm(tmpDir, { force: true, recursive: true });
+      const ctx: CordisContext = {
+        effect: () => {},
+        logger: { info: () => {} },
+        on: (
+          _event: string,
+          handler: (options: unknown, next: () => unknown) => unknown
+        ) => {
+          streamHandler = handler;
+        },
+      };
+
+      apply(ctx, { debug: true, debugFile });
+      if (typeof streamHandler !== "function") {
+        throw new TypeError("stream handler not registered");
+      }
+      const result: unknown = streamHandler(
+        {
+          model: "muse-spark-1.3-contributor-free",
+          provider: "opencode",
+          sessionId: "session-debug-999",
+        },
+        () => createMockStream("done")
+      );
+      if (!isAsyncIterableLike(result)) {
+        throw new Error("expected async iterable downstream");
+      }
+      expect(await collectUnknown(result)).toEqual(["done"]);
+
+      const content = await waitForFileContent(debugFile);
+      const [firstLine] = content.trim().split("\n");
+      if (firstLine === undefined) {
+        throw new Error("debug file is empty");
+      }
+      const parsed: unknown = JSON.parse(firstLine);
+      if (!isRecord(parsed)) {
+        throw new Error("debug entry is not an object");
+      }
+      expect(parsed.header).toBe("x-opencode-session");
+      expect(parsed.model).toBe("muse-spark-1.3-contributor-free");
+      expect(parsed.provider).toBe("opencode");
+      expect(parsed.session).toBe("session-debug-999");
+      expect(typeof parsed.value).toBe("string");
+      if (typeof parsed.value === "string") {
+        expect(parsed.value).toMatch(/^ses_/);
+      }
+    } finally {
+      await rm(tmpDir, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps session affinity across turns for the same DSH session", async () => {
+    const tmpDir = await mkdtemp(path.join(tmpdir(), "dsh-opencode-aff-"));
+    try {
+      const debugFile = path.join(tmpDir, "affinity.jsonl");
+      let streamHandler:
+        | ((options: unknown, next: () => unknown) => unknown)
+        | undefined;
+      const ctx: CordisContext = {
+        effect: () => {},
+        logger: { info: () => {} },
+        on: (
+          _event: string,
+          handler: (options: unknown, next: () => unknown) => unknown
+        ) => {
+          streamHandler = handler;
+        },
+      };
+      apply(ctx, { debugFile });
+      if (typeof streamHandler !== "function") {
+        throw new TypeError("stream handler not registered");
+      }
+      const handler = streamHandler;
+      const driveTurn = async (label: string) => {
+        const result: unknown = handler(
+          { model: "m", provider: "opencode", sessionId: "same-dsh-session" },
+          () => createMockStream(label)
+        );
+        if (!isAsyncIterableLike(result)) {
+          throw new Error("expected async iterable downstream");
+        }
+        await expect(collectUnknown(result)).resolves.toEqual([label]);
+      };
+      await driveTurn("turn-0");
+      await driveTurn("turn-1");
+      const content = await waitForFileContent(debugFile);
+      const values: unknown[] = [];
+      for (const line of content.trim().split("\n")) {
+        const parsed: unknown = JSON.parse(line);
+        if (isRecord(parsed)) {
+          values.push(parsed.value);
+        }
+      }
+      expect(values).toHaveLength(2);
+      expect(values[0]).toBe(values[1]);
+    } finally {
+      await rm(tmpDir, { force: true, recursive: true });
+    }
   });
 });

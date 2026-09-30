@@ -65,6 +65,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-store": "0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.1",
     "@types/node": "^26.6.3",
     "@types/react": "^18.3.31",

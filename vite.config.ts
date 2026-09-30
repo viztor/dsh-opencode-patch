@@ -24,6 +24,7 @@ export default defineConfig({
         files: ["test/**/*.ts", "scripts/**/*.ts"],
         rules: {
           "import/namespace": "off",
+          "no-await-in-loop": "off",
           "no-console": "off",
           "no-process-exit": "off",
           "promise/prefer-await-to-callbacks": "off",
@@ -72,7 +73,10 @@ export default defineConfig({
       "typescript/only-throw-error": "error",
       "typescript/prefer-nullish-coalescing": "warn",
       "typescript/prefer-promise-reject-errors": "error",
-      "typescript/promise-function-async": "warn",
+      // Off: `withStore` iterators and the `fetch` patch intentionally use
+      // sync functions returning promises so `AsyncLocalStorage.run` keeps
+      // turn context without an extra async tick.
+      "typescript/promise-function-async": "off",
       "typescript/return-await": "warn",
       "typescript/strict-boolean-expressions": "warn",
       "unicorn/filename-case": "off",

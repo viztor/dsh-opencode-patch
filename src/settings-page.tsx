@@ -219,17 +219,39 @@ export interface ClientContext {
   };
 }
 
+const isSettingsFormScope = (
+  value: unknown
+): value is SettingsFormScope<Record<string, unknown>> => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== "object" && typeof value !== "function") {
+    return false;
+  }
+  if (!("getSnapshot" in value && "subscribe" in value && "mutate" in value)) {
+    return false;
+  }
+  const snapshot: unknown = value.getSnapshot;
+  const subscribe: unknown = value.subscribe;
+  const mutate: unknown = value.mutate;
+  return (
+    typeof snapshot === "function" &&
+    typeof subscribe === "function" &&
+    typeof mutate === "function"
+  );
+};
+
 export const apply = (ctx: ClientContext): void => {
   const t = ctx.locale?.bind?.(NS) ?? ((k: string) => k);
   ctx.effect?.(() => {
     ctx.locale?.register?.(NS, { en, zh });
   }, "dsh-opencode: dictionaries");
 
-  const rawScope = ctx.configForms?.get?.(NS);
-  if (!rawScope) {
+  const rawScope: unknown = ctx.configForms?.get?.(NS);
+  if (!isSettingsFormScope(rawScope)) {
     return;
   }
-  const scope = rawScope as SettingsFormScope<Record<string, unknown>>;
+  const scope = rawScope;
 
   const model = new SettingsFormModel(scope, SPECS);
   const store = model.bind(() => ({

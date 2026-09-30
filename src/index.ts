@@ -82,20 +82,26 @@ export interface ResolvedPluginConfig {
 export const resolveConfig = (
   config: PluginConfig = {}
 ): ResolvedPluginConfig => {
-  const providers =
-    Array.isArray(config.providers) && config.providers.length > 0
-      ? config.providers.map(String)
-      : [...DEFAULT_PROVIDERS];
+  const rawProviders: unknown = config.providers;
+  const listed: string[] = Array.isArray(rawProviders)
+    ? rawProviders.filter(
+        (item: unknown): item is string =>
+          typeof item === "string" && item.length > 0
+      )
+    : [];
+  const providers = listed.length > 0 ? listed : [...DEFAULT_PROVIDERS];
   const mode = config.mode === "uuid" ? "uuid" : "session-id";
   const debug = config.debug === true;
+  const rawDebugFile: unknown = config.debugFile;
   const debugFile =
-    typeof config.debugFile === "string" && config.debugFile.length > 0
-      ? config.debugFile
+    typeof rawDebugFile === "string" && rawDebugFile.length > 0
+      ? rawDebugFile
       : undefined;
   const injectUserAgent = config.injectUserAgent !== false;
+  const rawUserAgent: unknown = config.userAgent;
   const userAgent =
-    typeof config.userAgent === "string" && config.userAgent.trim().length > 0
-      ? config.userAgent.trim()
+    typeof rawUserAgent === "string" && rawUserAgent.trim().length > 0
+      ? rawUserAgent.trim()
       : undefined;
   const injectOriginHeaders = config.injectOriginHeaders !== false;
   const injectCoreTools = config.injectCoreTools !== false;
@@ -112,8 +118,12 @@ export const resolveConfig = (
   };
 };
 
+interface DebugContext {
+  logger?: { warn?: (msg: string, ...args: unknown[]) => void };
+}
+
 const recordDebug = async (
-  ctx: { logger?: { warn?: (msg: string, ...args: unknown[]) => void } },
+  ctx: DebugContext,
   file: string,
   entry: unknown
 ): Promise<void> => {
@@ -130,6 +140,7 @@ export const headerValueFor = (
   _mode: string,
   table: Map<string, string>
 ): string | undefined => {
+  void _mode;
   if (sessionId === undefined || sessionId === null) {
     return undefined;
   }
@@ -137,11 +148,12 @@ export const headerValueFor = (
   if (raw.length === 0) {
     return undefined;
   }
-  let value = table.get(raw);
-  if (value === undefined) {
-    value = openCodeSessionIdFor(raw);
-    table.set(raw, value);
+  const cached = table.get(raw);
+  if (cached !== undefined) {
+    return cached;
   }
+  const value = openCodeSessionIdFor(raw);
+  table.set(raw, value);
   return value;
 };
 
@@ -151,43 +163,102 @@ export interface ActiveTurnState {
   value: string;
 }
 
+const isAsyncIteratorLike = <T>(value: unknown): value is AsyncIterator<T> => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== "object" && typeof value !== "function") {
+    return false;
+  }
+  if (!("next" in value)) {
+    return false;
+  }
+  const next: unknown = value.next;
+  return typeof next === "function";
+};
+
+const getAsyncIterator = <T>(
+  iterable: AsyncIterable<T>
+): AsyncIterator<T> | undefined => {
+  const candidate: unknown = iterable;
+  if (candidate === null || candidate === undefined) {
+    return undefined;
+  }
+  if (typeof candidate !== "object" && typeof candidate !== "function") {
+    return undefined;
+  }
+  if (!(Symbol.asyncIterator in candidate)) {
+    return undefined;
+  }
+  const factory: unknown = candidate[Symbol.asyncIterator];
+  if (typeof factory !== "function") {
+    return undefined;
+  }
+  const iterator: unknown = factory.call(candidate);
+  if (!isAsyncIteratorLike<T>(iterator)) {
+    return undefined;
+  }
+  return iterator;
+};
+
+const isAsyncIterableLike = (
+  value: unknown
+): value is AsyncIterable<unknown> => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== "object" && typeof value !== "function") {
+    return false;
+  }
+  if (!(Symbol.asyncIterator in value)) {
+    return false;
+  }
+  const factory: unknown = value[Symbol.asyncIterator];
+  return typeof factory === "function";
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return false;
+  }
+  return true;
+};
+
+const isUnknownArray = (value: unknown): value is unknown[] =>
+  Array.isArray(value);
+
 export const withStore = <T>(
   iterable: AsyncIterable<T>,
   store: ActiveTurnState,
   als: AsyncLocalStorage<ActiveTurnState>
 ): AsyncIterable<T> => {
-  const iterator = (
-    iterable as unknown as Record<symbol, () => AsyncIterator<T>>
-  )[Symbol.asyncIterator]?.();
-  if (!iterator) {
+  const iterator = getAsyncIterator(iterable);
+  if (iterator === undefined) {
     return iterable;
   }
-  const asyncIteratorObj: AsyncIterator<T> = {
-    async next() {
-      return als.run(store, async () => iterator.next());
-    },
-    async return(value?: unknown) {
+  const asyncIteratorObj: AsyncIterator<T, unknown, unknown> = {
+    next: (): Promise<IteratorResult<T, unknown>> =>
+      als.run(store, () => iterator.next()),
+    return: (value?: unknown): Promise<IteratorResult<T, unknown>> => {
       if (typeof iterator.return === "function") {
-        try {
-          return await iterator.return(value);
-        } catch {
-          // Downstream stream may already be torn down
-        }
+        return iterator.return(value).catch(() => ({ done: true, value }));
       }
-      return { done: true, value } as IteratorReturnResult<unknown>;
+      return Promise.resolve({ done: true, value });
     },
-    async throw(error?: unknown) {
-      if (typeof iterator.throw === "function") {
-        return als.run(store, async () => {
-          if (typeof iterator.throw === "function") {
-            return iterator.throw(error);
-          }
-          const err = error instanceof Error ? error : new Error(String(error));
-          throw err;
-        });
+    throw: (error?: unknown): Promise<IteratorResult<T, unknown>> => {
+      if (typeof iterator.throw !== "function") {
+        const err = error instanceof Error ? error : new Error(String(error));
+        return Promise.reject(err);
       }
-      const err = error instanceof Error ? error : new Error(String(error));
-      throw err;
+      // oxlint-disable-next-line typescript/unbound-method -- capture guarded method then rebind via .call to keep `this`
+      const throwMethod = iterator.throw;
+      return als.run(store, () => throwMethod.call(iterator, error));
     },
   };
   return {
@@ -197,15 +268,43 @@ export const withStore = <T>(
   };
 };
 
+const extractUrl = (input: RequestInfo | URL): string => {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  if (typeof input === "object" && input !== null && "url" in input) {
+    const urlProp: unknown = input.url;
+    if (typeof urlProp === "string") {
+      return urlProp;
+    }
+    if (urlProp instanceof URL) {
+      return urlProp.toString();
+    }
+  }
+  return "";
+};
+
+const readHeaderSource = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+): HeadersInit | undefined => {
+  if (init?.headers !== undefined) {
+    return init.headers;
+  }
+  if (typeof Request !== "undefined" && input instanceof Request) {
+    return input.headers;
+  }
+  return undefined;
+};
+
 export const hasSessionHeader = (
   input: RequestInfo | URL,
   init?: RequestInit
 ): boolean => {
-  const source =
-    init?.headers ??
-    (typeof Request !== "undefined" && input instanceof Request
-      ? input.headers
-      : undefined);
+  const source = readHeaderSource(input, init);
   if (source === undefined) {
     return false;
   }
@@ -225,52 +324,131 @@ export const isOpenCodeRequest = (
   if (url.includes("opencode.ai/zen")) {
     return true;
   }
-  if (state && providers.has(state.provider)) {
+  if (state !== undefined && providers.has(state.provider)) {
     return true;
   }
   return false;
 };
 
+const defaultSessionId = (): string => {
+  const envId: unknown = process.env.OPENCODE_SESSION_ID;
+  if (typeof envId === "string" && envId.length > 0) {
+    return envId;
+  }
+  return openCodeSessionIdFor("default");
+};
+
+const toolNames = (
+  tools: unknown[]
+): { hasBash: boolean; hasRead: boolean } => {
+  let hasBash = false;
+  let hasRead = false;
+  for (const tool of tools) {
+    if (!isRecord(tool)) {
+      continue;
+    }
+    const toolName: unknown = tool.name;
+    if (toolName === "read") {
+      hasRead = true;
+    }
+    if (toolName === "bash") {
+      hasBash = true;
+    }
+  }
+  return { hasBash, hasRead };
+};
+
+const maybeInjectCoreTools = (
+  url: string,
+  body: RequestInit["body"],
+  headers: Headers,
+  injectCoreTools: boolean
+): RequestInit["body"] => {
+  if (!injectCoreTools) {
+    return body;
+  }
+  if (!url.includes("/responses")) {
+    return body;
+  }
+  if (body === undefined || body === null) {
+    return body;
+  }
+  let bodyStr: string | undefined;
+  if (typeof body === "string") {
+    bodyStr = body;
+  } else if (Buffer.isBuffer(body)) {
+    bodyStr = body.toString("utf-8");
+  } else {
+    return body;
+  }
+  if (bodyStr.length === 0) {
+    return body;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyStr);
+  } catch {
+    return body;
+  }
+  if (!isRecord(parsed)) {
+    return body;
+  }
+  const modelProp: unknown = parsed.model;
+  if (typeof modelProp !== "string" || !modelProp.includes("free")) {
+    return body;
+  }
+  const toolsProp: unknown = parsed.tools;
+  let tools: unknown[];
+  if (toolsProp === undefined) {
+    tools = [];
+  } else if (isUnknownArray(toolsProp)) {
+    tools = [...toolsProp];
+  } else {
+    tools = [];
+  }
+  const { hasBash, hasRead } = toolNames(tools);
+  if (!hasRead) {
+    tools.push(DUMMY_READ_TOOL);
+  }
+  if (!hasBash) {
+    tools.push(DUMMY_BASH_TOOL);
+  }
+  parsed.tools = tools;
+  const newBodyStr = JSON.stringify(parsed);
+  headers.set("content-length", Buffer.byteLength(newBodyStr).toString());
+  return newBodyStr;
+};
+
+const isFetchFunction = (value: unknown): value is typeof fetch =>
+  typeof value === "function";
+
 export const patchFetch = (
   original: typeof fetch,
   als: AsyncLocalStorage<ActiveTurnState>,
   config: ResolvedPluginConfig
-): typeof fetch =>
-  function patchedFetch(
+): typeof fetch => {
+  const patchedFetch = function patchedFetch(
     this: unknown,
     input: RequestInfo | URL,
     init?: RequestInit
   ): Promise<Response> {
     const state = als.getStore();
-    let url = "";
-    if (typeof input === "string") {
-      url = input;
-    } else if (input && typeof input === "object" && "url" in input) {
-      url = String((input as { url: unknown }).url);
-    }
+    const url = extractUrl(input);
 
     if (!isOpenCodeRequest(url, state, config.providers)) {
       return original.call(this, input, init);
     }
 
-    const headers = new Headers(
-      init?.headers ??
-        (typeof Request !== "undefined" && input instanceof Request
-          ? input.headers
-          : undefined)
-    );
+    const headers = new Headers(readHeaderSource(input, init));
 
     // 1. Session header: ALWAYS injected for OpenCode requests
-    if (state) {
-      headers.set(SESSION_HEADER, state.value);
-    } else {
+    if (state === undefined) {
       const existing = headers.get(SESSION_HEADER);
-      if (!existing?.startsWith("ses_")) {
-        headers.set(
-          SESSION_HEADER,
-          process.env.OPENCODE_SESSION_ID ?? openCodeSessionIdFor("default")
-        );
+      if (existing === null || !existing.startsWith("ses_")) {
+        headers.set(SESSION_HEADER, defaultSessionId());
       }
+    } else {
+      headers.set(SESSION_HEADER, state.value);
     }
 
     // 2. User-Agent: injected / restored when enabled, with user override support
@@ -287,48 +465,21 @@ export const patchFetch = (
     const newInit: RequestInit = { ...init, headers };
 
     // 4. Core tool schema fallback for free-tier /responses models
-    if (config.injectCoreTools && url.includes("/responses") && init?.body) {
-      try {
-        let bodyStr: string | null = null;
-        if (typeof init.body === "string") {
-          bodyStr = init.body;
-        } else if (Buffer.isBuffer(init.body)) {
-          bodyStr = (init.body as Buffer).toString("utf-8");
-        }
-        if (bodyStr && bodyStr.length > 0) {
-          const bodyObj = JSON.parse(bodyStr) as {
-            model?: unknown;
-            tools?: { name?: unknown }[];
-          };
-          if (
-            typeof bodyObj.model === "string" &&
-            bodyObj.model.includes("free")
-          ) {
-            if (!Array.isArray(bodyObj.tools)) {
-              bodyObj.tools = [];
-            }
-            const hasRead = bodyObj.tools.some((t) => t.name === "read");
-            const hasBash = bodyObj.tools.some((t) => t.name === "bash");
-            if (!hasRead) {
-              bodyObj.tools.push(DUMMY_READ_TOOL);
-            }
-            if (!hasBash) {
-              bodyObj.tools.push(DUMMY_BASH_TOOL);
-            }
-            const newBodyStr = JSON.stringify(bodyObj);
-            newInit.body = newBodyStr;
-            headers.set(
-              "content-length",
-              Buffer.byteLength(newBodyStr).toString()
-            );
-          }
-        }
-      } catch {
-        // ignore parsing error
+    if (init?.body !== undefined) {
+      const newBody = maybeInjectCoreTools(
+        url,
+        init.body,
+        headers,
+        config.injectCoreTools
+      );
+      if (newBody !== init.body) {
+        newInit.body = newBody;
       }
     }
     return original.call(this, input, newInit);
   };
+  return patchedFetch;
+};
 
 export interface CordisContext {
   effect?: (fn: () => unknown, name?: string) => void;
@@ -347,6 +498,15 @@ export interface CordisContext {
   ) => void;
 }
 
+interface StreamOptions {
+  model?: unknown;
+  provider?: unknown;
+  sessionId?: unknown;
+}
+
+const isStreamOptions = (value: unknown): value is StreamOptions =>
+  typeof value === "object" && value !== null;
+
 export const apply = (
   ctx: CordisContext,
   rawConfig: PluginConfig = {}
@@ -356,8 +516,8 @@ export const apply = (
   const als = new AsyncLocalStorage<ActiveTurnState>();
   const uuidBySession = new Map<string, string>();
 
-  const originalFetch = globalThis.fetch;
-  if (typeof originalFetch !== "function") {
+  const originalFetch: unknown = globalThis.fetch;
+  if (!isFetchFunction(originalFetch)) {
     ctx.logger?.warn?.(
       "[dsh-opencode] globalThis.fetch is unavailable; cannot inject x-opencode-session"
     );
@@ -383,42 +543,43 @@ export const apply = (
   ctx.on?.(
     "llm/stream",
     (options: unknown, next: () => unknown) => {
-      if (!options || typeof options !== "object") {
+      if (!isStreamOptions(options)) {
         return next();
       }
-      const opts = options as {
-        model?: unknown;
-        provider?: unknown;
-        sessionId?: unknown;
-      };
-      const { model, provider, sessionId } = opts;
-      if (!providers.has(String(provider))) {
+      const providerProp: unknown = options.provider;
+      if (
+        typeof providerProp !== "string" &&
+        typeof providerProp !== "number"
+      ) {
         return next();
       }
-      if (typeof sessionId !== "string" && typeof sessionId !== "number") {
+      const providerKey = String(providerProp);
+      if (!providers.has(providerKey)) {
         return next();
       }
-      const rawSession = String(sessionId);
+      const sessionProp: unknown = options.sessionId;
+      if (typeof sessionProp !== "string" && typeof sessionProp !== "number") {
+        return next();
+      }
+      const rawSession = String(sessionProp);
+      if (rawSession.length === 0) {
+        return next();
+      }
       const value = headerValueFor(rawSession, mode, uuidBySession);
       if (value === undefined) {
         return next();
       }
 
-      const downstream = next() as AsyncIterable<unknown>;
-      if (
-        !downstream ||
-        typeof (downstream as unknown as Record<symbol, unknown>)[
-          Symbol.asyncIterator
-        ] !== "function"
-      ) {
+      const downstream: unknown = next();
+      if (!isAsyncIterableLike(downstream)) {
         return downstream;
       }
 
       if (debug || debugFile !== undefined) {
         const entry = {
           header: SESSION_HEADER,
-          model,
-          provider,
+          model: options.model,
+          provider: providerKey,
           session: rawSession,
           ts: new Date().toISOString(),
           value,
@@ -429,17 +590,18 @@ export const apply = (
         if (debug) {
           ctx.logger?.info?.(
             '[dsh-opencode] streaming provider "%s" with %s=%s',
-            String(provider),
+            providerKey,
             SESSION_HEADER,
             value
           );
         }
       }
+      const modelProp: unknown = options.model;
       return withStore(
         downstream,
         {
-          model: typeof model === "string" ? model : undefined,
-          provider: String(provider),
+          model: typeof modelProp === "string" ? modelProp : undefined,
+          provider: providerKey,
           value,
         },
         als
