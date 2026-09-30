@@ -34,9 +34,9 @@ pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, li
 
 ## Release process (maintainers)
 
-1. Bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit.
-2. `git tag vX.Y.Z && git push origin vX.Y.Z` — the `release` workflow verifies tag == version, runs check + tests, builds, and publishes to npm via OIDC trusted publishing. No tokens involved.
-3. CI (`ci.yml`) runs check + test + build on every push to `main` and every PR. Keep it green.
+1. Use conventional commits (`feat:`, `fix:`) — release-please opens the version-bump + changelog PR automatically; merging it tags and creates the GitHub Release, which fires OIDC publishing to npm and GitHub Packages.
+2. For manual releases: bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit, `git tag vX.Y.Z && git push origin vX.Y.Z`.
+3. On every release, refresh the **Last verified** date and matrix in `README.md` after smoke-testing: registry install resolves, plugin loads in the DSH Web profile, and a free-tier Zen call succeeds.
 
 ## Docs
 

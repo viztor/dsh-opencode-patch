@@ -1,0 +1,20 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # Scans conventional commits (feat:/fix:) since the last tag, opens a
+      # version-bump + changelog PR; merging it creates the tag + GitHub
+      # Release, which fires the `release` workflow (npm + GitHub Packages).
+      - uses: googleapis/release-please-action@v5
+        with:
+          release-type: node

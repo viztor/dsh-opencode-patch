@@ -29,6 +29,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      packages: write
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -49,3 +50,9 @@ jobs:
       # viztor/dsh-opencode + release.yml publisher registered on npmjs.com
       # with `npm publish` allowed. Provenance is automatic.
       - run: npm publish --access public
+      # Mirror to GitHub Packages so the repo sidebar populates; auth is the
+      # built-in GITHUB_TOKEN (packages: write above), no secret needed.
+      # Installs still come from npmjs.org unless a consumer repoints the scope.
+      - run: npm publish --registry=https://npm.pkg.github.com --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

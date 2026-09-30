@@ -1,6 +1,6 @@
 # OpenCode on DeepSeek Harness
 
-[![npm version](https://img.shields.io/npm/v/@viztor/dsh-opencode)](https://www.npmjs.com/package/@viztor/dsh-opencode) [![CI](https://github.com/viztor/dsh-opencode/actions/workflows/ci.yml/badge.svg)](https://github.com/viztor/dsh-opencode/actions/workflows/ci.yml) [![Release](https://github.com/viztor/dsh-opencode/actions/workflows/release.yml/badge.svg)](https://github.com/viztor/dsh-opencode/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/npm/l/@viztor/dsh-opencode)](LICENSE) [![Node >= 24](https://img.shields.io/node/v/@viztor/dsh-opencode)](https://nodejs.org)
+[![npm version](https://img.shields.io/npm/v/@viztor/dsh-opencode)](https://www.npmjs.com/package/@viztor/dsh-opencode) [![CI](https://github.com/viztor/dsh-opencode/actions/workflows/ci.yml/badge.svg)](https://github.com/viztor/dsh-opencode/actions/workflows/ci.yml) [![Release](https://github.com/viztor/dsh-opencode/actions/workflows/release.yml/badge.svg)](https://github.com/viztor/dsh-opencode/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/npm/l/@viztor/dsh-opencode)](LICENSE) [![Node >= 24](https://img.shields.io/node/v/@viztor/dsh-opencode)](https://nodejs.org) [![Last commit](https://img.shields.io/github/last-commit/viztor/dsh-opencode)](https://github.com/viztor/dsh-opencode/commits/main)
 
 Run free OpenCode Zen models (like `muse-spark-1.3-contributor-free`) inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) without `403 FreeTierError` or `400 MissingSessionID` errors.
 
@@ -73,6 +73,19 @@ Full option reference (types, `debug`/`debugFile`, `mode`): see [cordis.patch.ym
 | `403 FreeTierError` on free models | Headers stripped or tools missing | Keep all three inject toggles on |
 | `400 MissingSessionID` | No session header attached | Plugin must be in `bundles`; check it loaded |
 | Paid/other providers misbehaving | Shouldn't happen — they're never touched | File an issue with a redacted log |
+
+## Compatibility
+
+**Last verified: 2026-10-01** — refreshed on every release (see [Contributing](CONTRIBUTING.md)).
+
+| Component | Verified version |
+| :-- | :-- |
+| Plugin | `@viztor/dsh-opencode@0.2.1` (npm + GitHub Packages) |
+| Host | DSH Web profile (`dsh-profile-web`, `patchReload: live`) |
+| Runtime | Node 24+ |
+| Gateway | `https://opencode.ai/zen/v1` (`/responses` + chat completions) |
+| Model | `muse-spark-1.3-contributor-free` |
+| Checks | `vp check` clean, 44/44 deterministic tests, registry install resolves |
 
 ## Links
 
