@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.4.0](https://github.com/viztor/dsh-opencode/compare/v0.3.4...v0.4.0) (2026-09-30)
+
+
+### Features
+
+* bundle icon for plugin display surfaces ([9882c0e](https://github.com/viztor/dsh-opencode/commit/9882c0edf03665d753f783ac2a47c303c40f030b))
+
 ## [0.3.4](https://github.com/viztor/dsh-opencode/compare/v0.3.3...v0.3.4) (2026-09-30)
 
 
