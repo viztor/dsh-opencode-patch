@@ -1,14 +1,30 @@
-# dsh-opencode-patch
+<div align="center">
+  <img src="icon.svg" alt="OpenCode logo" width="120" />
+  <h1>dsh-opencode-patch</h1>
+  <p><strong>OpenCode on DeepSeek Harness — Gateway Origin Headers, Session Affinity, and Live Quota Monitor.</strong><br />Seamlessly connect OpenCode Zen & Go models to DSH without connection errors or invisible limits.</p>
 
-[![npm version](https://img.shields.io/npm/v/dsh-opencode-patch)](https://www.npmjs.com/package/dsh-opencode-patch) [![CI](https://github.com/viztor/dsh-opencode-patch/actions/workflows/ci.yml/badge.svg)](https://github.com/viztor/dsh-opencode-patch/actions/workflows/ci.yml) [![Release](https://github.com/viztor/dsh-opencode-patch/actions/workflows/release.yml/badge.svg)](https://github.com/viztor/dsh-opencode-patch/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/npm/l/dsh-opencode-patch)](LICENSE) [![Node >= 24](https://img.shields.io/node/v/dsh-opencode-patch)](https://nodejs.org)
+[![npm](https://img.shields.io/npm/v/dsh-opencode-patch.svg)](https://www.npmjs.com/package/dsh-opencode-patch) [![downloads](https://img.shields.io/npm/dm/dsh-opencode-patch.svg)](https://www.npmjs.com/package/dsh-opencode-patch) [![ci](https://github.com/viztor/dsh-opencode-patch/actions/workflows/ci.yml/badge.svg)](https://github.com/viztor/dsh-opencode-patch/actions/workflows/ci.yml) [![release](https://github.com/viztor/dsh-opencode-patch/actions/workflows/release.yml/badge.svg)](https://github.com/viztor/dsh-opencode-patch/actions/workflows/release.yml) [![license](https://img.shields.io/npm/l/dsh-opencode-patch.svg)](https://github.com/viztor/dsh-opencode-patch/blob/main/LICENSE) [![node](https://img.shields.io/node/v/dsh-opencode-patch.svg)](https://nodejs.org)
 
-Free OpenCode models and live Go quota display inside DeepSeek Harness. Zen (`muse-spark-1.3-contributor-free`, `space-bunny-free`) and Go (`deepseek-v4.1-flash`) — no `403 FreeTierError`, no `400 MissingSessionID`.
+</div>
 
-OpenCode's gateways expect three things DSH doesn't send by default: a valid `x-opencode-session` on every call, CLI origin proof on Zen (`User-Agent`, client headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier calls. DSH strips the user agent, identifies sessions with UUIDs the gateways reject, and can send tool-less requests — so the calls fail.
+---
 
-This plugin restores exactly what's missing at the network layer, and only for OpenCode traffic (`opencode` / `opencode-go` routes, `zen/v1` / `zen/go/v1` URLs). In addition, it tracks live OpenCode Go quota limits (5h rolling, weekly, and monthly rates) with a native pill in the chat input tray so you never wonder why a call stopped responding. DeepSeek, OpenAI, GitHub, and every other request pass through byte-for-byte untouched.
+Connect OpenCode Zen models (`muse-spark-1.3-contributor-free`, `space-bunny-free`) and OpenCode Go (`deepseek-v4.1-flash`) to DeepSeek Harness without network rejections or silent failures.
 
-## Install
+OpenCode's gateways expect three things DSH does not send by default: a valid `x-opencode-session` on every turn, CLI origin proof on Zen (`User-Agent`, client headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier requests. DSH strips the user agent, identifies sessions with raw UUIDs the gateway rejects, and can emit tool-less requests — causing `403 FreeTierError` or `400 MissingSessionID`.
+
+`dsh-opencode-patch` restores missing elements at the network layer strictly for OpenCode routes (`opencode` / `opencode-go`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
+
+| Without Patch | With `dsh-opencode-patch` |
+| :-- | :-- |
+| Zen free models fail with `403 FreeTierError` | **100% gateway origin headers & tool fallbacks** restored automatically |
+| Session IDs rejected with `400 MissingSessionID` | **Deterministic `ses_…` session hashing** and affinity across turns |
+| Quotas run out silently mid-conversation | **Live SVG quota ring & hover modal** mounted beside native `ContextMeter` |
+| Switching package names breaks profile configs | **Universal multi-alias engine** (`dsh-opencode-patch`, `@viztor/*`) |
+
+---
+
+## 🚀 Quick start
 
 ### Method 1: Direct from Web UI (Recommended)
 
@@ -17,8 +33,8 @@ DeepSeek Harness allows installing plugins directly through the Web interface wi
 1. Open DSH Web → **Settings → Plugins** (设置 → 插件).
 2. Click **Install Plugin** (添加插件).
 3. Search or enter `dsh-opencode-patch` (or `@viztor/dsh-opencode`).
-4. Click **Install** — DSH automatically fetches the package from npm, builds the bundle patch, and activates it live!
-5. OpenCode free-tier models and your live Go quota ring in the chat input tray are active right away.
+4. Click **Install** — DSH automatically fetches the package from npm, builds the bundle patch, and activates it live without restarting!
+5. OpenCode free-tier models and your live Go quota ring in the chat composer dock are active right away.
 
 ---
 
@@ -28,103 +44,190 @@ For headless environments, servers, or version-controlled dotfiles:
 
 ```sh
 cd ~/.dsh/profiles/web
-npm install dsh-opencode-patch   # or: npm install @viztor/dsh-opencode
+npm install dsh-opencode-patch   # or: npm install @viztor/dsh-opencode-patch
 ```
 
 Add the bundle to your profile's `package.json`:
 
-```json
+```jsonc
 {
   "dependencies": {
-    "dsh-opencode-patch": "^0.7.0"
+    "dsh-opencode-patch": "^0.9.1",
   },
   "dsh": {
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "dsh-opencode-patch"
-      ]
-    }
-  }
+        "dsh-opencode-patch",
+      ],
+    },
+  },
 }
 ```
 
 Then `pnpm install` in the profile directory and restart DSH.
 
-## Configure
+<details>
+<summary><strong>📦 Installing from GitHub Packages instead</strong></summary>
 
-DSH Web → **Settings → Plugins → OpenCode Integration**. Flip toggles, **Save**:
+<br />
+
+Every release mirrors `@viztor/dsh-opencode-patch` to GitHub Packages — an alternative source if npmjs.org is unreachable. GitHub Packages requires authentication even for public packages:
+
+```ini
+# project-local .npmrc
+@viztor:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=ghp_xxx
+```
+
+Then `npm install @viztor/dsh-opencode-patch` resolves from the mirror.
+
+</details>
+
+---
+
+## ⭕ Live OpenCode Go Quota Ring & Hover Modal
+
+When an OpenCode Go model (`deepseek-v4.1-flash`) is active, an interactive SVG circular progress meter mounts in the composer dock (`conversation.composer.dock`), directly alongside DSH's native `ContextMeter`:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Type a message...                                               │
+│                                                                 │
+│ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
+└─────────────────────────────────────────────────────────────────┘
+   [ ⭕ 73% Context ]   [ ⭕ 100% Go Quota ]  ← conversation.composer.dock
+```
+
+### Visual Features
+
+- **Adaptive Bottleneck Indicator**: Always displays the currently limiting window percentage (e.g. `100%` in red during rate limits, or your 5h rolling usage).
+- **Dynamic Color States**:
+  - `#30a46c` (Emerald Green): Normal operation (<80%).
+  - `#e0a100` (Amber): Elevated usage (≥80%).
+  - `#e5484d` (Red Alert): Limit reached (100% rate-limited).
+- **Rich Hover Modal**:
+  - **Bottleneck Accent Bar**: Visual gauge of active quota pressure.
+  - **3-Window Breakdown Rows**: Dedicated progress meters for **5-Hour Rolling**, **Weekly**, and **Monthly** limits.
+  - **Human-Friendly Countdowns**: Live relative timers (`in 3h 12m`, `in 7d 17h`, or `soon`).
+  - **3-Column Balance Cards**: Overview cards for quick visual reference.
+  - **Diagnostics & Refresh**: Displays last updated timestamp with a manual retry button.
+
+---
+
+## 🔑 Zero-Config Credential Discovery
+
+You do not need to duplicate your API key into this plugin's settings. The host-side service automatically scans:
+
+1. `cordis.patch.yml` under `llm-pi-ai.providers["opencode-go"]` (`apiKeyEnv`, inline `apiKey`, or custom `baseURL`)
+2. Standalone adapter rows (`id: opencode-go` / `name: dsh-opencode-go`)
+3. DSH Credentials Service (`~/.dsh/.credentials.yaml`)
+4. System environment variables (`OPENCODE_GO_API_KEY`, `OPENCODE_API_KEY`)
+
+Credentials never reach the browser; the host queries `https://opencode.ai/zen/go/v1/usage` and pushes sanitized status via DSH Remote IPC.
+
+---
+
+## ⚙️ Configuration
+
+DSH Web → **Settings → Plugins → OpenCode Integration** (设置 → 插件 → OpenCode 接入设置). Edit values and click **Save**:
 
 | Setting | Default | Effect |
 | :-- | :-- | :-- |
-| Inject User-Agent | on | Restores the OpenCode CLI `User-Agent` DSH strips |
-| User-Agent Override | empty | Custom string instead of the canonical CLI one |
-| Inject Origin Headers | on | Adds `x-opencode-client: cli` + `x-opencode-project: global` |
-| Inject Core Tools | on | Adds fallback `read`/`bash` schemas to free-tier `/responses` calls |
-| Providers | `opencode, opencode-go` | Which route IDs get the treatment |
-| Usage Quota Tracking | on | Live 5h, weekly, and monthly limit tracking in chat input tray |
-| Debug Logging | off | Logs each header-injected call via `ctx.logger` |
-| Debug File | empty | Appends JSONL stream-debug entries to a server-side path |
+| **Enable Go Quota Monitor** | `on` | Shows live quota ring in the composer dock beside context usage |
+| **Go Usage Base URL** | `https://opencode.ai/zen/go/v1` | Custom quota endpoint for enterprise proxies or mirrors |
+| **Go Key Env Var / Credential** | `OPENCODE_GO_API_KEY` | Custom environment variable or DSH Credential reference |
+| **Inject User-Agent** | `on` | Restores canonical OpenCode CLI `User-Agent` stripped by DSH |
+| **User-Agent Override** | empty | Custom string instead of canonical OpenCode CLI string |
+| **Inject Origin Headers** | `on` | Injects `x-opencode-client: cli` and `x-opencode-project: global` |
+| **Inject Core Tools** | `on` | Fallback `read`/`bash` schemas on free-tier requests |
+| **Providers** | `opencode, opencode-go` | Comma-separated list of route IDs to intercept |
+| **Debug Logging** | `off` | Logs each header-injected call via `ctx.logger` |
+| **Debug File** | empty | Appends JSONL stream-debug entries to a server-side path |
 
-Defaults live in code and show in the labels, so an empty field always means "the default". Settings resolve in layers — built-in defaults, then `cordis.patch.yml`, then anything saved here — and saving writes only what you edited. The `Overridden` badge marks UI-saved fields; **Reset** drops a field back to the file value.
+Settings resolve in layers: **built-in defaults → `cordis.patch.yml` → UI overrides**. Saving writes only modified fields. Click **Reset** on any field to return to the underlying configuration.
 
-## Headless config
+### Headless Server Configuration
 
-For servers or `cordis.patch.yml` overlays (all optional — omitting everything yields the defaults above):
+For servers, headless profiles, or version-controlled `cordis.patch.yml` overlays:
 
 ```yaml
 - id: dsh-opencode-patch
   name: "dsh-opencode-patch"
   config:
-    providers: [opencode, opencode-go]
+    providers:
+      - opencode
+      - opencode-go
+    usageEnabled: true
+    usageBaseURL: "https://opencode.ai/zen/go/v1"
+    usageKeyEnv: "OPENCODE_GO_API_KEY"
     injectUserAgent: true
-    userAgent: ""
     injectOriginHeaders: true
     injectCoreTools: true
-    usageEnabled: true
     debug: false
 ```
 
-Types and `debugFile` are documented in [cordis.patch.yml](cordis.patch.yml).
+---
 
-## Live OpenCode Go Quota Pill
+## 🔄 Universal Backwards Compatibility
 
-When an OpenCode Go model (`deepseek-v4.1-flash`) is selected in chat, an interactive quota pill mounts in the right-hand corner of the message input box:
+To ensure existing profiles and dependencies continue working without breaking changes, three package identifiers are supported across all runtime layers:
 
-- Displays real-time rolling 5-hour, weekly, and monthly utilization percentages
-- Highlights in amber (≥80%) and alerts in red when rate-limited (100%)
-- Clicking opens a popover detailing exact progress bars and reset timestamps
-- Credentials never reach the browser; the host fetches stats using `OPENCODE_GO_API_KEY` via DSH Typert IPC
+```
+                            User Installation
+                                    │
+       ┌────────────────────────────┼────────────────────────────┐
+       ▼                            ▼                            ▼
+"dsh-opencode-patch"   "@viztor/dsh-opencode-patch"     "@viztor/dsh-opencode"
+(Canonical package)         (Scoped mirror)              (Legacy thin wrapper)
+       │                            │                            │
+       └────────────────────────────┼────────────────────────────┘
+                                    │
+                                    ▼
+                 [window.__ModuleLoader__.load Engine]
+                    Registers all 4 aliases to factory
+                                    │
+                                    ▼
+                 [plugins.bundle.config UI Slot]
+                    Binds cards for all package aliases
+```
 
-## Troubleshooting
+1. **`dsh-opencode-patch`**: Primary canonical package on npmjs.org.
+2. **`@viztor/dsh-opencode-patch`**: Scoped mirror for GitHub Packages and enterprise registries requiring scope.
+3. **`@viztor/dsh-opencode`**: Thin compatibility wrapper with manifest deprecation notice that declares `dsh-opencode-patch` as a direct dependency and re-exports all runtime APIs and Cordis patches.
 
-| Symptom | Likely cause | Fix |
+---
+
+## 🛠 Troubleshooting
+
+| Symptom | Likely Cause | Solution |
 | :-- | :-- | :-- |
-| `403 FreeTierError` on free models | Headers stripped or tools missing | Keep the three inject toggles on |
-| `400 MissingSessionID` | No session header attached | Plugin must be in `bundles` and activated — check boot logs |
-| Go Quota says "Unavailable" | Missing API key | Store `OPENCODE_GO_API_KEY` in DSH Credentials or environment |
-| Anything else misbehaving | Shouldn't be us — non-OpenCode traffic is never touched | File an issue with a redacted log |
+| `403 FreeTierError` on free models | Gateway headers stripped or tool definitions missing | Keep **Inject User-Agent**, **Inject Origin Headers**, and **Inject Core Tools** toggled on. |
+| `400 MissingSessionID` | No session header attached | Ensure `dsh-opencode-patch` is listed in your profile's `bundles` array. |
+| Quota Ring displays "Unavailable" | Missing API key | Store `OPENCODE_GO_API_KEY` in DSH Credentials or export it in your shell environment. |
+| Popover shows "Limit reached" in red | Account has reached 100% of rolling or monthly quota | Check the hover popover for the exact reset countdown (`Resets in Xh Ym`). |
+| Non-OpenCode models misbehaving | Unrelated to this patch | Traffic to non-OpenCode providers (OpenAI, DeepSeek, Anthropic) passes through untouched. |
 
-## Compatibility
+---
 
-**Last verified: 2026-10-01** — refreshed on every release (see [Contributing](CONTRIBUTING.md)).
+## 📜 Compatibility & Verification
 
-| Component | Verified version |
+**Verified on DeepSeek Harness 0.2.0-rc.2 (Node 24+)**
+
+| Surface | Target |
 | :-- | :-- |
-| Plugin | `dsh-opencode-patch` (npm + GitHub Packages) |
-| Host | DSH Web profile (`dsh-profile-web`, `patchReload: live`) |
-| Runtime | Node 24+ |
-| Gateways | `zen/v1` (`/responses` + chat completions), `zen/go/v1` (chat completions) |
-| Models | `muse-spark-1.3-contributor-free`, `space-bunny-free`, `deepseek-v4.1-flash` (Go) |
-| Gates | `vp check` clean, 57 deterministic tests green, registry install resolves |
+| **Plugin Package** | `dsh-opencode-patch` (npm + GitHub Packages) |
+| **Host Profile** | DSH Web profile (`patchReload: live`) |
+| **Runtime Floor** | Node.js `>=24.0.0` |
+| **Gateways** | `zen/v1` (`/responses` & chat completions), `zen/go/v1` (chat completions) |
+| **Supported Models** | `muse-spark-1.3-contributor-free`, `space-bunny-free`, `deepseek-v4.1-flash` |
+| **Verification Gate** | `vp check` clean, 59 unit tests passing, full schema validation |
 
-## Links
+---
 
-- [Contributing](CONTRIBUTING.md) — setup, conventions, release process
-- [Changelog](CHANGELOG.md) — per-version record
-- [License](LICENSE) — MIT (nobu121 & viztor)
+## 👥 Attribution & License
 
-## Attribution
+Evolved from [**`nobu121/dsh-opencode-session`**](https://github.com/nobu121/dsh-opencode-session) by [@nobu121](https://github.com/nobu121), which pioneered session ID handling for OpenCode on DSH. Extended by [@viztor](https://github.com/viztor) to support Zen free-tier gateway compatibility, deterministic session hashing, live OpenCode Go quota monitoring, and native Web UI integration.
 
-Evolved from [`nobu121/dsh-opencode-session`](https://github.com/nobu121/dsh-opencode-session) by [@nobu121](https://github.com/nobu121), which pioneered the `x-opencode-session` approach for OpenCode Go. This project extends it to Zen free-tier compatibility, deterministic session hashing, configurable headers, live Go quota tracking, and a Web settings UI.
+Licensed under the [MIT License](LICENSE).
