@@ -1,10 +1,15 @@
 /**
- * Conversation slot component displaying OpenCode Go quota and rate limits.
+ * Composer-dock component displaying OpenCode Go quota and rate limits.
  *
- * Shows a compact circular progress ring in `conversation.input.right` reflecting the
- * hourly or bottleneck quota currently affecting the session. Hovering or clicking
- * reveals a detailed breakdown modal with rolling, weekly, and monthly meters,
- * countdown timers, and balance cards.
+ * Shows a compact circular progress ring in `conversation.composer.dock` —
+ * beside the host's own Context meter — reflecting the hourly or bottleneck
+ * quota currently affecting the session. Hovering or clicking reveals a
+ * detailed breakdown with rolling, weekly, and monthly meters, countdown
+ * timers, balance cards, and links for acting on a hit cap.
+ *
+ * It renders nothing when the account has no OpenCode Go credential, when the
+ * host serves no usage service (the quota toggle is off), or when a non-Go
+ * provider is active: an unactionable "unavailable" meter is worse than none.
  *
  * @module dsh-opencode-patch/usage-pill
  */
