@@ -847,10 +847,12 @@ export const UsagePill = ({
   );
 
   const provider = state?.current?.provider ?? "";
+  const model = state?.current?.model ?? "";
   const isOpenCodeGo =
     provider === "opencode-go" ||
     provider === "dsh-opencode-go" ||
-    /opencode-go/i.test(provider);
+    /opencode-go/i.test(provider) ||
+    /deepseek-v4\.1-flash/i.test(model);
 
   if (!isOpenCodeGo) {
     return null;
