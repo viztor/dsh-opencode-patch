@@ -548,6 +548,20 @@ export const apply = (
   const { debug, debugFile, providers } = config;
   const als = new AsyncLocalStorage<ActiveTurnState>();
 
+  const entryOptions = (
+    ctx as {
+      fiber?: { entry?: { options?: { id?: string; name?: string } } };
+    }
+  )?.fiber?.entry?.options;
+  if (
+    entryOptions?.name === "@viztor/dsh-opencode" ||
+    entryOptions?.id === "dsh-opencode"
+  ) {
+    ctx.logger?.info?.(
+      '[dsh-opencode-patch] Notice: "@viztor/dsh-opencode" has been renamed to "dsh-opencode-patch". Please update your profile configuration.'
+    );
+  }
+
   if (config.usageEnabled && typeof ctx.plugin === "function") {
     ctx.plugin(GoUsageService, {
       baseURL: () => {

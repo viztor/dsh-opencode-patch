@@ -78,6 +78,27 @@ for (const target of SCOPED_TARGETS) {
       readFileSync(path.join(scratch, "package.json"), "utf-8")
     ) as Record<string, unknown>;
     manifest.name = target;
+    if (target === "@viztor/dsh-opencode") {
+      manifest.deprecated =
+        "Package renamed to dsh-opencode-patch. Please install dsh-opencode-patch instead: https://www.npmjs.com/package/dsh-opencode-patch";
+      const redirectReadme = [
+        "# @viztor/dsh-opencode (Renamed to dsh-opencode-patch)",
+        "",
+        "> ⚠️ **Notice**: This package has been renamed to [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch).",
+        "",
+        "Please migrate to `dsh-opencode-patch`:",
+        "",
+        "```sh",
+        '# Via DSH Web UI: Settings → Plugins → Install Plugin → "dsh-opencode-patch"',
+        "",
+        "# Or via terminal in your profile directory:",
+        "npm install dsh-opencode-patch",
+        "```",
+        "",
+        "This package seamlessly re-exports `dsh-opencode-patch` for backwards compatibility.",
+      ].join("\n");
+      writeFileSync(path.join(scratch, "README.md"), redirectReadme);
+    }
     writeFileSync(
       path.join(scratch, "package.json"),
       `${JSON.stringify(manifest, null, 2)}\n`
