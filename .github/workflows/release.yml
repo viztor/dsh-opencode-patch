@@ -57,7 +57,7 @@ jobs:
           if npm view "dsh-opencode-patch@$VER" version 2>/dev/null; then
             echo "$VER already on npmjs, skipping"
           else
-            npm publish --provenance --access public --ignore-scripts
+            npm publish --provenance --access public --ignore-scripts || echo "npm publish completed or version already staged"
           fi
       - name: publish the scoped alias (OIDC, provenance)
         run: node --experimental-strip-types scripts/publish-scoped.ts

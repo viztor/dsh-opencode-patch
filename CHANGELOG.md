@@ -6,6 +6,14 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.9.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.9.0...v0.9.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* add publish error recovery and non-blocking scoped publishing ([4baea6f](https://github.com/viztor/dsh-opencode-patch/commit/4baea6fc737ae046fa33c5e8840ca8eeeb35c7fe))
+* rewrite cordis.patch.yml name for scoped package ([a164f98](https://github.com/viztor/dsh-opencode-patch/commit/a164f9845348bbdd2371971168f2371b808972e2))
+
 ## [0.9.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.8.0...v0.9.0) (2026-10-01)
 
 
