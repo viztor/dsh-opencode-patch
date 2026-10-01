@@ -12,14 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # No `version:` input: pnpm/action-setup refuses to run when it is given
+      # both that and a `packageManager` field, and package.json pins 12.6.0
+      # exactly. One source of truth, and the action reads it.
       - uses: pnpm/action-setup@v6
-        with:
-          version: 12
       - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Explicit, not inherited: `lib/` otherwise exists only because the
+      # `prepare` lifecycle fired during install, so any `--ignore-scripts`
+      # hardening would break the release with an unrelated error.
+      - run: pnpm run build
       - run: pnpm run check
       - run: pnpm run test
 
@@ -32,9 +37,10 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
+      # No `version:` input: pnpm/action-setup refuses to run when it is given
+      # both that and a `packageManager` field, and package.json pins 12.6.0
+      # exactly. One source of truth, and the action reads it.
       - uses: pnpm/action-setup@v6
-        with:
-          version: 12
       - uses: actions/setup-node@v7
         with:
           node-version: 26
@@ -48,22 +54,56 @@ jobs:
       - run: pnpm run build
       # OIDC trusted publishing: no token needed. Requires the
       # viztor/dsh-opencode-patch + release.yml publisher registered on npmjs.com
-      # with `npm publish` allowed. Provenance is automatic. The version
-      # guard keeps re-runs idempotent (a published version is skipped,
-      # so a failed mirror step can be retried by re-pushing the tag).
+      # with `npm publish` allowed. Provenance is automatic.
+      #
+      # Every publish step fails loudly. A swallowed error here once produced a
+      # green release for a version that never reached the registry, and the
+      # version was simply lost (v0.7.0). The `npm view` guard is the only place
+      # idempotency belongs; the final verification step is what proves the
+      # claim, and it runs even when a publisher is missing.
       - name: publish to npmjs (OIDC)
         run: |
           VER=$(node -p "require('./package.json').version")
           if npm view "dsh-opencode-patch@$VER" version 2>/dev/null; then
             echo "$VER already on npmjs, skipping"
           else
-            npm publish --provenance --access public --ignore-scripts || echo "npm publish completed or version already staged"
+            npm publish --provenance --access public --ignore-scripts
           fi
-      - name: publish the scoped alias (OIDC, provenance)
+      # The scoped names are separate packages to the registry, so each needs
+      # its own Trusted Publisher entry. This step is allowed to fail so the
+      # GitHub Packages mirror below still runs; the verification step at the
+      # end turns any gap into a failed release that names the missing target.
+      - name: publish the scoped aliases (OIDC, provenance)
+        continue-on-error: true
         run: node --experimental-strip-types scripts/publish-scoped.ts
-      # Mirror the scoped alias to GitHub Packages so the repo sidebar populates.
+      # Mirror the scoped names to GitHub Packages so the repo sidebar populates.
       # Unscoped packages are rejected by GHP; scoped packages mirror cleanly.
-      - name: mirror the scoped alias to GitHub Packages
+      - name: mirror the scoped aliases to GitHub Packages
         run: |
           export NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           PUBLISH_REGISTRY=https://npm.pkg.github.com node --experimental-strip-types scripts/publish-scoped.ts
+      # The release claim, checked instead of assumed. Without this the job
+      # reported success while `@viztor/dsh-opencode*` sat four versions behind
+      # the canonical package, because a publisher that was never registered
+      # fails with the same E404 as a transient fault.
+      - name: verify every published target
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          missing=""
+          for spec in \
+            "dsh-opencode-patch@$VER" \
+            "@viztor/dsh-opencode-patch@$VER" \
+            "@viztor/dsh-opencode@$VER"
+          do
+            if npm view "$spec" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+              echo "ok      $spec  (npmjs.org)"
+            else
+              echo "MISSING $spec  (npmjs.org)"
+              missing="$missing $spec"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::these targets did not publish:$missing — register a Trusted Publisher for each at https://www.npmjs.com/package/<name>/access (repository viztor/dsh-opencode-patch, workflow release.yml)"
+            exit 1
+          fi
+          echo "every published target is live on npmjs.org"

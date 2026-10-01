@@ -30,6 +30,7 @@
   },
   "files": [
     "lib",
+    "locale/*.json",
     "cordis.patch.yml",
     "icon.svg",
     "README.md",
@@ -50,7 +51,9 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
   },
   "publishConfig": {
     "access": "public"
@@ -65,13 +68,12 @@
     "lint:fix": "vp lint --fix",
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run release:gate",
-    "release:gate": "pnpm run build && pnpm run test",
+    "release:gate": "pnpm run build && pnpm run check && pnpm run test",
     "test": "vp test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-store": "0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-typert-protocol": "0.2.0-rc.2",
     "@types/node": "^26.6.3",
     "@types/react": "^18.3.31",
@@ -93,6 +95,7 @@
   "engines": {
     "node": ">=24"
   },
+  "packageManager": "pnpm@12.6.0",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

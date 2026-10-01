@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenCode integration",
+    "description": "Restore OpenCode Zen/Go gateway headers and session affinity, and track live Go quota beside the composer."
+  }
+}
