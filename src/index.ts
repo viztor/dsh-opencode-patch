@@ -75,7 +75,6 @@ export interface PluginConfig {
   injectCoreTools?: boolean;
   injectOriginHeaders?: boolean;
   injectUserAgent?: boolean;
-  mode?: "session-id" | "uuid";
   providers?: string[];
   userAgent?: string;
 }
@@ -86,7 +85,6 @@ export interface ResolvedPluginConfig {
   injectCoreTools: boolean;
   injectOriginHeaders: boolean;
   injectUserAgent: boolean;
-  mode: "session-id" | "uuid";
   providers: Set<string>;
   userAgent?: string;
 }
@@ -102,7 +100,6 @@ export const resolveConfig = (
       )
     : [];
   const providers = listed.length > 0 ? listed : [...DEFAULT_PROVIDERS];
-  const mode = config.mode === "uuid" ? "uuid" : "session-id";
   const debug = config.debug === true;
   const rawDebugFile: unknown = config.debugFile;
   const debugFile =
@@ -124,7 +121,6 @@ export const resolveConfig = (
     injectCoreTools,
     injectOriginHeaders,
     injectUserAgent,
-    mode,
     providers: new Set(providers),
     userAgent,
   };
@@ -148,8 +144,7 @@ const recordDebug = async (
 };
 
 export const headerValueFor = (
-  sessionId: string | number | undefined | null,
-  mode: string
+  sessionId: string | number | undefined | null
 ): string | undefined => {
   if (sessionId === undefined || sessionId === null) {
     return undefined;
@@ -158,14 +153,9 @@ export const headerValueFor = (
   if (raw.length === 0) {
     return undefined;
   }
-  // Pure derivation, no table: identical sessions map identically across
-  // turns and restarts (better cache affinity) with no per-process growth.
-  // uuid mode passes the DSH session through untouched (for gateways that
-  // accept raw UUIDs); session-id mode derives a gateway-compliant ses_…
-  // value.
-  if (mode === "uuid") {
-    return raw;
-  }
+  // Always derive: a pure SHA-256 mapping, stable across turns and restarts.
+  // There is no uuid passthrough mode — raw DSH UUIDs satisfy no gateway,
+  // while derived ses_… values route stably everywhere a UUID would.
   return openCodeSessionIdFor(raw);
 };
 
@@ -524,7 +514,7 @@ export const apply = (
   rawConfig: PluginConfig = {}
 ): void => {
   const config = resolveConfig(rawConfig);
-  const { debug, debugFile, mode, providers } = config;
+  const { debug, debugFile, providers } = config;
   const als = new AsyncLocalStorage<ActiveTurnState>();
 
   const originalFetch: unknown = globalThis.fetch;
@@ -540,9 +530,8 @@ export const apply = (
   ctx.effect?.(() => {
     globalThis.fetch = patched;
     ctx.logger?.info?.(
-      "[dsh-opencode] active for providers [%s] with mode %s",
-      [...providers].join(", "),
-      mode
+      "[dsh-opencode] active for providers [%s]",
+      [...providers].join(", ")
     );
     return () => {
       if (globalThis.fetch === patched) {
@@ -576,7 +565,7 @@ export const apply = (
       if (rawSession.length === 0) {
         return next();
       }
-      const value = headerValueFor(rawSession, mode);
+      const value = headerValueFor(rawSession);
       if (value === undefined) {
         return next();
       }

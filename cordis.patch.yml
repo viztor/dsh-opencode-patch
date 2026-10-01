@@ -14,7 +14,6 @@
 #   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
 #   injectOriginHeaders: bool   inject x-opencode-client & x-opencode-project (default true).
 #   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
-#   mode: 'session-id' | 'uuid' session derivation mode (default 'session-id').
 #   debug: true|false           log every streamed call that receives the header.
 #   debugFile: path             optional append target for stream debug JSONL.
 - insert:
@@ -28,5 +27,4 @@
         userAgent: ""
         injectOriginHeaders: true
         injectCoreTools: true
-        mode: session-id
         debug: false

@@ -49,9 +49,6 @@ const en = {
     "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter. Empty inherits the default.",
   invalidBoolean: "Enter true or false, or leave blank for default.",
   invalidText: "This value was not accepted; leave blank for default.",
-  mode: "Session Mode (default session-id)",
-  modeHint:
-    "session-id derives gateway-compliant ses_… IDs; uuid passes the DSH session through for gateways that accept raw UUIDs.",
   overridden: "Overridden",
   providers: "Providers",
   providersHint:
@@ -85,9 +82,6 @@ const zh = {
     "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。留空沿用默认值。",
   invalidBoolean: "请输入 true 或 false，留空使用默认值。",
   invalidText: "该值未被接受，留空使用默认值。",
-  mode: "会话模式（默认 session-id）",
-  modeHint:
-    "session-id 派生网关兼容的 ses_… ID；uuid 直接透传 DSH 会话 ID，仅用于接受原始 UUID 的网关。",
   overridden: "已覆盖",
   providers: "生效提供方",
   providersHint: "逗号分隔的提供方路由 ID 列表。默认：opencode, opencode-go。",
@@ -108,7 +102,6 @@ const FIELD = {
   injectCoreTools: "injectCoreTools",
   injectOriginHeaders: "injectOriginHeaders",
   injectUserAgent: "injectUserAgent",
-  mode: "mode",
   providers: "providers",
   userAgent: "userAgent",
 };
@@ -128,28 +121,12 @@ const settingsBooleanField = (field: string): SettingsFieldSpec => ({
   parse: (text: string) => BOOLEAN_DRAFTS[text.trim().toLowerCase()],
 });
 
-const MODES: Record<
-  string,
-  { kind: "set"; value: string } | { kind: "clear" }
-> = {
-  "": { kind: "clear" },
-  "session-id": { kind: "set", value: "session-id" },
-  uuid: { kind: "set", value: "uuid" },
-};
-
-const settingsModeField = (field: string): SettingsFieldSpec => ({
-  field,
-  format: (value: unknown) => (typeof value === "string" ? value : ""),
-  parse: (text: string) => MODES[text.trim().toLowerCase()],
-});
-
 const SPECS: SettingsFieldSpec[] = [
   settingsBooleanField(FIELD.injectUserAgent),
   settingsTextField(FIELD.userAgent),
   settingsBooleanField(FIELD.injectOriginHeaders),
   settingsBooleanField(FIELD.injectCoreTools),
   settingsTextField(FIELD.providers),
-  settingsModeField(FIELD.mode),
   settingsBooleanField(FIELD.debug),
   settingsTextField(FIELD.debugFile),
 ];
@@ -245,13 +222,6 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         hint={t("providersHint")}
         label={t("providers")}
         placeholder="opencode, opencode-go"
-      />
-      <SettingsValueField
-        {...field(FIELD.mode)}
-        hint={t("modeHint")}
-        invalidLabel={t("invalidText")}
-        label={t("mode")}
-        placeholder="session-id"
       />
       <SettingsValueField
         {...field(FIELD.debug)}

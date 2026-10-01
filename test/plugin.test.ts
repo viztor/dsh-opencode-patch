@@ -205,10 +205,9 @@ describe("openCodeSessionIdFor", () => {
 });
 
 describe("resolveConfig", () => {
-  it("fills default providers, mode, toggles, and debug flags", () => {
+  it("fills default providers, toggles, and debug flags", () => {
     const resolved = resolveConfig({});
     expect([...resolved.providers]).toEqual(["opencode", "opencode-go"]);
-    expect(resolved.mode).toBe("session-id");
     expect(resolved.debug).toBe(false);
     expect(resolved.debugFile).toBeUndefined();
     expect(resolved.injectUserAgent).toBe(true);
@@ -224,7 +223,6 @@ describe("resolveConfig", () => {
       injectCoreTools: false,
       injectOriginHeaders: false,
       injectUserAgent: false,
-      mode: "uuid",
       providers: ["custom-opencode", "opencode-dev"],
       userAgent: "my-custom-ua/1.0",
     });
@@ -232,21 +230,12 @@ describe("resolveConfig", () => {
       "custom-opencode",
       "opencode-dev",
     ]);
-    expect(resolved.mode).toBe("uuid");
     expect(resolved.debug).toBe(true);
     expect(resolved.debugFile).toBe("/tmp/debug.log");
     expect(resolved.injectUserAgent).toBe(false);
     expect(resolved.userAgent).toBe("my-custom-ua/1.0");
     expect(resolved.injectOriginHeaders).toBe(false);
     expect(resolved.injectCoreTools).toBe(false);
-  });
-
-  it("falls back to session-id mode when unknown mode is provided", () => {
-    const resolved = resolveConfig({
-      // @ts-expect-error -- intentionally invalid mode to verify fallback
-      mode: "unknown",
-    });
-    expect(resolved.mode).toBe("session-id");
   });
 
   it("falls back to defaults when providers list is empty or blank", () => {
@@ -341,35 +330,28 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
 
 describe("headerValueFor", () => {
   it("derives the same session id on every call without a table", () => {
-    const val1 = headerValueFor("dsh-uuid-1", "session-id");
+    const val1 = headerValueFor("dsh-uuid-1");
     expect(val1).toMatch(/^ses_/);
 
-    const val2 = headerValueFor("dsh-uuid-1", "session-id");
+    const val2 = headerValueFor("dsh-uuid-1");
     expect(val2).toBe(val1);
   });
 
   it("returns undefined for empty, null, or undefined session inputs", () => {
-    expect(headerValueFor("", "session-id")).toBeUndefined();
-    expect(headerValueFor(undefined, "session-id")).toBeUndefined();
-    expect(headerValueFor(null, "session-id")).toBeUndefined();
+    const missing: string | number | undefined = undefined;
+    expect(headerValueFor("")).toBeUndefined();
+    expect(headerValueFor(missing)).toBeUndefined();
+    expect(headerValueFor(null)).toBeUndefined();
   });
 
   it("accepts numeric session IDs", () => {
-    const value = headerValueFor(987_654, "session-id");
+    const value = headerValueFor(987_654);
     expect(value).toMatch(/^ses_/);
   });
 
-  it("passes the raw session through in uuid mode", () => {
+  it("derives ses_ IDs even for UUID-shaped input", () => {
     const raw = "c2a51fb0-578c-4019-80c4-868eff95fd08";
-    expect(headerValueFor(raw, "uuid")).toBe(raw);
-    // Stable across turns, and distinct sessions stay distinct.
-    expect(headerValueFor(raw, "uuid")).toBe(raw);
-    expect(headerValueFor("other-session", "uuid")).toBe("other-session");
-  });
-
-  it("derives ses_ IDs in session-id mode even for UUID-shaped input", () => {
-    const raw = "c2a51fb0-578c-4019-80c4-868eff95fd08";
-    const value = headerValueFor(raw, "session-id");
+    const value = headerValueFor(raw);
     expect(value).toMatch(SESSION_RE);
     expect(value).not.toBe(raw);
   });
