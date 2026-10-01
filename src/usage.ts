@@ -134,7 +134,15 @@ export class GoUsageService extends TypertRemoteService {
         missing
           ? "OpenCode Go API key is not configured"
           : "Could not resolve OpenCode Go API key",
-        { retainPrevious: false, retryable: !missing },
+        {
+          // A missing credential is a configuration state, not a fault: there
+          // is no quota to display, so the client hides the meter instead of
+          // showing an unavailable one. Any other resolution failure stays
+          // visible and retryable.
+          ...(missing ? { configured: false } : {}),
+          retainPrevious: false,
+          retryable: !missing,
+        },
         { cause: error }
       );
     }
@@ -144,7 +152,7 @@ export class GoUsageService extends TypertRemoteService {
       throw new RemoteError(
         "opencode-go/usage-unavailable",
         "OpenCode Go API key is not configured",
-        { retainPrevious: false, retryable: false }
+        { configured: false, retainPrevious: false, retryable: false }
       );
     }
 

@@ -100,19 +100,36 @@ When an OpenCode Go model (`deepseek-v4.1-flash`) is active, an interactive SVG 
    [ ⭕ 73% Context ]   [ ⭕ 100% Go Quota ]  ← conversation.composer.dock
 ```
 
+It registers in **one** slot only. Both the composer dock and the input tray render, so a second registration would draw the meter twice.
+
+### When it appears
+
+The meter is deliberately absent rather than wrong:
+
+| State | What you see |
+| :-- | :-- |
+| OpenCode Go selected **and** a key resolves | The quota ring |
+| A non-Go provider or model is active | Nothing |
+| **Enable Go Quota Monitor** is off | Nothing |
+| No OpenCode Go credential is configured | Nothing — toggle it on in Settings once you add a key |
+| A transient fetch failure | The ring with a stale/error state and a retry button |
+
+"Nothing" means the slot renders no element at all: an unactionable "unavailable" chip sitting in the composer for every non-Go user is worse than an absent meter.
+
 ### Visual Features
 
-- **Adaptive Bottleneck Indicator**: Always displays the currently limiting window percentage (e.g. `100%` in red during rate limits, or your 5h rolling usage).
-- **Dynamic Color States**:
-  - `#30a46c` (Emerald Green): Normal operation (<80%).
-  - `#e0a100` (Amber): Elevated usage (≥80%).
-  - `#e5484d` (Red Alert): Limit reached (100% rate-limited).
+- **Adaptive Bottleneck Indicator**: Always displays the currently limiting window percentage (e.g. `100%` when rate-limited, or your 5h rolling usage).
+- **Dynamic Color States**, drawn from the host's own semantic theme tokens so they are correct in light and dark mode:
+  - `--dsw-alias-state-success-primary` (green): Normal operation (<80%).
+  - `--dsw-alias-state-warn-primary` (amber): Elevated usage (≥80%).
+  - `--dsw-alias-state-error-primary` (red): Limit reached (100% rate-limited).
 - **Rich Hover Modal**:
   - **Bottleneck Accent Bar**: Visual gauge of active quota pressure.
   - **3-Window Breakdown Rows**: Dedicated progress meters for **5-Hour Rolling**, **Weekly**, and **Monthly** limits.
   - **Human-Friendly Countdowns**: Live relative timers (`in 3h 12m`, `in 7d 17h`, or `soon`).
   - **3-Column Balance Cards**: Overview cards for quick visual reference.
   - **Diagnostics & Refresh**: Displays last updated timestamp with a manual retry button.
+  - **Upgrade / limits links**: [Raise the limit](https://opencode.ai/go) and the [usage-limits reference](https://opencode.ai/docs/go/), so a hit cap has an answer next to it.
 
 ---
 
@@ -205,7 +222,8 @@ To ensure existing profiles and dependencies continue working without breaking c
 | :-- | :-- | :-- |
 | `403 FreeTierError` on free models | Gateway headers stripped or tool definitions missing | Keep **Inject User-Agent**, **Inject Origin Headers**, and **Inject Core Tools** toggled on. |
 | `400 MissingSessionID` | No session header attached | Ensure `dsh-opencode-patch` is listed in your profile's `bundles` array. |
-| Quota Ring displays "Unavailable" | Missing API key | Store `OPENCODE_GO_API_KEY` in DSH Credentials or export it in your shell environment. |
+| Quota ring never appears for a Go model | No OpenCode Go credential resolves, or **Enable Go Quota Monitor** is off | Store `OPENCODE_GO_API_KEY` in DSH Credentials or export it in your shell environment, and check the toggle in Settings. |
+| Two identical quota rings side by side | A stale bundle from before the meter was reduced to one slot | Reload the page, and confirm the plugin version in Settings → Plugins. |
 | Popover shows "Limit reached" in red | Account has reached 100% of rolling or monthly quota | Check the hover popover for the exact reset countdown (`Resets in Xh Ym`). |
 | Non-OpenCode models misbehaving | Unrelated to this patch | Traffic to non-OpenCode providers (OpenAI, DeepSeek, Anthropic) passes through untouched. |
 

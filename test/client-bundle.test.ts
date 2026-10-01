@@ -287,7 +287,13 @@ describe("client-bundle: artifact & VM loader boundary", () => {
 
     exports.apply(ctx);
     expect(registeredSlots).toContain("conversation.composer.dock");
-    expect(registeredSlots).toContain("conversation.input.right");
     expect(registeredSlots).toContain("plugins.bundle.config");
+    // Exactly one usage slot. The bundle used to register the meter in
+    // `conversation.input.right` as well, and since both slots render, the
+    // composer showed two identical meters.
+    expect(registeredSlots).not.toContain("conversation.input.right");
+    expect(
+      registeredSlots.filter((slot) => slot === "conversation.composer.dock")
+    ).toHaveLength(1);
   });
 });
