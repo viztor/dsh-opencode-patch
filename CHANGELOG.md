@@ -6,6 +6,14 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.6.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.5.1...v0.6.0) (2026-10-01)
+
+
+### Features
+
+* rename to dsh-opencode-patch and add live OpenCode Go quota pill ([e3eb48d](https://github.com/viztor/dsh-opencode-patch/commit/e3eb48d5b716bfa7fd8184ead823232a8ce4aa01))
+* restyle the icon into the Harness icon family ([eeb1fd8](https://github.com/viztor/dsh-opencode-patch/commit/eeb1fd8a21babdb273969cf82e9f91db0a1a380a))
+
 ## [0.5.1](https://github.com/viztor/dsh-opencode/compare/v0.5.0...v0.5.1) (2026-10-01)
 
 
