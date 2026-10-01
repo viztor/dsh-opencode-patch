@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.9.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.8.0...v0.9.0) (2026-10-01)
+
+
+### Features
+
+* expose usage monitor settings in Web UI and mount in composer dock ([9a28f25](https://github.com/viztor/dsh-opencode-patch/commit/9a28f25e121ed08d831e70e48f0558091c185162))
+
 ## [0.8.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.7.0...v0.8.0) (2026-10-01)
 
 
