@@ -78,7 +78,17 @@ for (const target of SCOPED_TARGETS) {
       readFileSync(path.join(scratch, "package.json"), "utf-8")
     ) as Record<string, unknown>;
     manifest.name = target;
-    if (target === "@viztor/dsh-opencode") {
+    if (target === "@viztor/dsh-opencode-patch") {
+      const patchPath = path.join(scratch, "cordis.patch.yml");
+      const patchContent = readFileSync(patchPath, "utf-8");
+      writeFileSync(
+        patchPath,
+        patchContent.replaceAll(
+          'name: "dsh-opencode-patch"',
+          'name: "@viztor/dsh-opencode-patch"'
+        )
+      );
+    } else if (target === "@viztor/dsh-opencode") {
       manifest.deprecated =
         "Package renamed to dsh-opencode-patch. Please install dsh-opencode-patch instead: https://www.npmjs.com/package/dsh-opencode-patch";
       const existingDeps =
