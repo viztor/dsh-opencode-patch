@@ -10,11 +10,25 @@ This plugin restores exactly what's missing at the network layer, and only for O
 
 ## Install
 
-From npm:
+### Method 1: Direct from Web UI (Recommended)
+
+DeepSeek Harness allows installing plugins directly through the Web interface without touching a terminal:
+
+1. Open DSH Web → **Settings → Plugins** (设置 → 插件).
+2. Click **Install Plugin** (添加插件).
+3. Search or enter `dsh-opencode-patch` (or `@viztor/dsh-opencode`).
+4. Click **Install** — DSH automatically fetches the package from npm, builds the bundle patch, and activates it live!
+5. OpenCode free-tier models and your live Go quota ring in the chat input tray are active right away.
+
+---
+
+### Method 2: Terminal / Profile `package.json`
+
+For headless environments, servers, or version-controlled dotfiles:
 
 ```sh
 cd ~/.dsh/profiles/web
-npm install dsh-opencode-patch
+npm install dsh-opencode-patch   # or: npm install @viztor/dsh-opencode
 ```
 
 Add the bundle to your profile's `package.json`:
@@ -22,7 +36,7 @@ Add the bundle to your profile's `package.json`:
 ```json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^0.5.1"
+    "dsh-opencode-patch": "^0.7.0"
   },
   "dsh": {
     "profile": {
