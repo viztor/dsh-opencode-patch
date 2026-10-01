@@ -20,6 +20,26 @@ export interface UsageOptions {
   resolveApiKey?: () => Promise<string | undefined>;
 }
 
+export interface DiscoveredGoConfig {
+  baseURL?: string;
+  keyEnv?: string;
+  literalKey?: string;
+}
+
+interface LoaderEntry {
+  options?: {
+    config?: Record<string, unknown>;
+    id?: string;
+    name?: string;
+  };
+}
+
+interface ContextWithLoader {
+  loader?: {
+    entries: () => Iterable<LoaderEntry>;
+  };
+}
+
 interface CredentialsHost {
   get?: (name: string) =>
     | {
@@ -27,6 +47,58 @@ interface CredentialsHost {
       }
     | undefined;
 }
+
+/**
+ * Auto-discover OpenCode Go provider configuration from loaded Cordis entries (e.g. llm-pi-ai).
+ */
+export const discoverGoConfig = (ctx: unknown): DiscoveredGoConfig => {
+  const result: DiscoveredGoConfig = {};
+  const context = ctx as ContextWithLoader | undefined;
+  if (!context?.loader || typeof context.loader.entries !== "function") {
+    return result;
+  }
+
+  for (const entry of context.loader.entries()) {
+    const config = entry?.options?.config;
+    if (!config || typeof config !== "object") {
+      continue;
+    }
+
+    // 1. Check `providers["opencode-go"]` in provider registries like llm-pi-ai
+    const { providers } = config;
+    if (providers && typeof providers === "object") {
+      const goProvider = (providers as Record<string, unknown>)["opencode-go"];
+      if (goProvider && typeof goProvider === "object") {
+        const row = goProvider as Record<string, unknown>;
+        if (typeof row.apiKeyEnv === "string" && row.apiKeyEnv.length > 0) {
+          result.keyEnv = row.apiKeyEnv;
+        }
+        if (typeof row.apiKey === "string" && row.apiKey.length > 0) {
+          result.literalKey = row.apiKey;
+        }
+        if (typeof row.baseURL === "string" && row.baseURL.length > 0) {
+          result.baseURL = row.baseURL;
+        }
+      }
+    }
+
+    // 2. Check standalone provider entries like id: opencode-go
+    const { id, name } = entry.options ?? {};
+    if (id === "opencode-go" || name === "dsh-opencode-go") {
+      if (typeof config.apiKeyEnv === "string" && config.apiKeyEnv.length > 0) {
+        result.keyEnv = config.apiKeyEnv;
+      }
+      if (typeof config.apiKey === "string" && config.apiKey.length > 0) {
+        result.literalKey = config.apiKey;
+      }
+      if (typeof config.baseURL === "string" && config.baseURL.length > 0) {
+        result.baseURL = config.baseURL;
+      }
+    }
+  }
+
+  return result;
+};
 
 export class GoUsageService extends TypertRemoteService {
   private identity?: { baseURL: string; key: string; source: string };
@@ -39,8 +111,11 @@ export class GoUsageService extends TypertRemoteService {
   }
 
   async read(): Promise<GoUsage> {
+    const discovered = discoverGoConfig(this.ctx);
     const rawBaseURL =
-      this.options.baseURL?.() ?? "https://opencode.ai/zen/go/v1";
+      this.options.baseURL?.() ??
+      discovered.baseURL ??
+      "https://opencode.ai/zen/go/v1";
     const baseURL = rawBaseURL.replace(/\/$/, "");
 
     let key: string | undefined;
@@ -147,18 +222,34 @@ export class GoUsageService extends TypertRemoteService {
   }
 
   private async resolveDefaultKey(): Promise<string | undefined> {
+    const discovered = discoverGoConfig(this.ctx);
+    if (
+      typeof discovered.literalKey === "string" &&
+      discovered.literalKey.length > 0
+    ) {
+      return discovered.literalKey;
+    }
+
+    const keyRef = discovered.keyEnv ?? "OPENCODE_GO_API_KEY";
     const creds = (this.ctx as unknown as CredentialsHost | undefined)?.get?.(
       "credentials"
     );
     if (creds && typeof creds.resolve === "function") {
       try {
-        const hit = await creds.resolve("OPENCODE_GO_API_KEY");
+        const hit = await creds.resolve(keyRef);
         if (hit?.value && hit.value.length > 0) return hit.value;
       } catch {
         // Fall through
       }
     }
-    return process.env.OPENCODE_GO_API_KEY;
+
+    if (process.env[keyRef]) {
+      return process.env[keyRef];
+    }
+    if (process.env.OPENCODE_GO_API_KEY) {
+      return process.env.OPENCODE_GO_API_KEY;
+    }
+    return process.env.OPENCODE_API_KEY;
   }
 }
 
