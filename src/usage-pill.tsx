@@ -83,7 +83,7 @@ const STYLES = `
 }
 
 .dsh-oc-usage-trigger.dsh-oc-usage-alert {
-  color: #e5484d;
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .dsh-oc-usage-ring-track {
@@ -169,8 +169,8 @@ const STYLES = `
 }
 
 .dsh-oc-usage-badge.dsh-oc-badge-limited {
-  background: rgba(229, 72, 77, 0.15);
-  color: #e5484d;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 15%, transparent);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .dsh-oc-usage-bar-track {
@@ -263,8 +263,8 @@ const STYLES = `
 }
 
 .dsh-oc-usage-card.dsh-oc-card-limited {
-  background: rgba(229, 72, 77, 0.08);
-  border-color: rgba(229, 72, 77, 0.25);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 25%, transparent);
 }
 
 .dsh-oc-usage-card-name {
@@ -320,27 +320,19 @@ const STYLES = `
 }
 `;
 
-const ensureStylesInjected = (): void => {
-  if (typeof document === "undefined") {
-    return;
-  }
-  const ATTR = "data-dsh-opencode-usage-styles";
-  if (document.head.querySelector(`style[${ATTR}]`) === null) {
-    const style = document.createElement("style");
-    style.setAttribute(ATTR, "true");
-    style.textContent = STYLES;
-    document.head.append(style);
-  }
-};
+// The stylesheet is rendered as a `<style>` element inside this component's own
+// tree (see `ActiveUsage`) instead of being appended to `document.head`: writing
+// DOM outside the component leaks a permanent `<style>` node on unmount and is
+// disallowed for DSH client plugins.
 
 const getWindowColor = (window: UsageWindow): string => {
   if (window.status === "rate-limited" || window.percent >= 100) {
-    return "#e5484d";
+    return "var(--dsw-alias-state-error-primary)";
   }
   if (window.percent >= 80) {
-    return "#e0a100";
+    return "var(--dsw-alias-state-warn-primary)";
   }
-  return "#30a46c";
+  return "var(--dsw-alias-state-success-primary)";
 };
 
 const formatRelativeReset = (dateStr: string, locale?: string): string => {
@@ -464,10 +456,6 @@ const ActiveUsage = ({
   const retry = useRef<() => void>(noop);
 
   useEffect(() => {
-    ensureStylesInjected();
-  }, []);
-
-  useEffect(() => {
     let alive = true;
     let busy = false;
     setSnapshot(null);
@@ -584,7 +572,9 @@ const ActiveUsage = ({
   const isLimited = affecting?.window.status === "rate-limited";
   const displayPercent = affecting?.window.percent ?? 0;
   const ringColor =
-    affecting === undefined ? "#30a46c" : getWindowColor(affecting.window);
+    affecting === undefined
+      ? "var(--dsw-alias-state-success-primary)"
+      : getWindowColor(affecting.window);
 
   // Clamp stroke dash array for circular SVG meter
   const clampedPercent = Math.min(100, Math.max(0, displayPercent));
@@ -607,6 +597,11 @@ const ActiveUsage = ({
       onMouseLeave={handleMouseLeave}
       ref={root}
     >
+      {/*
+        Component-local styles render as an element so React removes them when
+        the component unmounts; nothing is appended to `document.head`.
+      */}
+      <style>{STYLES}</style>
       <button
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -624,13 +619,17 @@ const ActiveUsage = ({
             cy="7"
             r={RADIUS}
           />
+          {/*
+            Quota colors are CSS custom properties, which do not resolve in SVG
+            presentation attributes — apply the token through `style` instead.
+          */}
           <circle
             className="dsh-oc-usage-ring-fill"
             cx="7"
             cy="7"
             r={RADIUS}
-            stroke={ringColor}
             strokeDasharray={strokeDasharray}
+            style={{ stroke: ringColor }}
             transform="rotate(-90 7 7)"
           />
         </svg>
@@ -739,7 +738,12 @@ const ActiveUsage = ({
                     Resets {formatRelativeReset(usage.monthly.resetsAt, locale)}
                   </span>
                   {usage.monthly.status === "rate-limited" && (
-                    <span style={{ color: "#e5484d", fontWeight: 600 }}>
+                    <span
+                      style={{
+                        color: "var(--dsw-alias-state-error-primary)",
+                        fontWeight: 600,
+                      }}
+                    >
                       {t("usageLimited")}
                     </span>
                   )}

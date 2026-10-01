@@ -41,7 +41,7 @@ aliases:
 ```sh
 pnpm install     # install dependencies
 pnpm run build   # vp pack -> lib/index.mjs + lib/index.d.mts + lib/client.js
-pnpm run check   # zero warnings/errors required
+pnpm run check   # zero *errors* required; warnings are a tracked debt register
 pnpm run test    # 44 deterministic tests, fully green required
 ```
 
