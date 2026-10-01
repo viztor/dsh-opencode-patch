@@ -1,7 +1,7 @@
 {
   "name": "@viztor/dsh-opencode",
   "version": "0.5.1",
-  "description": "OpenCode on DeepSeek Harness — session affinity, Zen/Go gateway origin headers, and free-tier tool fallback for OpenCode models.",
+  "description": "OpenCode on DeepSeek Harness \u2014 session affinity, Zen/Go gateway origin headers, and free-tier tool fallback for OpenCode models.",
   "keywords": [
     "cordis",
     "deepseek-harness",
@@ -82,7 +82,7 @@
   },
   "icon": "./icon.svg",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "dsh": {
     "bundle": {
