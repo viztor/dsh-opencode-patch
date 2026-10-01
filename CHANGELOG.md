@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.8.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.7.0...v0.8.0) (2026-10-01)
+
+
+### Features
+
+* implement thin wrapper pattern for legacy @viztor/dsh-opencode package ([8ad0d94](https://github.com/viztor/dsh-opencode-patch/commit/8ad0d94c6097904380dc85a7411d9b51ed0e84db))
+
 ## [0.7.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.6.0...v0.7.0) (2026-10-01)
 
 
