@@ -1,13 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenCode on DeepSeek Harness">
+  <title>OpenCode on DSH</title>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0E1626"/>
-      <stop offset="1" stop-color="#1B2F4B"/>
+    <linearGradient id="oc-glyph" x1="20" y1="22" x2="46" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4D6BFE"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
     </linearGradient>
   </defs>
-  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)"/>
-  <rect x="4" y="4" width="56" height="56" rx="14" fill="none" stroke="#5EEAD4" stroke-opacity="0.35" stroke-width="2"/>
-  <path d="M20 25 L31 32 L20 39" fill="none" stroke="#5EEAD4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="42" cy="32" r="4.5" fill="#5EEAD4"/>
-  <circle cx="42" cy="32" r="7.5" fill="none" stroke="#5EEAD4" stroke-opacity="0.45" stroke-width="2"/>
+  <!--
+    The DeepSeek Harness icon family: a softly tinted rounded square carrying
+    one vibrant glyph. Pale lavender container, DeepSeek-blue to purple
+    terminal mark — the sibling of TinyFish's teal fish, distinct in hue,
+    identical in language.
+  -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#EDEBFE"/>
+  <path d="M22 24 L32 32 L22 40" fill="none" stroke="url(#oc-glyph)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="37" y="37.5" width="9" height="4.5" rx="2.25" fill="url(#oc-glyph)"/>
 </svg>
