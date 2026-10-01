@@ -6,6 +6,16 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.7.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.6.0...v0.7.0) (2026-10-01)
+
+
+### Features
+
+* add manifest deprecation, redirect README, and runtime notice for legacy package ([f2b779a](https://github.com/viztor/dsh-opencode-patch/commit/f2b779a7ffbb2a87bd89a651b2d41d575a30ef62))
+* alias legacy dsh-opencode across loader, settings, and publishing ([c344067](https://github.com/viztor/dsh-opencode-patch/commit/c3440672cde3072ff74321e4cb64a8cb365b3a1b))
+* auto-discover opencode-go apiKeyEnv, apiKey, and baseURL from user config ([5e4b169](https://github.com/viztor/dsh-opencode-patch/commit/5e4b1695bca6eca60323bec451038ecae6bd9c7c))
+* render circular meter trigger and rich hover modal for quota breakdown ([b3f74a4](https://github.com/viztor/dsh-opencode-patch/commit/b3f74a4a35452b2ad260fba3416efb91fdfa5703))
+
 ## [0.6.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.5.1...v0.6.0) (2026-10-01)
 
 
