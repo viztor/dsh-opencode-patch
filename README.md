@@ -55,18 +55,17 @@ For servers or `cordis.patch.yml` overlays:
 
 ```yaml
 - id: dsh-opencode
-  name: dsh-opencode
+  name: "@viztor/dsh-opencode"
   config:
     providers: [opencode, opencode-go]
     injectUserAgent: true
     userAgent: ""
     injectOriginHeaders: true
     injectCoreTools: true
-    mode: session-id
     debug: false
 ```
 
-Full option reference (types, `debug`/`debugFile`, `mode`): see [cordis.patch.yml](cordis.patch.yml) header comments.
+Full option reference (types, `debug`/`debugFile`): see [cordis.patch.yml](cordis.patch.yml) header comments.
 
 ## Troubleshooting
 
