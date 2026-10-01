@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.5.1](https://github.com/viztor/dsh-opencode/compare/v0.5.0...v0.5.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* remove session mode option, always derive gateway IDs ([5ef6fca](https://github.com/viztor/dsh-opencode/commit/5ef6fca60cefda0c768059d73185d44f24d404dd))
+
 ## [0.5.0](https://github.com/viztor/dsh-opencode/compare/v0.4.0...v0.5.0) (2026-09-30)
 
 
