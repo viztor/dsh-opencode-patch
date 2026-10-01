@@ -85,7 +85,7 @@ Types and `debugFile` are documented in [cordis.patch.yml](cordis.patch.yml).
 | :-- | :-- |
 | Plugin | `@viztor/dsh-opencode@0.5.1` (npm + GitHub Packages) |
 | Host | DSH Web profile (`dsh-profile-web`, `patchReload: live`) |
-| Runtime | Node 26+ |
+| Runtime | Node 24+ |
 | Gateways | `zen/v1` (`/responses` + chat completions), `zen/go/v1` (chat completions) |
 | Models | `muse-spark-1.3-contributor-free`, `space-bunny-free`, `deepseek-v4.1-flash` (Go) |
 | Gates | `vp check` clean, 49 deterministic tests green, registry install resolves |
