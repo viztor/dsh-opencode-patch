@@ -6,6 +6,14 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.9.2](https://github.com/viztor/dsh-opencode-patch/compare/v0.9.1...v0.9.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* draw the quota meter once, and only when Go is configured ([215149e](https://github.com/viztor/dsh-opencode-patch/commit/215149e968354930972706ccd8d6e0999a3bdf0d))
+* publish safely, thin the wrapper's client half, and ship plugin metadata ([0c95202](https://github.com/viztor/dsh-opencode-patch/commit/0c95202c6aa5fd8dfdd30a3ae812fbc24484c1b6))
+
 ## [0.9.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.9.0...v0.9.1) (2026-10-01)
 
 
