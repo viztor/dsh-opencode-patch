@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenCode 接入",
+    "description": "恢复 OpenCode Zen/Go 网关请求头与会话保持，并在输入框旁实时显示 Go 额度。"
+  }
+}
