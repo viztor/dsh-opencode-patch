@@ -1,9 +1,10 @@
 /**
  * Conversation slot component displaying OpenCode Go quota and rate limits.
  *
- * Shows a compact pill in `conversation.input.right` that activates when an
- * OpenCode Go model is selected. Clicking opens an accessible status panel with
- * rolling, weekly, and monthly quota progress and reset times.
+ * Shows a compact circular progress ring in `conversation.input.right` reflecting the
+ * hourly or bottleneck quota currently affecting the session. Hovering or clicking
+ * reveals a detailed breakdown modal with rolling, weekly, and monthly meters,
+ * countdown timers, and balance cards.
  *
  * @module dsh-opencode-patch/usage-pill
  */
@@ -46,6 +47,9 @@ const noop = (): void => {
   /* no-op */
 };
 
+const RADIUS = 5.5;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
 const STYLES = `
 .dsh-oc-usage-root {
   position: relative;
@@ -53,131 +57,266 @@ const STYLES = `
   min-width: 0;
   vertical-align: middle;
 }
+
 .dsh-oc-usage-trigger {
   border: 0;
   background: transparent;
-  color: inherit;
-  opacity: 0.8;
+  color: var(--dsw-alias-label-secondary, currentColor);
   font: inherit;
   font-size: 12px;
-  padding: 3px 7px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 6px;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  user-select: none;
 }
+
 .dsh-oc-usage-trigger:hover,
 .dsh-oc-usage-trigger:focus-visible {
-  opacity: 1;
   background: color-mix(in srgb, currentColor 8%, transparent);
+  color: var(--dsw-alias-label-primary, currentColor);
 }
+
 .dsh-oc-usage-trigger.dsh-oc-usage-alert {
   color: #e5484d;
 }
+
+.dsh-oc-usage-ring-track {
+  fill: none;
+  stroke: currentColor;
+  opacity: 0.2;
+  stroke-width: 2;
+}
+
+.dsh-oc-usage-ring-fill {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease, stroke 0.2s ease;
+}
+
 .dsh-oc-usage-panel {
   position: absolute;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 8px);
   right: 0;
-  z-index: 100;
-  width: 290px;
-  max-width: calc(100vw - 32px);
-  max-height: 70vh;
+  z-index: 1100;
+  width: 310px;
+  max-width: calc(100vw - 24px);
+  max-height: 80vh;
   overflow-y: auto;
   box-sizing: border-box;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  border-radius: 12px;
-  color: var(--dsw-alias-label-primary, CanvasText);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-  font-size: 12px;
-  isolation: isolate;
+  padding: 14px;
+  border-radius: 14px;
   background-color: Canvas;
   background-image:
     linear-gradient(var(--dsw-specific-menu, transparent), var(--dsw-specific-menu, transparent)),
     linear-gradient(var(--dsw-alias-bg-layer-2, Canvas), var(--dsw-alias-bg-layer-2, Canvas));
-}
-.dsh-oc-usage-hint {
-  opacity: 0.7;
-  font-size: 11px;
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  color: var(--dsw-alias-label-primary, CanvasText);
+  font-size: 12px;
   line-height: 1.5;
-  margin: 4px 0;
+  isolation: isolate;
+  animation: dsh-oc-fade-in 0.15s ease-out;
 }
-.dsh-oc-usage-warning {
-  margin: 10px 0;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, #e5484d 12%, transparent);
+
+@keyframes dsh-oc-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dsh-oc-usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.dsh-oc-usage-headline {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dsh-oc-usage-figures {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+.dsh-oc-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.dsh-oc-usage-badge.dsh-oc-badge-limited {
+  background: rgba(229, 72, 77, 0.15);
   color: #e5484d;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
 }
-.dsh-oc-usage-warning strong {
-  display: block;
-  margin-bottom: 2px;
+
+.dsh-oc-usage-bar-track {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 999px;
+  height: 5px;
+  overflow: hidden;
+  margin-bottom: 12px;
 }
+
+.dsh-oc-usage-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease, background-color 0.2s ease;
+}
+
+.dsh-oc-usage-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 6px;
+}
+
+.dsh-oc-usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dsh-oc-usage-row-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.dsh-oc-usage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dsh-oc-usage-row-right {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.dsh-oc-usage-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 1px;
+  padding-left: 13px;
+}
+
+.dsh-oc-usage-divider {
+  height: 1px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  margin: 12px 0 10px;
+}
+
+.dsh-oc-usage-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.dsh-oc-usage-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.dsh-oc-usage-card {
+  padding: 8px 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dsh-oc-usage-card.dsh-oc-card-limited {
+  background: rgba(229, 72, 77, 0.08);
+  border-color: rgba(229, 72, 77, 0.25);
+}
+
+.dsh-oc-usage-card-name {
+  font-size: 10px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-oc-usage-card-percent {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dsh-oc-usage-card-reset {
+  font-size: 10px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsh-oc-usage-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.7;
+  padding-top: 4px;
+}
+
 .dsh-oc-usage-retry {
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   border-radius: 6px;
-  padding: 4px 10px;
+  padding: 2px 7px;
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  margin-top: 6px;
+  transition: background 0.15s ease;
 }
+
+.dsh-oc-usage-retry:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
 .dsh-oc-usage-retry:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: default;
-}
-.dsh-oc-usage-window {
-  margin-top: 12px;
-}
-.dsh-oc-usage-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-.dsh-oc-usage-window progress {
-  width: 100%;
-  height: 6px;
-  display: block;
-  appearance: none;
-  border: 0;
-  border-radius: 4px;
-  background: color-mix(in srgb, currentColor 15%, transparent);
-}
-.dsh-oc-usage-window progress::-webkit-progress-bar {
-  background: transparent;
-  border-radius: 4px;
-}
-.dsh-oc-usage-window progress::-webkit-progress-value {
-  background: #30a46c;
-  border-radius: 4px;
-}
-.dsh-oc-usage-window progress::-moz-progress-bar {
-  background: #30a46c;
-  border-radius: 4px;
-}
-.dsh-oc-usage-window progress.dsh-oc-usage-high::-webkit-progress-value {
-  background: #e0a100;
-}
-.dsh-oc-usage-window progress.dsh-oc-usage-high::-moz-progress-bar {
-  background: #e0a100;
-}
-.dsh-oc-usage-window progress.dsh-oc-usage-limited::-webkit-progress-value {
-  background: #e5484d;
-}
-.dsh-oc-usage-window progress.dsh-oc-usage-limited::-moz-progress-bar {
-  background: #e5484d;
-}
-.dsh-oc-usage-limited-tag {
-  color: #e5484d;
-  font-weight: 600;
-  font-size: 11px;
-  margin-top: 2px;
 }
 `;
 
@@ -194,11 +333,84 @@ const ensureStylesInjected = (): void => {
   }
 };
 
-const usageLevel = (window: UsageWindow): string | undefined => {
+const getWindowColor = (window: UsageWindow): string => {
   if (window.status === "rate-limited" || window.percent >= 100) {
-    return "dsh-oc-usage-limited";
+    return "#e5484d";
   }
-  return window.percent >= 80 ? "dsh-oc-usage-high" : undefined;
+  if (window.percent >= 80) {
+    return "#e0a100";
+  }
+  return "#30a46c";
+};
+
+const formatRelativeReset = (dateStr: string, locale?: string): string => {
+  const target = Date.parse(dateStr);
+  if (!Number.isFinite(target)) {
+    return dateStr;
+  }
+  const diffMs = target - Date.now();
+  if (diffMs <= 0) {
+    return "soon";
+  }
+  const diffMinutes = Math.round(diffMs / 60_000);
+  if (diffMinutes < 60) {
+    return `in ${diffMinutes}m`;
+  }
+  const diffHours = Math.floor(diffMinutes / 60);
+  const remMinutes = diffMinutes % 60;
+  if (diffHours < 24) {
+    return remMinutes > 0
+      ? `in ${diffHours}h ${remMinutes}m`
+      : `in ${diffHours}h`;
+  }
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `in ${diffDays}d ${diffHours % 24}h`;
+  }
+  return new Date(target).toLocaleDateString(locale, {
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+  });
+};
+
+interface AffectingWindowResult {
+  key: "monthly" | "rolling" | "weekly";
+  label: string;
+  window: UsageWindow;
+}
+
+const getAffectingWindow = (usage: GoUsage): AffectingWindowResult => {
+  // 1. Any rate-limited window is actively blocking the user
+  if (usage.monthly.status === "rate-limited") {
+    return { key: "monthly", label: "Monthly", window: usage.monthly };
+  }
+  if (usage.weekly.status === "rate-limited") {
+    return { key: "weekly", label: "Weekly", window: usage.weekly };
+  }
+  if (usage.rolling.status === "rate-limited") {
+    return { key: "rolling", label: "5-Hour", window: usage.rolling };
+  }
+
+  // 2. Otherwise pick the highest percentage
+  const candidates: {
+    key: "monthly" | "rolling" | "weekly";
+    label: string;
+    window: UsageWindow;
+  }[] = [
+    { key: "monthly", label: "Monthly", window: usage.monthly },
+    { key: "weekly", label: "Weekly", window: usage.weekly },
+    { key: "rolling", label: "5-Hour", window: usage.rolling },
+  ];
+  candidates.sort((a, b) => b.window.percent - a.window.percent);
+
+  const [top] = candidates;
+  if (top !== undefined && top.window.percent > 0) {
+    return top;
+  }
+  // Default to rolling hourly quota when all are 0
+  return { key: "rolling", label: "5-Hour", window: usage.rolling };
 };
 
 const parseFailure = (error: unknown): UsageFailure => {
@@ -246,7 +458,9 @@ const ActiveUsage = ({
   } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [open, setOpen] = useState(false);
+
   const root = useRef<HTMLSpanElement>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retry = useRef<() => void>(noop);
 
   useEffect(() => {
@@ -344,104 +558,278 @@ const ActiveUsage = ({
     };
   }, [open]);
 
+  const handleMouseEnter = (): void => {
+    if (hoverTimer.current !== null) {
+      clearTimeout(hoverTimer.current);
+    }
+    hoverTimer.current = setTimeout(() => {
+      setOpen(true);
+    }, 120);
+  };
+
+  const handleMouseLeave = (): void => {
+    if (hoverTimer.current !== null) {
+      clearTimeout(hoverTimer.current);
+    }
+    hoverTimer.current = setTimeout(() => {
+      setOpen(false);
+    }, 200);
+  };
+
   const current = snapshot?.reader === readUsage ? snapshot : null;
   const usage = current?.usage;
   const failure = failed?.reader === readUsage ? failed.failure : null;
 
-  const isLimited =
-    usage?.monthly.status === "rate-limited" ||
-    usage?.weekly.status === "rate-limited" ||
-    usage?.rolling.status === "rate-limited";
+  const affecting = usage === undefined ? undefined : getAffectingWindow(usage);
+  const isLimited = affecting?.window.status === "rate-limited";
+  const displayPercent = affecting?.window.percent ?? 0;
+  const ringColor =
+    affecting === undefined ? "#30a46c" : getWindowColor(affecting.window);
 
-  const label = usage
-    ? `Go · ${t("usageRollingShort")} ${usage.rolling.percent}% · ${t("usageWeekShort")} ${usage.weekly.percent}%${
-        isLimited ? ` · ${t("usageLimitedShort")}` : ""
-      }${failure ? ` · ${t("usageStaleShort")}` : ""}`
-    : `Go · ${failure ? t("usageUnavailable") : "…"}`;
+  // Clamp stroke dash array for circular SVG meter
+  const clampedPercent = Math.min(100, Math.max(0, displayPercent));
+  const dashLength = (CIRCUMFERENCE * clampedPercent) / 100;
+  const strokeDasharray = `${dashLength} ${CIRCUMFERENCE}`;
 
-  let panelContent: React.ReactNode = null;
-  if (usage) {
-    panelContent = (["rolling", "weekly", "monthly"] as const).map(
-      (windowKey) => {
-        const item = usage[windowKey];
-        return (
-          <div className="dsh-oc-usage-window" key={windowKey}>
-            <div className="dsh-oc-usage-row">
-              <span>{t(`usage_${windowKey}`)}</span>
-              <strong>{item.percent}%</strong>
-            </div>
-            <progress
-              className={usageLevel(item)}
-              aria-label={t(`usage_${windowKey}`)}
-              max={100}
-              value={Math.min(100, item.percent)}
-            />
-            <div className="dsh-oc-usage-hint">
-              {t("usageResets")}{" "}
-              {new Date(item.resetsAt).toLocaleString(getLocale?.())}
-            </div>
-            {item.status === "rate-limited" && (
-              <div className="dsh-oc-usage-limited-tag">
-                {t("usageLimited")}
-              </div>
-            )}
-          </div>
-        );
-      }
-    );
-  } else if (!failure) {
-    panelContent = <p className="dsh-oc-usage-hint">{t("usageLoading")}</p>;
+  let triggerLabel = "…";
+  if (usage !== undefined) {
+    triggerLabel = `${displayPercent}%`;
+  } else if (failure !== null) {
+    triggerLabel = "!";
   }
 
+  const locale = getLocale?.();
+
   return (
-    <span className="dsh-oc-usage-root" ref={root}>
+    <span
+      className="dsh-oc-usage-root"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      ref={root}
+    >
       <button
-        type="button"
-        className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={`${t("usageTitle")}: ${label}`}
+        aria-label={`${t("usageTitle")}: ${displayPercent}%`}
+        className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
         onClick={() => {
-          setOpen(!open);
+          setOpen((prev) => !prev);
         }}
+        type="button"
       >
-        {label}
+        <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+          <circle
+            className="dsh-oc-usage-ring-track"
+            cx="7"
+            cy="7"
+            r={RADIUS}
+          />
+          <circle
+            className="dsh-oc-usage-ring-fill"
+            cx="7"
+            cy="7"
+            r={RADIUS}
+            stroke={ringColor}
+            strokeDasharray={strokeDasharray}
+            transform="rotate(-90 7 7)"
+          />
+        </svg>
+        <span>{triggerLabel}</span>
       </button>
+
       {open && (
         <div
-          className="dsh-oc-usage-panel"
-          role="dialog"
-          aria-label={t("usageTitle")}
           aria-busy={refreshing}
+          aria-label={t("usageTitle")}
+          className="dsh-oc-usage-panel"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          role="dialog"
         >
-          <strong>{t("usageTitle")}</strong>
-          <p className="dsh-oc-usage-hint">{t("usageHint")}</p>
-          {failure && (
+          {/* Header */}
+          <div className="dsh-oc-usage-header">
+            <div>
+              <div className="dsh-oc-usage-headline">
+                {isLimited
+                  ? `${affecting?.label} quota limited`
+                  : `${displayPercent}% of ${affecting?.label ?? "quota"} used`}
+              </div>
+            </div>
+            {isLimited ? (
+              <span className="dsh-oc-usage-badge dsh-oc-badge-limited">
+                {t("usageLimited")}
+              </span>
+            ) : (
+              <span className="dsh-oc-usage-badge">Go Plan</span>
+            )}
+          </div>
+
+          {/* Primary Accent Progress Bar */}
+          <div className="dsh-oc-usage-bar-track">
+            <div
+              className="dsh-oc-usage-bar-fill"
+              style={{
+                backgroundColor: ringColor,
+                width: `${clampedPercent}%`,
+              }}
+            />
+          </div>
+
+          {/* Breakdown Section */}
+          {usage !== undefined && (
+            <div className="dsh-oc-usage-breakdown">
+              {/* 5-Hour Rolling */}
+              <div>
+                <div className="dsh-oc-usage-row">
+                  <span className="dsh-oc-usage-row-left">
+                    <span
+                      className="dsh-oc-usage-dot"
+                      style={{ backgroundColor: getWindowColor(usage.rolling) }}
+                    />
+                    {t("usage_rolling")}
+                  </span>
+                  <span className="dsh-oc-usage-row-right">
+                    {usage.rolling.percent}%
+                  </span>
+                </div>
+                <div className="dsh-oc-usage-subrow">
+                  <span>
+                    Resets {formatRelativeReset(usage.rolling.resetsAt, locale)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Weekly */}
+              <div>
+                <div className="dsh-oc-usage-row">
+                  <span className="dsh-oc-usage-row-left">
+                    <span
+                      className="dsh-oc-usage-dot"
+                      style={{ backgroundColor: getWindowColor(usage.weekly) }}
+                    />
+                    {t("usage_weekly")}
+                  </span>
+                  <span className="dsh-oc-usage-row-right">
+                    {usage.weekly.percent}%
+                  </span>
+                </div>
+                <div className="dsh-oc-usage-subrow">
+                  <span>
+                    Resets {formatRelativeReset(usage.weekly.resetsAt, locale)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Monthly */}
+              <div>
+                <div className="dsh-oc-usage-row">
+                  <span className="dsh-oc-usage-row-left">
+                    <span
+                      className="dsh-oc-usage-dot"
+                      style={{ backgroundColor: getWindowColor(usage.monthly) }}
+                    />
+                    {t("usage_monthly")}
+                  </span>
+                  <span className="dsh-oc-usage-row-right">
+                    {usage.monthly.percent}%
+                  </span>
+                </div>
+                <div className="dsh-oc-usage-subrow">
+                  <span>
+                    Resets {formatRelativeReset(usage.monthly.resetsAt, locale)}
+                  </span>
+                  {usage.monthly.status === "rate-limited" && (
+                    <span style={{ color: "#e5484d", fontWeight: 600 }}>
+                      {t("usageLimited")}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="dsh-oc-usage-divider" />
+
+          {/* Balance Cards (Image 2 pattern) */}
+          {usage !== undefined && (
+            <>
+              <div className="dsh-oc-usage-section-title">Quota Overview</div>
+              <div className="dsh-oc-usage-cards">
+                <div
+                  className={`dsh-oc-usage-card${usage.rolling.status === "rate-limited" ? " dsh-oc-card-limited" : ""}`}
+                >
+                  <span className="dsh-oc-usage-card-name">5-Hour</span>
+                  <span
+                    className="dsh-oc-usage-card-percent"
+                    style={{ color: getWindowColor(usage.rolling) }}
+                  >
+                    {usage.rolling.percent}%
+                  </span>
+                  <span className="dsh-oc-usage-card-reset">
+                    {formatRelativeReset(usage.rolling.resetsAt, locale)}
+                  </span>
+                </div>
+
+                <div
+                  className={`dsh-oc-usage-card${usage.weekly.status === "rate-limited" ? " dsh-oc-card-limited" : ""}`}
+                >
+                  <span className="dsh-oc-usage-card-name">Weekly</span>
+                  <span
+                    className="dsh-oc-usage-card-percent"
+                    style={{ color: getWindowColor(usage.weekly) }}
+                  >
+                    {usage.weekly.percent}%
+                  </span>
+                  <span className="dsh-oc-usage-card-reset">
+                    {formatRelativeReset(usage.weekly.resetsAt, locale)}
+                  </span>
+                </div>
+
+                <div
+                  className={`dsh-oc-usage-card${usage.monthly.status === "rate-limited" ? " dsh-oc-card-limited" : ""}`}
+                >
+                  <span className="dsh-oc-usage-card-name">Monthly</span>
+                  <span
+                    className="dsh-oc-usage-card-percent"
+                    style={{ color: getWindowColor(usage.monthly) }}
+                  >
+                    {usage.monthly.percent}%
+                  </span>
+                  <span className="dsh-oc-usage-card-reset">
+                    {formatRelativeReset(usage.monthly.resetsAt, locale)}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Failure Alert */}
+          {failure !== null && (
             <div className="dsh-oc-usage-warning" role="alert">
               <strong>{t("usageRefreshFailed")}</strong>
               <p>{failure.message ?? t("usageUnavailable")}</p>
-              {usage && <p>{t("usageStaleHint")}</p>}
             </div>
           )}
-          {failure && (
+
+          {/* Footer with updated timestamp & retry */}
+          <div className="dsh-oc-usage-footer">
+            <span>
+              {current === null
+                ? t("usageLoading")
+                : `${t("usageLastUpdated")} ${new Date(current.updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
+            </span>
             <button
-              type="button"
               className="dsh-oc-usage-retry"
               disabled={refreshing}
               onClick={() => {
                 retry.current();
               }}
+              type="button"
             >
-              {t(refreshing ? "usageRefreshing" : "usageRetry")}
+              {refreshing ? t("usageRefreshing") : t("usageRetry")}
             </button>
-          )}
-          {current && (
-            <p className="dsh-oc-usage-hint">
-              {t("usageLastUpdated")}{" "}
-              {new Date(current.updatedAt).toLocaleString(getLocale?.())}
-            </p>
-          )}
-          {panelContent}
+          </div>
         </div>
       )}
     </span>
