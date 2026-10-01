@@ -81,21 +81,48 @@ for (const target of SCOPED_TARGETS) {
     if (target === "@viztor/dsh-opencode") {
       manifest.deprecated =
         "Package renamed to dsh-opencode-patch. Please install dsh-opencode-patch instead: https://www.npmjs.com/package/dsh-opencode-patch";
+      const existingDeps =
+        (manifest.dependencies as Record<string, string> | undefined) ?? {};
+      manifest.dependencies = {
+        ...existingDeps,
+        "dsh-opencode-patch": `^${version}`,
+      };
+
+      // Thin wrapper entrypoints that re-export dsh-opencode-patch directly
+      const forwarder = [
+        'export * from "dsh-opencode-patch";',
+        'export { default } from "dsh-opencode-patch";',
+      ].join("\n");
+      writeFileSync(path.join(scratch, "lib", "index.mjs"), `${forwarder}\n`);
+      writeFileSync(path.join(scratch, "lib", "index.d.mts"), `${forwarder}\n`);
+
+      // Forwarding cordis patch to mount dsh-opencode-patch
+      const forwarderPatch = [
+        "# Thin wrapper patch forwarding to dsh-opencode-patch",
+        "- insert:",
+        "    - id: dsh-opencode-patch",
+        '      name: "dsh-opencode-patch"',
+      ].join("\n");
+      writeFileSync(
+        path.join(scratch, "cordis.patch.yml"),
+        `${forwarderPatch}\n`
+      );
+
       const redirectReadme = [
         "# @viztor/dsh-opencode (Renamed to dsh-opencode-patch)",
         "",
         "> ⚠️ **Notice**: This package has been renamed to [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch).",
         "",
-        "Please migrate to `dsh-opencode-patch`:",
+        "This package is a **thin compatibility wrapper** that depends on and re-exports `dsh-opencode-patch`.",
+        "",
+        "### How to migrate:",
         "",
         "```sh",
-        '# Via DSH Web UI: Settings → Plugins → Install Plugin → "dsh-opencode-patch"',
+        '# Via DSH Web UI (Recommended): Settings → Plugins → Install Plugin → "dsh-opencode-patch"',
         "",
         "# Or via terminal in your profile directory:",
         "npm install dsh-opencode-patch",
         "```",
-        "",
-        "This package seamlessly re-exports `dsh-opencode-patch` for backwards compatibility.",
       ].join("\n");
       writeFileSync(path.join(scratch, "README.md"), redirectReadme);
     }
