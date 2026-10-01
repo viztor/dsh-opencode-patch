@@ -2,7 +2,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 
-import { GoUsageService, registerUsageRemotes } from "./usage.ts";
+import {
+  GoUsageService,
+  discoverGoConfig,
+  registerUsageRemotes,
+} from "./usage.ts";
 
 /**
  * Package vs component identity (do not conflate):
@@ -544,8 +548,29 @@ export const apply = (
 
   if (config.usageEnabled && typeof ctx.plugin === "function") {
     ctx.plugin(GoUsageService, {
-      baseURL: () => config.usageBaseURL,
+      baseURL: () => {
+        if (
+          config.usageBaseURL.length > 0 &&
+          config.usageBaseURL !== "https://opencode.ai/zen/go/v1"
+        ) {
+          return config.usageBaseURL;
+        }
+        const discovered = discoverGoConfig(ctx);
+        return discovered.baseURL ?? config.usageBaseURL;
+      },
       resolveApiKey: async () => {
+        const discovered = discoverGoConfig(ctx);
+        if (
+          typeof discovered.literalKey === "string" &&
+          discovered.literalKey.length > 0
+        ) {
+          return discovered.literalKey;
+        }
+        const ref =
+          config.usageKeyEnv === "OPENCODE_GO_API_KEY"
+            ? (discovered.keyEnv ?? config.usageKeyEnv)
+            : config.usageKeyEnv;
+
         const creds = ctx.get?.("credentials") as
           | {
               resolve?: (r: string) => Promise<{ value?: string } | undefined>;
@@ -553,13 +578,17 @@ export const apply = (
           | undefined;
         if (creds && typeof creds.resolve === "function") {
           try {
-            const hit = await creds.resolve(config.usageKeyEnv);
-            if (hit?.value) return hit.value;
+            const hit = await creds.resolve(ref);
+            if (hit?.value && hit.value.length > 0) return hit.value;
           } catch {
             // Fall through
           }
         }
-        return process.env[config.usageKeyEnv];
+        return (
+          process.env[ref] ??
+          process.env.OPENCODE_GO_API_KEY ??
+          process.env.OPENCODE_API_KEY
+        );
       },
     });
     registerUsageRemotes(ctx);
@@ -659,7 +688,11 @@ export const apply = (
   );
 };
 
-export { GoUsageService, registerUsageRemotes } from "./usage.ts";
+export {
+  GoUsageService,
+  discoverGoConfig,
+  registerUsageRemotes,
+} from "./usage.ts";
 export {
   parseGoUsage,
   type GoUsage,

@@ -10,6 +10,7 @@ import {
   type ActiveTurnState,
   type CordisContext,
   apply,
+  discoverGoConfig,
   DUMMY_BASH_TOOL,
   DUMMY_READ_TOOL,
   GoUsageService,
@@ -1192,5 +1193,53 @@ describe("OpenCode Go Usage", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("discoverGoConfig discovers provider config from llm-pi-ai entries", () => {
+    const mockCtx = {
+      loader: {
+        entries: () => [
+          {
+            options: {
+              config: {
+                providers: {
+                  "opencode-go": {
+                    apiKeyEnv: "CUSTOM_GO_KEY_ENV",
+                    baseURL: "https://custom-gateway.com/zen/go/v1",
+                  },
+                },
+              },
+              id: "llm-pi-ai",
+              name: "@deepseek-ai/dsh-llm-pi-ai",
+            },
+          },
+        ],
+      },
+    };
+
+    const discovered = discoverGoConfig(mockCtx);
+    expect(discovered.keyEnv).toBe("CUSTOM_GO_KEY_ENV");
+    expect(discovered.baseURL).toBe("https://custom-gateway.com/zen/go/v1");
+  });
+
+  it("discoverGoConfig discovers literal apiKey from standalone opencode-go entry", () => {
+    const mockCtx = {
+      loader: {
+        entries: () => [
+          {
+            options: {
+              config: {
+                apiKey: "sk-literal-test-key",
+              },
+              id: "opencode-go",
+              name: "dsh-opencode-go",
+            },
+          },
+        ],
+      },
+    };
+
+    const discovered = discoverGoConfig(mockCtx);
+    expect(discovered.literalKey).toBe("sk-literal-test-key");
   });
 });
