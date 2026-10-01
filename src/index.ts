@@ -21,6 +21,8 @@ import {
  *   service scoping). It matches the default row id by convention.
  */
 export const name = "dsh-opencode-patch";
+export const LEGACY_NAME = "dsh-opencode";
+export const LEGACY_PKG = "@viztor/dsh-opencode";
 
 export const inject = ["llm"];
 

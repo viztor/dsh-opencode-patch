@@ -102,11 +102,12 @@ export default defineConfig({
       target: "node24",
     },
     {
-      // NOTE: id must equal package.json `name` exactly (including scope).
-      // The loader drops bundles that register any other id with
-      // "loaded without registering ... via __ModuleLoader__.load".
-      banner:
-        'window.__ModuleLoader__.load({\n  id: "dsh-opencode-patch",\n  factory: (require) => {\n    var module = { exports: {} };\n    var exports = module.exports;',
+      banner: [
+        "(function() {",
+        "  var factory = function(require) {",
+        "    var module = { exports: {} };",
+        "    var exports = module.exports;",
+      ].join("\n"),
       clean: false,
       deps: {
         neverBundle: [
@@ -117,7 +118,15 @@ export default defineConfig({
       },
       dts: false,
       entry: { client: "src/settings-page.tsx" },
-      footer: "    return module.exports;\n  },\n});",
+      footer: [
+        "    return module.exports;",
+        "  };",
+        '  window.__ModuleLoader__.load({ id: "dsh-opencode-patch", factory: factory });',
+        '  try { window.__ModuleLoader__.load({ id: "@viztor/dsh-opencode", factory: factory }); } catch (e) {}',
+        '  try { window.__ModuleLoader__.load({ id: "@viztor/dsh-opencode-patch", factory: factory }); } catch (e) {}',
+        '  try { window.__ModuleLoader__.load({ id: "dsh-opencode", factory: factory }); } catch (e) {}',
+        "})();",
+      ].join("\n"),
       format: ["cjs"],
       outDir: "lib",
       platform: "browser",

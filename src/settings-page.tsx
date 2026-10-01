@@ -20,6 +20,7 @@ import React from "react";
 import { UsagePill } from "./usage-pill.tsx";
 
 export const NS = "dsh-opencode-patch";
+export const LEGACY_NS = "dsh-opencode";
 
 /**
  * The bundle's npm package name, spelled rather than imported.
@@ -29,6 +30,7 @@ export const NS = "dsh-opencode-patch";
  * half must not depend on the host half, hence the duplication.
  */
 export const PKG = "dsh-opencode-patch";
+export const LEGACY_PKG = "@viztor/dsh-opencode";
 
 export const inject = [
   "slots",
@@ -340,10 +342,16 @@ const noopDisposer = (): void => {
 export const apply = (ctx: ClientContext): void => {
   ctx.effect?.(() => {
     try {
-      return ctx.locale?.register?.(NS, { en, zh });
+      ctx.locale?.register?.(NS, { en, zh });
     } catch {
-      return noopDisposer;
+      // ignore duplicate
     }
+    try {
+      ctx.locale?.register?.(LEGACY_NS, { en, zh });
+    } catch {
+      // ignore duplicate
+    }
+    return noopDisposer;
   }, "dsh-opencode-patch: dictionaries");
 
   // Conversation input tray quota pill for OpenCode Go models
@@ -380,7 +388,8 @@ export const apply = (ctx: ClientContext): void => {
     );
   });
 
-  const rawScope: unknown = ctx.configForms?.get?.(NS);
+  const rawScope: unknown =
+    ctx.configForms?.get?.(NS) ?? ctx.configForms?.get?.(LEGACY_NS);
   if (!isSettingsFormScope(rawScope)) {
     return;
   }
@@ -401,12 +410,13 @@ export const apply = (ctx: ClientContext): void => {
     "dsh-opencode-patch: form subscription"
   );
 
-  ctx.configForms?.whileServed?.([NS], () => {
+  ctx.configForms?.whileServed?.([NS, LEGACY_NS], () => {
     // `plugins.bundle.config` (NOT `plugins.item`): third-party bundles
     // render their own configuration on the bundle's page, keyed by npm
     // package name. The hook key becomes the `useOpencodeCard` prop; the
     // actions spread in as `edit` / `resetField` / `save` / `discard`.
     ctx.slots?.inject?.("plugins.bundle.config", () => {
+      // Register for primary package name
       ctx.slots?.register?.(
         {
           inject: () => ({
@@ -415,6 +425,32 @@ export const apply = (ctx: ClientContext): void => {
           }),
           key: PKG,
           locale: NS,
+          name: "plugins.bundle.config",
+        },
+        OpencodeCard
+      );
+      // Register for legacy scoped package name
+      ctx.slots?.register?.(
+        {
+          inject: () => ({
+            hooks: { opencodeCard: store },
+            ...model.actions(),
+          }),
+          key: LEGACY_PKG,
+          locale: LEGACY_NS,
+          name: "plugins.bundle.config",
+        },
+        OpencodeCard
+      );
+      // Register for legacy bare component name
+      ctx.slots?.register?.(
+        {
+          inject: () => ({
+            hooks: { opencodeCard: store },
+            ...model.actions(),
+          }),
+          key: LEGACY_NS,
+          locale: LEGACY_NS,
           name: "plugins.bundle.config",
         },
         OpencodeCard
