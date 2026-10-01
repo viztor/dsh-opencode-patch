@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import ultraciteFmt from "ultracite/oxfmt";
 import ultraciteLint from "ultracite/oxlint/core";
 import { defineConfig } from "vite-plus";
@@ -23,20 +25,35 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ["test/**/*.ts", "scripts/**/*.ts"],
+        files: ["test/**/*.ts", "test/**/*.tsx", "scripts/**/*.ts"],
         rules: {
+          "class-methods-use-this": "off",
+          "func-style": "off",
+          "import/first": "off",
           "import/namespace": "off",
           "no-await-in-loop": "off",
           "no-console": "off",
           "no-process-exit": "off",
           "promise/prefer-await-to-callbacks": "off",
+          "require-await": "off",
+          "sort-keys": "off",
+          "typescript/array-type": "off",
+          "typescript/consistent-type-imports": "off",
+          "typescript/no-confusing-void-expression": "off",
           "typescript/no-non-null-assertion": "off",
+          "typescript/no-unnecessary-type-assertion": "off",
           "typescript/no-unsafe-argument": "off",
           "typescript/no-unsafe-assignment": "off",
           "typescript/no-unsafe-call": "off",
           "typescript/no-unsafe-member-access": "off",
           "typescript/no-unsafe-return": "off",
+          "typescript/no-unsafe-type-assertion": "off",
           "typescript/strict-boolean-expressions": "off",
+          "unicorn/consistent-function-scoping": "off",
+          "unicorn/import-style": "off",
+          "unicorn/numeric-separators-style": "off",
+          "unicorn/prefer-import-meta-properties": "off",
+          "unicorn/text-encoding-identifier-case": "off",
         },
       },
     ],
@@ -45,6 +62,7 @@ export default defineConfig({
       "consistent-type-specifier-style": "off",
       curly: "off",
       eqeqeq: ["error", "always", { null: "ignore" }],
+      "func-style": "off",
       "max-classes-per-file": "off",
       "max-nested-callbacks": "off",
       "no-await-in-loop": "warn",
@@ -53,10 +71,12 @@ export default defineConfig({
       "no-use-before-define": "off",
       "node/callback-return": "off",
       "prefer-named-capture-group": "off",
+      "promise/avoid-new": "off",
       "require-await": "warn",
       "require-param-description": "off",
       "require-returns-description": "off",
       "require-unicode-regexp": "off",
+      "sort-keys": "off",
       "typescript/await-thenable": "error",
       "typescript/no-explicit-any": "warn",
       "typescript/no-floating-promises": "error",
@@ -134,6 +154,11 @@ export default defineConfig({
     },
   ],
   test: {
-    include: ["test/**/*.test.ts"],
+    alias: {
+      "@deepseek-ai/dsh-client-ui-primitives": fileURLToPath(
+        new URL("test/primitives-stub.tsx", import.meta.url)
+      ),
+    },
+    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
   },
 });
