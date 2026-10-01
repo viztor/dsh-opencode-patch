@@ -1,6 +1,6 @@
 {
   "name": "dsh-opencode-patch",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "description": "OpenCode on DeepSeek Harness — session affinity, Zen/Go gateway origin headers, free-tier tool fallback, and live Go quota display.",
   "keywords": [
     "cordis",

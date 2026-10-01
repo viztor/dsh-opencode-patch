@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.10.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.9.2...v0.10.0) (2026-10-01)
+
+
+### Features
+
+* link the console, and document why balance cannot be shown ([e5a3684](https://github.com/viztor/dsh-opencode-patch/commit/e5a3684ed8e9eb238eef7c44c80f8ca1f5b4213f))
+
 ## [0.9.2](https://github.com/viztor/dsh-opencode-patch/compare/v0.9.1...v0.9.2) (2026-10-01)
 
 
