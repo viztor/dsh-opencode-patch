@@ -57,13 +57,13 @@ jobs:
           if npm view "dsh-opencode-patch@$VER" version 2>/dev/null; then
             echo "$VER already on npmjs, skipping"
           else
-            npm publish --access public
+            npm publish --provenance --access public --ignore-scripts
           fi
-      # Mirror to GitHub Packages so the repo sidebar populates. Auth rides
-      # on the command line (file appends proved unreliable across
-      # setup-node's temp userconfig). Installs still come from npmjs.org
-      # unless a consumer repoints the scope.
-      - name: mirror to GitHub Packages
-        run: npm publish --registry=https://npm.pkg.github.com --access public --//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: publish the scoped alias (OIDC, provenance)
+        run: node --experimental-strip-types scripts/publish-scoped.ts
+      # Mirror the scoped alias to GitHub Packages so the repo sidebar populates.
+      # Unscoped packages are rejected by GHP; scoped packages mirror cleanly.
+      - name: mirror the scoped alias to GitHub Packages
+        run: |
+          export NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_REGISTRY=https://npm.pkg.github.com node --experimental-strip-types scripts/publish-scoped.ts
