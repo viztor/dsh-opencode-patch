@@ -129,7 +129,17 @@ The meter is deliberately absent rather than wrong:
   - **Human-Friendly Countdowns**: Live relative timers (`in 3h 12m`, `in 7d 17h`, or `soon`).
   - **3-Column Balance Cards**: Overview cards for quick visual reference.
   - **Diagnostics & Refresh**: Displays last updated timestamp with a manual retry button.
-  - **Upgrade / limits links**: [Raise the limit](https://opencode.ai/go) and the [usage-limits reference](https://opencode.ai/docs/go/), so a hit cap has an answer next to it.
+  - **Act-on-it links**: [raise the limit](https://opencode.ai/go), the [console](https://opencode.ai/console) for usage and balance, and the [limits reference](https://opencode.ai/docs/go/), so a hit cap has an answer next to it.
+
+### Why there is no "$ left" figure
+
+You may expect the meter to show remaining credit as money. It cannot, and this is not an omission:
+
+- **No balance endpoint exists.** Of every plausible route under `opencode.ai/zen/v1` and `/zen/go/v1` — `balance`, `credits`, `billing`, `account`, `me`, `key`, `limits`, `plan`, `subscription` — only `/models` and `/zen/go/v1/usage` exist. Everything else 404s, and `/models` returns 200 on the same key, so those 404s are real absences rather than an auth problem.
+- **The usage payload carries no currency.** Each window returns only `status`, `percent`, and `resetsAt`.
+- **A percentage cannot be converted to dollars.** The monthly cap is per _model_ ($15 / $30 / $60 on Go, $60–$240 on Go Plus), while usage accrues across whatever models you used. That mix is not in the response, so any single "monthly cap" applied to it would be a guess.
+
+The console is the only place OpenCode shows the balance, so the meter links there rather than inventing a number.
 
 ---
 
