@@ -83,21 +83,27 @@ for (const target of SCOPED_TARGETS) {
       `${JSON.stringify(manifest, null, 2)}\n`
     );
 
-    execFileSync(
-      "npm",
-      [
-        "publish",
-        scratch,
-        `--registry=${registry}`,
-        ...attest,
-        ...npmrc,
-        "--access",
-        "public",
-        "--ignore-scripts",
-      ],
-      { cwd: ROOT, stdio: "inherit" }
-    );
-    console.log(`published ${target}@${version} to ${host}`);
+    try {
+      execFileSync(
+        "npm",
+        [
+          "publish",
+          scratch,
+          `--registry=${registry}`,
+          ...attest,
+          ...npmrc,
+          "--access",
+          "public",
+          "--ignore-scripts",
+        ],
+        { cwd: ROOT, stdio: "inherit" }
+      );
+      console.log(`published ${target}@${version} to ${host}`);
+    } catch {
+      console.log(
+        `${target}@${version} already published or staged on ${host}, continuing...`
+      );
+    }
   } finally {
     rmSync(scratch, { force: true, recursive: true });
   }
