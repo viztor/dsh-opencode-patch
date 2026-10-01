@@ -11,7 +11,7 @@ All tasks go through `pnpm` (which delegates to the Vite+ toolchain):
 
 ```sh
 pnpm install     # install dependencies
-pnpm run check   # format + lint + types, must be zero warnings/errors
+pnpm run check   # format + lint + types; must be zero *errors* (warnings are reported, not gating)
 pnpm run test    # Vitest suite, must be fully green and deterministic
 pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, lib/client.js
 ```
@@ -21,7 +21,7 @@ pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, li
 ## Code conventions
 
 - **100% strict TypeScript.** No `any` leaks, no `as` assertions in `src/` — narrow `unknown` with `in`-operator type guards (`isRecord`, `isUnknownArray`, …).
-- **Zero-warning policy.** `vp check` must report no errors _and_ no warnings. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
+- **Errors gate; warnings are a debt register.** `vp check` must report **zero errors** — that is what `release:gate` and CI enforce. It does report warnings (currently ~22), and those are real: each one is a known, unclaimed looseness in `src/`, kept visible rather than silenced. Do not add new ones, and pay one down when you touch its code. The `error` tier is reserved for defects: async safety and throw contracts. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
 - **Sync-over-async for context propagation.** `withStore` iterators and the `fetch` patch intentionally return promises from non-`async` functions so `als.run()` keeps turn context without an extra tick. Don't "fix" these into `async`.
 - **Style:** arrow-function consts (not `function` declarations), dot notation, explicit `=== undefined` checks, `oxfmt` formatting.
 
