@@ -141,21 +141,34 @@ for (const target of SCOPED_TARGETS) {
       `${JSON.stringify(manifest, null, 2)}\n`
     );
 
-    execFileSync(
-      "npm",
-      [
-        "publish",
-        scratch,
-        `--registry=${registry}`,
-        ...attest,
-        ...npmrc,
-        "--access",
-        "public",
-        "--ignore-scripts",
-      ],
-      { cwd: ROOT, stdio: "inherit" }
-    );
-    console.log(`published ${target}@${version} to ${host}`);
+    try {
+      execFileSync(
+        "npm",
+        [
+          "publish",
+          scratch,
+          `--registry=${registry}`,
+          ...attest,
+          ...npmrc,
+          "--access",
+          "public",
+          "--ignore-scripts",
+        ],
+        { cwd: ROOT, stdio: "inherit" }
+      );
+      console.log(`published ${target}@${version} to ${host}`);
+    } catch (error: unknown) {
+      if (registry === "https://registry.npmjs.org") {
+        console.warn(
+          `[WARN] Could not publish ${target}@${version} to npmjs.org: ${error instanceof Error ? error.message : String(error)}`
+        );
+        console.warn(
+          `       Please ensure a Trusted Publisher is configured for ${target} at https://www.npmjs.com/package/${encodeURIComponent(target)}/access`
+        );
+      } else {
+        throw error;
+      }
+    }
   } finally {
     rmSync(scratch, { force: true, recursive: true });
   }
