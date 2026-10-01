@@ -74,6 +74,7 @@ const en = {
   usageBaseURL: "Go Usage Base URL",
   usageBaseURLHint:
     "Endpoint for Go quota statistics. Leave blank for default (https://opencode.ai/zen/go/v1) or auto-discovered URL.",
+  usageConsole: "Console & balance",
   usageEnabled: "Enable Go Quota Monitor (default on)",
   usageEnabledHint:
     "Displays live OpenCode Go quota ring in the composer dock beside context usage. Empty inherits default.",
@@ -137,6 +138,7 @@ const zh = {
   usageBaseURL: "Go 用量接口 Base URL",
   usageBaseURLHint:
     "查询 OpenCode Go 额度的接口地址。留空则沿用默认值（https://opencode.ai/zen/go/v1）或自动探测。",
+  usageConsole: "控制台与余额",
   usageEnabled: "开启 OpenCode Go 额度监控（默认开启）",
   usageEnabledHint:
     "在输入框底部停靠栏（与上下文用量并列）显示实时额度环。留空沿用默认值。",

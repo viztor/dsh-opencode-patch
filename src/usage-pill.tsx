@@ -66,10 +66,24 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
  * Where a user acts on what this meter shows.
  *
  * The meter reports the Go plan's rolling/weekly/monthly limits, so the useful
- * destinations are the plan page (raise the limit) and the limits reference
- * (understand it). Both are the vendor's own public pages.
+ * destinations are the plan page (raise the limit), the console (see the actual
+ * usage and Zen balance), and the limits reference (understand the numbers).
+ * All three are the vendor's own public pages.
+ *
+ * There is deliberately no balance *number* in this meter. OpenCode exposes no
+ * endpoint for account credit: of every plausible route under
+ * `https://opencode.ai/zen/v1` and `/zen/go/v1` — `balance`, `credits`,
+ * `billing`, `account`, `me`, `key`, `limits`, `plan`, `subscription` — only
+ * `/models` and `/zen/go/v1/usage` exist (the rest 404, while `/models` returns
+ * 200 on the same key, so the 404s are real absences rather than an auth
+ * problem). The usage payload carries only `status`, `percent`, and `resetsAt`
+ * per window — no currency — and a dollar figure cannot be derived from the
+ * percentage either, because the monthly cap is per *model* ($15/$30/$60 on Go,
+ * $60–$240 on Go Plus) while usage accrues across models. The console is the
+ * only place the balance is shown, so the link goes there.
  */
 const GO_PLAN_URL = "https://opencode.ai/go";
+const GO_CONSOLE_URL = "https://opencode.ai/console";
 const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go/";
 
 const STYLES = `
@@ -891,6 +905,9 @@ const ActiveUsage = ({
           <div className="dsh-oc-usage-links">
             <a href={GO_PLAN_URL} rel="noreferrer noopener" target="_blank">
               {t("usageUpgradePlan")}
+            </a>
+            <a href={GO_CONSOLE_URL} rel="noreferrer noopener" target="_blank">
+              {t("usageConsole")}
             </a>
             <a
               href={GO_LIMITS_DOC_URL}
