@@ -71,7 +71,16 @@ const en = {
   saving: "Saving…",
   title: "OpenCode Integration",
   unavailable: "This plugin is not loaded, so it cannot be configured.",
+  usageBaseURL: "Go Usage Base URL",
+  usageBaseURLHint:
+    "Endpoint for Go quota statistics. Leave blank for default (https://opencode.ai/zen/go/v1) or auto-discovered URL.",
+  usageEnabled: "Enable Go Quota Monitor (default on)",
+  usageEnabledHint:
+    "Displays live OpenCode Go quota ring in the composer dock beside context usage. Empty inherits default.",
   usageHint: "Account usage · used percentage · refreshes every minute",
+  usageKeyEnv: "Go Key Env Var / Credential",
+  usageKeyEnvHint:
+    "Reference to API key in DSH credentials or environment. Leave blank for default (OPENCODE_GO_API_KEY) or auto-discovery.",
   usageLastUpdated: "Last updated",
   usageLimited: "Limit reached",
   usageLimitedShort: "limited",
@@ -123,7 +132,16 @@ const zh = {
   saving: "保存中…",
   title: "OpenCode 接入设置",
   unavailable: "插件未加载，暂无法配置。",
+  usageBaseURL: "Go 用量接口 Base URL",
+  usageBaseURLHint:
+    "查询 OpenCode Go 额度的接口地址。留空则沿用默认值（https://opencode.ai/zen/go/v1）或自动探测。",
+  usageEnabled: "开启 OpenCode Go 额度监控（默认开启）",
+  usageEnabledHint:
+    "在输入框底部停靠栏（与上下文用量并列）显示实时额度环。留空沿用默认值。",
   usageHint: "账号额度 · 已用百分比 · 每分钟刷新",
+  usageKeyEnv: "Go Key 环境变量 / 凭据引用",
+  usageKeyEnvHint:
+    "DSH 凭据或环境变量中存储 API Key 的引用名。留空则自动探测或沿用默认值（OPENCODE_GO_API_KEY）。",
   usageLastUpdated: "更新于",
   usageLimited: "已达限额",
   usageLimitedShort: "受限",
@@ -152,6 +170,9 @@ const FIELD = {
   injectOriginHeaders: "injectOriginHeaders",
   injectUserAgent: "injectUserAgent",
   providers: "providers",
+  usageBaseURL: "usageBaseURL",
+  usageEnabled: "usageEnabled",
+  usageKeyEnv: "usageKeyEnv",
   userAgent: "userAgent",
 };
 
@@ -176,6 +197,9 @@ const SPECS: SettingsFieldSpec[] = [
   settingsBooleanField(FIELD.injectOriginHeaders),
   settingsBooleanField(FIELD.injectCoreTools),
   settingsTextField(FIELD.providers),
+  settingsBooleanField(FIELD.usageEnabled),
+  settingsTextField(FIELD.usageBaseURL),
+  settingsTextField(FIELD.usageKeyEnv),
   settingsBooleanField(FIELD.debug),
   settingsTextField(FIELD.debugFile),
 ];
@@ -273,6 +297,24 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         placeholder="opencode, opencode-go"
       />
       <SettingsValueField
+        {...field(FIELD.usageEnabled)}
+        hint={t("usageEnabledHint")}
+        invalidLabel={t("invalidBoolean")}
+        label={t("usageEnabled")}
+      />
+      <SettingsValueField
+        {...field(FIELD.usageBaseURL)}
+        hint={t("usageBaseURLHint")}
+        label={t("usageBaseURL")}
+        placeholder="https://opencode.ai/zen/go/v1"
+      />
+      <SettingsValueField
+        {...field(FIELD.usageKeyEnv)}
+        hint={t("usageKeyEnvHint")}
+        label={t("usageKeyEnv")}
+        placeholder="OPENCODE_GO_API_KEY"
+      />
+      <SettingsValueField
         {...field(FIELD.debug)}
         hint={t("debugHint")}
         invalidLabel={t("invalidBoolean")}
@@ -354,33 +396,47 @@ export const apply = (ctx: ClientContext): void => {
     return noopDisposer;
   }, "dsh-opencode-patch: dictionaries");
 
-  // Conversation input tray quota pill for OpenCode Go models
+  const createUsageInjector = () => (sessionId: unknown) => {
+    const directory = ctx.modelDirectories?.directoryFor?.(sessionId)?.store;
+    if (!directory) {
+      return null;
+    }
+    return {
+      directory,
+      readUsage: async () => {
+        const res = (await ctx.remote?.opencodeGoUsage?.read?.()) as
+          | { ok: true; value: unknown }
+          | { ok: false; error: unknown }
+          | undefined;
+        if (res && typeof res === "object" && "ok" in res) {
+          if (!res.ok) throw res.error;
+          return res.value;
+        }
+        return res;
+      },
+      t: ctx.locale?.bind?.(NS) ?? ((key: string) => key),
+    };
+  };
+
+  // Primary: Mount in composer dock beneath the card, directly beside ContextMeter
+  ctx.slots?.inject?.("conversation.composer.dock", () => {
+    ctx.slots?.register?.(
+      {
+        id: "dsh-opencode-patch-usage-dock",
+        inject: createUsageInjector(),
+        name: "conversation.composer.dock",
+        order: 50,
+      },
+      UsagePill
+    );
+  });
+
+  // Secondary fallback: Mount in conversation input tray
   ctx.slots?.inject?.("conversation.input.right", () => {
     ctx.slots?.register?.(
       {
         id: "dsh-opencode-patch-usage",
-        inject: (sessionId: unknown) => {
-          const directory =
-            ctx.modelDirectories?.directoryFor?.(sessionId)?.store;
-          if (!directory) {
-            return null;
-          }
-          return {
-            directory,
-            readUsage: async () => {
-              const res = (await ctx.remote?.opencodeGoUsage?.read?.()) as
-                | { ok: true; value: unknown }
-                | { ok: false; error: unknown }
-                | undefined;
-              if (res && typeof res === "object" && "ok" in res) {
-                if (!res.ok) throw res.error;
-                return res.value;
-              }
-              return res;
-            },
-            t: ctx.locale?.bind?.(NS) ?? ((key: string) => key),
-          };
-        },
+        inject: createUsageInjector(),
         name: "conversation.input.right",
         order: 1000,
       },
