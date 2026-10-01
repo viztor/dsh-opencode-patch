@@ -88,6 +88,12 @@ export default defineConfig({
   pack: [
     {
       clean: true,
+      deps: {
+        neverBundle: [
+          "@deepseek-ai/cordis",
+          "@deepseek-ai/dsh-typert-protocol",
+        ],
+      },
       dts: true,
       format: ["esm"],
       outDir: "lib",
@@ -100,7 +106,7 @@ export default defineConfig({
       // The loader drops bundles that register any other id with
       // "loaded without registering ... via __ModuleLoader__.load".
       banner:
-        'window.__ModuleLoader__.load({\n  id: "@viztor/dsh-opencode",\n  factory: (require) => {\n    var module = { exports: {} };\n    var exports = module.exports;',
+        'window.__ModuleLoader__.load({\n  id: "dsh-opencode-patch",\n  factory: (require) => {\n    var module = { exports: {} };\n    var exports = module.exports;',
       clean: false,
       deps: {
         neverBundle: [

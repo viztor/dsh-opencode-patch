@@ -2,19 +2,21 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 
+import { GoUsageService, registerUsageRemotes } from "./usage.ts";
+
 /**
  * Package vs component identity (do not conflate):
  *
- * - npm package `@viztor/dsh-opencode`: the installable unit. The host
+ * - npm package `dsh-opencode-patch`: the installable unit. The host
  *   resolves a cordis row to `node_modules/<row name>`, so the row's `name`
  *   must equal this string exactly (see cordis.patch.yml).
  * - cordis row: one *instance* of the package. `id` is the instance id and
- *   doubles as the settings namespace the client card binds (`dsh-opencode`).
+ *   doubles as the settings namespace the client card binds (`dsh-opencode-patch`).
  *   One package can back N rows with different ids/configs.
  * - `name` below: this component's cordis plugin identity (log lines,
- *   service scoping). It matches the default row id by convention only.
+ *   service scoping). It matches the default row id by convention.
  */
-export const name = "dsh-opencode";
+export const name = "dsh-opencode-patch";
 
 export const inject = ["llm"];
 
@@ -77,6 +79,9 @@ export interface PluginConfig {
   injectUserAgent?: boolean;
   providers?: string[];
   userAgent?: string;
+  usageBaseURL?: string;
+  usageKeyEnv?: string;
+  usageEnabled?: boolean;
 }
 
 export interface ResolvedPluginConfig {
@@ -87,6 +92,9 @@ export interface ResolvedPluginConfig {
   injectUserAgent: boolean;
   providers: Set<string>;
   userAgent?: string;
+  usageBaseURL: string;
+  usageKeyEnv: string;
+  usageEnabled: boolean;
 }
 
 export const resolveConfig = (
@@ -114,6 +122,17 @@ export const resolveConfig = (
       : undefined;
   const injectOriginHeaders = config.injectOriginHeaders !== false;
   const injectCoreTools = config.injectCoreTools !== false;
+  const usageBaseURL =
+    typeof config.usageBaseURL === "string" &&
+    config.usageBaseURL.trim().length > 0
+      ? config.usageBaseURL.trim()
+      : "https://opencode.ai/zen/go/v1";
+  const usageKeyEnv =
+    typeof config.usageKeyEnv === "string" &&
+    config.usageKeyEnv.trim().length > 0
+      ? config.usageKeyEnv.trim()
+      : "OPENCODE_GO_API_KEY";
+  const usageEnabled = config.usageEnabled !== false;
 
   return {
     debug,
@@ -122,6 +141,9 @@ export const resolveConfig = (
     injectOriginHeaders,
     injectUserAgent,
     providers: new Set(providers),
+    usageBaseURL,
+    usageEnabled,
+    usageKeyEnv,
     userAgent,
   };
 };
@@ -485,6 +507,8 @@ export const patchFetch = (
 
 export interface CordisContext {
   effect?: (fn: () => unknown, name?: string) => void;
+  get?: (name: string) => unknown;
+  inject?: (deps: string[], cb: (scope: unknown) => void) => void;
   logger?: {
     info?: (msg: string, ...args: unknown[]) => void;
     warn?: (msg: string, ...args: unknown[]) => void;
@@ -498,6 +522,7 @@ export interface CordisContext {
     ) => unknown,
     options?: { prepend?: boolean }
   ) => void;
+  plugin?: (plugin: unknown, options?: unknown) => void;
 }
 
 interface StreamOptions {
@@ -517,10 +542,33 @@ export const apply = (
   const { debug, debugFile, providers } = config;
   const als = new AsyncLocalStorage<ActiveTurnState>();
 
+  if (config.usageEnabled && typeof ctx.plugin === "function") {
+    ctx.plugin(GoUsageService, {
+      baseURL: () => config.usageBaseURL,
+      resolveApiKey: async () => {
+        const creds = ctx.get?.("credentials") as
+          | {
+              resolve?: (r: string) => Promise<{ value?: string } | undefined>;
+            }
+          | undefined;
+        if (creds && typeof creds.resolve === "function") {
+          try {
+            const hit = await creds.resolve(config.usageKeyEnv);
+            if (hit?.value) return hit.value;
+          } catch {
+            // Fall through
+          }
+        }
+        return process.env[config.usageKeyEnv];
+      },
+    });
+    registerUsageRemotes(ctx);
+  }
+
   const originalFetch: unknown = globalThis.fetch;
   if (!isFetchFunction(originalFetch)) {
     ctx.logger?.warn?.(
-      "[dsh-opencode] globalThis.fetch is unavailable; cannot inject x-opencode-session"
+      "[dsh-opencode-patch] globalThis.fetch is unavailable; cannot inject x-opencode-session"
     );
     return;
   }
@@ -530,7 +578,7 @@ export const apply = (
   ctx.effect?.(() => {
     globalThis.fetch = patched;
     ctx.logger?.info?.(
-      "[dsh-opencode] active for providers [%s]",
+      "[dsh-opencode-patch] active for providers [%s]",
       [...providers].join(", ")
     );
     return () => {
@@ -538,7 +586,7 @@ export const apply = (
         globalThis.fetch = originalFetch;
       }
     };
-  }, "dsh-opencode.fetch-patch");
+  }, "dsh-opencode-patch.fetch-patch");
 
   ctx.on?.(
     "llm/stream",
@@ -589,7 +637,7 @@ export const apply = (
         }
         if (debug) {
           ctx.logger?.info?.(
-            '[dsh-opencode] streaming provider "%s" with %s=%s',
+            '[dsh-opencode-patch] streaming provider "%s" with %s=%s',
             providerKey,
             SESSION_HEADER,
             value
@@ -610,5 +658,13 @@ export const apply = (
     { prepend: true }
   );
 };
+
+export { GoUsageService, registerUsageRemotes } from "./usage.ts";
+export {
+  parseGoUsage,
+  type GoUsage,
+  type UsageWindow,
+  usageRemote,
+} from "./usage-contract.ts";
 
 export default { apply, inject, name };

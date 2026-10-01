@@ -12,15 +12,18 @@ import {
   apply,
   DUMMY_BASH_TOOL,
   DUMMY_READ_TOOL,
+  GoUsageService,
   headerValueFor,
   hasSessionHeader,
   isOpenCodeRequest,
   name as PLUGIN_NAME,
   openCodeSessionIdFor,
   OPENCODE_UA,
+  parseGoUsage,
   patchFetch,
   resolveConfig,
   SESSION_HEADER,
+  usageRemote,
   withStore,
 } from "../src/index.ts";
 
@@ -1021,18 +1024,19 @@ describe("bundle manifest consistency", () => {
     }
     const patch = await readText("cordis.patch.yml");
     const row =
-      /^\s*-\s*id:\s*dsh-opencode\s*\n\s*name:\s*["']?([^"'\s]+)/m.exec(patch);
+      /^\s*-\s*id:\s*dsh-opencode-patch\s*\n\s*name:\s*["']?([^"'\s]+)/m.exec(
+        patch
+      );
     if (row === null || row[1] === undefined) {
-      throw new Error("dsh-opencode row not found in cordis.patch.yml");
+      throw new Error("dsh-opencode-patch row not found in cordis.patch.yml");
     }
-    // The host resolves row names to node_modules paths: an unscoped name
-    // fails the entry with "failed to import".
+    // The host resolves row names to node_modules paths.
     expect(row[1]).toBe(pkgRaw.name);
   });
 
   it("keeps the settings namespace equal to the cordis row id", async () => {
     const patch = await readText("cordis.patch.yml");
-    expect(patch).toContain("id: dsh-opencode");
+    expect(patch).toContain("id: dsh-opencode-patch");
     // Read the NS constant textually: importing settings-page.tsx would
     // drag the React + ui-primitives runtime chain (whose own deps are
     // incomplete for node) into a hermetic suite.
@@ -1041,13 +1045,12 @@ describe("bundle manifest consistency", () => {
     if (ns === null || ns[1] === undefined) {
       throw new Error("NS constant not found in src/settings-page.tsx");
     }
-    expect(ns[1]).toBe("dsh-opencode");
+    expect(ns[1]).toBe("dsh-opencode-patch");
   });
 
   it("keeps the component name aligned with the default row id", () => {
-    // Package (@viztor/dsh-opencode) ≠ row id (dsh-opencode) ≠ row name,
-    // but the component identity matches the default row id by convention.
-    expect(PLUGIN_NAME).toBe("dsh-opencode");
+    // Package (dsh-opencode-patch) == row id (dsh-opencode-patch) == row name.
+    expect(PLUGIN_NAME).toBe("dsh-opencode-patch");
   });
 
   it("ships a manifest icon the host can display", async () => {
@@ -1075,5 +1078,119 @@ describe("bundle manifest consistency", () => {
       throw new Error("client banner id not found in vite.config.ts");
     }
     expect(banner[1]).toBe(pkgRaw.name);
+  });
+});
+
+const createMockContext = () =>
+  ({
+    reflect: { provide: () => {} },
+  }) as never;
+
+describe("OpenCode Go Usage", () => {
+  const samplePayload = {
+    usage: {
+      monthly: {
+        percent: 100,
+        resetsAt: "2026-10-09T13:53:58.000Z",
+        status: "rate-limited",
+      },
+      rolling: {
+        percent: 15,
+        resetsAt: "2026-10-01T16:55:56.004Z",
+        status: "ok",
+      },
+      weekly: {
+        percent: 42,
+        resetsAt: "2026-10-05T00:00:00.000Z",
+        status: "ok",
+      },
+    },
+  };
+
+  it("parses valid API usage response with usage wrapper", () => {
+    const parsed = parseGoUsage(samplePayload);
+    expect(parsed.monthly.status).toBe("rate-limited");
+    expect(parsed.monthly.percent).toBe(100);
+    expect(parsed.rolling.percent).toBe(15);
+    expect(parsed.weekly.percent).toBe(42);
+  });
+
+  it("parses unwrapped usage response", () => {
+    const parsed = parseGoUsage(samplePayload.usage);
+    expect(parsed.monthly.status).toBe("rate-limited");
+    expect(parsed.rolling.status).toBe("ok");
+    expect(parsed.weekly.percent).toBe(42);
+  });
+
+  it("rejects non-object or null payloads", () => {
+    expect(() => parseGoUsage(null)).toThrow("expected an object");
+    expect(() => parseGoUsage("string")).toThrow("expected an object");
+  });
+
+  it("rejects payload missing rolling, weekly, or monthly", () => {
+    expect(() =>
+      parseGoUsage({
+        rolling: { percent: 0, resetsAt: "2026-01-01", status: "ok" },
+      })
+    ).toThrow();
+  });
+
+  it("declares usageRemote contribution with correct package and descriptor", () => {
+    expect(usageRemote.package).toBe("dsh-opencode-patch");
+    expect(usageRemote.descriptors.length).toBe(1);
+    expect(usageRemote.descriptors[0]?.namespace).toBe("opencodeGoUsage");
+  });
+
+  it("GoUsageService throws RemoteError when API key is missing", async () => {
+    const service = new GoUsageService(createMockContext(), {
+      baseURL: () => "https://opencode.ai/zen/go/v1",
+      resolveApiKey: () => Promise.resolve(""),
+    });
+    await expect(service.read()).rejects.toThrow(
+      "OpenCode Go API key is not configured"
+    );
+  });
+
+  it("GoUsageService reads and parses successfully with valid mock fetch", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(Response.json(samplePayload));
+
+      const service = new GoUsageService(createMockContext(), {
+        baseURL: () => "https://opencode.ai/zen/go/v1",
+        resolveApiKey: () => Promise.resolve("test_key_123"),
+      });
+
+      const usage = await service.read();
+      expect(usage.monthly.percent).toBe(100);
+      expect(usage.weekly.percent).toBe(42);
+      expect(usage.source).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("GoUsageService handles upstream 429/temporary error with RemoteError", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response("rate limit exceeded", { status: 429 })
+        );
+
+      const service = new GoUsageService(createMockContext(), {
+        baseURL: () => "https://opencode.ai/zen/go/v1",
+        resolveApiKey: () => Promise.resolve("test_key_123"),
+      });
+
+      await expect(service.read()).rejects.toThrow(
+        "OpenCode Go usage unavailable (HTTP 429)"
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

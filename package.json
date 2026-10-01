@@ -1,7 +1,7 @@
 {
-  "name": "@viztor/dsh-opencode",
+  "name": "dsh-opencode-patch",
   "version": "0.5.1",
-  "description": "OpenCode on DeepSeek Harness — session affinity, Zen/Go gateway origin headers, and free-tier tool fallback for OpenCode models.",
+  "description": "OpenCode on DeepSeek Harness — session affinity, Zen/Go gateway origin headers, free-tier tool fallback, and live Go quota display.",
   "keywords": [
     "cordis",
     "deepseek-harness",
@@ -16,9 +16,9 @@
     "session-affinity",
     "x-opencode-session"
   ],
-  "homepage": "https://github.com/viztor/dsh-opencode",
+  "homepage": "https://github.com/viztor/dsh-opencode-patch",
   "bugs": {
-    "url": "https://github.com/viztor/dsh-opencode/issues"
+    "url": "https://github.com/viztor/dsh-opencode-patch/issues"
   },
   "license": "MIT",
   "author": {
@@ -26,7 +26,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/viztor/dsh-opencode.git"
+    "url": "git+https://github.com/viztor/dsh-opencode-patch.git"
   },
   "files": [
     "lib",
@@ -72,6 +72,7 @@
   "devDependencies": {
     "@deepseek-ai/dsh-client-store": "0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.0-rc.2",
     "@types/node": "^26.6.3",
     "@types/react": "^18.3.31",
     "react": "^18.3.1",
@@ -79,6 +80,14 @@
     "ultracite": "^7.12.1",
     "vite-plus": "catalog:",
     "vitest": "^5.0.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.5-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    }
   },
   "icon": "./icon.svg",
   "engines": {
@@ -93,7 +102,9 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-plugin-manager",
-        "@deepseek-ai/dsh-api-remotes"
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "platform": "web",
       "immediately": true
