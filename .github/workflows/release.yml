@@ -47,14 +47,14 @@ jobs:
             || { echo "tag ${GITHUB_REF_NAME} != package.json version"; exit 1; }
       - run: pnpm run build
       # OIDC trusted publishing: no token needed. Requires the
-      # viztor/dsh-opencode + release.yml publisher registered on npmjs.com
+      # viztor/dsh-opencode-patch + release.yml publisher registered on npmjs.com
       # with `npm publish` allowed. Provenance is automatic. The version
       # guard keeps re-runs idempotent (a published version is skipped,
       # so a failed mirror step can be retried by re-pushing the tag).
       - name: publish to npmjs (OIDC)
         run: |
           VER=$(node -p "require('./package.json').version")
-          if npm view "@viztor/dsh-opencode@$VER" version 2>/dev/null; then
+          if npm view "dsh-opencode-patch@$VER" version 2>/dev/null; then
             echo "$VER already on npmjs, skipping"
           else
             npm publish --access public

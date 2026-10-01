@@ -1,8 +1,9 @@
 /**
- * `dsh-opencode` settings page — DSH Web client bundle.
- * Contributes a settings card under DSH Settings -> Plugins.
+ * `dsh-opencode-patch` settings page — DSH Web client bundle.
+ * Contributes a settings card under DSH Settings -> Plugins and a quota pill
+ * in the conversation input tray for OpenCode Go models.
  *
- * @module dsh-opencode/settings-page
+ * @module dsh-opencode-patch/settings-page
  */
 
 import {
@@ -16,7 +17,9 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
-export const NS = "dsh-opencode";
+import { UsagePill } from "./usage-pill.tsx";
+
+export const NS = "dsh-opencode-patch";
 
 /**
  * The bundle's npm package name, spelled rather than imported.
@@ -25,9 +28,15 @@ export const NS = "dsh-opencode";
  * cordis row id), so this must equal `package.json`'s `name`. The client
  * half must not depend on the host half, hence the duplication.
  */
-export const PKG = "@viztor/dsh-opencode";
+export const PKG = "dsh-opencode-patch";
 
-export const inject = ["slots", "locale", "configForms"];
+export const inject = [
+  "slots",
+  "locale",
+  "configForms",
+  "modelDirectories",
+  "remote",
+];
 
 const en = {
   debug: "Debug Logging (default off)",
@@ -37,7 +46,7 @@ const en = {
   debugHint:
     "Logs every streamed call receiving the header via ctx.logger. Empty inherits the default.",
   description:
-    "OpenCode Zen gateway origin headers, session affinity, and free-tier compatibility.",
+    "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
   injectCoreTools: "Inject Core Tools (default on)",
   injectCoreToolsHint:
     "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
@@ -60,6 +69,25 @@ const en = {
   saving: "Saving…",
   title: "OpenCode Integration",
   unavailable: "This plugin is not loaded, so it cannot be configured.",
+  usageHint: "Account usage · used percentage · refreshes every minute",
+  usageLastUpdated: "Last updated",
+  usageLimited: "Limit reached",
+  usageLimitedShort: "limited",
+  usageLoading: "Loading usage…",
+  usageRefreshFailed: "Refresh failed",
+  usageRefreshing: "Refreshing…",
+  usageResets: "Resets",
+  usageRetry: "Retry now",
+  usageRollingShort: "5h",
+  usageStaleHint:
+    "Showing the last successful usage reading. Current usage may have changed.",
+  usageStaleShort: "Last data",
+  usageTitle: "OpenCode Go usage",
+  usageUnavailable: "Unavailable",
+  usageWeekShort: "week",
+  usage_monthly: "Monthly",
+  usage_rolling: "5 hours",
+  usage_weekly: "Weekly",
   userAgent: "User-Agent Override",
   userAgentHint:
     "Custom User-Agent string. Leave blank to use the canonical OpenCode CLI string.",
@@ -70,7 +98,8 @@ const zh = {
   debugFile: "调试文件",
   debugFileHint: "插件追加 JSONL 流调试记录的服务端绝对路径。留空表示不记录。",
   debugHint: "通过 ctx.logger 记录每次注入会话头的流式调用。留空沿用默认值。",
-  description: "OpenCode Zen 网关来源头恢复、会话保持与免费模型兼容支持。",
+  description:
+    "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
   injectCoreTools: "自动补全核心工具（默认开启）",
   injectCoreToolsHint:
     "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。留空沿用默认值。",
@@ -92,6 +121,24 @@ const zh = {
   saving: "保存中…",
   title: "OpenCode 接入设置",
   unavailable: "插件未加载，暂无法配置。",
+  usageHint: "账号额度 · 已用百分比 · 每分钟刷新",
+  usageLastUpdated: "更新于",
+  usageLimited: "已达限额",
+  usageLimitedShort: "受限",
+  usageLoading: "正在读取用量…",
+  usageRefreshFailed: "刷新失败",
+  usageRefreshing: "正在刷新…",
+  usageResets: "重置于",
+  usageRetry: "立即重试",
+  usageRollingShort: "5小时",
+  usageStaleHint: "当前显示上次成功读取的用量，实际用量可能已变化。",
+  usageStaleShort: "上次数据",
+  usageTitle: "OpenCode Go 用量",
+  usageUnavailable: "暂不可用",
+  usageWeekShort: "周",
+  usage_monthly: "每月",
+  usage_rolling: "5 小时",
+  usage_weekly: "每周",
   userAgent: "自定义 User-Agent",
   userAgentHint: "自定义 User-Agent 字符串。留空则使用默认 OpenCode CLI 标识。",
 };
@@ -247,7 +294,16 @@ export interface ClientContext {
   effect?: (fn: () => unknown, name?: string) => void;
   locale?: {
     bind: (ns: string) => (key: string) => string;
-    register: (ns: string, dicts: Record<string, unknown>) => void;
+    register: (
+      ns: string,
+      dicts: Record<string, unknown>
+    ) => (() => void) | undefined;
+  };
+  modelDirectories?: {
+    directoryFor: (sessionId: unknown) => { store: unknown };
+  };
+  remote?: {
+    opencodeGoUsage?: { read: () => Promise<unknown> };
   };
   slots?: {
     inject: (name: string, fn: () => void) => void;
@@ -277,10 +333,52 @@ const isSettingsFormScope = (
   );
 };
 
+const noopDisposer = (): void => {
+  /* no-op */
+};
+
 export const apply = (ctx: ClientContext): void => {
   ctx.effect?.(() => {
-    ctx.locale?.register?.(NS, { en, zh });
-  }, "dsh-opencode: dictionaries");
+    try {
+      return ctx.locale?.register?.(NS, { en, zh });
+    } catch {
+      return noopDisposer;
+    }
+  }, "dsh-opencode-patch: dictionaries");
+
+  // Conversation input tray quota pill for OpenCode Go models
+  ctx.slots?.inject?.("conversation.input.right", () => {
+    ctx.slots?.register?.(
+      {
+        id: "dsh-opencode-patch-usage",
+        inject: (sessionId: unknown) => {
+          const directory =
+            ctx.modelDirectories?.directoryFor?.(sessionId)?.store;
+          if (!directory) {
+            return null;
+          }
+          return {
+            directory,
+            readUsage: async () => {
+              const res = (await ctx.remote?.opencodeGoUsage?.read?.()) as
+                | { ok: true; value: unknown }
+                | { ok: false; error: unknown }
+                | undefined;
+              if (res && typeof res === "object" && "ok" in res) {
+                if (!res.ok) throw res.error;
+                return res.value;
+              }
+              return res;
+            },
+            t: ctx.locale?.bind?.(NS) ?? ((key: string) => key),
+          };
+        },
+        name: "conversation.input.right",
+        order: 1000,
+      },
+      UsagePill
+    );
+  });
 
   const rawScope: unknown = ctx.configForms?.get?.(NS);
   if (!isSettingsFormScope(rawScope)) {
@@ -300,7 +398,7 @@ export const apply = (ctx: ClientContext): void => {
     () => () => {
       model.dispose();
     },
-    "dsh-opencode: form subscription"
+    "dsh-opencode-patch: form subscription"
   );
 
   ctx.configForms?.whileServed?.([NS], () => {

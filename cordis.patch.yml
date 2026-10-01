@@ -1,11 +1,10 @@
-# dsh-opencode layer.
+# dsh-opencode-patch layer.
 #
 # Adds one host plugin row that manages session affinity, OpenCode Zen gateway
-# origin headers, and free-tier compatibility for OpenCode, OpenCode Go, and OpenCode Zen routes.
+# origin headers, free-tier compatibility, and live Go quota display.
 #
-# NOTE: `name` must equal this package's npm name (@viztor/dsh-opencode) —
-# the host resolves row names to node_modules paths, so an unscoped name
-# fails the entry with "failed to import". `id` stays short: it is the
+# NOTE: `name` must equal this package's npm name (dsh-opencode-patch) —
+# the host resolves row names to node_modules paths. `id` is the
 # settings namespace and the plugin's own `name` export.
 #
 # Configuration (row `config`, all optional):
@@ -14,11 +13,14 @@
 #   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
 #   injectOriginHeaders: bool   inject x-opencode-client & x-opencode-project (default true).
 #   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
+#   usageEnabled: boolean       enable host-side OpenCode Go usage querying (default true).
+#   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
+#   usageKeyEnv: string         environment variable or credential ref for Go key (default 'OPENCODE_GO_API_KEY').
 #   debug: true|false           log every streamed call that receives the header.
 #   debugFile: path             optional append target for stream debug JSONL.
 - insert:
-    - id: dsh-opencode
-      name: "@viztor/dsh-opencode"
+    - id: dsh-opencode-patch
+      name: "dsh-opencode-patch"
       config:
         providers:
           - opencode
@@ -27,4 +29,5 @@
         userAgent: ""
         injectOriginHeaders: true
         injectCoreTools: true
+        usageEnabled: true
         debug: false
