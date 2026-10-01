@@ -95,6 +95,14 @@ export const parseGoUsage = (value: unknown): GoUsage => {
 declare module "@deepseek-ai/dsh-typert-protocol" {
   interface RemoteErrorDetailsMap {
     "opencode-go/usage-unavailable": {
+      /**
+       * `false` when the account has no OpenCode Go credential at all, which is
+       * a configuration state rather than a fault: there is no quota to show,
+       * so the client renders nothing instead of an unavailable meter. A
+       * transient failure leaves it `true`/absent and stays visible with a
+       * retry.
+       */
+      readonly configured?: boolean;
       readonly retainPrevious: boolean;
       readonly retryable: boolean;
       readonly source?: string;

@@ -84,6 +84,7 @@ const en = {
   usageLastUpdated: "Last updated",
   usageLimited: "Limit reached",
   usageLimitedShort: "limited",
+  usageLimitsDoc: "Usage limits",
   usageLoading: "Loading usage…",
   usageRefreshFailed: "Refresh failed",
   usageRefreshing: "Refreshing…",
@@ -95,6 +96,7 @@ const en = {
   usageStaleShort: "Last data",
   usageTitle: "OpenCode Go usage",
   usageUnavailable: "Unavailable",
+  usageUpgradePlan: "Upgrade plan",
   usageWeekShort: "week",
   usage_monthly: "Monthly",
   usage_rolling: "5 hours",
@@ -145,6 +147,7 @@ const zh = {
   usageLastUpdated: "更新于",
   usageLimited: "已达限额",
   usageLimitedShort: "受限",
+  usageLimitsDoc: "额度说明",
   usageLoading: "正在读取用量…",
   usageRefreshFailed: "刷新失败",
   usageRefreshing: "正在刷新…",
@@ -155,6 +158,7 @@ const zh = {
   usageStaleShort: "上次数据",
   usageTitle: "OpenCode Go 用量",
   usageUnavailable: "暂不可用",
+  usageUpgradePlan: "升级套餐",
   usageWeekShort: "周",
   usage_monthly: "每月",
   usage_rolling: "5 小时",
@@ -401,6 +405,15 @@ export const apply = (ctx: ClientContext): void => {
     if (!directory) {
       return null;
     }
+    // No Host service means there is nothing to measure. That covers both
+    // "Usage Quota Tracking is switched off" (the Host only registers
+    // `opencodeGoUsage` when `usageEnabled` is on) and a mimetype/version
+    // mismatch — either way the meter is absent rather than showing an
+    // unavailable state the user cannot act on. This is read at inject time,
+    // so it follows the Host service rather than the page's first render.
+    if (typeof ctx.remote?.opencodeGoUsage?.read !== "function") {
+      return null;
+    }
     return {
       directory,
       readUsage: async () => {
@@ -418,27 +431,20 @@ export const apply = (ctx: ClientContext): void => {
     };
   };
 
-  // Primary: Mount in composer dock beneath the card, directly beside ContextMeter
+  // The quota meter mounts in exactly ONE slot.
+  //
+  // It is the composer dock, beneath the input card and beside the Context
+  // meter, because that is where the harness already puts per-turn diagnostics.
+  // It must not also be registered in `conversation.input.right`: both slots
+  // render, so registering twice drew the meter twice side by side. One
+  // registration, one meter.
   ctx.slots?.inject?.("conversation.composer.dock", () => {
-    ctx.slots?.register?.(
-      {
-        id: "dsh-opencode-patch-usage-dock",
-        inject: createUsageInjector(),
-        name: "conversation.composer.dock",
-        order: 50,
-      },
-      UsagePill
-    );
-  });
-
-  // Secondary fallback: Mount in conversation input tray
-  ctx.slots?.inject?.("conversation.input.right", () => {
     ctx.slots?.register?.(
       {
         id: "dsh-opencode-patch-usage",
         inject: createUsageInjector(),
-        name: "conversation.input.right",
-        order: 1000,
+        name: "conversation.composer.dock",
+        order: 50,
       },
       UsagePill
     );

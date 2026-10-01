@@ -38,6 +38,13 @@ export interface UsagePillProps {
 }
 
 interface UsageFailure {
+  /**
+   * `false` when the Host reports the account has no OpenCode Go credential.
+   * That is a configuration state rather than a fault — there is no quota to
+   * measure — so the meter renders nothing instead of an unavailable state
+   * the user cannot act on.
+   */
+  configured?: boolean;
   message?: string;
   retainPrevious: boolean;
   source?: string;
@@ -49,6 +56,16 @@ const noop = (): void => {
 
 const RADIUS = 5.5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+/**
+ * Where a user acts on what this meter shows.
+ *
+ * The meter reports the Go plan's rolling/weekly/monthly limits, so the useful
+ * destinations are the plan page (raise the limit) and the limits reference
+ * (understand it). Both are the vendor's own public pages.
+ */
+const GO_PLAN_URL = "https://opencode.ai/go";
+const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go/";
 
 const STYLES = `
 .dsh-oc-usage-root {
@@ -318,6 +335,24 @@ const STYLES = `
   opacity: 0.4;
   cursor: default;
 }
+
+/* The "what do I do about this" row. Links, not buttons: both navigate away. */
+.dsh-oc-usage-links {
+  display: flex;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 11px;
+}
+
+.dsh-oc-usage-links a {
+  color: var(--dsw-alias-link, currentColor);
+  text-decoration: none;
+}
+
+.dsh-oc-usage-links a:hover {
+  text-decoration: underline;
+}
 `;
 
 // The stylesheet is rendered as a `<style>` element inside this component's own
@@ -419,6 +454,7 @@ const parseFailure = (error: unknown): UsageFailure => {
         ? (error.details as Record<string, unknown>)
         : {};
     return {
+      ...(details.configured === false ? { configured: false } : {}),
       message:
         "message" in error && typeof error.message === "string"
           ? error.message
@@ -438,7 +474,7 @@ const ActiveUsage = ({
   getLocale,
   readUsage,
   t,
-}: Omit<UsagePillProps, "directory">): React.ReactElement => {
+}: Omit<UsagePillProps, "directory">): React.ReactElement | null => {
   const [snapshot, setSnapshot] = useState<{
     reader: typeof readUsage;
     updatedAt: number;
@@ -567,6 +603,14 @@ const ActiveUsage = ({
   const current = snapshot?.reader === readUsage ? snapshot : null;
   const usage = current?.usage;
   const failure = failed?.reader === readUsage ? failed.failure : null;
+
+  // Nothing to show when the account has no OpenCode Go credential: the meter
+  // exists to report a quota, and there is no quota to report. Rendering an
+  // "unavailable" chip instead would put a permanent, unactionable error in
+  // the composer for every user who never configured OpenCode Go.
+  if (failure?.configured === false) {
+    return null;
+  }
 
   const affecting = usage === undefined ? undefined : getAffectingWindow(usage);
   const isLimited = affecting?.window.status === "rate-limited";
@@ -833,6 +877,23 @@ const ActiveUsage = ({
             >
               {refreshing ? t("usageRefreshing") : t("usageRetry")}
             </button>
+          </div>
+          {/*
+            The meter says a limit was hit; these say what to do about it.
+            Both open in a new tab so the console is not lost, and both carry
+            rel="noreferrer noopener" because the target is a third party.
+          */}
+          <div className="dsh-oc-usage-links">
+            <a href={GO_PLAN_URL} rel="noreferrer noopener" target="_blank">
+              {t("usageUpgradePlan")}
+            </a>
+            <a
+              href={GO_LIMITS_DOC_URL}
+              rel="noreferrer noopener"
+              target="_blank"
+            >
+              {t("usageLimitsDoc")}
+            </a>
           </div>
         </div>
       )}

@@ -129,9 +129,12 @@ describe("settings-page: apply & slots", () => {
 
     expect(dockRegistrations).toHaveLength(1);
     expect(dockRegistrations[0]?.entry.order).toBe(50);
+    expect(dockRegistrations[0]?.entry.id).toBe("dsh-opencode-patch-usage");
 
-    expect(inputRegistrations).toHaveLength(1);
-    expect(inputRegistrations[0]?.entry.order).toBe(1000);
+    // The meter registers in exactly ONE slot. It used to also register in
+    // `conversation.input.right`, and because both slots render, the composer
+    // drew two identical meters side by side.
+    expect(inputRegistrations).toHaveLength(0);
   });
 
   it("handles usage injector logic and remote reading", async () => {
@@ -178,6 +181,33 @@ describe("settings-page: apply & slots", () => {
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });
+  });
+
+  it("hides the meter when the Host serves no usage service", () => {
+    // The Host registers `opencodeGoUsage` only while Usage Quota Tracking is
+    // on, so an absent service is how "switched off" reaches the client. The
+    // injector returning null means the slot renders nothing at all, rather
+    // than an unavailable meter the user cannot act on.
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: {
+        directoryFor: () => ({ store: {} }),
+      },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.composer.dock") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+
+    apply(ctx as never);
+    expect(dockInjector).toBeDefined();
+    expect(dockInjector?.("session")).toBeNull();
   });
 
   it("unpacks remote errors properly in readUsage", async () => {
