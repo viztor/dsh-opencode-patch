@@ -96,8 +96,10 @@ jobs:
           # is readable yet: npm answers "Your package is being processed and
           # may take a few minutes to become available", and an immediate
           # `npm view` returns nothing. Checking once reported a healthy release
-          # as failed.
-          for attempt in $(seq 1 12); do
+          # as failed. Indexing has taken over six minutes for the unscoped
+          # primary, so the window is ten minutes; the existing-version skips
+          # in the publish steps keep a re-run cheap when this still runs out.
+          for attempt in $(seq 1 40); do
             still=""
             for spec in $pending; do
               if npm view "$spec" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
@@ -111,9 +113,9 @@ jobs:
               echo "every published target is live on npmjs.org"
               exit 0
             fi
-            echo "attempt $attempt/12: waiting for npm to index:$pending"
+            echo "attempt $attempt/40: waiting for npm to index:$pending"
             sleep 15
           done
 
-          echo "::error::these targets did not publish:$pending — register a Trusted Publisher for each at https://www.npmjs.com/package/<name>/access (repository viztor/dsh-opencode-patch, workflow release.yml)"
+          echo "::error::these targets did not publish:$pending — register a Trusted Publisher for each at https://www.npmjs.com/package/<name>/access (repository viztor/dsh-opencode-patch, workflow release.yml). If the publish steps above passed, npm may still be indexing: a re-run of this job is safe, it skips versions already on the registry."
           exit 1
