@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 
+import z from "@deepseek-ai/schemastery";
+
 import {
   GoUsageService,
   discoverGoConfig,
@@ -103,10 +105,23 @@ export interface ResolvedPluginConfig {
   usageEnabled: boolean;
 }
 
+const unwrap = (val: unknown): unknown => {
+  if (
+    val !== null &&
+    typeof val === "object" &&
+    "get" in val &&
+    typeof val.get === "function"
+  ) {
+    return Reflect.apply(val.get, val, []);
+  }
+  return val;
+};
+
 export const resolveConfig = (
-  config: PluginConfig = {}
+  rawInput: PluginConfig = {}
 ): ResolvedPluginConfig => {
-  const rawProviders: unknown = config.providers;
+  const config = (rawInput ?? {}) as Record<string, unknown>;
+  const rawProviders: unknown = unwrap(config.providers);
   const listed: string[] = Array.isArray(rawProviders)
     ? rawProviders.filter(
         (item: unknown): item is string =>
@@ -114,31 +129,31 @@ export const resolveConfig = (
       )
     : [];
   const providers = listed.length > 0 ? listed : [...DEFAULT_PROVIDERS];
-  const debug = config.debug === true;
-  const rawDebugFile: unknown = config.debugFile;
+  const debug = unwrap(config.debug) === true;
+  const rawDebugFile: unknown = unwrap(config.debugFile);
   const debugFile =
     typeof rawDebugFile === "string" && rawDebugFile.length > 0
       ? rawDebugFile
       : undefined;
-  const injectUserAgent = config.injectUserAgent !== false;
-  const rawUserAgent: unknown = config.userAgent;
+  const injectUserAgent = unwrap(config.injectUserAgent) !== false;
+  const rawUserAgent: unknown = unwrap(config.userAgent);
   const userAgent =
     typeof rawUserAgent === "string" && rawUserAgent.trim().length > 0
       ? rawUserAgent.trim()
       : undefined;
-  const injectOriginHeaders = config.injectOriginHeaders !== false;
-  const injectCoreTools = config.injectCoreTools !== false;
+  const injectOriginHeaders = unwrap(config.injectOriginHeaders) !== false;
+  const injectCoreTools = unwrap(config.injectCoreTools) !== false;
+  const rawBaseURL = unwrap(config.usageBaseURL);
   const usageBaseURL =
-    typeof config.usageBaseURL === "string" &&
-    config.usageBaseURL.trim().length > 0
-      ? config.usageBaseURL.trim()
+    typeof rawBaseURL === "string" && rawBaseURL.trim().length > 0
+      ? rawBaseURL.trim()
       : "https://opencode.ai/zen/go/v1";
+  const rawKeyEnv = unwrap(config.usageKeyEnv);
   const usageKeyEnv =
-    typeof config.usageKeyEnv === "string" &&
-    config.usageKeyEnv.trim().length > 0
-      ? config.usageKeyEnv.trim()
+    typeof rawKeyEnv === "string" && rawKeyEnv.trim().length > 0
+      ? rawKeyEnv.trim()
       : "OPENCODE_GO_API_KEY";
-  const usageEnabled = config.usageEnabled !== false;
+  const usageEnabled = unwrap(config.usageEnabled) !== false;
 
   return {
     debug,
@@ -153,6 +168,79 @@ export const resolveConfig = (
     userAgent,
   };
 };
+
+/**
+ * The plugin's settings schema, in the harness's own `@deepseek-ai/schemastery`
+ * fork (not the public line): it implements the `~standard` surface the loader
+ * uses to validate the row, and the settings UI relies on the same schema to
+ * serve the namespace the client card binds.
+ *
+ * Exporting this is what makes the row render as a real settings section
+ * rather than free-form YAML: `dsh-settings` filters out any schema whose
+ * fields are not marked `.volatile()`, so without `.volatile()` on these fields
+ * the namespace is omitted from `describe()`, `configForms.whileServed` never
+ * fires, and the Plugins page shows the bundle with no card.
+ *
+ * Defaults mirror `resolveConfig` one for one, and `resolveConfig` unwraps
+ * volatile `.get()` nodes idempotently so the host behaves identically whether
+ * the row carries explicit values, schema-defaulted nodes, or raw JSON.
+ */
+export const Config = z.object({
+  providers: z
+    .array(z.string())
+    .default([...DEFAULT_PROVIDERS])
+    .volatile()
+    .description("Provider route keys to intercept."),
+  injectUserAgent: z
+    .boolean()
+    .default(true)
+    .volatile()
+    .description(
+      "Restore the opencode CLI User-Agent stripped by the DSH LLM adapter."
+    ),
+  userAgent: z
+    .string()
+    .volatile()
+    .description(
+      "Custom User-Agent string. Leave blank to use the canonical OpenCode CLI one."
+    ),
+  injectOriginHeaders: z
+    .boolean()
+    .default(true)
+    .volatile()
+    .description("Inject x-opencode-client and x-opencode-project headers."),
+  injectCoreTools: z
+    .boolean()
+    .default(true)
+    .volatile()
+    .description(
+      "Auto-inject read and bash tool schemas on free-tier requests."
+    ),
+  usageEnabled: z
+    .boolean()
+    .default(true)
+    .volatile()
+    .description("Enable host-side OpenCode Go usage querying."),
+  usageBaseURL: z
+    .string()
+    .default("https://opencode.ai/zen/go/v1")
+    .volatile()
+    .description("OpenCode Go gateway base URL."),
+  usageKeyEnv: z
+    .string()
+    .default("OPENCODE_GO_API_KEY")
+    .volatile()
+    .description("Environment variable or credential ref for the Go key."),
+  debug: z
+    .boolean()
+    .default(false)
+    .volatile()
+    .description("Log injected streamed calls."),
+  debugFile: z
+    .string()
+    .volatile()
+    .description("Server-side path for JSONL stream-debug entries."),
+});
 
 interface DebugContext {
   logger?: { warn?: (msg: string, ...args: unknown[]) => void };

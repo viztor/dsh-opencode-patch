@@ -339,7 +339,10 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
 export interface ClientContext {
   configForms?: {
     get: (ns: string) => unknown;
-    whileServed: (ns: string[], fn: () => void) => void;
+    whileServed: (
+      ns: string[],
+      fn: () => (() => void) | undefined
+    ) => (() => void) | undefined;
   };
   effect?: (fn: () => unknown, name?: string) => void;
   locale?: {
@@ -356,8 +359,14 @@ export interface ClientContext {
     opencodeGoUsage?: { read: () => Promise<unknown> };
   };
   slots?: {
-    inject: (name: string, fn: () => void) => void;
-    register: (entry: Record<string, unknown>, component: unknown) => void;
+    inject: (
+      name: string,
+      fn: () => (() => void) | undefined
+    ) => (() => void) | undefined;
+    register: (
+      entry: Record<string, unknown>,
+      component: unknown
+    ) => (() => void) | undefined;
   };
 }
 
@@ -440,7 +449,12 @@ export const apply = (ctx: ClientContext): void => {
   // It must not also be registered in `conversation.input.right`: both slots
   // render, so registering twice drew the meter twice side by side. One
   // registration, one meter.
-  ctx.slots?.inject?.("conversation.composer.dock", () => {
+  //
+  // The inject callback returns the registration's disposer: the slot
+  // re-runs this callback whenever the dock is collapsed and re-declared
+  // (live reload does exactly that), and re-registering the same entry id
+  // without disposing the previous one throws.
+  ctx.slots?.inject?.("conversation.composer.dock", () =>
     ctx.slots?.register?.(
       {
         id: "dsh-opencode-patch-usage",
@@ -449,8 +463,8 @@ export const apply = (ctx: ClientContext): void => {
         order: 50,
       },
       UsagePill
-    );
-  });
+    )
+  );
 
   const rawScope: unknown =
     ctx.configForms?.get?.(NS) ?? ctx.configForms?.get?.(LEGACY_NS);
@@ -474,51 +488,77 @@ export const apply = (ctx: ClientContext): void => {
     "dsh-opencode-patch: form subscription"
   );
 
-  ctx.configForms?.whileServed?.([NS, LEGACY_NS], () => {
-    // `plugins.bundle.config` (NOT `plugins.item`): third-party bundles
-    // render their own configuration on the bundle's page, keyed by npm
-    // package name. The hook key becomes the `useOpencodeCard` prop; the
-    // actions spread in as `edit` / `resetField` / `save` / `discard`.
-    ctx.slots?.inject?.("plugins.bundle.config", () => {
+  // `plugins.bundle.config` (NOT `plugins.item`): third-party bundles
+  // render their own configuration on the bundle's page, keyed by npm
+  // package name. The hook key becomes the `useOpencodeCard` prop; the
+  // actions spread in as `edit` / `resetField` / `save` / `discard`.
+  //
+  // Registered directly in ctx.effect so the bundle configuration card is
+  // always available when viewing the installed package detail page, rather
+  // than depending on whether the host has already re-described its namespaces.
+  ctx.effect?.(() => {
+    const stop = ctx.slots?.inject?.("plugins.bundle.config", () => {
+      const cards: (() => void)[] = [];
+      const keepCard = (dispose: (() => void) | undefined): void => {
+        if (typeof dispose === "function") {
+          cards.push(dispose);
+        }
+      };
       // Register for primary package name
-      ctx.slots?.register?.(
-        {
-          inject: () => ({
-            hooks: { opencodeCard: store },
-            ...model.actions(),
-          }),
-          key: PKG,
-          locale: NS,
-          name: "plugins.bundle.config",
-        },
-        OpencodeCard
+      keepCard(
+        ctx.slots?.register?.(
+          {
+            inject: () => ({
+              hooks: { opencodeCard: store },
+              ...model.actions(),
+            }),
+            key: PKG,
+            locale: NS,
+            name: "plugins.bundle.config",
+          },
+          OpencodeCard
+        )
       );
       // Register for legacy scoped package name
-      ctx.slots?.register?.(
-        {
-          inject: () => ({
-            hooks: { opencodeCard: store },
-            ...model.actions(),
-          }),
-          key: LEGACY_PKG,
-          locale: LEGACY_NS,
-          name: "plugins.bundle.config",
-        },
-        OpencodeCard
+      keepCard(
+        ctx.slots?.register?.(
+          {
+            inject: () => ({
+              hooks: { opencodeCard: store },
+              ...model.actions(),
+            }),
+            key: LEGACY_PKG,
+            locale: LEGACY_NS,
+            name: "plugins.bundle.config",
+          },
+          OpencodeCard
+        )
       );
       // Register for legacy bare component name
-      ctx.slots?.register?.(
-        {
-          inject: () => ({
-            hooks: { opencodeCard: store },
-            ...model.actions(),
-          }),
-          key: LEGACY_NS,
-          locale: LEGACY_NS,
-          name: "plugins.bundle.config",
-        },
-        OpencodeCard
+      keepCard(
+        ctx.slots?.register?.(
+          {
+            inject: () => ({
+              hooks: { opencodeCard: store },
+              ...model.actions(),
+            }),
+            key: LEGACY_NS,
+            locale: LEGACY_NS,
+            name: "plugins.bundle.config",
+          },
+          OpencodeCard
+        )
       );
+      return () => {
+        for (const dispose of cards) {
+          dispose();
+        }
+      };
     });
-  });
+    return () => {
+      if (typeof stop === "function") {
+        stop();
+      }
+    };
+  }, "dsh-opencode-patch: settings");
 };
