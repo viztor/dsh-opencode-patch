@@ -27,6 +27,7 @@ jobs:
       - run: pnpm run build
       - run: pnpm run check
       - run: pnpm run test
+      - run: node --experimental-strip-types scripts/check.ts
 
   publish:
     needs: verify
