@@ -857,6 +857,33 @@ describe("patchFetch", () => {
     expect(headerOf(capture.init, SESSION_HEADER)).toBe("ses_test");
   });
 
+  it("injects x-opencode-parent-session-id when parent session is present", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture, mockFetch } = createCaptureFetch();
+    const testSession = openCodeSessionIdFor("child-subagent");
+    const testParentSession = openCodeSessionIdFor("parent-lead");
+    const patched = patchFetch(mockFetch, als, resolveConfig());
+
+    await als.run(
+      {
+        parentValue: testParentSession,
+        provider: "opencode",
+        value: testSession,
+      },
+      async () => {
+        await patched("https://opencode.ai/zen/v1/chat/completions", {
+          method: "POST",
+        });
+      }
+    );
+
+    expect(headerOf(capture.init, SESSION_HEADER)).toBe(testSession);
+    expect(headerOf(capture.init, "x-opencode-session-id")).toBe(testSession);
+    expect(headerOf(capture.init, "x-opencode-parent-session-id")).toBe(
+      testParentSession
+    );
+  });
+
   it("injects read and bash tools for free-tier /responses models", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const { capture, mockFetch } = createCaptureFetch();
@@ -1263,6 +1290,52 @@ describe("apply (plugin lifecycle)", () => {
       throw new Error("expected async iterable downstream");
     }
     expect(await collectUnknown(result)).toEqual(["decision-allow"]);
+  });
+
+  it("resolves parent session from options or ctx.sessions for subagents", async () => {
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    const ctx: CordisContext = {
+      effect: () => {},
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+      get: (name: string): unknown =>
+        name === "sessions"
+          ? {
+              get: (id: string) =>
+                id === "child-subagent-session"
+                  ? {
+                      header: {
+                        id: "child-subagent-session",
+                        parentSession: "root-lead-session",
+                      },
+                    }
+                  : undefined,
+            }
+          : undefined,
+    };
+
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+    const result: unknown = streamHandler(
+      {
+        model: "deepseek-v4.1-flash",
+        provider: "opencode-go",
+        sessionId: "child-subagent-session",
+      },
+      () => createMockStream("subagent-chunk")
+    );
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+    expect(await collectUnknown(result)).toEqual(["subagent-chunk"]);
   });
 });
 

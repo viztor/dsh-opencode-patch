@@ -12,6 +12,7 @@
 import type { AsyncLocalStorage } from "node:async_hooks";
 
 import type { ResolvedPluginConfig } from "./config.ts";
+import { readParentSessionResolver } from "./cordis-context.ts";
 import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
 import { isAsyncIterableLike } from "./guards.ts";
@@ -25,6 +26,9 @@ import { withStore } from "./turn-store.ts";
 
 interface StreamOptions {
   model?: unknown;
+  parentId?: unknown;
+  parentSession?: unknown;
+  parentSessionId?: unknown;
   provider?: unknown;
   sessionId?: unknown;
 }
@@ -80,6 +84,23 @@ export const createStreamHook = (
       value = rawSession;
     }
 
+    const parentResolver = readParentSessionResolver(ctx);
+    const parentProp =
+      options.parentSessionId ?? options.parentSession ?? options.parentId;
+    let rawParent: string | undefined;
+    if (typeof parentProp === "string" && parentProp.length > 0) {
+      rawParent = parentProp;
+    } else if (typeof parentProp === "number") {
+      rawParent = String(parentProp);
+    } else if (
+      typeof options.sessionId === "string" &&
+      parentResolver !== undefined
+    ) {
+      rawParent = parentResolver(options.sessionId);
+    }
+    const parentValue =
+      rawParent === undefined ? undefined : headerValueFor(rawParent);
+
     const downstream: unknown = next();
     if (!isAsyncIterableLike(downstream)) {
       return downstream;
@@ -89,6 +110,7 @@ export const createStreamHook = (
       const entry = {
         header: SESSION_HEADER,
         model: options.model,
+        ...(parentValue === undefined ? {} : { parentSession: parentValue }),
         provider: providerKey,
         session: rawSession,
         ts: new Date().toISOString(),
@@ -111,6 +133,7 @@ export const createStreamHook = (
       downstream,
       {
         model: typeof modelProp === "string" ? modelProp : undefined,
+        ...(parentValue === undefined ? {} : { parentValue }),
         provider: providerKey,
         value,
       },

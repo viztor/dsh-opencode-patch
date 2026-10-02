@@ -15,6 +15,7 @@ import { getAsyncIterator } from "./guards.ts";
 /** What one active streamed turn contributes to outgoing requests. */
 export interface ActiveTurnState {
   model?: string;
+  parentValue?: string;
   provider: string;
   value: string;
 }

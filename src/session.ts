@@ -14,6 +14,9 @@ import { createHash } from "node:crypto";
 /** Header carrying the derived OpenCode session id. */
 export const SESSION_HEADER = "x-opencode-session";
 
+/** Header carrying the derived OpenCode parent session id for subagents. */
+export const PARENT_SESSION_HEADER = "x-opencode-parent-session-id";
+
 /** Canonical OpenCode CLI User-Agent the DSH LLM adapter strips. */
 export const OPENCODE_UA =
   "opencode/1.18.33 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
