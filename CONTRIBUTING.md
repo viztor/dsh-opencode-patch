@@ -1,4 +1,4 @@
-# Contributing to dsh-opencode
+# Contributing to dsh-opencode-patch
 
 ## Prerequisites
 
@@ -17,6 +17,14 @@ pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, li
 ```
 
 > Note: in some shells `pnpm exec` stalls; invoke the binary directly if so: `node node_modules/.pnpm/vite-plus@*/node_modules/vite-plus/bin/vp <cmd>`.
+
+## Live profile loop
+
+The web profile wires this checkout with `link:`, so builds are picked up like this:
+
+- **Host (`lib/index.mjs`) — restart required.** The base bundle ships `hmr root: []` (config watches only, `**/node_modules` ignored) and the loader caches ESM imports per process, so a linked package is never re-imported after boot. After every `pnpm run build`, restart `dsh web` — otherwise the profile silently keeps running the module from boot time. Symptom of a stale host: the plugin row is active but the settings card shows "This plugin is not loaded, so it cannot be configured." — `dsh-settings` is filtering on the old module's `Config` schema.
+- **Client (`lib/client.js`) — refresh suffices.** The client bundle is re-served from disk on every page load; a browser refresh picks it up.
+- **Verify after a restart:** the Plugins page shows the **OpenCode Patch** card, and its configure view renders all 17 fields (no unavailable line). `node --experimental-strip-types scripts/check.ts` catches a stale `lib/` before you do (`src/` newer than `lib/`).
 
 ## Code conventions
 
