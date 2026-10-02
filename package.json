@@ -68,7 +68,7 @@
     "lint:fix": "vp lint --fix",
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run release:gate",
-    "release:gate": "pnpm run build && pnpm run check && pnpm run test",
+    "release:gate": "pnpm run build && pnpm run check && pnpm run test && node --experimental-strip-types scripts/check.ts",
     "test": "vp test",
     "typecheck": "tsc --noEmit"
   },
