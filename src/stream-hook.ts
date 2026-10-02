@@ -15,7 +15,11 @@ import type { ResolvedPluginConfig } from "./config.ts";
 import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
 import { isAsyncIterableLike } from "./guards.ts";
-import { headerValueFor, SESSION_HEADER } from "./session.ts";
+import {
+  fallbackSessionId,
+  headerValueFor,
+  SESSION_HEADER,
+} from "./session.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { withStore } from "./turn-store.ts";
 
@@ -61,16 +65,19 @@ export const createStreamHook = (
       return next();
     }
     const sessionProp: unknown = options.sessionId;
-    if (typeof sessionProp !== "string" && typeof sessionProp !== "number") {
-      return next();
-    }
-    const rawSession = String(sessionProp);
-    if (rawSession.length === 0) {
-      return next();
-    }
-    const value = headerValueFor(rawSession);
-    if (value === undefined) {
-      return next();
+    let rawSession: string;
+    let value: string;
+    if (typeof sessionProp === "string" && sessionProp.length > 0) {
+      rawSession = sessionProp;
+      value =
+        headerValueFor(rawSession) ?? fallbackSessionId(config.sessionIdEnv);
+    } else if (typeof sessionProp === "number") {
+      rawSession = String(sessionProp);
+      value =
+        headerValueFor(rawSession) ?? fallbackSessionId(config.sessionIdEnv);
+    } else {
+      rawSession = fallbackSessionId(config.sessionIdEnv);
+      value = rawSession;
     }
 
     const downstream: unknown = next();
