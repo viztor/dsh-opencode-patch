@@ -23,6 +23,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { en as cardCopy } from "../src/settings-copy.ts";
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const failures: string[] = [];
 const notes: string[] = [];
@@ -441,6 +443,53 @@ if (existsSync(clientPath)) {
   }
 } else {
   fail("lib/client.js is missing — run `pnpm run build`");
+}
+
+/* ------------------------------------ 12. one name everywhere (identity + i18n) */
+
+const settingsPage = readFileSync(join(ROOT, "src/settings-page.tsx"), "utf8");
+const nsMatch = /export const NS = "([^"]+)"/u.exec(settingsPage);
+if (nsMatch?.[1] === pkg.name) {
+  ok(`settings namespace == package name (${pkg.name})`);
+} else {
+  fail(
+    `settings NS is "${nsMatch?.[1]}" but package.json name is "${pkg.name}" — ` +
+      "the card would bind a namespace the host never serves"
+  );
+}
+
+const localeKeys = (value: unknown, prefix = ""): string[] =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? Object.entries(value as Record<string, unknown>).flatMap(([key, child]) =>
+        localeKeys(child, prefix === "" ? key : `${prefix}.${key}`)
+      )
+    : [prefix];
+
+const [enLocale, zhLocale] = ["en", "zh"].map(
+  (lang) =>
+    JSON.parse(
+      readFileSync(join(ROOT, `locale/${lang}.json`), "utf8")
+    ) as unknown
+);
+const enKeys = localeKeys(enLocale).toSorted();
+const zhKeys = localeKeys(zhLocale).toSorted();
+if (enKeys.join("\n") === zhKeys.join("\n")) {
+  ok(`${enKeys.length} locale keys in sync across en/zh`);
+} else {
+  fail(
+    `locale/en.json and locale/zh.json disagree on keys (${enKeys.length} en vs ` +
+      `${zhKeys.length} zh) — a missing translation would render as a raw key`
+  );
+}
+
+const bundleTitle = (enLocale as { meta?: { title?: unknown } }).meta?.title;
+if (bundleTitle === cardCopy.title) {
+  ok(`one display name everywhere ("${bundleTitle}")`);
+} else {
+  fail(
+    `the plugin shows two names: locale/en.json meta.title "${String(bundleTitle)}" ` +
+      `!= settings-card title "${cardCopy.title}" — keep one display name`
+  );
 }
 
 /* ------------------------------------------------------------------- report */
