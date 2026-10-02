@@ -37,7 +37,18 @@ function spec(field: string) {
   };
 }
 
-export const settingsTextField = (field: string) => spec(field);
+export const settingsTextField = (field: string) => ({
+  field,
+  // Mirrors the real primitive: only strings render, and a draft is trimmed
+  // on the way in — an all-blank draft clears the field.
+  format: (value: unknown) => (typeof value === "string" ? value : ""),
+  parse: (text: string) => {
+    const trimmed = text.trim();
+    return trimmed === ""
+      ? { kind: "clear" as const }
+      : { kind: "set" as const, value: trimmed };
+  },
+});
 export const settingsNumberField = (field: string) => spec(field);
 
 export interface SecretSpec {

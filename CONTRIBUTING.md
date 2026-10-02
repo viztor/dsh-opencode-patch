@@ -21,7 +21,7 @@ pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, li
 ## Code conventions
 
 - **100% strict TypeScript.** No `any` leaks, no `as` assertions in `src/` — narrow `unknown` with `in`-operator type guards (`isRecord`, `isUnknownArray`, …).
-- **Errors gate; warnings are a debt register.** `vp check` must report **zero errors** — that is what `release:gate` and CI enforce. It does report warnings (currently ~22), and those are real: each one is a known, unclaimed looseness in `src/`, kept visible rather than silenced. Do not add new ones, and pay one down when you touch its code. The `error` tier is reserved for defects: async safety and throw contracts. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
+- **Zero errors and zero warnings.** `vp check` must report neither — that is what `release:gate` and CI enforce, and the warnings tier has been paid down to zero: do not reintroduce one. The `error` tier is reserved for defects: async safety and throw contracts. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
 - **Sync-over-async for context propagation.** `withStore` iterators and the `fetch` patch intentionally return promises from non-`async` functions so `als.run()` keeps turn context without an extra tick. Don't "fix" these into `async`.
 - **Style:** arrow-function consts (not `function` declarations), dot notation, explicit `=== undefined` checks, `oxfmt` formatting.
 
@@ -30,7 +30,7 @@ pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, li
 - **Deterministic only.** No `Math.random()`, no fixed `sleep()` waits. Async file assertions poll with a deadline (`waitForFileContent`).
 - **No secret fixtures.** Session IDs are derived at runtime (`openCodeSessionIdFor`) or read from `OPENCODE_SESSION_ID`; never hardcode `ses_…` or API keys. `lib/` and `*.log` stay gitignored.
 - **Restore globals.** Tests that touch `globalThis.fetch` or `process.env` must restore them in `afterEach` (`vi.unstubAllGlobals()`, `delete process.env.…`).
-- **Meaningful coverage.** Every toggle (`injectUserAgent`, `injectOriginHeaders`, `injectCoreTools`, `providers`, `userAgent`) needs both the on and off path; every passthrough claim needs a non-OpenCode URL test proving headers are untouched.
+- **Meaningful coverage.** Every config field in the `SPECS` register (`src/settings-fields.ts`) needs both the on and off path where it has one; every passthrough claim needs a non-OpenCode URL test proving headers are untouched; helper functions exported from `usage-ui.ts` are asserted directly, not re-derived in the test.
 
 ## Release process (maintainers)
 

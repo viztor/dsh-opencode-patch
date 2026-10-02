@@ -1,0 +1,113 @@
+/**
+ * The `llm/stream` hook: turn capture for configured providers.
+ *
+ * Extracted from `apply()` so the lifecycle wiring stays readable; the hook
+ * itself validates the stream options, derives the session value, optionally
+ * records the debug entry, and carries the turn state through the downstream
+ * async iterable.
+ *
+ * @module dsh-opencode-patch/stream-hook
+ */
+
+import type { AsyncLocalStorage } from "node:async_hooks";
+
+import type { ResolvedPluginConfig } from "./config.ts";
+import type { DebugContext } from "./debug.ts";
+import { recordDebug } from "./debug.ts";
+import { isAsyncIterableLike } from "./guards.ts";
+import { headerValueFor, SESSION_HEADER } from "./session.ts";
+import type { ActiveTurnState } from "./turn-store.ts";
+import { withStore } from "./turn-store.ts";
+
+interface StreamOptions {
+  model?: unknown;
+  provider?: unknown;
+  sessionId?: unknown;
+}
+
+const isStreamOptions = (value: unknown): value is StreamOptions =>
+  typeof value === "object" && value !== null;
+
+type StreamHandler = (options: unknown, next: () => unknown) => unknown;
+
+/**
+ * Build the `llm/stream` listener.
+ *
+ * @param ctx - plugin context (logging + debug file writes).
+ * @param config - resolved plugin configuration.
+ * @param als - turn store shared with the fetch patch.
+ */
+export const createStreamHook = (
+  ctx: DebugContext & {
+    logger?: {
+      info?: (msg: string, ...args: unknown[]) => void;
+    };
+  },
+  config: ResolvedPluginConfig,
+  als: AsyncLocalStorage<ActiveTurnState>
+): StreamHandler => {
+  const { debug, debugFile, providers } = config;
+
+  return (options: unknown, next: () => unknown): unknown => {
+    if (!isStreamOptions(options)) {
+      return next();
+    }
+    const providerProp: unknown = options.provider;
+    if (typeof providerProp !== "string" && typeof providerProp !== "number") {
+      return next();
+    }
+    const providerKey = String(providerProp);
+    if (!providers.has(providerKey)) {
+      return next();
+    }
+    const sessionProp: unknown = options.sessionId;
+    if (typeof sessionProp !== "string" && typeof sessionProp !== "number") {
+      return next();
+    }
+    const rawSession = String(sessionProp);
+    if (rawSession.length === 0) {
+      return next();
+    }
+    const value = headerValueFor(rawSession);
+    if (value === undefined) {
+      return next();
+    }
+
+    const downstream: unknown = next();
+    if (!isAsyncIterableLike(downstream)) {
+      return downstream;
+    }
+
+    if (debug || debugFile !== undefined) {
+      const entry = {
+        header: SESSION_HEADER,
+        model: options.model,
+        provider: providerKey,
+        session: rawSession,
+        ts: new Date().toISOString(),
+        value,
+      };
+      if (debugFile !== undefined) {
+        void recordDebug(ctx, debugFile, entry);
+      }
+      if (debug) {
+        ctx.logger?.info?.(
+          '[dsh-opencode-patch] streaming provider "%s" with %s=%s',
+          providerKey,
+          SESSION_HEADER,
+          value
+        );
+      }
+    }
+    const modelProp: unknown = options.model;
+    return withStore(
+      downstream,
+      {
+        model: typeof modelProp === "string" ? modelProp : undefined,
+        provider: providerKey,
+        value,
+      },
+      als
+    );
+  };
+};
