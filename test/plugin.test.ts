@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type ActiveTurnState,
+  Config,
   type CordisContext,
   apply,
   discoverGoConfig,
@@ -22,6 +23,7 @@ import {
   OPENCODE_UA,
   parseGoUsage,
   patchFetch,
+  type PluginConfig,
   resolveConfig,
   SESSION_HEADER,
   usageRemote,
@@ -260,6 +262,59 @@ describe("resolveConfig", () => {
     });
     expect(resolved.userAgent).toBe("custom-ua/2.0");
     expect(resolved.debugFile).toBeUndefined();
+  });
+});
+
+describe("Config schema", () => {
+  it("validates an empty row to the documented defaults", () => {
+    // The harness validates the patch row against this schema before the
+    // plugin sees it, and the settings UI serves the namespace from it — so
+    // the schema is what makes the row a real settings section. An empty row
+    // must validate to exactly the keys `resolveConfig` understands.
+    const validated = Config({}) as Record<string, unknown>;
+    // oxlint-disable-next-line unicorn/no-array-sort -- `Object.keys` returns a fresh array, so in-place sort mutates nothing shared.
+    expect(Object.keys(validated).sort()).toEqual(
+      [
+        "debug",
+        "debugFile",
+        "injectCoreTools",
+        "injectOriginHeaders",
+        "injectUserAgent",
+        "providers",
+        "usageBaseURL",
+        "usageEnabled",
+        "usageKeyEnv",
+        "userAgent",
+        // oxlint-disable-next-line unicorn/no-array-sort -- array literal is fresh, so in-place sort mutates nothing shared.
+      ].sort()
+    );
+    expect(resolveConfig(validated as PluginConfig)).toMatchObject({
+      debug: false,
+      injectCoreTools: true,
+      injectOriginHeaders: true,
+      injectUserAgent: true,
+      providers: new Set(["opencode", "opencode-go"]),
+      usageBaseURL: "https://opencode.ai/zen/go/v1",
+      usageEnabled: true,
+      usageKeyEnv: "OPENCODE_GO_API_KEY",
+    });
+  });
+
+  it("resolves validated and raw rows identically", () => {
+    // Validated and raw rows reach `resolveConfig` from different layers, and
+    // must not disagree about a default — otherwise the settings page would
+    // show one thing and the host would enforce another.
+    const cases: PluginConfig[] = [
+      {},
+      { providers: ["opencode"] },
+      { injectUserAgent: false, usageEnabled: false, debug: true },
+      { usageKeyEnv: "X", usageBaseURL: "https://example.invalid" },
+    ];
+    for (const row of cases) {
+      expect(resolveConfig(Config(row) as unknown as PluginConfig)).toEqual(
+        resolveConfig(row)
+      );
+    }
   });
 });
 
