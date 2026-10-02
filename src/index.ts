@@ -161,5 +161,3 @@ export const apply = (
 
   ctx.on?.("llm/stream", createStreamHook(ctx, config, als), { prepend: true });
 };
-
-export default { apply, inject, name };
