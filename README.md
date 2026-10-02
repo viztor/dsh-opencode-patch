@@ -267,7 +267,7 @@ To ensure existing profiles and dependencies continue working without breaking c
 | **Runtime Floor** | Node.js `>=24.0.0` |
 | **Gateways** | `zen/v1` (`/responses` & chat completions), `zen/go/v1` (chat completions) |
 | **Supported Models** | `muse-spark-1.3-contributor-free`, `space-bunny-free`, `deepseek-v4.1-flash` |
-| **Verification Gate** | `vp check` clean, 59 unit tests passing, full schema validation |
+| **Verification Gate** | `vp check` clean, 94 unit tests passing, full schema validation, consumer install+load (`scripts/check.ts`) |
 
 ---
 
