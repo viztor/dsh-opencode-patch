@@ -419,11 +419,15 @@ describe("settings-page: OpencodeCard rendering", () => {
     const form = firstOf(tree, "SettingsForm");
     expect(form).toBeDefined();
 
-    // Verify SettingsValueFields exist in tree: the 10 original controls
-    // plus the 7 adaptivity knobs the host schema also serves.
+    // Boolean fields now render as SettingsBooleanField (with Switch inside),
+    // text/list fields remain SettingsValueField. Total = 17.
     const valueFields = findAll(tree, "SettingsValueField");
-    expect(valueFields.length).toBe(17);
-    const ids = valueFields.map((field) => field.props.id);
+    const boolFields = findAll(tree, "SettingsBooleanField");
+    expect(valueFields.length + boolFields.length).toBe(17);
+    // 12 text/list fields, 5 boolean fields:
+    expect(valueFields.length).toBe(12);
+    expect(boolFields.length).toBe(5);
+    const ids = valueFields.map((f) => f.props.id);
     for (const knob of [
       "freeModelMarker",
       "gatewayUrls",
@@ -435,18 +439,38 @@ describe("settings-page: OpencodeCard rendering", () => {
     ]) {
       expect(ids).toContain(`plugin-config-opencode-${knob}`);
     }
+    const boolIds = boolFields.map((f) => f.props.id);
+    for (const knob of [
+      "injectUserAgent",
+      "injectOriginHeaders",
+      "injectCoreTools",
+      "usageEnabled",
+      "debug",
+    ]) {
+      expect(boolIds).toContain(`plugin-config-opencode-${knob}`);
+    }
 
-    // Test form field edit callbacks
-    const [firstField] = valueFields;
-    assert.ok(firstField);
-    const onEdit = firstField.props.onEdit as (val: string) => void;
-    onEdit("false");
-    expect(edits).toEqual([{ field: "injectUserAgent", text: "false" }]);
+    // Test boolean field edit: first boolean field is injectUserAgent
+    const [firstBool] = boolFields;
+    assert.ok(firstBool);
+    const onBoolEdit = firstBool.props.onEdit as (text: string) => void;
+    onBoolEdit("false");
+    expect(edits).toContainEqual({ field: "injectUserAgent", text: "false" });
 
-    // Test form field reset callbacks
-    const onReset = firstField.props.onReset as () => void;
+    // Test text field edit via the first SettingsValueField (userAgent)
+    const [firstValueField] = valueFields;
+    assert.ok(firstValueField);
+    const onEdit = firstValueField.props.onEdit as (val: string) => void;
+    onEdit("opencode/custom");
+    expect(edits).toContainEqual({
+      field: "userAgent",
+      text: "opencode/custom",
+    });
+
+    // Test reset callback
+    const onReset = firstBool.props.onReset as () => void;
     onReset();
-    expect(resets).toEqual(["injectUserAgent"]);
+    expect(resets).toContain("injectUserAgent");
   });
 
   it("disables fields when writable is false", () => {
@@ -476,8 +500,12 @@ describe("settings-page: OpencodeCard rendering", () => {
     });
 
     const valueFields = findAll(tree, "SettingsValueField");
-    for (const field of valueFields) {
-      expect(field.props.disabled).toBe(true);
+    for (const f of valueFields) {
+      expect(f.props.disabled).toBe(true);
+    }
+    const boolFields = findAll(tree, "SettingsBooleanField");
+    for (const f of boolFields) {
+      expect(f.props.disabled).toBe(true);
     }
   });
 });

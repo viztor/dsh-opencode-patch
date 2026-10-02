@@ -14,6 +14,8 @@ import {
   SettingsForm,
   SettingsFormModel,
   SettingsValueField,
+  Switch,
+  Tag,
   type SettingsFormScope,
   type SettingsFormShell,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -82,6 +84,92 @@ const formLabels = (t: Translate) => ({
   unavailable: t("unavailable"),
 });
 
+interface BooleanFieldProps {
+  disabled: boolean;
+  hint?: string;
+  id: string;
+  label: string;
+  onEdit: (text: string) => void;
+  onReset: () => void;
+  overridden: boolean;
+  overriddenLabel: string;
+  resetLabel: string;
+  text: string;
+}
+
+/**
+ * A boolean toggle field that uses the Switch primitive.
+ *
+ * Mirrors the label/override-badge/reset/hint chrome of SettingsValueField
+ * but replaces the text input with a Switch so boolean config knobs render
+ * as proper toggles instead of "true"/"false" text boxes.
+ */
+const SettingsBooleanField: React.FC<BooleanFieldProps> = (
+  props: BooleanFieldProps
+) => {
+  const checked = props.text === "true";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      <div
+        style={{
+          alignItems: "center",
+          display: "flex",
+          gap: "8px",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ alignItems: "center", display: "flex", gap: "6px" }}>
+          <label
+            htmlFor={props.id}
+            style={{ fontSize: "13px", fontWeight: 500 }}
+          >
+            {props.label}
+          </label>
+          {props.overridden ? (
+            <>
+              <Tag tone="neutral">{props.overriddenLabel}</Tag>
+              <button
+                disabled={props.disabled}
+                onClick={props.onReset}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--color-fg-subtle, #8b949e)",
+                  cursor: props.disabled ? "default" : "pointer",
+                  fontSize: "11px",
+                  padding: "0",
+                }}
+                type="button"
+              >
+                {props.resetLabel}
+              </button>
+            </>
+          ) : null}
+        </div>
+        <Switch
+          checked={checked}
+          disabled={props.disabled}
+          label={props.label}
+          onChange={(next: boolean) => {
+            props.onEdit(String(next));
+          }}
+        />
+      </div>
+      {props.hint === undefined ? null : (
+        <p
+          style={{
+            color: "var(--color-fg-subtle, #8b949e)",
+            fontSize: "12px",
+            margin: 0,
+          }}
+        >
+          {props.hint}
+        </p>
+      )}
+    </div>
+  );
+};
+
 const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
   const { t } = props;
   if (props.view === "summary") {
@@ -106,6 +194,28 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
     ...(state.fields[name] ?? { invalid: false, overridden: false, text: "" }),
   });
 
+  const boolField = (name: string) => {
+    const f = state.fields[name] ?? {
+      invalid: false,
+      overridden: false,
+      text: "",
+    };
+    return {
+      disabled,
+      id: `plugin-config-opencode-${name}`,
+      onEdit: (text: string) => {
+        props.edit(name, text);
+      },
+      onReset: () => {
+        props.resetField(name);
+      },
+      overridden: f.overridden,
+      overriddenLabel: t("overridden"),
+      resetLabel: t("reset"),
+      text: f.text,
+    };
+  };
+
   return (
     <SettingsForm
       labels={formLabels(t)}
@@ -113,10 +223,9 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
       onSave={props.save}
       state={state.shell}
     >
-      <SettingsValueField
-        {...field(FIELD.injectUserAgent)}
+      <SettingsBooleanField
+        {...boolField(FIELD.injectUserAgent)}
         hint={t("injectUserAgentHint")}
-        invalidLabel={t("invalidBoolean")}
         label={t("injectUserAgent")}
       />
       <SettingsValueField
@@ -125,10 +234,9 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("userAgent")}
         placeholder="opencode/1.18.33 ..."
       />
-      <SettingsValueField
-        {...field(FIELD.injectOriginHeaders)}
+      <SettingsBooleanField
+        {...boolField(FIELD.injectOriginHeaders)}
         hint={t("injectOriginHeadersHint")}
-        invalidLabel={t("invalidBoolean")}
         label={t("injectOriginHeaders")}
       />
       <SettingsValueField
@@ -143,10 +251,9 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("originProject")}
         placeholder="global"
       />
-      <SettingsValueField
-        {...field(FIELD.injectCoreTools)}
+      <SettingsBooleanField
+        {...boolField(FIELD.injectCoreTools)}
         hint={t("injectCoreToolsHint")}
-        invalidLabel={t("invalidBoolean")}
         label={t("injectCoreTools")}
       />
       <SettingsValueField
@@ -173,10 +280,9 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("sessionIdEnv")}
         placeholder="OPENCODE_SESSION_ID"
       />
-      <SettingsValueField
-        {...field(FIELD.usageEnabled)}
+      <SettingsBooleanField
+        {...boolField(FIELD.usageEnabled)}
         hint={t("usageEnabledHint")}
-        invalidLabel={t("invalidBoolean")}
         label={t("usageEnabled")}
       />
       <SettingsValueField
@@ -203,10 +309,9 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("usageModelMarkers")}
         placeholder="deepseek-v4.1-flash"
       />
-      <SettingsValueField
-        {...field(FIELD.debug)}
+      <SettingsBooleanField
+        {...boolField(FIELD.debug)}
         hint={t("debugHint")}
-        invalidLabel={t("invalidBoolean")}
         label={t("debug")}
       />
       <SettingsValueField

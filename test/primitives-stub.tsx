@@ -188,6 +188,10 @@ export function Switch(props: KitProps) {
   return { props, type: "Switch" };
 }
 
+export function Tag(props: KitProps) {
+  return { props, type: "Tag" };
+}
+
 export function SegmentedControl(props: KitProps) {
   return { props, type: "SegmentedControl" };
 }
