@@ -17,8 +17,6 @@ import {
 
 /** Schema knob names this card edits; keys double as label ids. */
 export const FIELD = {
-  debug: "debug",
-  debugFile: "debugFile",
   freeModelMarker: "freeModelMarker",
   gatewayUrls: "gatewayUrls",
   injectCoreTools: "injectCoreTools",
@@ -31,7 +29,6 @@ export const FIELD = {
   usageBaseURL: "usageBaseURL",
   usageEnabled: "usageEnabled",
   usageKeyEnv: "usageKeyEnv",
-  usageModelMarkers: "usageModelMarkers",
   usageProviderMarkers: "usageProviderMarkers",
   userAgent: "userAgent",
 };
@@ -93,7 +90,4 @@ export const SPECS: SettingsFieldSpec[] = [
   settingsTextField(FIELD.usageBaseURL),
   settingsTextField(FIELD.usageKeyEnv),
   settingsListField(FIELD.usageProviderMarkers),
-  settingsListField(FIELD.usageModelMarkers),
-  settingsBooleanField(FIELD.debug),
-  settingsTextField(FIELD.debugFile),
 ];

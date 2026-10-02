@@ -25,13 +25,6 @@ export const ALL_MODELS_MARKER = "*";
 export const DEFAULT_USAGE_PROVIDER_MARKERS = ["opencode-go"];
 
 /**
- * Model-id markers that make the Go quota meter visible even under a
- * custom-routed provider (Go serves some models outside the `opencode-go`
- * route id).
- */
-export const DEFAULT_USAGE_MODEL_MARKERS = ["deepseek-v4.1-flash"];
-
-/**
  * Unwrap a schemastery volatile `.get()` node to its current value.
  *
  * Idempotent: plain values pass through untouched, so the host behaves

@@ -64,18 +64,22 @@ export class GoUsageService extends TypertRemoteService {
     this.options = options;
   }
 
-  async read(): Promise<GoUsage> {
-    const discovered = discoverGoConfig(this.ctx);
+  async read(query?: { provider?: string }): Promise<GoUsage> {
+    const targetProvider = query?.provider;
+    const discovered = discoverGoConfig(this.ctx, targetProvider);
     const rawBaseURL =
       this.options.baseURL?.() ?? discovered.baseURL ?? DEFAULT_USAGE_BASE_URL;
-    const baseURL = rawBaseURL.replace(/\/$/, "");
+    const normalizedBaseURL = rawBaseURL.includes("opencode.ai/zen/v1")
+      ? rawBaseURL.replace("opencode.ai/zen/v1", "opencode.ai/zen/go/v1")
+      : rawBaseURL;
+    const baseURL = normalizedBaseURL.replace(/\/$/, "");
     const keyRef = effectiveGoKeyRef(discovered, this.options.keyEnv);
 
     let key: string | undefined;
     try {
       key = this.options.resolveApiKey
         ? await this.options.resolveApiKey()
-        : await resolveGoApiKey(this.ctx, this.options.keyEnv);
+        : await resolveGoApiKey(this.ctx, this.options.keyEnv, targetProvider);
     } catch (error: unknown) {
       this.identity = undefined;
       const missing = isMissingCredential(error);
@@ -123,6 +127,8 @@ export class GoUsageService extends TypertRemoteService {
           Accept: "application/json",
           Authorization: `Bearer ${key}`,
           "User-Agent": USAGE_USER_AGENT,
+          "x-opencode-client": "cli",
+          "x-opencode-project": "global",
         },
         redirect: "error",
         signal: AbortSignal.timeout(10_000),

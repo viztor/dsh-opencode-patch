@@ -22,7 +22,6 @@ import {
 import React from "react";
 
 import {
-  DEFAULT_USAGE_MODEL_MARKERS,
   DEFAULT_USAGE_PROVIDER_MARKERS,
   readStringList,
 } from "./config-values.ts";
@@ -303,23 +302,6 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("usageProviderMarkers")}
         placeholder="opencode-go"
       />
-      <SettingsValueField
-        {...field(FIELD.usageModelMarkers)}
-        hint={t("usageModelMarkersHint")}
-        label={t("usageModelMarkers")}
-        placeholder="deepseek-v4.1-flash"
-      />
-      <SettingsBooleanField
-        {...boolField(FIELD.debug)}
-        hint={t("debugHint")}
-        label={t("debug")}
-      />
-      <SettingsValueField
-        {...field(FIELD.debugFile)}
-        hint={t("debugFileHint")}
-        label={t("debugFile")}
-        placeholder="/tmp/dsh-opencode-debug.jsonl"
-      />
     </SettingsForm>
   );
 };
@@ -413,16 +395,12 @@ export const apply = (ctx: ClientContext): void => {
    * fields carry no user value.
    */
   const usageMarkers = (): {
-    modelMarkers: string[];
     providerMarkers: string[];
   } => {
     const value: unknown = scope?.getSnapshot().value;
     const record = isRecord(value) ? value : {};
-    const modelMarkers = readStringList(record.usageModelMarkers);
     const providerMarkers = readStringList(record.usageProviderMarkers);
     return {
-      modelMarkers:
-        modelMarkers.length > 0 ? modelMarkers : DEFAULT_USAGE_MODEL_MARKERS,
       providerMarkers:
         providerMarkers.length > 0
           ? providerMarkers

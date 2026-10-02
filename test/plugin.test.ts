@@ -272,7 +272,6 @@ describe("resolveConfig", () => {
     expect(defaults.freeModelMarker).toBe("free");
     expect(defaults.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
     expect(defaults.usageProviderMarkers).toEqual(["opencode-go"]);
-    expect(defaults.usageModelMarkers).toEqual(["deepseek-v4.1-flash"]);
 
     const custom = resolveConfig({
       freeModelMarker: "  preview  ",
@@ -280,7 +279,6 @@ describe("resolveConfig", () => {
       originClient: "desktop",
       originProject: "team-a",
       sessionIdEnv: "MY_SESSION",
-      usageModelMarkers: ["flash-latest"],
       usageProviderMarkers: ["go-relay"],
     });
     expect(custom.gatewayUrls).toEqual(["relay.example.com/zen"]);
@@ -289,7 +287,6 @@ describe("resolveConfig", () => {
     expect(custom.freeModelMarker).toBe("preview");
     expect(custom.sessionIdEnv).toBe("MY_SESSION");
     expect(custom.usageProviderMarkers).toEqual(["go-relay"]);
-    expect(custom.usageModelMarkers).toEqual(["flash-latest"]);
 
     // Blank strings and empty lists fall back instead of disabling the knob.
     const blank = resolveConfig({
@@ -298,7 +295,6 @@ describe("resolveConfig", () => {
       originClient: "",
       originProject: "   ",
       sessionIdEnv: "",
-      usageModelMarkers: [],
       usageProviderMarkers: ["", " "],
     });
     expect(blank.gatewayUrls).toEqual(["opencode.ai/zen"]);
@@ -307,7 +303,6 @@ describe("resolveConfig", () => {
     expect(blank.freeModelMarker).toBe("free");
     expect(blank.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
     expect(blank.usageProviderMarkers).toEqual(["opencode-go"]);
-    expect(blank.usageModelMarkers).toEqual(["deepseek-v4.1-flash"]);
   });
 });
 
@@ -322,7 +317,6 @@ describe("Config schema", () => {
     expect(Object.keys(validated).sort()).toEqual(
       [
         "debug",
-        "debugFile",
         "freeModelMarker",
         "gatewayUrls",
         "injectCoreTools",
@@ -335,7 +329,6 @@ describe("Config schema", () => {
         "usageBaseURL",
         "usageEnabled",
         "usageKeyEnv",
-        "usageModelMarkers",
         "usageProviderMarkers",
         "userAgent",
         // oxlint-disable-next-line unicorn/no-array-sort -- array literal is fresh, so in-place sort mutates nothing shared.
@@ -355,7 +348,6 @@ describe("Config schema", () => {
       usageBaseURL: "https://opencode.ai/zen/go/v1",
       usageEnabled: true,
       usageKeyEnv: "OPENCODE_GO_API_KEY",
-      usageModelMarkers: ["deepseek-v4.1-flash"],
       usageProviderMarkers: ["opencode-go"],
     });
   });

@@ -196,7 +196,7 @@ describe("usage-pill: UsagePill component gating", () => {
     expect(element.type).toBeDefined();
   });
 
-  it("mounts ActiveUsage when active model contains deepseek-v4.1-flash", () => {
+  it("does not mount ActiveUsage when active provider is not opencode-go even if model is deepseek-v4.1-flash", () => {
     const store = createStore({
       current: {
         model: "deepseek-v4.1-flash",
@@ -210,9 +210,7 @@ describe("usage-pill: UsagePill component gating", () => {
       t: (k: string) => k,
     });
 
-    expect(element).not.toBeNull();
-    assert.ok(element);
-    expect(element.type).toBeDefined();
+    expect(element).toBeNull();
   });
 
   it("honours configured provider markers instead of the built-in gate", () => {

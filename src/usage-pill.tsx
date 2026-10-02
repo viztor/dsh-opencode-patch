@@ -21,10 +21,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import {
-  DEFAULT_USAGE_MODEL_MARKERS,
-  DEFAULT_USAGE_PROVIDER_MARKERS,
-} from "./config-values.ts";
+import { DEFAULT_USAGE_PROVIDER_MARKERS } from "./config-values.ts";
 import { isRecord } from "./guards.ts";
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import {
@@ -57,8 +54,7 @@ export interface UsagePillProps {
   directory: SnapshotStore<ModelDirectoryState>;
   getLocale?: () => string;
   /**
-   * Model-id markers that reveal the meter even under a custom-routed
-   * provider. Defaults to the Go model marker when absent or empty.
+   * Deprecated: model markers are no longer used for gating. Kept optional for backward compatibility.
    */
   modelMarkers?: readonly string[];
   /**
@@ -66,7 +62,7 @@ export interface UsagePillProps {
    * marker when absent or empty.
    */
   providerMarkers?: readonly string[];
-  readUsage: () => Promise<GoUsage>;
+  readUsage: (provider?: string) => Promise<GoUsage>;
   t: (key: string) => string;
 }
 
@@ -113,11 +109,16 @@ const parseFailure = (error: unknown): UsageFailure => {
   };
 };
 
+interface ActiveUsageProps extends Omit<UsagePillProps, "directory"> {
+  provider?: string;
+}
+
 const ActiveUsage = ({
   getLocale,
+  provider,
   readUsage,
   t,
-}: Omit<UsagePillProps, "directory">): React.ReactElement | null => {
+}: ActiveUsageProps): React.ReactElement | null => {
   const [snapshot, setSnapshot] = useState<{
     reader: typeof readUsage;
     updatedAt: number;
@@ -148,7 +149,7 @@ const ActiveUsage = ({
       busy = true;
       setRefreshing(true);
       try {
-        const value = await readUsage();
+        const value = await readUsage(provider);
         if (alive) {
           setSnapshot({
             reader: readUsage,
@@ -435,6 +436,11 @@ const ActiveUsage = ({
                   );
                 })}
               </div>
+              {isLimited ? (
+                <div className="dsh-oc-usage-zen-notice">
+                  {t("usageZenFallbackNotice")}
+                </div>
+              ) : null}
             </>
           )}
 
@@ -492,7 +498,7 @@ const ActiveUsage = ({
 
 export const UsagePill = ({
   directory,
-  modelMarkers,
+  modelMarkers: _modelMarkers,
   providerMarkers,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
@@ -503,7 +509,6 @@ export const UsagePill = ({
   );
 
   const provider = state?.current?.provider ?? "";
-  const model = state?.current?.model ?? "";
   // The settings scope passes the configured markers at inject time; an
   // absent or empty list falls back to the plugin defaults, so direct
   // callers (and older injected props) keep the stock Go gate.
@@ -511,16 +516,11 @@ export const UsagePill = ({
     providerMarkers !== undefined && providerMarkers.length > 0
       ? providerMarkers
       : DEFAULT_USAGE_PROVIDER_MARKERS;
-  const models =
-    modelMarkers !== undefined && modelMarkers.length > 0
-      ? modelMarkers
-      : DEFAULT_USAGE_MODEL_MARKERS;
-  const isOpenCodeGo =
-    matchesAny(provider, providers) || matchesAny(model, models);
+  const isOpenCodeGo = matchesAny(provider, providers);
 
   if (!isOpenCodeGo) {
     return null;
   }
 
-  return <ActiveUsage {...props} />;
+  return <ActiveUsage {...props} provider={provider} />;
 };

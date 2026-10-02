@@ -333,6 +333,18 @@ export const STYLES = `
   cursor: default;
 }
 
+.dsh-oc-usage-zen-notice {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d97706) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d97706) 25%, transparent);
+  color: inherit;
+  opacity: 0.95;
+  margin-top: 4px;
+}
+
 /* The "what do I do about this" row. Links, not buttons: both navigate away. */
 .dsh-oc-usage-links {
   display: flex;
