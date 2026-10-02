@@ -268,7 +268,7 @@ describe("resolveConfig", () => {
     const defaults = resolveConfig({});
     expect(defaults.gatewayUrls).toEqual(["opencode.ai/zen"]);
     expect(defaults.originClient).toBe("cli");
-    expect(defaults.originProject).toBe("global");
+    expect(defaults.injectProject).toBe(true);
     expect(defaults.freeModelMarker).toBe("free");
     expect(defaults.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
     expect(defaults.usageProviderMarkers).toEqual(["opencode-go"]);
@@ -276,14 +276,14 @@ describe("resolveConfig", () => {
     const custom = resolveConfig({
       freeModelMarker: "  preview  ",
       gatewayUrls: [" relay.example.com/zen ", ""],
+      injectProject: false,
       originClient: "desktop",
-      originProject: "team-a",
       sessionIdEnv: "MY_SESSION",
       usageProviderMarkers: ["go-relay"],
     });
     expect(custom.gatewayUrls).toEqual(["relay.example.com/zen"]);
     expect(custom.originClient).toBe("desktop");
-    expect(custom.originProject).toBe("team-a");
+    expect(custom.injectProject).toBe(false);
     expect(custom.freeModelMarker).toBe("preview");
     expect(custom.sessionIdEnv).toBe("MY_SESSION");
     expect(custom.usageProviderMarkers).toEqual(["go-relay"]);
@@ -293,13 +293,12 @@ describe("resolveConfig", () => {
       freeModelMarker: "",
       gatewayUrls: [],
       originClient: "",
-      originProject: "   ",
       sessionIdEnv: "",
       usageProviderMarkers: ["", " "],
     });
     expect(blank.gatewayUrls).toEqual(["opencode.ai/zen"]);
     expect(blank.originClient).toBe("cli");
-    expect(blank.originProject).toBe("global");
+    expect(blank.injectProject).toBe(true);
     expect(blank.freeModelMarker).toBe("free");
     expect(blank.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
     expect(blank.usageProviderMarkers).toEqual(["opencode-go"]);
@@ -321,9 +320,9 @@ describe("Config schema", () => {
         "gatewayUrls",
         "injectCoreTools",
         "injectOriginHeaders",
+        "injectProject",
         "injectUserAgent",
         "originClient",
-        "originProject",
         "providers",
         "sessionIdEnv",
         "usageBaseURL",
@@ -340,9 +339,9 @@ describe("Config schema", () => {
       gatewayUrls: ["opencode.ai/zen"],
       injectCoreTools: true,
       injectOriginHeaders: true,
+      injectProject: true,
       injectUserAgent: true,
       originClient: "cli",
-      originProject: "global",
       providers: new Set(["opencode", "opencode-go"]),
       sessionIdEnv: "OPENCODE_SESSION_ID",
       usageBaseURL: "https://opencode.ai/zen/go/v1",
@@ -662,7 +661,7 @@ describe("patchFetch", () => {
     const patched = patchFetch(
       mockFetch,
       als,
-      resolveConfig({ originClient: "desktop", originProject: "team-a" })
+      resolveConfig({ originClient: "desktop", injectProject: true })
     );
 
     await als.run(
@@ -674,15 +673,15 @@ describe("patchFetch", () => {
       }
     );
     expect(headerOf(capture.init, "x-opencode-client")).toBe("desktop");
-    expect(headerOf(capture.init, "x-opencode-project")).toBe("team-a");
+    expect(headerOf(capture.init, "x-opencode-project")).toBe("global");
   });
 
-  it("dynamically resolves x-opencode-project from workspace when default, and omits when blank", async () => {
+  it("dynamically resolves x-opencode-project from workspace when injectProject is on, and omits when off", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const { capture: c1, mockFetch: m1 } = createCaptureFetch();
     const patched1 = patchFetch(m1, als, resolveConfig());
 
-    // When default (global), dynamic project from workspace turn state is used:
+    // When default (injectProject: true), dynamic project from workspace turn state is used:
     await als.run(
       {
         project: "my-web-workspace",
@@ -697,12 +696,12 @@ describe("patchFetch", () => {
     );
     expect(headerOf(c1.init, "x-opencode-project")).toBe("my-web-workspace");
 
-    // When "none", header is completely omitted:
+    // When injectProject: false, header is completely omitted:
     const { capture: c2, mockFetch: m2 } = createCaptureFetch();
     const patched2 = patchFetch(
       m2,
       als,
-      resolveConfig({ originProject: "none" })
+      resolveConfig({ injectProject: false })
     );
     await als.run(
       {

@@ -420,15 +420,14 @@ describe("settings-page: OpencodeCard rendering", () => {
     const valueFields = findAll(tree, "SettingsValueField");
     const boolFields = findAll(tree, "SettingsBooleanField");
     expect(valueFields.length + boolFields.length).toBe(14);
-    // 10 text/list fields, 4 boolean fields:
-    expect(valueFields.length).toBe(10);
-    expect(boolFields.length).toBe(4);
+    // 9 text/list fields, 5 boolean fields:
+    expect(valueFields.length).toBe(9);
+    expect(boolFields.length).toBe(5);
     const ids = valueFields.map((f) => f.props.id);
     for (const knob of [
       "freeModelMarker",
       "gatewayUrls",
       "originClient",
-      "originProject",
       "sessionIdEnv",
       "usageBaseURL",
       "usageKeyEnv",
@@ -440,6 +439,7 @@ describe("settings-page: OpencodeCard rendering", () => {
     for (const knob of [
       "injectUserAgent",
       "injectOriginHeaders",
+      "injectProject",
       "injectCoreTools",
       "usageEnabled",
     ]) {
@@ -519,7 +519,7 @@ describe("settings-page: field specs", () => {
       "userAgent",
       "injectOriginHeaders",
       "originClient",
-      "originProject",
+      "injectProject",
       "injectCoreTools",
       "freeModelMarker",
       "providers",

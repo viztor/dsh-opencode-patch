@@ -11,9 +11,9 @@
 #   providers: [string]         provider route keys to intercept (default ['opencode', 'opencode-go']).
 #   injectUserAgent: boolean    restore OpenCode CLI User-Agent stripped by DSH adapter (default true).
 #   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
-#   injectOriginHeaders: bool   inject x-opencode-client & x-opencode-project (default true).
+#   injectOriginHeaders: bool   inject x-opencode-client (default true).
 #   originClient: string        x-opencode-client value (default 'cli').
-#   originProject: string       x-opencode-project value (default 'global').
+#   injectProject: boolean      attach active workspace project in x-opencode-project (default true).
 #   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
 #   freeModelMarker: string     model-id substring getting the core-tool fallback ('*' = all, '' = none; default 'free').
 #   gatewayUrls: [string]       URL substrings marking OpenCode gateway traffic (default ['opencode.ai/zen']).
@@ -22,7 +22,6 @@
 #   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
 #   usageKeyEnv: string         environment variable or credential ref for Go key (default 'OPENCODE_GO_API_KEY').
 #   usageProviderMarkers: [str] provider substrings whose quota the meter reports (default ['opencode-go']).
-#   usageModelMarkers: [string] model substrings whose quota the meter reports (default ['deepseek-v4.1-flash']).
 #   debug: true|false           log every streamed call that receives the header.
 #   debugFile: path             optional append target for stream debug JSONL.
 - insert:

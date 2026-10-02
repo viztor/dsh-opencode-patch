@@ -244,11 +244,10 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("originClient")}
         placeholder="cli"
       />
-      <SettingsValueField
-        {...field(FIELD.originProject)}
-        hint={t("originProjectHint")}
-        label={t("originProject")}
-        placeholder="global"
+      <SettingsBooleanField
+        {...boolField(FIELD.injectProject)}
+        hint={t("injectProjectHint")}
+        label={t("injectProject")}
       />
       <SettingsBooleanField
         {...boolField(FIELD.injectCoreTools)}

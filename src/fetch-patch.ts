@@ -170,18 +170,12 @@ export const patchFetch = (
     if (config.injectOriginHeaders) {
       headers.set("x-opencode-client", config.originClient);
 
-      const isExplicitNone =
-        config.originProject === "none" || config.originProject === "off";
-
-      if (!isExplicitNone) {
-        const effectiveProject =
-          config.originProject.length > 0 && config.originProject !== "global"
-            ? config.originProject
-            : (state?.project ?? config.originProject);
-
-        if (effectiveProject.length > 0) {
-          headers.set("x-opencode-project", effectiveProject);
-        }
+      if (config.injectProject) {
+        const project =
+          state?.project !== undefined && state.project.length > 0
+            ? state.project
+            : "global";
+        headers.set("x-opencode-project", project);
       }
     }
 
