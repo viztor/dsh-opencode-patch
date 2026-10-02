@@ -14,8 +14,14 @@ import { createHash } from "node:crypto";
 /** Header carrying the derived OpenCode session id. */
 export const SESSION_HEADER = "x-opencode-session";
 
+/** Generic proxy session affinity header used by gateways and connection pools. */
+export const SESSION_AFFINITY_HEADER = "x-session-affinity";
+
 /** Header carrying the derived OpenCode parent session id for subagents. */
 export const PARENT_SESSION_HEADER = "x-opencode-parent-session-id";
+
+/** Generic parent session header used by third-party proxies. */
+export const PARENT_SESSION_ALT_HEADER = "x-parent-session-id";
 
 /** Canonical OpenCode CLI User-Agent the DSH LLM adapter strips. */
 export const OPENCODE_UA =
