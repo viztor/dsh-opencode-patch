@@ -42,14 +42,20 @@ const readProviderRow = (
 /**
  * Auto-discover OpenCode Go provider configuration from loaded Cordis
  * entries (e.g. llm-pi-ai), honoring both shapes it ships in: a
- * `providers["opencode-go"]` row inside a provider registry, and a
- * standalone entry with `id: opencode-go` / `name: dsh-opencode-go`.
+ * provider row inside a provider registry, and a standalone entry.
+ *
+ * Checks `targetProvider` first if specified, then falls back to `opencode-go`
+ * and `opencode` (Zen), or any provider pointing to `opencode.ai`.
  *
  * Later entries win, mirroring composition order.
  *
  * @param ctx - the plugin context, mock or real.
+ * @param targetProvider - optional specific provider route id to prioritize.
  */
-export const discoverGoConfig = (ctx: unknown): DiscoveredGoConfig => {
+export const discoverGoConfig = (
+  ctx: unknown,
+  targetProvider?: string
+): DiscoveredGoConfig => {
   const result: DiscoveredGoConfig = {};
   if (!isLoaderHost(ctx)) {
     return result;
@@ -68,18 +74,42 @@ export const discoverGoConfig = (ctx: unknown): DiscoveredGoConfig => {
       continue;
     }
 
-    // 1. `providers["opencode-go"]` inside a provider registry like llm-pi-ai.
+    // 1. Providers inside a provider registry like llm-pi-ai.
     const providers: unknown = config.providers;
     if (isRecord(providers)) {
-      const goProvider: unknown = providers["opencode-go"];
-      if (isRecord(goProvider)) {
-        readProviderRow(goProvider, result);
+      if (
+        typeof targetProvider === "string" &&
+        targetProvider.length > 0 &&
+        isRecord(providers[targetProvider])
+      ) {
+        readProviderRow(providers[targetProvider], result);
+      }
+      if (isRecord(providers["opencode-go"])) {
+        readProviderRow(providers["opencode-go"], result);
+      }
+      if (isRecord(providers.opencode)) {
+        readProviderRow(providers.opencode, result);
+      }
+      for (const pRow of Object.values(providers)) {
+        if (isRecord(pRow)) {
+          const bUrl: unknown = pRow.baseURL;
+          if (typeof bUrl === "string" && bUrl.includes("opencode.ai")) {
+            readProviderRow(pRow, result);
+          }
+        }
       }
     }
 
-    // 2. Standalone provider entries like `id: opencode-go`.
+    // 2. Standalone provider entries like `id: opencode-go` or `id: opencode`.
     const { id, name } = options;
-    if (id === "opencode-go" || name === "dsh-opencode-go") {
+    if (
+      (typeof targetProvider === "string" &&
+        (id === targetProvider || name === targetProvider)) ||
+      id === "opencode-go" ||
+      id === "opencode" ||
+      name === "dsh-opencode-go" ||
+      name === "dsh-opencode"
+    ) {
       readProviderRow(config, result);
     }
   }
@@ -93,13 +123,27 @@ export const discoverGoConfig = (ctx: unknown): DiscoveredGoConfig => {
  *
  * @param ctx - the plugin context used for discovery.
  * @param configured - the row's `usageBaseURL` setting.
+ * @param targetProvider - optional specific provider route id to prioritize.
  */
-export const resolveGoBaseURL = (ctx: unknown, configured: string): string => {
+export const resolveGoBaseURL = (
+  ctx: unknown,
+  configured: string,
+  targetProvider?: string
+): string => {
   if (configured.length > 0 && configured !== DEFAULT_USAGE_BASE_URL) {
     return configured;
   }
-  const discovered = discoverGoConfig(ctx);
-  return discovered.baseURL ?? configured;
+  const discovered = discoverGoConfig(ctx, targetProvider);
+  if (discovered.baseURL !== undefined && discovered.baseURL.length > 0) {
+    if (discovered.baseURL.includes("opencode.ai/zen/v1")) {
+      return discovered.baseURL.replace(
+        "opencode.ai/zen/v1",
+        "opencode.ai/zen/go/v1"
+      );
+    }
+    return discovered.baseURL;
+  }
+  return configured;
 };
 
 /**
@@ -137,14 +181,16 @@ export const effectiveGoKeyRef = (
  *
  * @param ctx - the plugin context used for discovery and credentials.
  * @param configuredKeyEnv - the row's `usageKeyEnv` setting.
+ * @param targetProvider - optional specific provider route id to prioritize.
  * @returns the key, or `undefined` when nothing resolves — the caller raises
  * the typed `MISSING_CREDENTIAL` error instead of a raw one.
  */
 export const resolveGoApiKey = async (
   ctx: unknown,
-  configuredKeyEnv?: string
+  configuredKeyEnv?: string,
+  targetProvider?: string
 ): Promise<string | undefined> => {
-  const discovered = discoverGoConfig(ctx);
+  const discovered = discoverGoConfig(ctx, targetProvider);
   if (
     typeof discovered.literalKey === "string" &&
     discovered.literalKey.length > 0
@@ -170,13 +216,18 @@ export const resolveGoKeyForRef = async (
 ): Promise<string | undefined> => {
   const resolve = readCredentialsResolver(ctx);
   if (resolve !== undefined) {
-    try {
-      const hit = await resolve(ref);
-      if (hit?.value !== undefined && hit.value.length > 0) {
-        return hit.value;
+    const candidates = [ref, DEFAULT_USAGE_KEY_ENV, "OPENCODE_API_KEY"];
+    const results = await Promise.allSettled(
+      candidates.map((candidate) => resolve(candidate))
+    );
+    for (const res of results) {
+      if (
+        res.status === "fulfilled" &&
+        res.value?.value !== undefined &&
+        res.value.value.length > 0
+      ) {
+        return res.value.value;
       }
-    } catch {
-      // Fall through to the environment.
     }
   }
 

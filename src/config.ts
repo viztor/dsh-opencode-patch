@@ -14,17 +14,13 @@
 import z from "@deepseek-ai/schemastery";
 
 import {
-  DEFAULT_USAGE_MODEL_MARKERS,
   DEFAULT_USAGE_PROVIDER_MARKERS,
   readBoolean,
   readString,
   readStringList,
 } from "./config-values.ts";
 
-// Re-exported so the public surface keeps one import site: the markers are
-// defined client-side (in `config-values.ts`) because the pill's fallback
-// gate reads them too, but consumers of the config module still get them.
-export { DEFAULT_USAGE_MODEL_MARKERS, DEFAULT_USAGE_PROVIDER_MARKERS };
+export { DEFAULT_USAGE_PROVIDER_MARKERS };
 
 /** Provider route keys the plugin intercepts out of the box. */
 export const DEFAULT_PROVIDERS = ["opencode", "opencode-go"];
@@ -76,7 +72,6 @@ export const CONFIG_DEFAULTS = {
   usageBaseURL: DEFAULT_USAGE_BASE_URL,
   usageEnabled: true,
   usageKeyEnv: DEFAULT_USAGE_KEY_ENV,
-  usageModelMarkers: DEFAULT_USAGE_MODEL_MARKERS,
   usageProviderMarkers: DEFAULT_USAGE_PROVIDER_MARKERS,
 } as const;
 
@@ -95,9 +90,8 @@ export interface PluginConfig {
   sessionIdEnv?: string;
   userAgent?: string;
   usageBaseURL?: string;
-  usageKeyEnv?: string;
   usageEnabled?: boolean;
-  usageModelMarkers?: string[];
+  usageKeyEnv?: string;
   usageProviderMarkers?: string[];
 }
 
@@ -120,7 +114,6 @@ export interface ResolvedPluginConfig {
   usageBaseURL: string;
   usageEnabled: boolean;
   usageKeyEnv: string;
-  usageModelMarkers: string[];
   usageProviderMarkers: string[];
 }
 
@@ -140,7 +133,6 @@ export const resolveConfig = (
   const providers = readStringList(config.providers);
   const gatewayUrls = readStringList(config.gatewayUrls);
   const usageProviderMarkers = readStringList(config.usageProviderMarkers);
-  const usageModelMarkers = readStringList(config.usageModelMarkers);
 
   return {
     debug: readBoolean(config.debug, CONFIG_DEFAULTS.debug),
@@ -178,10 +170,6 @@ export const resolveConfig = (
       CONFIG_DEFAULTS.usageEnabled
     ),
     usageKeyEnv: readString(config.usageKeyEnv) ?? CONFIG_DEFAULTS.usageKeyEnv,
-    usageModelMarkers:
-      usageModelMarkers.length > 0
-        ? usageModelMarkers
-        : [...CONFIG_DEFAULTS.usageModelMarkers],
     usageProviderMarkers:
       usageProviderMarkers.length > 0
         ? usageProviderMarkers
@@ -285,20 +273,11 @@ export const Config = z.object({
     .description(
       "Provider-route markers that show the Go quota meter in the composer."
     ),
-  usageModelMarkers: z
-    .array(z.string())
-    .default([...CONFIG_DEFAULTS.usageModelMarkers])
-    .volatile()
-    .description(
-      "Model-id markers that show the Go quota meter under any provider."
-    ),
   debug: z
     .boolean()
     .default(CONFIG_DEFAULTS.debug)
-    .volatile()
     .description("Log injected streamed calls."),
   debugFile: z
     .string()
-    .volatile()
     .description("Server-side path for JSONL stream-debug entries."),
 });

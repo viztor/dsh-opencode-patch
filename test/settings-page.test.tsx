@@ -174,7 +174,6 @@ describe("settings-page: apply & slots", () => {
     // Valid session ID returns injected props
     const injected = dockInjector?.("valid") as {
       directory: unknown;
-      modelMarkers: string[];
       providerMarkers: string[];
       readUsage: () => Promise<unknown>;
       t: (k: string) => string;
@@ -183,7 +182,6 @@ describe("settings-page: apply & slots", () => {
     expect(injected.directory).toEqual({ isDirectory: true });
     // No scope in this context: the meter falls back to the plugin defaults.
     expect(injected.providerMarkers).toEqual(["opencode-go"]);
-    expect(injected.modelMarkers).toEqual(["deepseek-v4.1-flash"]);
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });
@@ -259,11 +257,9 @@ describe("settings-page: apply & slots", () => {
 
     apply(ctx as never);
     const injected = dockInjector?.("valid") as {
-      modelMarkers: string[];
       providerMarkers: string[];
     };
     expect(injected.providerMarkers).toEqual(["custom-go-route"]);
-    expect(injected.modelMarkers).toEqual(["custom-go-model"]);
   });
 
   it("unpacks remote errors properly in readUsage", async () => {
@@ -419,14 +415,14 @@ describe("settings-page: OpencodeCard rendering", () => {
     const form = firstOf(tree, "SettingsForm");
     expect(form).toBeDefined();
 
-    // Boolean fields now render as SettingsBooleanField (with Switch inside),
-    // text/list fields remain SettingsValueField. Total = 17.
+    // Boolean fields render as SettingsBooleanField (with Switch inside),
+    // text/list fields remain SettingsValueField. Total = 14 (debug/debugFile are file-only, usageModelMarkers removed).
     const valueFields = findAll(tree, "SettingsValueField");
     const boolFields = findAll(tree, "SettingsBooleanField");
-    expect(valueFields.length + boolFields.length).toBe(17);
-    // 12 text/list fields, 5 boolean fields:
-    expect(valueFields.length).toBe(12);
-    expect(boolFields.length).toBe(5);
+    expect(valueFields.length + boolFields.length).toBe(14);
+    // 10 text/list fields, 4 boolean fields:
+    expect(valueFields.length).toBe(10);
+    expect(boolFields.length).toBe(4);
     const ids = valueFields.map((f) => f.props.id);
     for (const knob of [
       "freeModelMarker",
@@ -434,7 +430,8 @@ describe("settings-page: OpencodeCard rendering", () => {
       "originClient",
       "originProject",
       "sessionIdEnv",
-      "usageModelMarkers",
+      "usageBaseURL",
+      "usageKeyEnv",
       "usageProviderMarkers",
     ]) {
       expect(ids).toContain(`plugin-config-opencode-${knob}`);
@@ -445,7 +442,6 @@ describe("settings-page: OpencodeCard rendering", () => {
       "injectOriginHeaders",
       "injectCoreTools",
       "usageEnabled",
-      "debug",
     ]) {
       expect(boolIds).toContain(`plugin-config-opencode-${knob}`);
     }
@@ -533,9 +529,6 @@ describe("settings-page: field specs", () => {
       "usageBaseURL",
       "usageKeyEnv",
       "usageProviderMarkers",
-      "usageModelMarkers",
-      "debug",
-      "debugFile",
     ]);
   });
 

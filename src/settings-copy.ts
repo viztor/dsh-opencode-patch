@@ -11,12 +11,6 @@
  */
 
 export const en = {
-  debug: "Debug Logging (default off)",
-  debugFile: "Debug File",
-  debugFileHint:
-    "Absolute server-side path the plugin appends JSONL stream-debug entries to. Leave blank for none.",
-  debugHint:
-    "Logs every streamed call receiving the header via ctx.logger. Empty inherits the default.",
   description:
     "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
   freeModelMarker: "Free-Tier Model Marker (default free)",
@@ -72,9 +66,6 @@ export const en = {
   usageLimitedShort: "limited",
   usageLimitsDoc: "Usage limits",
   usageLoading: "Loading usage…",
-  usageModelMarkers: "Quota Meter Model Markers",
-  usageModelMarkersHint:
-    "Comma-separated model-id markers that show the quota meter under any provider. Default: deepseek-v4.1-flash.",
   usageProviderMarkers: "Quota Meter Provider Markers",
   usageProviderMarkersHint:
     "Comma-separated provider-route markers that show the quota meter. Default: opencode-go.",
@@ -90,6 +81,8 @@ export const en = {
   usageUnavailable: "Unavailable",
   usageUpgradePlan: "Upgrade plan",
   usageWeekShort: "week",
+  usageZenFallbackNotice:
+    "When plan limits are reached, requests can automatically fall back to Zen credits if 'Use balance' is enabled in the OpenCode Console.",
   usage_monthly: "Monthly",
   usage_rolling: "5 hours",
   usage_weekly: "Weekly",
@@ -100,10 +93,6 @@ export const en = {
 
 /** `zh` mirrors `en` key-for-key; the type makes a missing key a compile error. */
 export const zh: Record<keyof typeof en, string> = {
-  debug: "调试日志（默认关闭）",
-  debugFile: "调试文件",
-  debugFileHint: "插件追加 JSONL 流调试记录的服务端绝对路径。留空表示不记录。",
-  debugHint: "通过 ctx.logger 记录每次注入会话头的流式调用。留空沿用默认值。",
   description:
     "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
   freeModelMarker: "免费档模型标记（默认 free）",
@@ -156,9 +145,6 @@ export const zh: Record<keyof typeof en, string> = {
   usageLimitedShort: "受限",
   usageLimitsDoc: "额度说明",
   usageLoading: "正在读取用量…",
-  usageModelMarkers: "额度表模型标记",
-  usageModelMarkersHint:
-    "逗号分隔的模型 ID 标记，命中任意提供方下均显示额度表。默认：deepseek-v4.1-flash。",
   usageProviderMarkers: "额度表提供方标记",
   usageProviderMarkersHint:
     "逗号分隔的提供方路由标记，命中后显示额度表。默认：opencode-go。",
@@ -173,6 +159,8 @@ export const zh: Record<keyof typeof en, string> = {
   usageUnavailable: "暂不可用",
   usageUpgradePlan: "升级套餐",
   usageWeekShort: "周",
+  usageZenFallbackNotice:
+    "当套餐额度达到上限时，若在 OpenCode 控制台开启了「使用余额 (Use balance)」，调用将自动回退消耗 Zen 余额。",
   usage_monthly: "每月",
   usage_rolling: "5 小时",
   usage_weekly: "每周",
