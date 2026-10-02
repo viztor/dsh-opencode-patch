@@ -169,7 +169,20 @@ export const patchFetch = (
     // 3. Client & Project origin headers: injected when enabled
     if (config.injectOriginHeaders) {
       headers.set("x-opencode-client", config.originClient);
-      headers.set("x-opencode-project", config.originProject);
+
+      const isExplicitNone =
+        config.originProject === "none" || config.originProject === "off";
+
+      if (!isExplicitNone) {
+        const effectiveProject =
+          config.originProject.length > 0 && config.originProject !== "global"
+            ? config.originProject
+            : (state?.project ?? config.originProject);
+
+        if (effectiveProject.length > 0) {
+          headers.set("x-opencode-project", effectiveProject);
+        }
+      }
     }
 
     const newInit: RequestInit = { ...init, headers };

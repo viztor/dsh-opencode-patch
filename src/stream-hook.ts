@@ -10,9 +10,10 @@
  */
 
 import type { AsyncLocalStorage } from "node:async_hooks";
+import path from "node:path";
 
 import type { ResolvedPluginConfig } from "./config.ts";
-import { readParentSessionResolver } from "./cordis-context.ts";
+import { readSessionMetaResolver } from "./cordis-context.ts";
 import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
 import { isAsyncIterableLike } from "./guards.ts";
@@ -84,7 +85,12 @@ export const createStreamHook = (
       value = rawSession;
     }
 
-    const parentResolver = readParentSessionResolver(ctx);
+    const sessionMetaResolver = readSessionMetaResolver(ctx);
+    const sessionMeta =
+      typeof options.sessionId === "string" && sessionMetaResolver !== undefined
+        ? sessionMetaResolver(options.sessionId)
+        : undefined;
+
     const parentProp =
       options.parentSessionId ?? options.parentSession ?? options.parentId;
     let rawParent: string | undefined;
@@ -92,14 +98,19 @@ export const createStreamHook = (
       rawParent = parentProp;
     } else if (typeof parentProp === "number") {
       rawParent = String(parentProp);
-    } else if (
-      typeof options.sessionId === "string" &&
-      parentResolver !== undefined
-    ) {
-      rawParent = parentResolver(options.sessionId);
+    } else if (sessionMeta?.parentSession !== undefined) {
+      rawParent = sessionMeta.parentSession;
     }
     const parentValue =
       rawParent === undefined ? undefined : headerValueFor(rawParent);
+
+    let project: string | undefined;
+    if (sessionMeta?.cwd !== undefined) {
+      const folder = path.basename(sessionMeta.cwd);
+      if (folder.length > 0 && folder !== "/" && folder !== ".") {
+        project = folder;
+      }
+    }
 
     const downstream: unknown = next();
     if (!isAsyncIterableLike(downstream)) {
@@ -111,6 +122,7 @@ export const createStreamHook = (
         header: SESSION_HEADER,
         model: options.model,
         ...(parentValue === undefined ? {} : { parentSession: parentValue }),
+        ...(project === undefined ? {} : { project }),
         provider: providerKey,
         session: rawSession,
         ts: new Date().toISOString(),
@@ -134,6 +146,7 @@ export const createStreamHook = (
       {
         model: typeof modelProp === "string" ? modelProp : undefined,
         ...(parentValue === undefined ? {} : { parentValue }),
+        ...(project === undefined ? {} : { project }),
         provider: providerKey,
         value,
       },

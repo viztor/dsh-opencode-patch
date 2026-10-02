@@ -140,16 +140,26 @@ export const isLoaderHost = (ctx: unknown): ctx is LoaderHost => {
   return typeof entries === "function";
 };
 
+/** Session metadata resolved from the host SessionRegistry. */
+export interface SessionMeta {
+  cwd?: string;
+  parentSession?: string;
+}
+
+export type SessionMetaResolver = (
+  sessionId: string
+) => SessionMeta | undefined;
+
 /** Parent session lookup function. */
 export type ParentSessionResolver = (sessionId: string) => string | undefined;
 
 /**
- * Read the parent session lookup function from `ctx.get("sessions")` or `ctx.sessions`,
+ * Read the session metadata lookup function from `ctx.get("sessions")` or `ctx.sessions`,
  * returning `undefined` when the Host serves no session service.
  */
-export const readParentSessionResolver = (
+export const readSessionMetaResolver = (
   ctx: unknown
-): ParentSessionResolver | undefined => {
+): SessionMetaResolver | undefined => {
   if (!isRecord(ctx)) {
     return undefined;
   }
@@ -170,7 +180,7 @@ export const readParentSessionResolver = (
     return undefined;
   }
   const { get } = sessions;
-  return (sessionId: string): string | undefined => {
+  return (sessionId: string): SessionMeta | undefined => {
     try {
       const session: unknown = Reflect.apply(get, sessions, [sessionId]);
       if (!isRecord(session)) {
@@ -180,12 +190,33 @@ export const readParentSessionResolver = (
       if (!isRecord(header)) {
         return undefined;
       }
-      const parentSession: unknown = header.parentSession;
-      return typeof parentSession === "string" && parentSession.length > 0
-        ? parentSession
-        : undefined;
+      const parentSession =
+        typeof header.parentSession === "string" &&
+        header.parentSession.length > 0
+          ? header.parentSession
+          : undefined;
+      const cwd =
+        typeof header.cwd === "string" && header.cwd.length > 0
+          ? header.cwd
+          : undefined;
+      return { cwd, parentSession };
     } catch {
       return undefined;
     }
   };
+};
+
+/**
+ * Read the parent session lookup function from `ctx.get("sessions")` or `ctx.sessions`,
+ * returning `undefined` when the Host serves no session service.
+ */
+export const readParentSessionResolver = (
+  ctx: unknown
+): ParentSessionResolver | undefined => {
+  const metaResolver = readSessionMetaResolver(ctx);
+  if (metaResolver === undefined) {
+    return undefined;
+  }
+  return (sessionId: string): string | undefined =>
+    metaResolver(sessionId)?.parentSession;
 };

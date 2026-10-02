@@ -677,6 +677,48 @@ describe("patchFetch", () => {
     expect(headerOf(capture.init, "x-opencode-project")).toBe("team-a");
   });
 
+  it("dynamically resolves x-opencode-project from workspace when default, and omits when blank", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture: c1, mockFetch: m1 } = createCaptureFetch();
+    const patched1 = patchFetch(m1, als, resolveConfig());
+
+    // When default (global), dynamic project from workspace turn state is used:
+    await als.run(
+      {
+        project: "my-web-workspace",
+        provider: "opencode",
+        value: "ses_dyn_proj",
+      },
+      async () => {
+        await patched1("https://opencode.ai/zen/v1/chat/completions", {
+          method: "POST",
+        });
+      }
+    );
+    expect(headerOf(c1.init, "x-opencode-project")).toBe("my-web-workspace");
+
+    // When "none", header is completely omitted:
+    const { capture: c2, mockFetch: m2 } = createCaptureFetch();
+    const patched2 = patchFetch(
+      m2,
+      als,
+      resolveConfig({ originProject: "none" })
+    );
+    await als.run(
+      {
+        project: "my-web-workspace",
+        provider: "opencode",
+        value: "ses_dyn_proj",
+      },
+      async () => {
+        await patched2("https://opencode.ai/zen/v1/chat/completions", {
+          method: "POST",
+        });
+      }
+    );
+    expect(headerOf(c2.init, "x-opencode-project")).toBeNull();
+  });
+
   it("scopes the core-tool fallback to the configured model marker", async () => {
     const runWith = async (
       modelName: string,

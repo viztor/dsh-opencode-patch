@@ -16,6 +16,7 @@ import { getAsyncIterator } from "./guards.ts";
 export interface ActiveTurnState {
   model?: string;
   parentValue?: string;
+  project?: string;
   provider: string;
   value: string;
 }
