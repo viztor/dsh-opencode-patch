@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.11.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.10.1...v0.11.0) (2026-10-02)
+
+
+### Features
+
+* make gateway, origin, session, and quota-meter behavior configurable ([6937f56](https://github.com/viztor/dsh-opencode-patch/commit/6937f56eef9651fd92a46ea7037b13735988f520))
+
 ## [0.10.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.10.0...v0.10.1) (2026-10-02)
 
 
