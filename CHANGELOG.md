@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.10.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.10.0...v0.10.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **settings:** export volatile Config schema and decouple bundle slot registration ([41db32b](https://github.com/viztor/dsh-opencode-patch/commit/41db32b8edacb9726a157200fc2e9f7a5dab8ab0))
+
 ## [0.10.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.9.2...v0.10.0) (2026-10-01)
 
 
