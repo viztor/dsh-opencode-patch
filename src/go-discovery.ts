@@ -207,6 +207,10 @@ export const resolveGoApiKey = async (
  * environment. Never throws: a failing credentials service degrades to the
  * env path.
  *
+ * Zen keys (`OPENCODE_API_KEY` / `oc_sk_...`) are excluded here because Zen
+ * keys lack the OpenCode Go subscription entitlement and will 403 when sent
+ * to the Go quota endpoint.
+ *
  * @param ctx - the plugin context used for credentials.
  * @param ref - effective credential reference from {@link effectiveGoKeyRef}.
  */
@@ -214,9 +218,12 @@ export const resolveGoKeyForRef = async (
   ctx: unknown,
   ref: string
 ): Promise<string | undefined> => {
+  const isZenRef = ref === "OPENCODE_API_KEY";
   const resolve = readCredentialsResolver(ctx);
   if (resolve !== undefined) {
-    const candidates = [ref, DEFAULT_USAGE_KEY_ENV, "OPENCODE_API_KEY"];
+    const candidates = isZenRef
+      ? [DEFAULT_USAGE_KEY_ENV]
+      : [ref, DEFAULT_USAGE_KEY_ENV];
     const results = await Promise.allSettled(
       candidates.map((candidate) => resolve(candidate))
     );
@@ -224,21 +231,31 @@ export const resolveGoKeyForRef = async (
       if (
         res.status === "fulfilled" &&
         res.value?.value !== undefined &&
-        res.value.value.length > 0
+        res.value.value.length > 0 &&
+        !res.value.value.startsWith("oc_sk_")
       ) {
         return res.value.value;
       }
     }
   }
 
-  const fromEnv = process.env[ref];
-  if (fromEnv !== undefined && fromEnv.length > 0) {
-    return fromEnv;
+  if (!isZenRef) {
+    const fromEnv = process.env[ref];
+    if (
+      fromEnv !== undefined &&
+      fromEnv.length > 0 &&
+      !fromEnv.startsWith("oc_sk_")
+    ) {
+      return fromEnv;
+    }
   }
   const fallback = process.env[DEFAULT_USAGE_KEY_ENV];
-  if (fallback !== undefined && fallback.length > 0) {
+  if (
+    fallback !== undefined &&
+    fallback.length > 0 &&
+    !fallback.startsWith("oc_sk_")
+  ) {
     return fallback;
   }
-  const generic = process.env.OPENCODE_API_KEY;
-  return generic !== undefined && generic.length > 0 ? generic : undefined;
+  return undefined;
 };

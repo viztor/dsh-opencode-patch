@@ -152,6 +152,13 @@ export class GoUsageService extends TypertRemoteService {
     }
 
     if (!response.ok) {
+      if (response.status === 403 && text.includes("EntitlementError")) {
+        throw new RemoteError(
+          USAGE_UNAVAILABLE,
+          "OpenCode Go subscription required",
+          { configured: false, retainPrevious: false, retryable: false }
+        );
+      }
       const temporary =
         response.status === 408 ||
         response.status === 429 ||
