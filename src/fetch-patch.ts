@@ -96,6 +96,21 @@ export const isOpenCodeRequest = (
   return false;
 };
 
+const resolveSessionHeader = (
+  state: ActiveTurnState | undefined,
+  headers: Headers,
+  sessionIdEnv: string
+): string => {
+  if (state) {
+    return state.value;
+  }
+  const existing = headers.get(SESSION_HEADER);
+  if (typeof existing === "string" && existing.startsWith("ses_")) {
+    return existing;
+  }
+  return fallbackSessionId(sessionIdEnv);
+};
+
 /**
  * Wrap `fetch` so claimed OpenCode requests carry the gateway's expected
  * headers and session id.
@@ -124,14 +139,13 @@ export const patchFetch = (
     const headers = new Headers(readHeaderSource(input, init));
 
     // 1. Session header: ALWAYS injected for OpenCode requests
-    if (state === undefined) {
-      const existing = headers.get(SESSION_HEADER);
-      if (existing === null || !existing.startsWith("ses_")) {
-        headers.set(SESSION_HEADER, fallbackSessionId(config.sessionIdEnv));
-      }
-    } else {
-      headers.set(SESSION_HEADER, state.value);
-    }
+    const sessionVal = resolveSessionHeader(
+      state,
+      headers,
+      config.sessionIdEnv
+    );
+    headers.set(SESSION_HEADER, sessionVal);
+    headers.set("x-opencode-session-id", sessionVal);
 
     // 2. User-Agent: injected / restored when enabled, with user override support
     if (config.injectUserAgent) {

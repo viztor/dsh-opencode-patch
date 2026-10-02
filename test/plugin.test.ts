@@ -1233,6 +1233,37 @@ describe("apply (plugin lifecycle)", () => {
       await rm(tmpDir, { force: true, recursive: true });
     }
   });
+
+  it("captures turn state and wraps streams for auto-review calls where sessionId is omitted", async () => {
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    const ctx: CordisContext = {
+      effect: () => {},
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+    const autoReviewOptions = {
+      model: "deepseek-v4.1-flash",
+      provider: "opencode-go",
+    };
+    const result: unknown = streamHandler(autoReviewOptions, () =>
+      createMockStream("decision-allow")
+    );
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+    expect(await collectUnknown(result)).toEqual(["decision-allow"]);
+  });
 });
 
 describe("bundle manifest consistency", () => {

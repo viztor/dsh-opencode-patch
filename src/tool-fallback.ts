@@ -16,6 +16,12 @@ import { isRecord, isUnknownArray } from "./guards.ts";
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
 
+/** Check whether a request URL targets a model completion endpoint. */
+export const isCompletionEndpoint = (url: string): boolean =>
+  url.includes(RESPONSES_PATH) ||
+  url.includes("/chat/completions") ||
+  url.includes("/completions");
+
 /** Placeholder `read` schema the gateway's validator accepts. */
 export const DUMMY_READ_TOOL = {
   description: "Read a file or directory from the local filesystem.",
@@ -47,16 +53,56 @@ export const DUMMY_BASH_TOOL = {
   type: "function",
 } as const;
 
+/** Placeholder `read` schema formatted for OpenAI-compatible /chat/completions. */
+export const DUMMY_READ_TOOL_FUNCTION = {
+  type: "function",
+  function: {
+    description: "Read a file or directory from the local filesystem.",
+    name: "read",
+    parameters: {
+      properties: {
+        filePath: {
+          description: "The absolute path to the file",
+          type: "string",
+        },
+      },
+      required: ["filePath"],
+      type: "object",
+    },
+  },
+} as const;
+
+/** Placeholder `bash` schema formatted for OpenAI-compatible /chat/completions. */
+export const DUMMY_BASH_TOOL_FUNCTION = {
+  type: "function",
+  function: {
+    description: "Execute a bash command.",
+    name: "bash",
+    parameters: {
+      properties: {
+        command: { description: "The command to execute", type: "string" },
+      },
+      required: ["command"],
+      type: "object",
+    },
+  },
+} as const;
+
 const toolNames = (
   tools: unknown[]
-): { hasBash: boolean; hasRead: boolean } => {
+): { hasBash: boolean; hasRead: boolean; isOpenAiFormat: boolean } => {
   let hasBash = false;
   let hasRead = false;
+  let isOpenAiFormat = false;
   for (const tool of tools) {
     if (!isRecord(tool)) {
       continue;
     }
-    const toolName: unknown = tool.name;
+    let toolName: unknown = tool.name;
+    if (typeof toolName !== "string" && isRecord(tool.function)) {
+      toolName = tool.function.name;
+      isOpenAiFormat = true;
+    }
     if (toolName === "read") {
       hasRead = true;
     }
@@ -64,7 +110,7 @@ const toolNames = (
       hasBash = true;
     }
   }
-  return { hasBash, hasRead };
+  return { hasBash, hasRead, isOpenAiFormat };
 };
 
 /** Whether `modelId` is in scope for the core-tool fallback. */
@@ -79,9 +125,9 @@ export const isCoreToolModel = (modelId: string, marker: string): boolean => {
 };
 
 /**
- * Inject `read` + `bash` schemas into a free-tier `/responses` body.
+ * Inject `read` + `bash` schemas into a free-tier completions body.
  *
- * @param url - request URL (only `/responses` bodies are considered).
+ * @param url - request URL (supports `/responses` and `/chat/completions`).
  * @param body - the outgoing request body.
  * @param headers - the mutable header bag whose `content-length` must track a
  * rewritten body.
@@ -141,12 +187,16 @@ export const maybeInjectCoreTools = (
     // as an absent one, so the request leaves with schemas the gateway accepts.
     tools = [];
   }
-  const { hasBash, hasRead } = toolNames(tools);
+  const { hasBash, hasRead, isOpenAiFormat } = toolNames(tools);
+  const useOpenAi =
+    isOpenAiFormat ||
+    url.includes("/chat/completions") ||
+    url.includes("/completions");
   if (!hasRead) {
-    tools.push(DUMMY_READ_TOOL);
+    tools.push(useOpenAi ? DUMMY_READ_TOOL_FUNCTION : DUMMY_READ_TOOL);
   }
   if (!hasBash) {
-    tools.push(DUMMY_BASH_TOOL);
+    tools.push(useOpenAi ? DUMMY_BASH_TOOL_FUNCTION : DUMMY_BASH_TOOL);
   }
   parsed.tools = tools;
   const newBodyStr = JSON.stringify(parsed);
