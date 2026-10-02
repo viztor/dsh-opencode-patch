@@ -879,7 +879,11 @@ describe("patchFetch", () => {
 
     expect(headerOf(capture.init, SESSION_HEADER)).toBe(testSession);
     expect(headerOf(capture.init, "x-opencode-session-id")).toBe(testSession);
+    expect(headerOf(capture.init, "x-session-affinity")).toBe(testSession);
     expect(headerOf(capture.init, "x-opencode-parent-session-id")).toBe(
+      testParentSession
+    );
+    expect(headerOf(capture.init, "x-parent-session-id")).toBe(
       testParentSession
     );
   });

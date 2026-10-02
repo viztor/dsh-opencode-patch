@@ -72,7 +72,9 @@ export {
   headerValueFor,
   openCodeSessionIdFor,
   OPENCODE_UA,
+  PARENT_SESSION_ALT_HEADER,
   PARENT_SESSION_HEADER,
+  SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
 } from "./session.ts";
 export { type ActiveTurnState, withStore } from "./turn-store.ts";
