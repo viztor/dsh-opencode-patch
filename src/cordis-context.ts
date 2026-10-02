@@ -139,3 +139,53 @@ export const isLoaderHost = (ctx: unknown): ctx is LoaderHost => {
   const entries: unknown = loader.entries;
   return typeof entries === "function";
 };
+
+/** Parent session lookup function. */
+export type ParentSessionResolver = (sessionId: string) => string | undefined;
+
+/**
+ * Read the parent session lookup function from `ctx.get("sessions")` or `ctx.sessions`,
+ * returning `undefined` when the Host serves no session service.
+ */
+export const readParentSessionResolver = (
+  ctx: unknown
+): ParentSessionResolver | undefined => {
+  if (!isRecord(ctx)) {
+    return undefined;
+  }
+  let sessions: unknown;
+  if ("sessions" in ctx) {
+    const { sessions: candidate } = ctx;
+    if (isRecord(candidate)) {
+      sessions = candidate;
+    }
+  } else if (isFunctionLike(ctx.get)) {
+    try {
+      sessions = Reflect.apply(ctx.get, ctx, ["sessions"]);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!isRecord(sessions) || !isFunctionLike(sessions.get)) {
+    return undefined;
+  }
+  const { get } = sessions;
+  return (sessionId: string): string | undefined => {
+    try {
+      const session: unknown = Reflect.apply(get, sessions, [sessionId]);
+      if (!isRecord(session)) {
+        return undefined;
+      }
+      const header: unknown = session.header;
+      if (!isRecord(header)) {
+        return undefined;
+      }
+      const parentSession: unknown = header.parentSession;
+      return typeof parentSession === "string" && parentSession.length > 0
+        ? parentSession
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+};

@@ -13,7 +13,12 @@
 import type { AsyncLocalStorage } from "node:async_hooks";
 
 import { DEFAULT_GATEWAY_URLS, type ResolvedPluginConfig } from "./config.ts";
-import { fallbackSessionId, OPENCODE_UA, SESSION_HEADER } from "./session.ts";
+import {
+  fallbackSessionId,
+  OPENCODE_UA,
+  PARENT_SESSION_HEADER,
+  SESSION_HEADER,
+} from "./session.ts";
 import { maybeInjectCoreTools } from "./tool-fallback.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 
@@ -146,6 +151,11 @@ export const patchFetch = (
     );
     headers.set(SESSION_HEADER, sessionVal);
     headers.set("x-opencode-session-id", sessionVal);
+
+    // 1b. Parent session header: injected for subagents and child sessions
+    if (state?.parentValue !== undefined) {
+      headers.set(PARENT_SESSION_HEADER, state.parentValue);
+    }
 
     // 2. User-Agent: injected / restored when enabled, with user override support
     if (config.injectUserAgent) {
