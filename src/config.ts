@@ -38,9 +38,6 @@ export const DEFAULT_ORIGIN_CLIENT = "cli";
 /** Whether to attach the workspace project identifier (x-opencode-project) by default. */
 export const DEFAULT_INJECT_PROJECT = true;
 
-/** Value restored into `x-opencode-project` by default when project injection is enabled. */
-export const DEFAULT_ORIGIN_PROJECT = "global";
-
 /**
  * Model-id substring that marks a request as free-tier (and therefore in need
  * of the core-tool schema fallback).
@@ -89,7 +86,6 @@ export interface PluginConfig {
   injectProject?: boolean;
   injectUserAgent?: boolean;
   originClient?: string;
-  originProject?: string | boolean;
   providers?: string[];
   sessionIdEnv?: string;
   userAgent?: string;
@@ -120,23 +116,6 @@ export interface ResolvedPluginConfig {
   usageKeyEnv: string;
   usageProviderMarkers: string[];
 }
-
-const resolveInjectProject = (config: PluginConfig): boolean => {
-  if (typeof config.injectProject === "boolean") {
-    return config.injectProject;
-  }
-  if (
-    config.originProject === "none" ||
-    config.originProject === "off" ||
-    config.originProject === false
-  ) {
-    return false;
-  }
-  if (typeof config.originProject === "boolean") {
-    return config.originProject;
-  }
-  return CONFIG_DEFAULTS.injectProject;
-};
 
 /**
  * Fold a raw row config (or schema-validated output) into the resolved shape.
@@ -170,13 +149,16 @@ export const resolveConfig = (
       config.injectOriginHeaders,
       CONFIG_DEFAULTS.injectOriginHeaders
     ),
+    injectProject: readBoolean(
+      config.injectProject,
+      CONFIG_DEFAULTS.injectProject
+    ),
     injectUserAgent: readBoolean(
       config.injectUserAgent,
       CONFIG_DEFAULTS.injectUserAgent
     ),
     originClient:
       readString(config.originClient) ?? CONFIG_DEFAULTS.originClient,
-    injectProject: resolveInjectProject(config),
     providers: new Set(
       providers.length > 0 ? providers : [...CONFIG_DEFAULTS.providers]
     ),
