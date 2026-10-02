@@ -100,11 +100,11 @@ OpenCode uses `x-opencode-project` to group token usage, requests, and costs in 
 
 While live probes confirm the gateway accepts requests regardless of whether the project exists in your OpenCode account (even omitting the header returns `200 OK`), hardcoding `"global"` causes all work across different repositories to merge into a single analytics bucket.
 
-`dsh-opencode-patch` resolves the project dynamically:
+`dsh-opencode-patch` handles this automatically through a simple toggle:
 
-1. **Automatic Directory Detection (Default)**: When `originProject` is left at `"global"`, the plugin inspects the active session's working directory (`session.header.cwd`) and extracts the folder name (e.g. `/home/you/projects/my-app` $\rightarrow$ `x-opencode-project: "dsh-opencode"`).
-2. **Explicit Override**: If you set an explicit project in Settings (e.g. `originProject: "production-app"`), that value is sent verbatim across all requests.
-3. **Header Omission (`"none"` / `"off"`)**: If you set `originProject` to `"none"` or `"off"`, the `x-opencode-project` header is completely omitted, matching OpenCode CLI's standalone behavior.
+1. **Enabled (Default on)**: The plugin inspects the active session's working directory (`session.header.cwd`) and extracts the folder name (e.g. `/home/you/projects/my-app` $\rightarrow$ `x-opencode-project: "dsh-opencode"`). If running outside any project directory, it falls back to `"global"`.
+2. **Disabled (Toggled off)**: The `x-opencode-project` header is completely omitted, matching OpenCode CLI's standalone behavior.
+3. **Zero Configuration**: Users do not need to type custom project strings or manually manage project overrides across different sessions. Everything tracks your active workspace folder naturally.
 
 ---
 
@@ -284,9 +284,9 @@ Open DSH Web → **Settings → Plugins → OpenCode Patch** (设置 → 插件 
 | :-- | :-: | :-- | :-- |
 | **Inject User-Agent** | `Switch` | `on` | Restores official OpenCode CLI User-Agent to pass Cloudflare WAF checks. |
 | **User-Agent Override** | `Text` | empty | Optional custom User-Agent string. |
-| **Inject Origin Headers** | `Switch` | `on` | Injects `x-opencode-client` and `x-opencode-project`. |
+| **Inject Origin Headers** | `Switch` | `on` | Injects official client origin headers (`x-opencode-client`). |
 | **Origin Client** | `Text` | `cli` | Value sent as `x-opencode-client`. |
-| **Origin Project** | `Text` | `global` | Default project tag; automatically resolves workspace folder when `"global"`. Set `"none"` to omit. |
+| **Attach Workspace Project** | `Switch` | `on` | Automatically tags requests with your current workspace directory name (or 'global' if outside a project). Turn off to omit. |
 | **Inject Core Tools** | `Switch` | `on` | Injects dummy `read` + `bash` schemas on free-tier requests to satisfy gateway validation. |
 | **Free Model Marker** | `Text` | `free` | Model-id marker triggering tool schema fallback (`*` = all models). |
 | **Providers** | `List` | `opencode, opencode-go` | Comma-separated provider route IDs intercepted by the patch. |
@@ -322,7 +322,7 @@ Developer diagnostics (`debug` and `debugFile`) are non-volatile and configured 
     injectUserAgent: true
     injectOriginHeaders: true
     originClient: "cli"
-    originProject: "global" # Or "none" to omit, or specific project string
+    injectProject: true # Attach workspace folder (or 'global'); false omits header
     injectCoreTools: true
     # File-level only debug options:
     debug: false

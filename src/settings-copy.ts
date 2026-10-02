@@ -24,7 +24,10 @@ export const en = {
     "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
   injectOriginHeaders: "Inject Origin Headers (default on)",
   injectOriginHeadersHint:
-    "Injects x-opencode-client and x-opencode-project headers. Empty inherits the default.",
+    "Injects official x-opencode-client origin header. Empty inherits the default.",
+  injectProject: "Attach Workspace Project (default on)",
+  injectProjectHint:
+    "Automatically tags requests with your current workspace folder name (or 'global' if outside a project) for OpenCode Console tracking. Turn off to omit.",
   injectUserAgent: "Inject User-Agent (default on)",
   injectUserAgentHint:
     "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter. Empty inherits the default.",
@@ -33,9 +36,6 @@ export const en = {
   originClient: "x-opencode-client Value (default cli)",
   originClientHint:
     "Value restored into the x-opencode-client header on gateway requests. Empty inherits the default.",
-  originProject: "x-opencode-project Value (default global)",
-  originProjectHint:
-    "Value restored into the x-opencode-project header on gateway requests. Empty inherits the default.",
   overridden: "Overridden",
   providers: "Providers",
   providersHint:
@@ -106,7 +106,10 @@ export const zh: Record<keyof typeof en, string> = {
     "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。留空沿用默认值。",
   injectOriginHeaders: "注入客户端来源头（默认开启）",
   injectOriginHeadersHint:
-    "注入 x-opencode-client 与 x-opencode-project 头部信息。留空沿用默认值。",
+    "在网关请求中附带官方 x-opencode-client 标识头。留空沿用默认值。",
+  injectProject: "附带工作区项目标识（默认开启）",
+  injectProjectHint:
+    "在请求中自动附带当前工作区目录名称（若在工作区外则为 'global'），便于在 OpenCode 控制台按项目统计用量。关闭后则不发送该请求头。",
   injectUserAgent: "恢复 User-Agent（默认开启）",
   injectUserAgentHint:
     "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。留空沿用默认值。",
@@ -114,8 +117,6 @@ export const zh: Record<keyof typeof en, string> = {
   invalidText: "该值未被接受，留空使用默认值。",
   originClient: "x-opencode-client 取值（默认 cli）",
   originClientHint: "恢复到 x-opencode-client 头部的取值。留空沿用默认值。",
-  originProject: "x-opencode-project 取值（默认 global）",
-  originProjectHint: "恢复到 x-opencode-project 头部的取值。留空沿用默认值。",
   overridden: "已覆盖",
   providers: "生效提供方",
   providersHint: "逗号分隔的提供方路由 ID 列表。默认：opencode, opencode-go。",

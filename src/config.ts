@@ -35,7 +35,10 @@ export const DEFAULT_GATEWAY_URLS = ["opencode.ai/zen"];
 /** Value restored into `x-opencode-client` by default. */
 export const DEFAULT_ORIGIN_CLIENT = "cli";
 
-/** Value restored into `x-opencode-project` by default. */
+/** Whether to attach the workspace project identifier (x-opencode-project) by default. */
+export const DEFAULT_INJECT_PROJECT = true;
+
+/** Value restored into `x-opencode-project` by default when project injection is enabled. */
 export const DEFAULT_ORIGIN_PROJECT = "global";
 
 /**
@@ -64,9 +67,9 @@ export const CONFIG_DEFAULTS = {
   gatewayUrls: DEFAULT_GATEWAY_URLS,
   injectCoreTools: true,
   injectOriginHeaders: true,
+  injectProject: DEFAULT_INJECT_PROJECT,
   injectUserAgent: true,
   originClient: DEFAULT_ORIGIN_CLIENT,
-  originProject: DEFAULT_ORIGIN_PROJECT,
   providers: DEFAULT_PROVIDERS,
   sessionIdEnv: DEFAULT_SESSION_ID_ENV,
   usageBaseURL: DEFAULT_USAGE_BASE_URL,
@@ -83,9 +86,10 @@ export interface PluginConfig {
   gatewayUrls?: string[];
   injectCoreTools?: boolean;
   injectOriginHeaders?: boolean;
+  injectProject?: boolean;
   injectUserAgent?: boolean;
   originClient?: string;
-  originProject?: string;
+  originProject?: string | boolean;
   providers?: string[];
   sessionIdEnv?: string;
   userAgent?: string;
@@ -105,9 +109,9 @@ export interface ResolvedPluginConfig {
   gatewayUrls: string[];
   injectCoreTools: boolean;
   injectOriginHeaders: boolean;
+  injectProject: boolean;
   injectUserAgent: boolean;
   originClient: string;
-  originProject: string;
   providers: Set<string>;
   sessionIdEnv: string;
   userAgent?: string;
@@ -116,6 +120,23 @@ export interface ResolvedPluginConfig {
   usageKeyEnv: string;
   usageProviderMarkers: string[];
 }
+
+const resolveInjectProject = (config: PluginConfig): boolean => {
+  if (typeof config.injectProject === "boolean") {
+    return config.injectProject;
+  }
+  if (
+    config.originProject === "none" ||
+    config.originProject === "off" ||
+    config.originProject === false
+  ) {
+    return false;
+  }
+  if (typeof config.originProject === "boolean") {
+    return config.originProject;
+  }
+  return CONFIG_DEFAULTS.injectProject;
+};
 
 /**
  * Fold a raw row config (or schema-validated output) into the resolved shape.
@@ -155,8 +176,7 @@ export const resolveConfig = (
     ),
     originClient:
       readString(config.originClient) ?? CONFIG_DEFAULTS.originClient,
-    originProject:
-      readString(config.originProject) ?? CONFIG_DEFAULTS.originProject,
+    injectProject: resolveInjectProject(config),
     providers: new Set(
       providers.length > 0 ? providers : [...CONFIG_DEFAULTS.providers]
     ),
@@ -219,17 +239,19 @@ export const Config = z.object({
     .boolean()
     .default(CONFIG_DEFAULTS.injectOriginHeaders)
     .volatile()
-    .description("Inject x-opencode-client and x-opencode-project headers."),
+    .description("Inject x-opencode-client header."),
   originClient: z
     .string()
     .default(CONFIG_DEFAULTS.originClient)
     .volatile()
     .description("Value restored into the x-opencode-client header."),
-  originProject: z
-    .string()
-    .default(CONFIG_DEFAULTS.originProject)
+  injectProject: z
+    .boolean()
+    .default(CONFIG_DEFAULTS.injectProject)
     .volatile()
-    .description("Value restored into the x-opencode-project header."),
+    .description(
+      "Attach the active workspace folder name (or 'global' if outside a project) in x-opencode-project."
+    ),
   injectCoreTools: z
     .boolean()
     .default(CONFIG_DEFAULTS.injectCoreTools)
