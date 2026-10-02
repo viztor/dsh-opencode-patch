@@ -1,7 +1,11 @@
 /**
  * `dsh-opencode-patch` settings page — DSH Web client bundle.
  * Contributes a settings card under DSH Settings -> Plugins and a quota pill
- * in the conversation input tray for OpenCode Go models.
+ * in the composer dock (`conversation.composer.dock`) for OpenCode Go models.
+ *
+ * Locale copy lives in `settings-copy.ts` and the field register in
+ * `settings-fields.ts`; this module owns wiring: card rendering, scope
+ * validation, and `apply`.
  *
  * @module dsh-opencode-patch/settings-page
  */
@@ -10,14 +14,23 @@ import {
   SettingsForm,
   SettingsFormModel,
   SettingsValueField,
-  settingsTextField,
-  type SettingsFieldSpec,
   type SettingsFormScope,
   type SettingsFormShell,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
+import {
+  DEFAULT_USAGE_MODEL_MARKERS,
+  DEFAULT_USAGE_PROVIDER_MARKERS,
+  readStringList,
+} from "./config-values.ts";
+import { isRecord } from "./guards.ts";
+import { en, zh, type Translate } from "./settings-copy.ts";
+import { FIELD, SPECS } from "./settings-fields.ts";
 import { UsagePill } from "./usage-pill.tsx";
+
+// Re-exported so the field register stays reachable from the bundle entry.
+export { SPECS };
 
 export const NS = "dsh-opencode-patch";
 export const LEGACY_NS = "dsh-opencode";
@@ -39,178 +52,6 @@ export const inject = [
   "modelDirectories",
   "remote",
 ];
-
-const en = {
-  debug: "Debug Logging (default off)",
-  debugFile: "Debug File",
-  debugFileHint:
-    "Absolute server-side path the plugin appends JSONL stream-debug entries to. Leave blank for none.",
-  debugHint:
-    "Logs every streamed call receiving the header via ctx.logger. Empty inherits the default.",
-  description:
-    "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
-  injectCoreTools: "Inject Core Tools (default on)",
-  injectCoreToolsHint:
-    "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
-  injectOriginHeaders: "Inject Origin Headers (default on)",
-  injectOriginHeadersHint:
-    "Injects x-opencode-client and x-opencode-project headers. Empty inherits the default.",
-  injectUserAgent: "Inject User-Agent (default on)",
-  injectUserAgentHint:
-    "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter. Empty inherits the default.",
-  invalidBoolean: "Enter true or false, or leave blank for default.",
-  invalidText: "This value was not accepted; leave blank for default.",
-  overridden: "Overridden",
-  providers: "Providers",
-  providersHint:
-    "Comma-separated list of route IDs to intercept. Default: opencode, opencode-go.",
-  readOnly: "This deployment stores settings read-only.",
-  reset: "Reset to default",
-  save: "Save",
-  saveFailed: "The deployment did not accept these values.",
-  saving: "Saving…",
-  title: "OpenCode Integration",
-  unavailable: "This plugin is not loaded, so it cannot be configured.",
-  usageBaseURL: "Go Usage Base URL",
-  usageBaseURLHint:
-    "Endpoint for Go quota statistics. Leave blank for default (https://opencode.ai/zen/go/v1) or auto-discovered URL.",
-  usageConsole: "Console & balance",
-  usageEnabled: "Enable Go Quota Monitor (default on)",
-  usageEnabledHint:
-    "Displays live OpenCode Go quota ring in the composer dock beside context usage. Empty inherits default.",
-  usageHint: "Account usage · used percentage · refreshes every minute",
-  usageKeyEnv: "Go Key Env Var / Credential",
-  usageKeyEnvHint:
-    "Reference to API key in DSH credentials or environment. Leave blank for default (OPENCODE_GO_API_KEY) or auto-discovery.",
-  usageLastUpdated: "Last updated",
-  usageLimited: "Limit reached",
-  usageLimitedShort: "limited",
-  usageLimitsDoc: "Usage limits",
-  usageLoading: "Loading usage…",
-  usageRefreshFailed: "Refresh failed",
-  usageRefreshing: "Refreshing…",
-  usageResets: "Resets",
-  usageRetry: "Retry now",
-  usageRollingShort: "5h",
-  usageStaleHint:
-    "Showing the last successful usage reading. Current usage may have changed.",
-  usageStaleShort: "Last data",
-  usageTitle: "OpenCode Go usage",
-  usageUnavailable: "Unavailable",
-  usageUpgradePlan: "Upgrade plan",
-  usageWeekShort: "week",
-  usage_monthly: "Monthly",
-  usage_rolling: "5 hours",
-  usage_weekly: "Weekly",
-  userAgent: "User-Agent Override",
-  userAgentHint:
-    "Custom User-Agent string. Leave blank to use the canonical OpenCode CLI string.",
-};
-
-const zh = {
-  debug: "调试日志（默认关闭）",
-  debugFile: "调试文件",
-  debugFileHint: "插件追加 JSONL 流调试记录的服务端绝对路径。留空表示不记录。",
-  debugHint: "通过 ctx.logger 记录每次注入会话头的流式调用。留空沿用默认值。",
-  description:
-    "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
-  injectCoreTools: "自动补全核心工具（默认开启）",
-  injectCoreToolsHint:
-    "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。留空沿用默认值。",
-  injectOriginHeaders: "注入客户端来源头（默认开启）",
-  injectOriginHeadersHint:
-    "注入 x-opencode-client 与 x-opencode-project 头部信息。留空沿用默认值。",
-  injectUserAgent: "恢复 User-Agent（默认开启）",
-  injectUserAgentHint:
-    "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。留空沿用默认值。",
-  invalidBoolean: "请输入 true 或 false，留空使用默认值。",
-  invalidText: "该值未被接受，留空使用默认值。",
-  overridden: "已覆盖",
-  providers: "生效提供方",
-  providersHint: "逗号分隔的提供方路由 ID 列表。默认：opencode, opencode-go。",
-  readOnly: "当前部署配置为只读。",
-  reset: "恢复默认",
-  save: "保存",
-  saveFailed: "保存失败，请检查填写内容。",
-  saving: "保存中…",
-  title: "OpenCode 接入设置",
-  unavailable: "插件未加载，暂无法配置。",
-  usageBaseURL: "Go 用量接口 Base URL",
-  usageBaseURLHint:
-    "查询 OpenCode Go 额度的接口地址。留空则沿用默认值（https://opencode.ai/zen/go/v1）或自动探测。",
-  usageConsole: "控制台与余额",
-  usageEnabled: "开启 OpenCode Go 额度监控（默认开启）",
-  usageEnabledHint:
-    "在输入框底部停靠栏（与上下文用量并列）显示实时额度环。留空沿用默认值。",
-  usageHint: "账号额度 · 已用百分比 · 每分钟刷新",
-  usageKeyEnv: "Go Key 环境变量 / 凭据引用",
-  usageKeyEnvHint:
-    "DSH 凭据或环境变量中存储 API Key 的引用名。留空则自动探测或沿用默认值（OPENCODE_GO_API_KEY）。",
-  usageLastUpdated: "更新于",
-  usageLimited: "已达限额",
-  usageLimitedShort: "受限",
-  usageLimitsDoc: "额度说明",
-  usageLoading: "正在读取用量…",
-  usageRefreshFailed: "刷新失败",
-  usageRefreshing: "正在刷新…",
-  usageResets: "重置于",
-  usageRetry: "立即重试",
-  usageRollingShort: "5小时",
-  usageStaleHint: "当前显示上次成功读取的用量，实际用量可能已变化。",
-  usageStaleShort: "上次数据",
-  usageTitle: "OpenCode Go 用量",
-  usageUnavailable: "暂不可用",
-  usageUpgradePlan: "升级套餐",
-  usageWeekShort: "周",
-  usage_monthly: "每月",
-  usage_rolling: "5 小时",
-  usage_weekly: "每周",
-  userAgent: "自定义 User-Agent",
-  userAgentHint: "自定义 User-Agent 字符串。留空则使用默认 OpenCode CLI 标识。",
-};
-
-const FIELD = {
-  debug: "debug",
-  debugFile: "debugFile",
-  injectCoreTools: "injectCoreTools",
-  injectOriginHeaders: "injectOriginHeaders",
-  injectUserAgent: "injectUserAgent",
-  providers: "providers",
-  usageBaseURL: "usageBaseURL",
-  usageEnabled: "usageEnabled",
-  usageKeyEnv: "usageKeyEnv",
-  userAgent: "userAgent",
-};
-
-const BOOLEAN_DRAFTS: Record<
-  string,
-  { kind: "set"; value: boolean } | { kind: "clear" }
-> = {
-  "": { kind: "clear" },
-  false: { kind: "set", value: false },
-  true: { kind: "set", value: true },
-};
-
-const settingsBooleanField = (field: string): SettingsFieldSpec => ({
-  field,
-  format: (value: unknown) => (typeof value === "boolean" ? String(value) : ""),
-  parse: (text: string) => BOOLEAN_DRAFTS[text.trim().toLowerCase()],
-});
-
-const SPECS: SettingsFieldSpec[] = [
-  settingsBooleanField(FIELD.injectUserAgent),
-  settingsTextField(FIELD.userAgent),
-  settingsBooleanField(FIELD.injectOriginHeaders),
-  settingsBooleanField(FIELD.injectCoreTools),
-  settingsTextField(FIELD.providers),
-  settingsBooleanField(FIELD.usageEnabled),
-  settingsTextField(FIELD.usageBaseURL),
-  settingsTextField(FIELD.usageKeyEnv),
-  settingsBooleanField(FIELD.debug),
-  settingsTextField(FIELD.debugFile),
-];
-
-type Translate = (key: keyof typeof en) => string;
 
 interface CardField {
   invalid: boolean;
@@ -291,16 +132,46 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         label={t("injectOriginHeaders")}
       />
       <SettingsValueField
+        {...field(FIELD.originClient)}
+        hint={t("originClientHint")}
+        label={t("originClient")}
+        placeholder="cli"
+      />
+      <SettingsValueField
+        {...field(FIELD.originProject)}
+        hint={t("originProjectHint")}
+        label={t("originProject")}
+        placeholder="global"
+      />
+      <SettingsValueField
         {...field(FIELD.injectCoreTools)}
         hint={t("injectCoreToolsHint")}
         invalidLabel={t("invalidBoolean")}
         label={t("injectCoreTools")}
       />
       <SettingsValueField
+        {...field(FIELD.freeModelMarker)}
+        hint={t("freeModelMarkerHint")}
+        label={t("freeModelMarker")}
+        placeholder="free"
+      />
+      <SettingsValueField
         {...field(FIELD.providers)}
         hint={t("providersHint")}
         label={t("providers")}
         placeholder="opencode, opencode-go"
+      />
+      <SettingsValueField
+        {...field(FIELD.gatewayUrls)}
+        hint={t("gatewayUrlsHint")}
+        label={t("gatewayUrls")}
+        placeholder="opencode.ai/zen"
+      />
+      <SettingsValueField
+        {...field(FIELD.sessionIdEnv)}
+        hint={t("sessionIdEnvHint")}
+        label={t("sessionIdEnv")}
+        placeholder="OPENCODE_SESSION_ID"
       />
       <SettingsValueField
         {...field(FIELD.usageEnabled)}
@@ -319,6 +190,18 @@ const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         hint={t("usageKeyEnvHint")}
         label={t("usageKeyEnv")}
         placeholder="OPENCODE_GO_API_KEY"
+      />
+      <SettingsValueField
+        {...field(FIELD.usageProviderMarkers)}
+        hint={t("usageProviderMarkersHint")}
+        label={t("usageProviderMarkers")}
+        placeholder="opencode-go"
+      />
+      <SettingsValueField
+        {...field(FIELD.usageModelMarkers)}
+        hint={t("usageModelMarkersHint")}
+        label={t("usageModelMarkers")}
+        placeholder="deepseek-v4.1-flash"
       />
       <SettingsValueField
         {...field(FIELD.debug)}
@@ -411,9 +294,41 @@ export const apply = (ctx: ClientContext): void => {
     return noopDisposer;
   }, "dsh-opencode-patch: dictionaries");
 
+  // Resolve the settings scope BEFORE wiring the dock injector so the quota
+  // meter can read the configured trigger markers from it at inject time.
+  // The injector still registers when there is no scope: the meter has work
+  // to do as long as the Host serves the usage service.
+  const rawScope: unknown =
+    ctx.configForms?.get?.(NS) ?? ctx.configForms?.get?.(LEGACY_NS);
+  const scope = isSettingsFormScope(rawScope) ? rawScope : undefined;
+
+  /**
+   * The configured quota-meter markers from the scope's current value,
+   * falling back to the plugin defaults while the scope is loading or the
+   * fields carry no user value.
+   */
+  const usageMarkers = (): {
+    modelMarkers: string[];
+    providerMarkers: string[];
+  } => {
+    const value: unknown = scope?.getSnapshot().value;
+    const record = isRecord(value) ? value : {};
+    const modelMarkers = readStringList(record.usageModelMarkers);
+    const providerMarkers = readStringList(record.usageProviderMarkers);
+    return {
+      modelMarkers:
+        modelMarkers.length > 0 ? modelMarkers : DEFAULT_USAGE_MODEL_MARKERS,
+      providerMarkers:
+        providerMarkers.length > 0
+          ? providerMarkers
+          : DEFAULT_USAGE_PROVIDER_MARKERS,
+    };
+  };
+
   const createUsageInjector = () => (sessionId: unknown) => {
-    const directory = ctx.modelDirectories?.directoryFor?.(sessionId)?.store;
-    if (!directory) {
+    const directory: unknown =
+      ctx.modelDirectories?.directoryFor?.(sessionId)?.store;
+    if (directory === undefined || directory === null) {
       return null;
     }
     // No Host service means there is nothing to measure. That covers both
@@ -425,16 +340,20 @@ export const apply = (ctx: ClientContext): void => {
     if (typeof ctx.remote?.opencodeGoUsage?.read !== "function") {
       return null;
     }
+    const markers = usageMarkers();
     return {
       directory,
+      ...markers,
       readUsage: async () => {
-        const res = (await ctx.remote?.opencodeGoUsage?.read?.()) as
-          | { ok: true; value: unknown }
-          | { ok: false; error: unknown }
-          | undefined;
-        if (res && typeof res === "object" && "ok" in res) {
-          if (!res.ok) throw res.error;
-          return res.value;
+        const res: unknown = await ctx.remote?.opencodeGoUsage?.read?.();
+        // The envelope is `{ok: true, value} | {ok: false, error}`. Narrowing
+        // `ok` to a boolean lets the branch read as plain truthiness — the
+        // lint config rejects coercing an `unknown` inside the condition.
+        if (isRecord(res) && typeof res.ok === "boolean") {
+          if (res.ok) {
+            return "value" in res ? res.value : undefined;
+          }
+          throw "error" in res ? res.error : undefined;
         }
         return res;
       },
@@ -466,12 +385,11 @@ export const apply = (ctx: ClientContext): void => {
     )
   );
 
-  const rawScope: unknown =
-    ctx.configForms?.get?.(NS) ?? ctx.configForms?.get?.(LEGACY_NS);
-  if (!isSettingsFormScope(rawScope)) {
+  // Without a served scope the card cannot render or save, so the form and
+  // its registrations stop here — the dock injector above stays registered.
+  if (scope === undefined) {
     return;
   }
-  const scope = rawScope;
 
   const model = new SettingsFormModel(scope, SPECS);
   const store = model.bind(() => ({
@@ -504,51 +422,30 @@ export const apply = (ctx: ClientContext): void => {
           cards.push(dispose);
         }
       };
-      // Register for primary package name
-      keepCard(
-        ctx.slots?.register?.(
-          {
-            inject: () => ({
-              hooks: { opencodeCard: store },
-              ...model.actions(),
-            }),
-            key: PKG,
-            locale: NS,
-            name: "plugins.bundle.config",
-          },
-          OpencodeCard
-        )
-      );
-      // Register for legacy scoped package name
-      keepCard(
-        ctx.slots?.register?.(
-          {
-            inject: () => ({
-              hooks: { opencodeCard: store },
-              ...model.actions(),
-            }),
-            key: LEGACY_PKG,
-            locale: LEGACY_NS,
-            name: "plugins.bundle.config",
-          },
-          OpencodeCard
-        )
-      );
-      // Register for legacy bare component name
-      keepCard(
-        ctx.slots?.register?.(
-          {
-            inject: () => ({
-              hooks: { opencodeCard: store },
-              ...model.actions(),
-            }),
-            key: LEGACY_NS,
-            locale: LEGACY_NS,
-            name: "plugins.bundle.config",
-          },
-          OpencodeCard
-        )
-      );
+      // One registration per package alias: the current npm name, the legacy
+      // scoped name, and the legacy bare namespace — each keyed and locale
+      // bound exactly as its page lookup expects.
+      const aliases: { key: string; locale: string }[] = [
+        { key: PKG, locale: NS },
+        { key: LEGACY_PKG, locale: LEGACY_NS },
+        { key: LEGACY_NS, locale: LEGACY_NS },
+      ];
+      for (const alias of aliases) {
+        keepCard(
+          ctx.slots?.register?.(
+            {
+              inject: () => ({
+                hooks: { opencodeCard: store },
+                ...model.actions(),
+              }),
+              key: alias.key,
+              locale: alias.locale,
+              name: "plugins.bundle.config",
+            },
+            OpencodeCard
+          )
+        );
+      }
       return () => {
         for (const dispose of cards) {
           dispose();

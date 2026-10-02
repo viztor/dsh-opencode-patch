@@ -263,6 +263,52 @@ describe("resolveConfig", () => {
     expect(resolved.userAgent).toBe("custom-ua/2.0");
     expect(resolved.debugFile).toBeUndefined();
   });
+
+  it("resolves the adaptivity knobs with blank-is-default semantics", () => {
+    const defaults = resolveConfig({});
+    expect(defaults.gatewayUrls).toEqual(["opencode.ai/zen"]);
+    expect(defaults.originClient).toBe("cli");
+    expect(defaults.originProject).toBe("global");
+    expect(defaults.freeModelMarker).toBe("free");
+    expect(defaults.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
+    expect(defaults.usageProviderMarkers).toEqual(["opencode-go"]);
+    expect(defaults.usageModelMarkers).toEqual(["deepseek-v4.1-flash"]);
+
+    const custom = resolveConfig({
+      freeModelMarker: "  preview  ",
+      gatewayUrls: [" relay.example.com/zen ", ""],
+      originClient: "desktop",
+      originProject: "team-a",
+      sessionIdEnv: "MY_SESSION",
+      usageModelMarkers: ["flash-latest"],
+      usageProviderMarkers: ["go-relay"],
+    });
+    expect(custom.gatewayUrls).toEqual(["relay.example.com/zen"]);
+    expect(custom.originClient).toBe("desktop");
+    expect(custom.originProject).toBe("team-a");
+    expect(custom.freeModelMarker).toBe("preview");
+    expect(custom.sessionIdEnv).toBe("MY_SESSION");
+    expect(custom.usageProviderMarkers).toEqual(["go-relay"]);
+    expect(custom.usageModelMarkers).toEqual(["flash-latest"]);
+
+    // Blank strings and empty lists fall back instead of disabling the knob.
+    const blank = resolveConfig({
+      freeModelMarker: "",
+      gatewayUrls: [],
+      originClient: "",
+      originProject: "   ",
+      sessionIdEnv: "",
+      usageModelMarkers: [],
+      usageProviderMarkers: ["", " "],
+    });
+    expect(blank.gatewayUrls).toEqual(["opencode.ai/zen"]);
+    expect(blank.originClient).toBe("cli");
+    expect(blank.originProject).toBe("global");
+    expect(blank.freeModelMarker).toBe("free");
+    expect(blank.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
+    expect(blank.usageProviderMarkers).toEqual(["opencode-go"]);
+    expect(blank.usageModelMarkers).toEqual(["deepseek-v4.1-flash"]);
+  });
 });
 
 describe("Config schema", () => {
@@ -277,26 +323,40 @@ describe("Config schema", () => {
       [
         "debug",
         "debugFile",
+        "freeModelMarker",
+        "gatewayUrls",
         "injectCoreTools",
         "injectOriginHeaders",
         "injectUserAgent",
+        "originClient",
+        "originProject",
         "providers",
+        "sessionIdEnv",
         "usageBaseURL",
         "usageEnabled",
         "usageKeyEnv",
+        "usageModelMarkers",
+        "usageProviderMarkers",
         "userAgent",
         // oxlint-disable-next-line unicorn/no-array-sort -- array literal is fresh, so in-place sort mutates nothing shared.
       ].sort()
     );
     expect(resolveConfig(validated as PluginConfig)).toMatchObject({
       debug: false,
+      freeModelMarker: "free",
+      gatewayUrls: ["opencode.ai/zen"],
       injectCoreTools: true,
       injectOriginHeaders: true,
       injectUserAgent: true,
+      originClient: "cli",
+      originProject: "global",
       providers: new Set(["opencode", "opencode-go"]),
+      sessionIdEnv: "OPENCODE_SESSION_ID",
       usageBaseURL: "https://opencode.ai/zen/go/v1",
       usageEnabled: true,
       usageKeyEnv: "OPENCODE_GO_API_KEY",
+      usageModelMarkers: ["deepseek-v4.1-flash"],
+      usageProviderMarkers: ["opencode-go"],
     });
   });
 
@@ -346,6 +406,42 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
         new Set()
       )
     ).toBe(true);
+  });
+
+  it("matches gateway URLs from configuration instead of the built-in one", () => {
+    const gatewayUrls = ["relay.example.com/zen", "gateway.corp/api"];
+    expect(
+      isOpenCodeRequest(
+        "https://relay.example.com/zen/v1/responses",
+        undefined,
+        providers,
+        gatewayUrls
+      )
+    ).toBe(true);
+    expect(
+      isOpenCodeRequest(
+        "https://gateway.corp/api/chat",
+        undefined,
+        providers,
+        gatewayUrls
+      )
+    ).toBe(true);
+    // A configured list replaces the default marker, so the stock gateway no
+    // longer matches when the operator pointed the plugin elsewhere.
+    expect(
+      isOpenCodeRequest(
+        "https://opencode.ai/zen/v1/responses",
+        undefined,
+        providers,
+        gatewayUrls
+      )
+    ).toBe(false);
+    // Blank markers never match (an empty substring would claim everything).
+    expect(
+      isOpenCodeRequest("https://anywhere.example/v1", undefined, providers, [
+        "",
+      ])
+    ).toBe(false);
   });
 
   it("identifies active turn state when routed to matching provider", () => {
@@ -566,6 +662,86 @@ describe("patchFetch", () => {
     expect(headerOf(capture.init, "x-opencode-client")).toBe("cli");
     expect(headerOf(capture.init, "x-opencode-project")).toBe("global");
     expect(headerOf(capture.init, SESSION_HEADER)).toBe(testSession);
+  });
+
+  it("restores configurable origin header values", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture, mockFetch } = createCaptureFetch();
+    const patched = patchFetch(
+      mockFetch,
+      als,
+      resolveConfig({ originClient: "desktop", originProject: "team-a" })
+    );
+
+    await als.run(
+      { provider: "opencode", value: "ses_origins_1" },
+      async () => {
+        await patched("https://opencode.ai/zen/v1/chat/completions", {
+          method: "POST",
+        });
+      }
+    );
+    expect(headerOf(capture.init, "x-opencode-client")).toBe("desktop");
+    expect(headerOf(capture.init, "x-opencode-project")).toBe("team-a");
+  });
+
+  it("scopes the core-tool fallback to the configured model marker", async () => {
+    const runWith = async (
+      modelName: string,
+      config: Parameters<typeof resolveConfig>[0]
+    ) => {
+      const als = new AsyncLocalStorage<ActiveTurnState>();
+      const { capture, mockFetch } = createCaptureFetch();
+      const patched = patchFetch(mockFetch, als, resolveConfig(config));
+      await als.run({ provider: "opencode", value: "ses_marker" }, async () => {
+        await patched("https://opencode.ai/zen/v1/responses", {
+          body: JSON.stringify({ input: "hi", model: modelName }),
+          method: "POST",
+        });
+      });
+      return capture.init?.body;
+    };
+
+    // Custom marker: only models carrying it fall back.
+    const customHit = await runWith("acct-preview-9", {
+      freeModelMarker: "preview",
+    });
+    expect(toolNamesOf(parseJsonBody(customHit))).toEqual(["read", "bash"]);
+    const customMiss = await runWith("muse-spark-1.3-contributor-free", {
+      freeModelMarker: "preview",
+    });
+    expect(toolNamesOf(parseJsonBody(customMiss))).toBeUndefined();
+
+    // `*` applies to every model on the path.
+    const allModels = await runWith("gpt-5-paid", { freeModelMarker: "*" });
+    expect(toolNamesOf(parseJsonBody(allModels))).toEqual(["read", "bash"]);
+
+    // A blank marker falls back to the default instead of disabling injection.
+    const blank = await runWith("muse-spark-1.3-contributor-free", {
+      freeModelMarker: "",
+    });
+    expect(toolNamesOf(parseJsonBody(blank))).toEqual(["read", "bash"]);
+  });
+
+  it("uses the configured session id env outside a turn", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture, mockFetch } = createCaptureFetch();
+    process.env.MY_SESSION_ID = "ses_envprovided000000000";
+    try {
+      const patched = patchFetch(
+        mockFetch,
+        als,
+        resolveConfig({ sessionIdEnv: "MY_SESSION_ID" })
+      );
+      await patched("https://opencode.ai/zen/v1/chat/completions", {
+        method: "POST",
+      });
+      expect(headerOf(capture.init, SESSION_HEADER)).toBe(
+        "ses_envprovided000000000"
+      );
+    } finally {
+      delete process.env.MY_SESSION_ID;
+    }
   });
 
   it("injects for configured custom relays when turn state matches", async () => {

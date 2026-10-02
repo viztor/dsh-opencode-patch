@@ -21,7 +21,25 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
+import {
+  DEFAULT_USAGE_MODEL_MARKERS,
+  DEFAULT_USAGE_PROVIDER_MARKERS,
+} from "./config-values.ts";
+import { isRecord } from "./guards.ts";
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
+import {
+  BREAKDOWN_WINDOWS,
+  CIRCUMFERENCE,
+  formatRelativeReset,
+  getAffectingWindow,
+  GO_CONSOLE_URL,
+  GO_LIMITS_DOC_URL,
+  GO_PLAN_URL,
+  getWindowColor,
+  matchesAny,
+  RADIUS,
+  STYLES,
+} from "./usage-ui.ts";
 
 export interface SnapshotStore<T> {
   getSnapshot: () => T;
@@ -38,6 +56,16 @@ export interface ModelDirectoryState {
 export interface UsagePillProps {
   directory: SnapshotStore<ModelDirectoryState>;
   getLocale?: () => string;
+  /**
+   * Model-id markers that reveal the meter even under a custom-routed
+   * provider. Defaults to the Go model marker when absent or empty.
+   */
+  modelMarkers?: readonly string[];
+  /**
+   * Provider-route markers that reveal the meter. Defaults to the Go route
+   * marker when absent or empty.
+   */
+  providerMarkers?: readonly string[];
   readUsage: () => Promise<GoUsage>;
   t: (key: string) => string;
 }
@@ -59,406 +87,6 @@ const noop = (): void => {
   /* no-op */
 };
 
-const RADIUS = 5.5;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-/**
- * Where a user acts on what this meter shows.
- *
- * The meter reports the Go plan's rolling/weekly/monthly limits, so the useful
- * destinations are the plan page (raise the limit), the console (see the actual
- * usage and Zen balance), and the limits reference (understand the numbers).
- * All three are the vendor's own public pages.
- *
- * There is deliberately no balance *number* in this meter. OpenCode exposes no
- * endpoint for account credit: of every plausible route under
- * `https://opencode.ai/zen/v1` and `/zen/go/v1` — `balance`, `credits`,
- * `billing`, `account`, `me`, `key`, `limits`, `plan`, `subscription` — only
- * `/models` and `/zen/go/v1/usage` exist (the rest 404, while `/models` returns
- * 200 on the same key, so the 404s are real absences rather than an auth
- * problem). The usage payload carries only `status`, `percent`, and `resetsAt`
- * per window — no currency — and a dollar figure cannot be derived from the
- * percentage either, because the monthly cap is per *model* ($15/$30/$60 on Go,
- * $60–$240 on Go Plus) while usage accrues across models. The console is the
- * only place the balance is shown, so the link goes there.
- */
-const GO_PLAN_URL = "https://opencode.ai/go";
-const GO_CONSOLE_URL = "https://opencode.ai/console";
-const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go/";
-
-const STYLES = `
-.dsh-oc-usage-root {
-  position: relative;
-  display: inline-flex;
-  min-width: 0;
-  vertical-align: middle;
-}
-
-.dsh-oc-usage-trigger {
-  border: 0;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, currentColor);
-  font: inherit;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  padding: 3px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  transition: background 0.15s ease, opacity 0.15s ease;
-  user-select: none;
-}
-
-.dsh-oc-usage-trigger:hover,
-.dsh-oc-usage-trigger:focus-visible {
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  color: var(--dsw-alias-label-primary, currentColor);
-}
-
-.dsh-oc-usage-trigger.dsh-oc-usage-alert {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.dsh-oc-usage-ring-track {
-  fill: none;
-  stroke: currentColor;
-  opacity: 0.2;
-  stroke-width: 2;
-}
-
-.dsh-oc-usage-ring-fill {
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  transition: stroke-dasharray 0.3s ease, stroke 0.2s ease;
-}
-
-.dsh-oc-usage-panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 1100;
-  width: 310px;
-  max-width: calc(100vw - 24px);
-  max-height: 80vh;
-  overflow-y: auto;
-  box-sizing: border-box;
-  padding: 14px;
-  border-radius: 14px;
-  background-color: Canvas;
-  background-image:
-    linear-gradient(var(--dsw-specific-menu, transparent), var(--dsw-specific-menu, transparent)),
-    linear-gradient(var(--dsw-alias-bg-layer-2, Canvas), var(--dsw-alias-bg-layer-2, Canvas));
-  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
-  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
-  color: var(--dsw-alias-label-primary, CanvasText);
-  font-size: 12px;
-  line-height: 1.5;
-  isolation: isolate;
-  animation: dsh-oc-fade-in 0.15s ease-out;
-}
-
-@keyframes dsh-oc-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.dsh-oc-usage-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.dsh-oc-usage-headline {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.dsh-oc-usage-figures {
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-secondary, currentColor);
-}
-
-.dsh-oc-usage-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.dsh-oc-usage-badge.dsh-oc-badge-limited {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 15%, transparent);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.dsh-oc-usage-bar-track {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  border-radius: 999px;
-  height: 5px;
-  overflow: hidden;
-  margin-bottom: 12px;
-}
-
-.dsh-oc-usage-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.3s ease, background-color 0.2s ease;
-}
-
-.dsh-oc-usage-breakdown {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin-top: 6px;
-}
-
-.dsh-oc-usage-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.dsh-oc-usage-row-left {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.dsh-oc-usage-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dsh-oc-usage-row-right {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  font-size: 12px;
-}
-
-.dsh-oc-usage-subrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  opacity: 0.65;
-  margin-top: 1px;
-  padding-left: 13px;
-}
-
-.dsh-oc-usage-divider {
-  height: 1px;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  margin: 12px 0 10px;
-}
-
-.dsh-oc-usage-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.6;
-  margin-bottom: 8px;
-}
-
-.dsh-oc-usage-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.dsh-oc-usage-card {
-  padding: 8px 7px;
-  border-radius: 8px;
-  background: color-mix(in srgb, currentColor 5%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.dsh-oc-usage-card.dsh-oc-card-limited {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
-  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 25%, transparent);
-}
-
-.dsh-oc-usage-card-name {
-  font-size: 10px;
-  opacity: 0.7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dsh-oc-usage-card-percent {
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.dsh-oc-usage-card-reset {
-  font-size: 10px;
-  opacity: 0.6;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dsh-oc-usage-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  opacity: 0.7;
-  padding-top: 4px;
-}
-
-.dsh-oc-usage-retry {
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 6px;
-  padding: 2px 7px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.dsh-oc-usage-retry:hover:not(:disabled) {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.dsh-oc-usage-retry:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* The "what do I do about this" row. Links, not buttons: both navigate away. */
-.dsh-oc-usage-links {
-  display: flex;
-  gap: 12px;
-  padding-top: 6px;
-  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 11px;
-}
-
-.dsh-oc-usage-links a {
-  color: var(--dsw-alias-link, currentColor);
-  text-decoration: none;
-}
-
-.dsh-oc-usage-links a:hover {
-  text-decoration: underline;
-}
-`;
-
-// The stylesheet is rendered as a `<style>` element inside this component's own
-// tree (see `ActiveUsage`) instead of being appended to `document.head`: writing
-// DOM outside the component leaks a permanent `<style>` node on unmount and is
-// disallowed for DSH client plugins.
-
-const getWindowColor = (window: UsageWindow): string => {
-  if (window.status === "rate-limited" || window.percent >= 100) {
-    return "var(--dsw-alias-state-error-primary)";
-  }
-  if (window.percent >= 80) {
-    return "var(--dsw-alias-state-warn-primary)";
-  }
-  return "var(--dsw-alias-state-success-primary)";
-};
-
-const formatRelativeReset = (dateStr: string, locale?: string): string => {
-  const target = Date.parse(dateStr);
-  if (!Number.isFinite(target)) {
-    return dateStr;
-  }
-  const diffMs = target - Date.now();
-  if (diffMs <= 0) {
-    return "soon";
-  }
-  const diffMinutes = Math.round(diffMs / 60_000);
-  if (diffMinutes < 60) {
-    return `in ${diffMinutes}m`;
-  }
-  const diffHours = Math.floor(diffMinutes / 60);
-  const remMinutes = diffMinutes % 60;
-  if (diffHours < 24) {
-    return remMinutes > 0
-      ? `in ${diffHours}h ${remMinutes}m`
-      : `in ${diffHours}h`;
-  }
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) {
-    return `in ${diffDays}d ${diffHours % 24}h`;
-  }
-  return new Date(target).toLocaleDateString(locale, {
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-  });
-};
-
-interface AffectingWindowResult {
-  key: "monthly" | "rolling" | "weekly";
-  label: string;
-  window: UsageWindow;
-}
-
-const getAffectingWindow = (usage: GoUsage): AffectingWindowResult => {
-  // 1. Any rate-limited window is actively blocking the user
-  if (usage.monthly.status === "rate-limited") {
-    return { key: "monthly", label: "Monthly", window: usage.monthly };
-  }
-  if (usage.weekly.status === "rate-limited") {
-    return { key: "weekly", label: "Weekly", window: usage.weekly };
-  }
-  if (usage.rolling.status === "rate-limited") {
-    return { key: "rolling", label: "5-Hour", window: usage.rolling };
-  }
-
-  // 2. Otherwise pick the highest percentage
-  const candidates: {
-    key: "monthly" | "rolling" | "weekly";
-    label: string;
-    window: UsageWindow;
-  }[] = [
-    { key: "monthly", label: "Monthly", window: usage.monthly },
-    { key: "weekly", label: "Weekly", window: usage.weekly },
-    { key: "rolling", label: "5-Hour", window: usage.rolling },
-  ];
-  candidates.sort((a, b) => b.window.percent - a.window.percent);
-
-  const [top] = candidates;
-  if (top !== undefined && top.window.percent > 0) {
-    return top;
-  }
-  // Default to rolling hourly quota when all are 0
-  return { key: "rolling", label: "5-Hour", window: usage.rolling };
-};
-
 const parseFailure = (error: unknown): UsageFailure => {
   if (
     typeof error === "object" &&
@@ -467,11 +95,7 @@ const parseFailure = (error: unknown): UsageFailure => {
     error.code === "opencode-go/usage-unavailable"
   ) {
     const details =
-      "details" in error &&
-      typeof error.details === "object" &&
-      error.details !== null
-        ? (error.details as Record<string, unknown>)
-        : {};
+      "details" in error && isRecord(error.details) ? error.details : {};
     return {
       ...(details.configured === false ? { configured: false } : {}),
       message:
@@ -740,78 +364,42 @@ const ActiveUsage = ({
           {/* Breakdown Section */}
           {usage !== undefined && (
             <div className="dsh-oc-usage-breakdown">
-              {/* 5-Hour Rolling */}
-              <div>
-                <div className="dsh-oc-usage-row">
-                  <span className="dsh-oc-usage-row-left">
-                    <span
-                      className="dsh-oc-usage-dot"
-                      style={{ backgroundColor: getWindowColor(usage.rolling) }}
-                    />
-                    {t("usage_rolling")}
-                  </span>
-                  <span className="dsh-oc-usage-row-right">
-                    {usage.rolling.percent}%
-                  </span>
-                </div>
-                <div className="dsh-oc-usage-subrow">
-                  <span>
-                    Resets {formatRelativeReset(usage.rolling.resetsAt, locale)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Weekly */}
-              <div>
-                <div className="dsh-oc-usage-row">
-                  <span className="dsh-oc-usage-row-left">
-                    <span
-                      className="dsh-oc-usage-dot"
-                      style={{ backgroundColor: getWindowColor(usage.weekly) }}
-                    />
-                    {t("usage_weekly")}
-                  </span>
-                  <span className="dsh-oc-usage-row-right">
-                    {usage.weekly.percent}%
-                  </span>
-                </div>
-                <div className="dsh-oc-usage-subrow">
-                  <span>
-                    Resets {formatRelativeReset(usage.weekly.resetsAt, locale)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Monthly */}
-              <div>
-                <div className="dsh-oc-usage-row">
-                  <span className="dsh-oc-usage-row-left">
-                    <span
-                      className="dsh-oc-usage-dot"
-                      style={{ backgroundColor: getWindowColor(usage.monthly) }}
-                    />
-                    {t("usage_monthly")}
-                  </span>
-                  <span className="dsh-oc-usage-row-right">
-                    {usage.monthly.percent}%
-                  </span>
-                </div>
-                <div className="dsh-oc-usage-subrow">
-                  <span>
-                    Resets {formatRelativeReset(usage.monthly.resetsAt, locale)}
-                  </span>
-                  {usage.monthly.status === "rate-limited" && (
-                    <span
-                      style={{
-                        color: "var(--dsw-alias-state-error-primary)",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {t("usageLimited")}
-                    </span>
-                  )}
-                </div>
-              </div>
+              {/* One row per window; the rate-limited badge now appears on
+                  every window that is limited, not only the monthly one. */}
+              {BREAKDOWN_WINDOWS.map((entry) => {
+                const window: UsageWindow = usage[entry.key];
+                return (
+                  <div key={entry.key}>
+                    <div className="dsh-oc-usage-row">
+                      <span className="dsh-oc-usage-row-left">
+                        <span
+                          className="dsh-oc-usage-dot"
+                          style={{ backgroundColor: getWindowColor(window) }}
+                        />
+                        {t(entry.labelKey)}
+                      </span>
+                      <span className="dsh-oc-usage-row-right">
+                        {window.percent}%
+                      </span>
+                    </div>
+                    <div className="dsh-oc-usage-subrow">
+                      <span>
+                        Resets {formatRelativeReset(window.resetsAt, locale)}
+                      </span>
+                      {window.status === "rate-limited" && (
+                        <span
+                          style={{
+                            color: "var(--dsw-alias-state-error-primary)",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {t("usageLimited")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -823,50 +411,29 @@ const ActiveUsage = ({
             <>
               <div className="dsh-oc-usage-section-title">Quota Overview</div>
               <div className="dsh-oc-usage-cards">
-                <div
-                  className={`dsh-oc-usage-card${usage.rolling.status === "rate-limited" ? " dsh-oc-card-limited" : ""}`}
-                >
-                  <span className="dsh-oc-usage-card-name">5-Hour</span>
-                  <span
-                    className="dsh-oc-usage-card-percent"
-                    style={{ color: getWindowColor(usage.rolling) }}
-                  >
-                    {usage.rolling.percent}%
-                  </span>
-                  <span className="dsh-oc-usage-card-reset">
-                    {formatRelativeReset(usage.rolling.resetsAt, locale)}
-                  </span>
-                </div>
-
-                <div
-                  className={`dsh-oc-usage-card${usage.weekly.status === "rate-limited" ? " dsh-oc-card-limited" : ""}`}
-                >
-                  <span className="dsh-oc-usage-card-name">Weekly</span>
-                  <span
-                    className="dsh-oc-usage-card-percent"
-                    style={{ color: getWindowColor(usage.weekly) }}
-                  >
-                    {usage.weekly.percent}%
-                  </span>
-                  <span className="dsh-oc-usage-card-reset">
-                    {formatRelativeReset(usage.weekly.resetsAt, locale)}
-                  </span>
-                </div>
-
-                <div
-                  className={`dsh-oc-usage-card${usage.monthly.status === "rate-limited" ? " dsh-oc-card-limited" : ""}`}
-                >
-                  <span className="dsh-oc-usage-card-name">Monthly</span>
-                  <span
-                    className="dsh-oc-usage-card-percent"
-                    style={{ color: getWindowColor(usage.monthly) }}
-                  >
-                    {usage.monthly.percent}%
-                  </span>
-                  <span className="dsh-oc-usage-card-reset">
-                    {formatRelativeReset(usage.monthly.resetsAt, locale)}
-                  </span>
-                </div>
+                {BREAKDOWN_WINDOWS.map((entry) => {
+                  const window: UsageWindow = usage[entry.key];
+                  const limited = window.status === "rate-limited";
+                  return (
+                    <div
+                      className={`dsh-oc-usage-card${limited ? " dsh-oc-card-limited" : ""}`}
+                      key={entry.key}
+                    >
+                      <span className="dsh-oc-usage-card-name">
+                        {entry.cardName}
+                      </span>
+                      <span
+                        className="dsh-oc-usage-card-percent"
+                        style={{ color: getWindowColor(window) }}
+                      >
+                        {window.percent}%
+                      </span>
+                      <span className="dsh-oc-usage-card-reset">
+                        {formatRelativeReset(window.resetsAt, locale)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -925,6 +492,8 @@ const ActiveUsage = ({
 
 export const UsagePill = ({
   directory,
+  modelMarkers,
+  providerMarkers,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
   const state = useSyncExternalStore(
@@ -935,11 +504,19 @@ export const UsagePill = ({
 
   const provider = state?.current?.provider ?? "";
   const model = state?.current?.model ?? "";
+  // The settings scope passes the configured markers at inject time; an
+  // absent or empty list falls back to the plugin defaults, so direct
+  // callers (and older injected props) keep the stock Go gate.
+  const providers =
+    providerMarkers !== undefined && providerMarkers.length > 0
+      ? providerMarkers
+      : DEFAULT_USAGE_PROVIDER_MARKERS;
+  const models =
+    modelMarkers !== undefined && modelMarkers.length > 0
+      ? modelMarkers
+      : DEFAULT_USAGE_MODEL_MARKERS;
   const isOpenCodeGo =
-    provider === "opencode-go" ||
-    provider === "dsh-opencode-go" ||
-    /opencode-go/i.test(provider) ||
-    /deepseek-v4\.1-flash/i.test(model);
+    matchesAny(provider, providers) || matchesAny(model, models);
 
   if (!isOpenCodeGo) {
     return null;

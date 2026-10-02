@@ -108,8 +108,8 @@ The meter is deliberately absent rather than wrong:
 
 | State | What you see |
 | :-- | :-- |
-| OpenCode Go selected **and** a key resolves | The quota ring |
-| A non-Go provider or model is active | Nothing |
+| A key resolves and the active provider/model matches a **Usage Marker** (default: OpenCode Go) | The quota ring |
+| No configured marker matches the active provider/model — any route id or model name works, not just `opencode-go` | Nothing |
 | **Enable Go Quota Monitor** is off | Nothing |
 | No OpenCode Go credential is configured | Nothing — toggle it on in Settings once you add a key |
 | A transient fetch failure | The ring with a stale/error state and a retry button |
@@ -158,18 +158,25 @@ Credentials never reach the browser; the host queries `https://opencode.ai/zen/g
 
 ## ⚙️ Configuration
 
-DSH Web → **Settings → Plugins → OpenCode Integration** (设置 → 插件 → OpenCode 接入设置). Edit values and click **Save**:
+DSH Web → **Settings → Plugins → OpenCode Patch** (设置 → 插件 → OpenCode 补丁设置). Edit values and click **Save**:
 
 | Setting | Default | Effect |
 | :-- | :-- | :-- |
 | **Enable Go Quota Monitor** | `on` | Shows live quota ring in the composer dock beside context usage |
 | **Go Usage Base URL** | `https://opencode.ai/zen/go/v1` | Custom quota endpoint for enterprise proxies or mirrors |
 | **Go Key Env Var / Credential** | `OPENCODE_GO_API_KEY` | Custom environment variable or DSH Credential reference |
+| **Go Usage Provider Markers** | `opencode-go` | Comma-separated provider substrings the ring reports on — covers proxy route ids |
+| **Go Usage Model Markers** | `deepseek-v4.1-flash` | Comma-separated model substrings the ring reports on |
 | **Inject User-Agent** | `on` | Restores canonical OpenCode CLI `User-Agent` stripped by DSH |
 | **User-Agent Override** | empty | Custom string instead of canonical OpenCode CLI string |
-| **Inject Origin Headers** | `on` | Injects `x-opencode-client: cli` and `x-opencode-project: global` |
+| **Inject Origin Headers** | `on` | Injects `x-opencode-client` and `x-opencode-project` |
+| **Origin Client** | `cli` | Value sent as `x-opencode-client` |
+| **Origin Project** | `global` | Value sent as `x-opencode-project` |
 | **Inject Core Tools** | `on` | Fallback `read`/`bash` schemas on free-tier requests |
+| **Free Model Marker** | `free` | Model-id substring treated as free-tier (`*` = every model, empty = never) |
 | **Providers** | `opencode, opencode-go` | Comma-separated list of route IDs to intercept |
+| **Gateway URLs** | `opencode.ai/zen` | Comma-separated URL substrings treated as OpenCode gateway traffic |
+| **Session ID Env Var** | `OPENCODE_SESSION_ID` | Env var consulted before the derived `ses_…` id |
 | **Debug Logging** | `off` | Logs each header-injected call via `ctx.logger` |
 | **Debug File** | empty | Appends JSONL stream-debug entries to a server-side path |
 
@@ -186,11 +193,21 @@ For servers, headless profiles, or version-controlled `cordis.patch.yml` overlay
     providers:
       - opencode
       - opencode-go
+    gatewayUrls:
+      - opencode.ai/zen
+    sessionIdEnv: "OPENCODE_SESSION_ID"
+    freeModelMarker: "free"
     usageEnabled: true
     usageBaseURL: "https://opencode.ai/zen/go/v1"
     usageKeyEnv: "OPENCODE_GO_API_KEY"
+    usageProviderMarkers:
+      - opencode-go
+    usageModelMarkers:
+      - deepseek-v4.1-flash
     injectUserAgent: true
     injectOriginHeaders: true
+    originClient: "cli"
+    originProject: "global"
     injectCoreTools: true
     debug: false
 ```

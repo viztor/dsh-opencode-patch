@@ -8,6 +8,7 @@ import {
   LEGACY_PKG,
   NS,
   PKG,
+  SPECS,
 } from "../src/settings-page.tsx";
 
 interface TestElement {
@@ -173,11 +174,16 @@ describe("settings-page: apply & slots", () => {
     // Valid session ID returns injected props
     const injected = dockInjector?.("valid") as {
       directory: unknown;
+      modelMarkers: string[];
+      providerMarkers: string[];
       readUsage: () => Promise<unknown>;
       t: (k: string) => string;
     };
     expect(injected).toBeDefined();
     expect(injected.directory).toEqual({ isDirectory: true });
+    // No scope in this context: the meter falls back to the plugin defaults.
+    expect(injected.providerMarkers).toEqual(["opencode-go"]);
+    expect(injected.modelMarkers).toEqual(["deepseek-v4.1-flash"]);
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });
@@ -208,6 +214,56 @@ describe("settings-page: apply & slots", () => {
     apply(ctx as never);
     expect(dockInjector).toBeDefined();
     expect(dockInjector?.("session")).toBeNull();
+  });
+
+  it("passes configured quota-meter markers from the scope to the injector", () => {
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+
+    const ctx = {
+      configForms: {
+        get: () => ({
+          getSnapshot: () => ({
+            base: {},
+            revision: 1,
+            status: "ready",
+            user: {},
+            value: {
+              usageModelMarkers: ["custom-go-model"],
+              usageProviderMarkers: ["custom-go-route"],
+            },
+            writable: true,
+          }),
+          mutate: async () => true,
+          subscribe: () => () => {},
+        }),
+        whileServed: (_namespaces: string[], fn: () => void) => fn(),
+      },
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: {
+        directoryFor: () => ({ store: { isDirectory: true } }),
+      },
+      remote: {
+        opencodeGoUsage: {
+          read: async () => ({ ok: true, value: {} }),
+        },
+      },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.composer.dock") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+
+    apply(ctx as never);
+    const injected = dockInjector?.("valid") as {
+      modelMarkers: string[];
+      providerMarkers: string[];
+    };
+    expect(injected.providerMarkers).toEqual(["custom-go-route"]);
+    expect(injected.modelMarkers).toEqual(["custom-go-model"]);
   });
 
   it("unpacks remote errors properly in readUsage", async () => {
@@ -363,9 +419,22 @@ describe("settings-page: OpencodeCard rendering", () => {
     const form = firstOf(tree, "SettingsForm");
     expect(form).toBeDefined();
 
-    // Verify SettingsValueFields exist in tree
+    // Verify SettingsValueFields exist in tree: the 10 original controls
+    // plus the 7 adaptivity knobs the host schema also serves.
     const valueFields = findAll(tree, "SettingsValueField");
-    expect(valueFields.length).toBeGreaterThanOrEqual(9);
+    expect(valueFields.length).toBe(17);
+    const ids = valueFields.map((field) => field.props.id);
+    for (const knob of [
+      "freeModelMarker",
+      "gatewayUrls",
+      "originClient",
+      "originProject",
+      "sessionIdEnv",
+      "usageModelMarkers",
+      "usageProviderMarkers",
+    ]) {
+      expect(ids).toContain(`plugin-config-opencode-${knob}`);
+    }
 
     // Test form field edit callbacks
     const [firstField] = valueFields;
@@ -410,5 +479,64 @@ describe("settings-page: OpencodeCard rendering", () => {
     for (const field of valueFields) {
       expect(field.props.disabled).toBe(true);
     }
+  });
+});
+
+describe("settings-page: field specs", () => {
+  const specOf = (field: string) => {
+    const found = SPECS.find((s) => s.field === field);
+    assert.ok(found, `expected a spec for ${field}`);
+    return found;
+  };
+
+  it("covers every field the card renders, in render order", () => {
+    expect(SPECS.map((s) => s.field)).toEqual([
+      "injectUserAgent",
+      "userAgent",
+      "injectOriginHeaders",
+      "originClient",
+      "originProject",
+      "injectCoreTools",
+      "freeModelMarker",
+      "providers",
+      "gatewayUrls",
+      "sessionIdEnv",
+      "usageEnabled",
+      "usageBaseURL",
+      "usageKeyEnv",
+      "usageProviderMarkers",
+      "usageModelMarkers",
+      "debug",
+      "debugFile",
+    ]);
+  });
+
+  it("round-trips list fields as arrays, not strings", () => {
+    const providers = specOf("providers");
+    expect(providers.format(["opencode", "opencode-go"])).toBe(
+      "opencode, opencode-go"
+    );
+    expect(providers.parse("opencode , opencode-go ")).toEqual({
+      kind: "set",
+      value: ["opencode", "opencode-go"],
+    });
+    // An empty draft clears the field so it re-inherits the default.
+    expect(providers.parse(" , ")).toEqual({ kind: "clear" });
+    // A non-list stored value renders as an empty draft rather than junk.
+    expect(providers.format("not-a-list")).toBe("");
+  });
+
+  it("keeps boolean and text fields on their stock semantics", () => {
+    const inject = specOf("injectCoreTools");
+    expect(inject.format(true)).toBe("true");
+    expect(inject.format("not-a-boolean")).toBe("");
+    expect(inject.parse("TRUE")).toEqual({ kind: "set", value: true });
+    expect(inject.parse("")).toEqual({ kind: "clear" });
+    expect(inject.parse("maybe")).toBeUndefined();
+
+    const marker = specOf("freeModelMarker");
+    expect(marker.format("free")).toBe("free");
+    expect(marker.parse("  pro  ")).toEqual({ kind: "set", value: "pro" });
+    expect(marker.parse("   ")).toEqual({ kind: "clear" });
   });
 });
