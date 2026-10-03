@@ -229,6 +229,32 @@ if (e.data.responseBody?.includes("GoUsageLimitError")) {
 
 ---
 
+### 6. Architectural Comparison: `dsh-opencode-patch` vs. `dsh-opencode-go`
+
+A common question is how `dsh-opencode-patch` compares to Duskriver's [`dsh-opencode-go`](https://www.npmjs.com/package/dsh-opencode-go):
+
+| Feature / Capability | `dsh-opencode-go` | `dsh-opencode-patch` (This Plugin) |
+| :-- | :-- | :-- |
+| **Plugin Role** | Standalone LLM Provider (`dsh-opencode-go`) | Universal Gateway Patch & Enhancement Layer |
+| **Intercepted Routes** | Dedicated Go provider only | Any route: `opencode`, `opencode-go`, custom relays |
+| **OpenCode Go Models** | ✅ (`/zen/go/v1` DeepSeek, Qwen) | ✅ (`/zen/go/v1` DeepSeek, Qwen) |
+| **OpenCode Zen Models** | ❌ Not supported | ✅ (`/zen/v1` Claude, GPT-5, Gemini, Contributor) |
+| **Multi-Protocol Gateway** | OpenAI Completions only | OpenAI Responses + Completions + Anthropic + Google |
+| **Free-Tier Tool Fallback** | ❌ Free models fail on missing tools | ✅ Injects dummy `read` + `bash` schemas automatically |
+| **Hierarchical Subagents** | ❌ No parent tracking | ✅ Injects `x-opencode-parent-session-id` for subagents |
+| **Dynamic Workspace Project** | ❌ Hardcoded / None | ✅ Automatically tags active folder from `session.header.cwd` |
+| **DSH Auto Review Support** | ❌ Fails on missing `sessionId` | ✅ Fallback turn capture in `AsyncLocalStorage` |
+| **Composer Dock Meter** | Text string (`Go · 5小时 42% · 周 18%`) | Dual-mode: SVG circular progress ring + Zen coin pill |
+| **Attached Zen Credit** | ❌ None | ✅ DSH Credentials, env vars, and auto-detection |
+| **Model Metadata** | Discovered from `models.dev/api.json` | Inherits standard DSH & OpenCode catalog specs |
+
+#### Key Insights from `dsh-opencode-go`:
+
+- **`https://models.dev/api.json`**: OpenCode publishes its canonical model catalog, deprecation status, context window sizes, and pricing metadata at `https://models.dev/api.json`.
+- **Target Audience**: `dsh-opencode-go` is tailored specifically for users who only need a standalone OpenCode Go provider. In contrast, `dsh-opencode-patch` is an all-in-one gateway patch that transparently fixes, optimizes, and meters both Zen and Go traffic across every DSH operation mode.
+
+---
+
 ## ⭕ Live Dual-Mode Quota Monitor & Zen Credit Display
 
 The plugin mounts an interactive meter in the composer dock (`conversation.composer.dock`), directly alongside DSH's native `ContextMeter`:
