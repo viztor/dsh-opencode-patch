@@ -245,9 +245,9 @@ Then `pnpm install` in the profile directory and restart DSH.
 
 ---
 
-## ⭕ Live OpenCode Go Quota Ring & Hover Modal
+## ⭕ Live Quota Monitor & Zen Credit Display
 
-When an OpenCode Go provider route (`opencode-go`) is active, an interactive SVG circular progress meter mounts in the composer dock (`conversation.composer.dock`), directly alongside DSH's native `ContextMeter`:
+The plugin mounts an interactive meter in the composer dock (`conversation.composer.dock`), directly alongside DSH's native `ContextMeter`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -255,22 +255,26 @@ When an OpenCode Go provider route (`opencode-go`) is active, an interactive SVG
 │                                                                 │
 │ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
 └─────────────────────────────────────────────────────────────────┘
-   [ ⭕ 73% Context ]   [ ⭕ 100% Go Quota ]  ← conversation.composer.dock
+   [ ⭕ 73% Context ]   [ ⭕ 100% Go Quota ]  ← when OpenCode Go is active
+   [ ⭕ 73% Context ]   [ 🪙 Zen: $25.00 ]    ← when OpenCode Zen is active
 ```
 
-### Visual Features
+### Visual Modes
 
-- **Adaptive Bottleneck Indicator**: Always displays the currently limiting window percentage (e.g. `100%` when rate-limited, or your 5h rolling usage).
-- **Dynamic Color States**, drawn from host semantic tokens for light and dark modes:
-  - `--dsw-alias-state-success-primary` (green): Normal operation (<80%).
-  - `--dsw-alias-state-warn-primary` (amber): Elevated usage (≥80%).
-  - `--dsw-alias-state-error-primary` (red): Limit reached (100% rate-limited).
-- **Rich Hover Modal**:
-  - **3-Window Breakdown Rows**: Dedicated progress meters for **5-Hour Rolling**, **Weekly**, and **Monthly** limits.
-  - **Human-Friendly Countdowns**: Live relative timers (`in 3h 12m`, `in 7d 17h`, or `soon`).
-  - **Zen Balance Fallback Notice**: When rate-limited, explains how to enable "Use balance" in the OpenCode Console to fall back to Zen credits.
-  - **Diagnostics & Refresh**: Displays last updated timestamp with a manual retry button.
-  - **Act-on-it links**: [Upgrade plan](https://opencode.ai/go), [Console & balance](https://opencode.ai/console), and [Usage limits doc](https://opencode.ai/docs/go/).
+1. **OpenCode Go (`opencode-go`)**:
+   - **Adaptive Bottleneck Ring**: Real-time SVG circular progress ring showing the currently limiting window percentage (`42%`, `80%`, or `100%` when rate-limited).
+   - **3-Window Breakdown Rows**: Dedicated progress meters for **5-Hour Rolling**, **Weekly**, and **Monthly** limits with live reset countdowns.
+   - **Attached Zen Credit Card**: Displays your attached available Zen balance (e.g. `$25.00` or `Ready`), showing whether Zen overflow is ready to take over when Go limits are reached.
+   - **Semantic Color States**: Green (<80%), Amber (≥80%), Red (100% rate-limited).
+
+2. **OpenCode Zen (`opencode`)**:
+   - **Zen Credit Pill**: Compact coin badge (`🪙 Zen: $25.00` or `🪙 OpenCode Zen`) in the dock.
+   - **Pay-As-You-Go Panel**: Explains per-token billing, displays attached available credit, and links directly to the console and pricing.
+
+3. **Attaching Zen Available Credit**: OpenCode does not offer a public REST balance endpoint, so the plugin allows attaching your Zen credit via multiple seamless layers:
+   - **DSH Credentials**: Store `OPENCODE_ZEN_CREDIT` or `OPENCODE_ZEN_BALANCE` in `~/.dsh/.credentials.yaml` (e.g. `"$25.00"`).
+   - **Environment Variables**: Set `OPENCODE_ZEN_BALANCE="$25.00"` or `OPENCODE_ZEN_CREDIT="$25.00"`.
+   - **Automatic Zen Detection**: If an `OPENCODE_API_KEY` is present, the plugin automatically detects that Zen pay-as-you-go is configured and marks overflow as **Ready**.
 
 ---
 
