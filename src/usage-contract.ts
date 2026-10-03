@@ -24,8 +24,6 @@ export interface GoUsage {
   /** Opaque Host identity for this endpoint/account; never a credential or its hash. */
   source?: string;
   weekly: UsageWindow;
-  /** Attached available Zen credit / balance (e.g. "$15.00", "Pay-as-you-go"). */
-  zenCredit?: string;
   /** Whether Zen balance overflow fallback is active or configured. */
   zenOverflow?: boolean;
 }
@@ -88,15 +86,8 @@ export const parseGoUsage = (value: unknown): GoUsage => {
       ? root.source
       : undefined;
 
-  const { zenCredit: rootCredit, zenOverflow: rootOverflow } = root;
-  const { zenCredit: sourceCredit, zenOverflow: sourceOverflow } = source;
-
-  let zenCredit: string | undefined;
-  if (typeof rootCredit === "string" && rootCredit.length > 0) {
-    zenCredit = rootCredit;
-  } else if (typeof sourceCredit === "string" && sourceCredit.length > 0) {
-    zenCredit = sourceCredit;
-  }
+  const { zenOverflow: rootOverflow } = root;
+  const { zenOverflow: sourceOverflow } = source;
 
   let zenOverflow: boolean | undefined;
   if (typeof rootOverflow === "boolean") {
@@ -110,7 +101,6 @@ export const parseGoUsage = (value: unknown): GoUsage => {
     rolling,
     ...(sourceId === undefined ? {} : { source: sourceId }),
     weekly,
-    ...(zenCredit === undefined ? {} : { zenCredit }),
     ...(zenOverflow === undefined ? {} : { zenOverflow }),
   };
 };

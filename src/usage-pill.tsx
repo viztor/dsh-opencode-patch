@@ -303,10 +303,7 @@ const ActiveUsage = ({
 
   let zenCardDesc: string;
   if (isZen) {
-    zenCardDesc =
-      usage?.zenCredit === undefined
-        ? t("zenPaygDesc")
-        : t("zenOverflowActive");
+    zenCardDesc = t("zenPaygDesc");
   } else if (isLimited) {
     zenCardDesc = t("zenFallbackNotice");
   } else {
@@ -314,12 +311,10 @@ const ActiveUsage = ({
   }
 
   let zenCardCredit: string;
-  if (usage?.zenCredit !== undefined) {
-    zenCardCredit = usage.zenCredit;
-  } else if (isZen) {
+  if (isZen) {
     zenCardCredit = t("zenPaygBadge");
   } else if (usage?.zenOverflow === true) {
-    zenCardCredit = "Ready";
+    zenCardCredit = isLimited ? "Active" : "Ready";
   } else {
     zenCardCredit = t("zenPaygBadge");
   }
@@ -341,7 +336,7 @@ const ActiveUsage = ({
         aria-haspopup="dialog"
         aria-label={
           isZen
-            ? `${t("zenPaygTitle")}: ${usage?.zenCredit ?? t("zenPaygBadge")}`
+            ? `${t("zenPaygTitle")} (${t("zenPaygBadge")})`
             : `${t("usageTitle")}: ${displayPercent}%`
         }
         className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
@@ -355,11 +350,7 @@ const ActiveUsage = ({
             <span aria-hidden="true" style={{ fontSize: "11px" }}>
               🪙
             </span>
-            <span>
-              {usage?.zenCredit === undefined
-                ? t("zenPaygTitle")
-                : `Zen: ${usage.zenCredit}`}
-            </span>
+            <span>{t("zenPaygTitle")}</span>
           </span>
         ) : (
           <>
@@ -510,10 +501,8 @@ const ActiveUsage = ({
             </>
           )}
 
-          {/* Attached Zen Credit / Overflow Card */}
-          {(isZen ||
-            usage?.zenCredit !== undefined ||
-            usage?.zenOverflow === true) && (
+          {/* Attached Zen Overflow Card */}
+          {(isZen || usage?.zenOverflow === true) && (
             <div className="dsh-oc-zen-card">
               <div className="dsh-oc-zen-card-left">
                 <span className="dsh-oc-zen-card-title">{t("zenCredit")}</span>
@@ -523,10 +512,7 @@ const ActiveUsage = ({
             </div>
           )}
 
-          {isLimited &&
-          !isZen &&
-          usage?.zenCredit === undefined &&
-          usage?.zenOverflow !== true ? (
+          {isLimited && !isZen && usage?.zenOverflow !== true ? (
             <div className="dsh-oc-usage-zen-notice">
               {t("usageZenFallbackNotice")}
             </div>
