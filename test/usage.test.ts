@@ -10,8 +10,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   GoUsageService,
+  clearSessionUsageStore,
   discoverGoConfig,
   parseGoUsage,
+  parseUsageQuery,
+  recordTurnUsage,
   usageRemote,
 } from "../src/index.ts";
 import { createMockContext } from "./test-helpers.ts";
@@ -74,6 +77,89 @@ describe("OpenCode Go Usage", () => {
     expect(usageRemote.package).toBe("dsh-opencode-patch");
     expect(usageRemote.descriptors.length).toBe(1);
     expect(usageRemote.descriptors[0]?.namespace).toBe("opencodeGoUsage");
+  });
+
+  it("accepts the optional provider/session query on the wire", () => {
+    // Both fields are how the client tells the Host which route and which
+    // conversation to meter; the parameter must therefore be declared, and
+    // optional so a caller that knows neither still works.
+    const params = usageRemote.descriptors[0]?.parameters;
+    expect(params?.length).toBe(1);
+    expect(params?.[0]?.name).toBe("query");
+    expect(params?.[0]?.wire).toBe("query");
+    expect(params?.[0]?.acceptsUndefined).toBe(true);
+  });
+
+  it("parseUsageQuery keeps the fields it needs and refuses junk", () => {
+    expect(parseUsageQuery()).toEqual({});
+    expect(parseUsageQuery(null)).toEqual({});
+    // Blank strings mean "not stated", not "the empty route".
+    expect(parseUsageQuery({ provider: "", sessionId: "" })).toEqual({});
+    expect(
+      parseUsageQuery({ provider: "opencode-go", sessionId: "s-1" })
+    ).toEqual({ provider: "opencode-go", sessionId: "s-1" });
+    // A partial query keeps only the usable half.
+    expect(parseUsageQuery({ sessionId: "s-1" })).toEqual({ sessionId: "s-1" });
+    expect(parseUsageQuery({ sessionId: 42 })).toEqual({});
+    expect(() => parseUsageQuery("nope")).toThrow(/expected an object/);
+  });
+
+  it("scopes session spend to the conversation that asked for it", async () => {
+    clearSessionUsageStore();
+    // Two conversations have spend; the Host must not conflate them.
+    recordTurnUsage(
+      "session-a",
+      { inputTokens: 1_000_000, totalTokens: 1_000_000 },
+      { input: 1, output: 1 },
+      "model-a"
+    );
+    recordTurnUsage(
+      "session-b",
+      { inputTokens: 2_000_000, totalTokens: 2_000_000 },
+      { input: 1, output: 1 },
+      "model-b"
+    );
+
+    const originalFetch = globalThis.fetch;
+    try {
+      // A fresh Response per call: a Response body can only be read once, and
+      // this test reads twice.
+      globalThis.fetch = vi.fn().mockImplementation(async () =>
+        Response.json({
+          usage: {
+            monthly: {
+              percent: 1,
+              resetsAt: new Date().toISOString(),
+              status: "ok",
+            },
+            rolling: {
+              percent: 1,
+              resetsAt: new Date().toISOString(),
+              status: "ok",
+            },
+            weekly: {
+              percent: 1,
+              resetsAt: new Date().toISOString(),
+              status: "ok",
+            },
+          },
+        })
+      );
+      const service = new GoUsageService(createMockContext(), {
+        baseURL: () => "https://opencode.ai/zen/go/v1",
+        resolveApiKey: () => Promise.resolve("test_key_123"),
+      });
+
+      const a = await service.read({ sessionId: "session-a" });
+      expect(a.session?.activeModel).toBe("model-a");
+      expect(a.session?.totalTokens).toBe(1_000_000);
+
+      const b = await service.read({ sessionId: "session-b" });
+      expect(b.session?.activeModel).toBe("model-b");
+      expect(b.session?.totalTokens).toBe(2_000_000);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("GoUsageService throws RemoteError when API key is missing", async () => {

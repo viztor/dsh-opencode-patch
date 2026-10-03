@@ -49,9 +49,9 @@ Web client bundle (`lib/client.js`):
 - `src/usage-pill.tsx` — quota ring + hover modal component; mounts only while an active provider matches a usage marker. Shows session spend/rate only when `showUsagePrice` is on.
 - `src/usage-ui.ts` — dependency-free meter pieces (geometry, action links, `matchesAny`, window helpers, stylesheet), exported so tests hit real logic.
 
-Tests — 135 deterministic cases in 11 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith):
+Tests — 139 deterministic cases in 11 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith):
 
-- `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` · `session-cost` — host behavior split by concern; `settings-page` (13) card · `usage-pill` (11) meter gating · `client-bundle` (4) bundle boundary.
+- `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` · `session-cost` — host behavior split by concern; `settings-page` (14) card · `usage-pill` (11) meter gating · `client-bundle` (4) bundle boundary.
 - `test/test-helpers.ts` — shared fixtures: mock streams, capture fetch, predicates, `createMockContext`.
 - `test/primitives-stub.tsx` — stand-in for the host UI kit; keep it behaviourally faithful to the real primitives (trimmed drafts, empty clears).
 
@@ -69,7 +69,7 @@ Supporting files:
 pnpm install     # install dependencies
 pnpm run build   # vp pack -> lib/index.mjs + lib/index.d.mts + lib/client.js
 pnpm run check   # zero *errors* required; zero warnings is the goal (no debt)
-pnpm run test    # 135 deterministic tests, fully green required
+pnpm run test    # 139 deterministic tests, fully green required
 ```
 
 - Host code needs a **restart**: the base bundle ships `hmr root: []` (config watches only) and a `link:` package resolves through `node_modules` (ignored), so the host never re-imports `lib/index.mjs` after boot — restart `dsh web` after every `pnpm run build`, or the profile runs the old module and `dsh-settings` serves a stale/absent config schema. `lib/client.js` is re-served per page load, so a browser refresh suffices for client-only changes.
