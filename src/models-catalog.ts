@@ -257,9 +257,157 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
   },
 ];
 
-const CATALOG_BY_ID = new Map<string, CatalogModelSpec>(
+/** Official OpenCode model registry URL. */
+export const MODELS_DEV_URL = "https://models.dev/api.json";
+
+/** TTL for cached models before triggering a background revalidation (60 minutes). */
+export const CATALOG_REVALIDATION_TTL_MS = 60 * 60 * 1000;
+
+/** Timeout for models.dev revalidation requests (8 seconds). */
+export const MODELS_DEV_TIMEOUT_MS = 8000;
+
+let activeCatalog = new Map<string, CatalogModelSpec>(
   OPENCODE_GO_CATALOG.map((m) => [m.id, m])
 );
+let lastRefreshedAt = 0;
+let refreshPromise: Promise<readonly CatalogModelSpec[]> | undefined;
+
+/**
+ * Safely parse raw models.dev JSON data for the opencode-go provider.
+ *
+ * @param data - raw parsed JSON from `https://models.dev/api.json`
+ * @returns extracted model specifications
+ */
+export const parseModelsDevCatalog = (data: unknown): CatalogModelSpec[] => {
+  if (!isRecord(data)) {
+    return [];
+  }
+  const goProvider = isRecord(data["opencode-go"])
+    ? data["opencode-go"]
+    : undefined;
+  if (!goProvider || !isRecord(goProvider.models)) {
+    return [];
+  }
+  const results: CatalogModelSpec[] = [];
+  for (const [id, rawModel] of Object.entries(goProvider.models)) {
+    if (!isRecord(rawModel)) {
+      continue;
+    }
+    const name =
+      typeof rawModel.name === "string" && rawModel.name.length > 0
+        ? rawModel.name
+        : id;
+    const limit = isRecord(rawModel.limit) ? rawModel.limit : undefined;
+    const context_window =
+      typeof limit?.context === "number" && limit.context > 0
+        ? limit.context
+        : 1_000_000;
+    const max_output_tokens =
+      typeof limit?.output === "number" && limit.output > 0
+        ? limit.output
+        : 131_072;
+    const modalities = isRecord(rawModel.modalities)
+      ? rawModel.modalities
+      : undefined;
+    const input_modalities = Array.isArray(modalities?.input)
+      ? modalities.input.filter((m): m is string => typeof m === "string")
+      : ["text"];
+
+    results.push({
+      context_window,
+      id,
+      input_modalities:
+        input_modalities.length > 0 ? input_modalities : ["text"],
+      max_output_tokens,
+      name,
+    });
+  }
+  return results;
+};
+
+/**
+ * Fetch and merge the latest live model specifications from `models.dev`.
+ *
+ * Never throws: on network failure, timeout, or invalid reply, gracefully falls
+ * back to the current active catalog. Concurrent calls coalesce into one in-flight promise.
+ *
+ * @param fetchFn - fetch implementation to use (defaults to globalThis.fetch)
+ * @param force - bypass TTL cache and force immediate refresh
+ */
+export const refreshCatalog = (
+  fetchFn: typeof fetch = globalThis.fetch,
+  force = false
+): Promise<readonly CatalogModelSpec[]> => {
+  const now = Date.now();
+  if (
+    !force &&
+    lastRefreshedAt > 0 &&
+    now - lastRefreshedAt < CATALOG_REVALIDATION_TTL_MS
+  ) {
+    return Promise.resolve([...activeCatalog.values()]);
+  }
+  if (!force && refreshPromise !== undefined) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetchFn(MODELS_DEV_URL, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(MODELS_DEV_TIMEOUT_MS),
+      });
+      if (response.ok) {
+        const json: unknown = await response.json();
+        const parsed = parseModelsDevCatalog(json);
+        if (parsed.length > 0) {
+          const next = new Map(activeCatalog);
+          for (const model of parsed) {
+            next.set(model.id, model);
+          }
+          activeCatalog = next;
+          lastRefreshedAt = Date.now();
+        }
+      }
+    } catch {
+      // Revalidation failure retains the current active catalog and allows later retry
+    } finally {
+      refreshPromise = undefined;
+    }
+    return [...activeCatalog.values()];
+  })();
+
+  return refreshPromise;
+};
+
+const triggerBackgroundRefresh = async (
+  fetchFn: typeof fetch
+): Promise<void> => {
+  try {
+    await refreshCatalog(fetchFn);
+  } catch {
+    // Background revalidation failure silently retains active catalog
+  }
+};
+
+/**
+ * Return the current catalog immediately (non-blocking), triggering background
+ * revalidation if the cached data is stale.
+ *
+ * @param fetchFn - fetch implementation to use for background refresh
+ */
+export const getLiveCatalog = (
+  fetchFn: typeof fetch = globalThis.fetch
+): readonly CatalogModelSpec[] => {
+  const now = Date.now();
+  if (
+    lastRefreshedAt === 0 ||
+    now - lastRefreshedAt >= CATALOG_REVALIDATION_TTL_MS
+  ) {
+    // Non-blocking background revalidation
+    void triggerBackgroundRefresh(fetchFn);
+  }
+  return [...activeCatalog.values()];
+};
 
 /** Check whether a request URL is interrogating the models directory on OpenCode. */
 export const isModelsListingUrl = (url: string): boolean => {
@@ -273,10 +421,12 @@ export const isModelsListingUrl = (url: string): boolean => {
  * Merge and enrich a gateway `/models` response with the complete OpenCode Go catalog.
  *
  * @param response - the upstream fetch Response
+ * @param fetchFn - optional fetch implementation for SWR background refresh
  * @returns an enriched Response with all 33+ models and complete metadata
  */
 export const enrichModelsResponse = async (
-  response: Response
+  response: Response,
+  fetchFn: typeof fetch = globalThis.fetch
 ): Promise<Response> => {
   let existingData: Record<string, unknown>[] = [];
   try {
@@ -288,10 +438,12 @@ export const enrichModelsResponse = async (
     // If the upstream returned non-JSON, we will generate the full catalog response.
   }
 
+  const catalog = getLiveCatalog(fetchFn);
+  const catalogById = new Map(catalog.map((m) => [m.id, m]));
   const merged = new Map<string, Record<string, unknown>>();
 
   // 1. Seed with known catalog models (so contextWindow, name, maxTokens are populated)
-  for (const spec of OPENCODE_GO_CATALOG) {
+  for (const spec of catalog) {
     merged.set(spec.id, {
       context_window: spec.context_window,
       created: 1_727_740_800,
@@ -310,7 +462,7 @@ export const enrichModelsResponse = async (
     if (id.length === 0) {
       continue;
     }
-    const spec = CATALOG_BY_ID.get(id);
+    const spec = catalogById.get(id);
     const enriched = {
       ...item,
       context_window:
