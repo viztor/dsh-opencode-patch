@@ -18,6 +18,12 @@ export interface CordisContext {
   effect?: (fn: () => unknown, name?: string) => void;
   get?: (name: string) => unknown;
   inject?: (deps: string[], cb: (scope: unknown) => void) => void;
+  llm?: {
+    registerModelDiscovery?: (
+      ns: string,
+      discover: () => Promise<unknown>
+    ) => void;
+  };
   logger?: {
     info?: (msg: string, ...args: unknown[]) => void;
     warn?: (msg: string, ...args: unknown[]) => void;

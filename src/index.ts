@@ -30,6 +30,7 @@ import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
 import { isFetchFunction } from "./guards.ts";
+import { OPENCODE_GO_CATALOG } from "./models-catalog.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { registerUsageRemotes, GoUsageService } from "./usage.ts";
@@ -104,6 +105,12 @@ export {
   type UsageWindow,
   usageRemote,
 } from "./usage-contract.ts";
+export {
+  OPENCODE_GO_CATALOG,
+  enrichModelsResponse,
+  isModelsListingUrl,
+  type CatalogModelSpec,
+} from "./models-catalog.ts";
 
 /**
  * Plugin entry: register the quota service, patch `fetch` for OpenCode
@@ -162,4 +169,22 @@ export const apply = (
   }, "dsh-opencode-patch.fetch-patch");
 
   ctx.on?.("llm/stream", createStreamHook(ctx, config, als), { prepend: true });
+
+  try {
+    if (typeof ctx.llm?.registerModelDiscovery === "function") {
+      ctx.llm.registerModelDiscovery(name, () =>
+        Promise.resolve(
+          OPENCODE_GO_CATALOG.map((m) => ({
+            contextWindow: m.context_window,
+            id: m.id,
+            inputModalities: m.input_modalities,
+            maxTokens: m.max_output_tokens,
+            name: m.name,
+          }))
+        )
+      );
+    }
+  } catch {
+    // Model discovery registration is non-fatal
+  }
 };

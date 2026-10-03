@@ -255,6 +255,22 @@ A common question is how `dsh-opencode-patch` compares to Duskriver's [`dsh-open
 
 ---
 
+### 7. Authoritative Model Catalog Auto-Enrichment & Discovery
+
+A known limitation of OpenCode Go's default gateway is that `GET https://opencode.ai/zen/go/v1/models` frequently returns a truncated subset of models (often only 10 models), omitting human-readable display names, context windows, max tokens, and input modalities.
+
+`dsh-opencode-patch` resolves this at two distinct layers:
+
+1. **Gateway Models Endpoint Auto-Enrichment**: When DSH or any client requests `GET .../models` on an OpenCode gateway (`/zen/go/v1/models` or `/zen/v1/models`), `patchFetch` intercepts the response and merges it with the canonical 33-model catalog sourced from [`models.dev/api.json`](https://models.dev/api.json).
+   - Every model is populated with its human-friendly `name` (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`).
+   - Every model receives its verified `context_window` (up to 1,000,000+ tokens) and `max_output_tokens` (up to 384,000 tokens).
+   - Input modalities (`text`, `image`) are accurately declared so vision-capable models work out of the box.
+   - If the upstream gateway suffers a temporary outage or truncates the listing, the full 33-model catalog is seamlessly served so model discovery never breaks.
+
+2. **Native DSH Model Discovery Registration**: On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`). When DSH's model picker enumerates models for OpenCode Go, it immediately surfaces the full list of all 33+ subscription models.
+
+---
+
 ## ⭕ Live Dual-Mode Quota Monitor & Zen Credit Display
 
 The plugin mounts an interactive meter in the composer dock (`conversation.composer.dock`), directly alongside DSH's native `ContextMeter`:
