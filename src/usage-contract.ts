@@ -12,6 +12,8 @@ import type {
   TypertRemoteContribution,
 } from "@deepseek-ai/dsh-typert-protocol";
 
+import type { SessionUsageSnapshot } from "./session-cost.ts";
+
 export interface UsageWindow {
   percent: number;
   resetsAt: string;
@@ -21,6 +23,8 @@ export interface UsageWindow {
 export interface GoUsage {
   monthly: UsageWindow;
   rolling: UsageWindow;
+  /** Accumulated token and dollar usage for the current session. */
+  session?: SessionUsageSnapshot;
   /** Opaque Host identity for this endpoint/account; never a credential or its hash. */
   source?: string;
   weekly: UsageWindow;
@@ -96,9 +100,48 @@ export const parseGoUsage = (value: unknown): GoUsage => {
     zenOverflow = sourceOverflow;
   }
 
+  let session: SessionUsageSnapshot | undefined;
+  const sessionRaw = isRecord(root.session) ? root.session : undefined;
+  if (
+    sessionRaw !== undefined &&
+    typeof sessionRaw.costFormatted === "string" &&
+    typeof sessionRaw.totalTokens === "number"
+  ) {
+    session = {
+      ...(typeof sessionRaw.activeModel === "string" &&
+      sessionRaw.activeModel.length > 0
+        ? { activeModel: sessionRaw.activeModel }
+        : {}),
+      ...(typeof sessionRaw.activeRateFormatted === "string"
+        ? { activeRateFormatted: sessionRaw.activeRateFormatted }
+        : {}),
+      cacheReadTokens:
+        typeof sessionRaw.cacheReadTokens === "number"
+          ? sessionRaw.cacheReadTokens
+          : 0,
+      costFormatted: sessionRaw.costFormatted,
+      costUsd: typeof sessionRaw.costUsd === "number" ? sessionRaw.costUsd : 0,
+      ...(sessionRaw.includedInPlan === true ? { includedInPlan: true } : {}),
+      inputTokens:
+        typeof sessionRaw.inputTokens === "number" ? sessionRaw.inputTokens : 0,
+      modelsUsed: Array.isArray(sessionRaw.modelsUsed)
+        ? sessionRaw.modelsUsed.filter(
+            (m): m is string => typeof m === "string"
+          )
+        : [],
+      outputTokens:
+        typeof sessionRaw.outputTokens === "number"
+          ? sessionRaw.outputTokens
+          : 0,
+      totalTokens: sessionRaw.totalTokens,
+      turns: typeof sessionRaw.turns === "number" ? sessionRaw.turns : 0,
+    };
+  }
+
   return {
     monthly,
     rolling,
+    ...(session === undefined ? {} : { session }),
     ...(sourceId === undefined ? {} : { source: sourceId }),
     weekly,
     ...(zenOverflow === undefined ? {} : { zenOverflow }),

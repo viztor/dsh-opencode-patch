@@ -200,7 +200,7 @@ export const patchFetch = (
         ? input.method
         : "GET")
     ).toUpperCase();
-    if (method === "GET" && isModelsListingUrl(url)) {
+    if (config.enrichModels && method === "GET" && isModelsListingUrl(url)) {
       return enrichModelsResponse(url, response);
     }
     return response;

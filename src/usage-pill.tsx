@@ -63,6 +63,8 @@ export interface UsagePillProps {
    */
   providerMarkers?: readonly string[];
   readUsage: (provider?: string) => Promise<GoUsage>;
+  /** Whether to show accumulated session spend and the active model's rate. */
+  showUsagePrice?: boolean;
   t: (key: string) => string;
 }
 
@@ -117,6 +119,7 @@ const ActiveUsage = ({
   getLocale,
   provider,
   readUsage,
+  showUsagePrice = true,
   t,
 }: ActiveUsageProps): React.ReactElement | null => {
   const [snapshot, setSnapshot] = useState<{
@@ -350,7 +353,13 @@ const ActiveUsage = ({
             <span aria-hidden="true" style={{ fontSize: "11px" }}>
               🪙
             </span>
-            <span>{t("zenPaygTitle")}</span>
+            <span>
+              {showUsagePrice &&
+              usage?.session !== undefined &&
+              usage.session.costUsd > 0
+                ? usage.session.costFormatted
+                : t("zenPaygTitle")}
+            </span>
           </span>
         ) : (
           <>
@@ -499,6 +508,26 @@ const ActiveUsage = ({
                 </>
               )}
             </>
+          )}
+
+          {/* Session spend & active-model rate. Priced on the Host from
+              models.dev rates, so the client never ships the catalog. */}
+          {showUsagePrice && usage?.session !== undefined && (
+            <div className="dsh-oc-zen-card">
+              <div className="dsh-oc-zen-card-left">
+                <span className="dsh-oc-zen-card-title">
+                  {t("sessionSpend")}
+                </span>
+                <span className="dsh-oc-zen-card-desc">
+                  {usage.session.includedInPlan === true
+                    ? t("includedInPlan")
+                    : `${usage.session.activeModel ?? ""} · ${usage.session.activeRateFormatted ?? ""}`}
+                </span>
+              </div>
+              <span className="dsh-oc-zen-card-credit">
+                {usage.session.costFormatted}
+              </span>
+            </div>
           )}
 
           {/* Attached Zen Overflow Card */}

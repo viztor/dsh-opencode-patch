@@ -14,13 +14,14 @@
 import z from "@deepseek-ai/schemastery";
 
 import {
+  DEFAULT_SHOW_USAGE_PRICE,
   DEFAULT_USAGE_PROVIDER_MARKERS,
   readBoolean,
   readString,
   readStringList,
 } from "./config-values.ts";
 
-export { DEFAULT_USAGE_PROVIDER_MARKERS };
+export { DEFAULT_SHOW_USAGE_PRICE, DEFAULT_USAGE_PROVIDER_MARKERS };
 
 /** Provider route keys the plugin intercepts out of the box. */
 export const DEFAULT_PROVIDERS = ["opencode", "opencode-go"];
@@ -60,6 +61,7 @@ export const DEFAULT_USAGE_KEY_ENV = "OPENCODE_GO_API_KEY";
  */
 export const CONFIG_DEFAULTS = {
   debug: false,
+  enrichModels: true,
   freeModelMarker: DEFAULT_FREE_MODEL_MARKER,
   gatewayUrls: DEFAULT_GATEWAY_URLS,
   injectCoreTools: true,
@@ -69,6 +71,7 @@ export const CONFIG_DEFAULTS = {
   originClient: DEFAULT_ORIGIN_CLIENT,
   providers: DEFAULT_PROVIDERS,
   sessionIdEnv: DEFAULT_SESSION_ID_ENV,
+  showUsagePrice: DEFAULT_SHOW_USAGE_PRICE,
   usageBaseURL: DEFAULT_USAGE_BASE_URL,
   usageEnabled: true,
   usageKeyEnv: DEFAULT_USAGE_KEY_ENV,
@@ -79,6 +82,7 @@ export const CONFIG_DEFAULTS = {
 export interface PluginConfig {
   debug?: boolean;
   debugFile?: string;
+  enrichModels?: boolean;
   freeModelMarker?: string;
   gatewayUrls?: string[];
   injectCoreTools?: boolean;
@@ -88,6 +92,7 @@ export interface PluginConfig {
   originClient?: string;
   providers?: string[];
   sessionIdEnv?: string;
+  showUsagePrice?: boolean;
   userAgent?: string;
   usageBaseURL?: string;
   usageEnabled?: boolean;
@@ -99,6 +104,7 @@ export interface PluginConfig {
 export interface ResolvedPluginConfig {
   debug: boolean;
   debugFile?: string;
+  enrichModels: boolean;
   /** `*` when the core-tool fallback should run for every model. */
   freeModelMarker: string;
   /** URL substrings marking gateway traffic; never empty after resolution. */
@@ -110,6 +116,7 @@ export interface ResolvedPluginConfig {
   originClient: string;
   providers: Set<string>;
   sessionIdEnv: string;
+  showUsagePrice: boolean;
   userAgent?: string;
   usageBaseURL: string;
   usageEnabled: boolean;
@@ -137,6 +144,10 @@ export const resolveConfig = (
   return {
     debug: readBoolean(config.debug, CONFIG_DEFAULTS.debug),
     debugFile: readString(config.debugFile),
+    enrichModels: readBoolean(
+      config.enrichModels,
+      CONFIG_DEFAULTS.enrichModels
+    ),
     freeModelMarker:
       readString(config.freeModelMarker) ?? CONFIG_DEFAULTS.freeModelMarker,
     gatewayUrls:
@@ -164,6 +175,10 @@ export const resolveConfig = (
     ),
     sessionIdEnv:
       readString(config.sessionIdEnv) ?? CONFIG_DEFAULTS.sessionIdEnv,
+    showUsagePrice: readBoolean(
+      config.showUsagePrice,
+      CONFIG_DEFAULTS.showUsagePrice
+    ),
     userAgent: readString(config.userAgent),
     usageBaseURL:
       readString(config.usageBaseURL) ?? CONFIG_DEFAULTS.usageBaseURL,
@@ -260,6 +275,18 @@ export const Config = z.object({
     .default(CONFIG_DEFAULTS.usageEnabled)
     .volatile()
     .description("Enable host-side OpenCode Go usage querying."),
+  enrichModels: z
+    .boolean()
+    .default(CONFIG_DEFAULTS.enrichModels)
+    .volatile()
+    .description(
+      "Enrich and override gateway models list using canonical models.dev catalog."
+    ),
+  showUsagePrice: z
+    .boolean()
+    .default(CONFIG_DEFAULTS.showUsagePrice)
+    .volatile()
+    .description("Display session spend and model pricing in usage meter."),
   usageBaseURL: z
     .string()
     .default(CONFIG_DEFAULTS.usageBaseURL)

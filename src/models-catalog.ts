@@ -13,9 +13,11 @@
  */
 
 import { isRecord } from "./guards.ts";
+import type { ModelCostRate } from "./session-cost.ts";
 
 export interface CatalogModelSpec {
   context_window: number;
+  cost?: ModelCostRate;
   id: string;
   input_modalities: string[];
   is_free?: boolean;
@@ -710,12 +712,30 @@ const extractSpecs = (
     const input_modalities = Array.isArray(modalities?.input)
       ? modalities.input.filter((m): m is string => typeof m === "string")
       : ["text"];
-    const cost = isRecord(rawModel.cost) ? rawModel.cost : undefined;
+    const costRaw = isRecord(rawModel.cost) ? rawModel.cost : undefined;
+    let cost: ModelCostRate | undefined;
+    if (costRaw !== undefined) {
+      const input = typeof costRaw.input === "number" ? costRaw.input : 0;
+      const output = typeof costRaw.output === "number" ? costRaw.output : 0;
+      const cache_read =
+        typeof costRaw.cache_read === "number" ? costRaw.cache_read : undefined;
+      const cache_write =
+        typeof costRaw.cache_write === "number"
+          ? costRaw.cache_write
+          : undefined;
+      cost = {
+        input,
+        output,
+        ...(cache_read === undefined ? {} : { cache_read }),
+        ...(cache_write === undefined ? {} : { cache_write }),
+      };
+    }
     const is_free =
       id.includes("free") || (cost?.input === 0 && cost?.output === 0);
 
     results.push({
       context_window,
+      ...(cost === undefined ? {} : { cost }),
       id,
       input_modalities:
         input_modalities.length > 0 ? input_modalities : ["text"],
@@ -726,6 +746,10 @@ const extractSpecs = (
   }
   return results;
 };
+
+/** Look up model specifications and pricing rates by model ID. */
+export const findModelSpec = (modelId: string): CatalogModelSpec | undefined =>
+  activeGoCatalog.get(modelId) ?? activeZenCatalog.get(modelId);
 
 /**
  * Safely parse raw models.dev JSON data for both opencode-go and opencode providers.

@@ -11,8 +11,12 @@
  */
 
 export const en = {
+  activeModelRate: "Model Rate",
   description:
     "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
+  enrichModels: "Enrich Models from Models.dev (default on)",
+  enrichModelsHint:
+    "Merges canonical specifications, active free models, and accurate context limits from models.dev into OpenCode model listings. Turn off to keep raw gateway listings.",
   freeModelMarker: "Free-Tier Model Marker (default free)",
   freeModelMarkerHint:
     "Model-id substring that triggers the core-tool fallback; * matches every model. Empty inherits the default.",
@@ -31,6 +35,7 @@ export const en = {
   injectUserAgent: "Inject User-Agent (default on)",
   injectUserAgentHint:
     "Restores the opencode CLI User-Agent stripped by the DSH LLM adapter. Empty inherits the default.",
+  includedInPlan: "Included in Go Plan",
   invalidBoolean: "Enter true or false, or leave blank for default.",
   invalidText: "This value was not accepted; leave blank for default.",
   originClient: "x-opencode-client Value (default cli)",
@@ -42,6 +47,7 @@ export const en = {
     "Comma-separated list of route IDs to intercept. Default: opencode, opencode-go.",
   readOnly: "This deployment stores settings read-only.",
   reset: "Reset to default",
+  sessionSpend: "Session Spend",
   save: "Save",
   saveFailed: "The deployment did not accept these values.",
   saving: "Saving…",
@@ -69,6 +75,9 @@ export const en = {
   usageProviderMarkers: "Quota Meter Provider Markers",
   usageProviderMarkersHint:
     "Comma-separated provider-route markers that show the quota meter. Default: opencode-go.",
+  showUsagePrice: "Show Session Spend & Model Rate (default on)",
+  showUsagePriceHint:
+    "Shows accumulated session cost and the active model's per-million-token rate in the meter, priced from models.dev. Turn off to show quota only.",
   usageRefreshFailed: "Refresh failed",
   usageRefreshing: "Refreshing…",
   usageResets: "Resets",
@@ -99,8 +108,12 @@ export const en = {
 
 /** `zh` mirrors `en` key-for-key; the type makes a missing key a compile error. */
 export const zh: Record<keyof typeof en, string> = {
+  activeModelRate: "当前模型费率",
   description:
     "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
+  enrichModels: "使用 models.dev 补全模型列表（默认开启）",
+  enrichModelsHint:
+    "将 models.dev 的规范参数、当前免费模型与准确的上下文上限合并进 OpenCode 模型列表。关闭后保留网关原始列表。",
   freeModelMarker: "免费档模型标记（默认 free）",
   freeModelMarkerHint:
     "触发核心工具补全的模型 ID 子串；* 匹配全部模型。留空沿用默认值。",
@@ -119,6 +132,7 @@ export const zh: Record<keyof typeof en, string> = {
   injectUserAgent: "恢复 User-Agent（默认开启）",
   injectUserAgentHint:
     "恢复被 DSH 适配器过滤掉的官方 OpenCode CLI User-Agent。留空沿用默认值。",
+  includedInPlan: "Go 套餐包含",
   invalidBoolean: "请输入 true 或 false，留空使用默认值。",
   invalidText: "该值未被接受，留空使用默认值。",
   originClient: "x-opencode-client 取值（默认 cli）",
@@ -128,6 +142,7 @@ export const zh: Record<keyof typeof en, string> = {
   providersHint: "逗号分隔的提供方路由 ID 列表。默认：opencode, opencode-go。",
   readOnly: "当前部署配置为只读。",
   reset: "恢复默认",
+  sessionSpend: "当前会话消耗",
   save: "保存",
   saveFailed: "保存失败，请检查填写内容。",
   saving: "保存中…",
@@ -155,6 +170,9 @@ export const zh: Record<keyof typeof en, string> = {
   usageProviderMarkers: "额度表提供方标记",
   usageProviderMarkersHint:
     "逗号分隔的提供方路由标记，命中后显示额度表。默认：opencode-go。",
+  showUsagePrice: "显示会话消耗与模型费率（默认开启）",
+  showUsagePriceHint:
+    "在额度表中显示本会话累计花费与当前模型每百万 Token 费率（取自 models.dev）。关闭后仅显示额度。",
   usageRefreshFailed: "刷新失败",
   usageRefreshing: "正在刷新…",
   usageResets: "重置于",

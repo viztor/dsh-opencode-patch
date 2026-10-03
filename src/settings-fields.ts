@@ -17,6 +17,7 @@ import {
 
 /** Schema knob names this card edits; keys double as label ids. */
 export const FIELD = {
+  enrichModels: "enrichModels",
   freeModelMarker: "freeModelMarker",
   gatewayUrls: "gatewayUrls",
   injectCoreTools: "injectCoreTools",
@@ -26,6 +27,7 @@ export const FIELD = {
   originClient: "originClient",
   providers: "providers",
   sessionIdEnv: "sessionIdEnv",
+  showUsagePrice: "showUsagePrice",
   usageBaseURL: "usageBaseURL",
   usageEnabled: "usageEnabled",
   usageKeyEnv: "usageKeyEnv",
@@ -83,10 +85,12 @@ export const SPECS: SettingsFieldSpec[] = [
   settingsBooleanField(FIELD.injectProject),
   settingsBooleanField(FIELD.injectCoreTools),
   settingsTextField(FIELD.freeModelMarker),
+  settingsBooleanField(FIELD.enrichModels),
   settingsListField(FIELD.providers),
   settingsListField(FIELD.gatewayUrls),
   settingsTextField(FIELD.sessionIdEnv),
   settingsBooleanField(FIELD.usageEnabled),
+  settingsBooleanField(FIELD.showUsagePrice),
   settingsTextField(FIELD.usageBaseURL),
   settingsTextField(FIELD.usageKeyEnv),
   settingsListField(FIELD.usageProviderMarkers),

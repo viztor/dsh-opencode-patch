@@ -22,7 +22,9 @@ import {
 import React from "react";
 
 import {
+  DEFAULT_SHOW_USAGE_PRICE,
   DEFAULT_USAGE_PROVIDER_MARKERS,
+  readBoolean,
   readStringList,
 } from "./config-values.ts";
 import { isRecord } from "./guards.ts";
@@ -395,6 +397,7 @@ export const apply = (ctx: ClientContext): void => {
    */
   const usageMarkers = (): {
     providerMarkers: string[];
+    showUsagePrice: boolean;
   } => {
     const value: unknown = scope?.getSnapshot().value;
     const record = isRecord(value) ? value : {};
@@ -404,6 +407,10 @@ export const apply = (ctx: ClientContext): void => {
         providerMarkers.length > 0
           ? providerMarkers
           : DEFAULT_USAGE_PROVIDER_MARKERS,
+      showUsagePrice: readBoolean(
+        record.showUsagePrice,
+        DEFAULT_SHOW_USAGE_PRICE
+      ),
     };
   };
 
