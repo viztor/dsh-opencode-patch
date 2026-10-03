@@ -6,6 +6,33 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.12.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.11.0...v0.12.0) (2026-10-03)
+
+
+### Features
+
+* auto-enrich gateway /models responses with canonical 33-model catalog ([2f9e9e7](https://github.com/viztor/dsh-opencode-patch/commit/2f9e9e7e0f6e7cfb344044c20ec19d55896d5e32))
+* dual-catalog SWR updates (Go + Zen free models) and routed key resolution ([4124479](https://github.com/viztor/dsh-opencode-patch/commit/41244790fe63f1497f58f3b36f82803cd7e780fb))
+* dynamically attribute x-opencode-project to workspace directory ([9adfb9a](https://github.com/viztor/dsh-opencode-patch/commit/9adfb9a0837f40bc8b3edf23b3d2669eee71c9c6))
+* inject x-session-affinity and x-parent-session-id for proxy and gateway compatibility ([9883251](https://github.com/viztor/dsh-opencode-patch/commit/9883251e5188412731858b7bc46d5876cc35088b))
+* make quota meter provider-based, remove UI debug fields, and enhance provider discovery ([979e9ed](https://github.com/viztor/dsh-opencode-patch/commit/979e9ed4e438a645c7d08f19fe92811e18842a0b))
+* real-time Stale-While-Revalidate (SWR) model catalog updating with local shim ([19fe3e1](https://github.com/viztor/dsh-opencode-patch/commit/19fe3e173a05903bb14099d0245967c3576d4c57))
+* refine Go and Zen usage display and attach available Zen credit ([4e2c01d](https://github.com/viztor/dsh-opencode-patch/commit/4e2c01d56959319c0445abef741d837eb9414120))
+* replace boolean text inputs with Switch toggles in settings card ([857b4d7](https://github.com/viztor/dsh-opencode-patch/commit/857b4d7e86b458b26edbd2c4e4a7bbe38c06b5bf))
+* replace originProject text override with natural language injectProject toggle ([b34fabe](https://github.com/viztor/dsh-opencode-patch/commit/b34fabe87c02a3906a9599233c2958c52ab63e5a))
+* session spend tracking, catalog/price toggles, and split test suite ([a5fa579](https://github.com/viztor/dsh-opencode-patch/commit/a5fa579289659f888e1ef0d94a51aa8f87bc4030))
+* support x-opencode-parent-session-id for DSH subagents and child sessions ([58354e4](https://github.com/viztor/dsh-opencode-patch/commit/58354e498a80ac843e1d9bfe607f0f6a71f8a993))
+
+
+### Bug Fixes
+
+* apply request patch to auto-review calls and inject session-id headers ([b6e492a](https://github.com/viztor/dsh-opencode-patch/commit/b6e492a077f3c6adc55dd079b03593faf8fb7bd5))
+* isolate Go usage queries to Go keys and ignore Zen keys for quota endpoint ([cfecac0](https://github.com/viztor/dsh-opencode-patch/commit/cfecac03091638fc6d33eacf982a7e7e351503c1))
+* keep deprecated models out of the refresh, and correct the README model lists ([5ca3c4f](https://github.com/viztor/dsh-opencode-patch/commit/5ca3c4f6933d983d15df63f2c96393c073cf1b16))
+* remove default export so cordis unwrapExports exposes Config ([80c7af1](https://github.com/viztor/dsh-opencode-patch/commit/80c7af152ff37f9d8de8b54e6e39135f0dbfa9a0))
+* scope the spend reading to the conversation and route that asked for it ([dc5e1b1](https://github.com/viztor/dsh-opencode-patch/commit/dc5e1b129e6354674b26dfb8fecd9f2174e0e250))
+* ship only active catalog models with rates, and cover the new surface ([73a9d0f](https://github.com/viztor/dsh-opencode-patch/commit/73a9d0f53ac9022bc5911312666ec29d3b3a6a16))
+
 ## [0.11.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.10.1...v0.11.0) (2026-10-02)
 
 
