@@ -181,7 +181,7 @@ describe("settings-page: apply & slots", () => {
     expect(injected).toBeDefined();
     expect(injected.directory).toEqual({ isDirectory: true });
     // No scope in this context: the meter falls back to the plugin defaults.
-    expect(injected.providerMarkers).toEqual(["opencode-go"]);
+    expect(injected.providerMarkers).toEqual(["opencode-go", "opencode"]);
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });

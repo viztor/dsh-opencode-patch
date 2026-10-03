@@ -271,7 +271,7 @@ describe("resolveConfig", () => {
     expect(defaults.injectProject).toBe(true);
     expect(defaults.freeModelMarker).toBe("free");
     expect(defaults.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
-    expect(defaults.usageProviderMarkers).toEqual(["opencode-go"]);
+    expect(defaults.usageProviderMarkers).toEqual(["opencode-go", "opencode"]);
 
     const custom = resolveConfig({
       freeModelMarker: "  preview  ",
@@ -301,7 +301,7 @@ describe("resolveConfig", () => {
     expect(blank.injectProject).toBe(true);
     expect(blank.freeModelMarker).toBe("free");
     expect(blank.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
-    expect(blank.usageProviderMarkers).toEqual(["opencode-go"]);
+    expect(blank.usageProviderMarkers).toEqual(["opencode-go", "opencode"]);
   });
 });
 
@@ -347,7 +347,7 @@ describe("Config schema", () => {
       usageBaseURL: "https://opencode.ai/zen/go/v1",
       usageEnabled: true,
       usageKeyEnv: "OPENCODE_GO_API_KEY",
-      usageProviderMarkers: ["opencode-go"],
+      usageProviderMarkers: ["opencode-go", "opencode"],
     });
   });
 

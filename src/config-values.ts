@@ -22,7 +22,7 @@ export const ALL_MODELS_MARKER = "*";
  * here because both the host schema's default and the pill's fallback gate
  * read the same list.
  */
-export const DEFAULT_USAGE_PROVIDER_MARKERS = ["opencode-go"];
+export const DEFAULT_USAGE_PROVIDER_MARKERS = ["opencode-go", "opencode"];
 
 /**
  * Unwrap a schemastery volatile `.get()` node to its current value.

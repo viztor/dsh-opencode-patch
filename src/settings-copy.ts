@@ -89,6 +89,12 @@ export const en = {
   userAgent: "User-Agent Override",
   userAgentHint:
     "Custom User-Agent string. Leave blank to use the canonical OpenCode CLI string.",
+  zenCredit: "Available Zen Balance",
+  zenFallbackNotice: "Requests will automatically consume Zen balance",
+  zenOverflowActive: "Zen balance ready for overflow",
+  zenPaygBadge: "Pay-as-you-go",
+  zenPaygDesc: "Per-token pay-as-you-go inference",
+  zenPaygTitle: "OpenCode Zen",
 };
 
 /** `zh` mirrors `en` key-for-key; the type makes a missing key a compile error. */
@@ -167,6 +173,12 @@ export const zh: Record<keyof typeof en, string> = {
   usage_weekly: "每周",
   userAgent: "自定义 User-Agent",
   userAgentHint: "自定义 User-Agent 字符串。留空则使用默认 OpenCode CLI 标识。",
+  zenCredit: "可用 Zen 余额",
+  zenFallbackNotice: "请求将自动从 Zen 余额中扣除",
+  zenOverflowActive: "Zen 余额已就绪，将在额度用尽时自动承接",
+  zenPaygBadge: "按量计费",
+  zenPaygDesc: "按 Token 实际用量计费",
+  zenPaygTitle: "OpenCode Zen",
 };
 
 /** Renders a copy key for the card's `t` prop. */
