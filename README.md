@@ -282,7 +282,7 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 │ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
 └─────────────────────────────────────────────────────────────────┘
    [ ⭕ 73% Context ]   [ ⭕ 42% Go Quota ]  ← when OpenCode Go is active
-   [ ⭕ 73% Context ]   [ 🪙 Zen: $25.00 ]    ← when OpenCode Zen is active
+   [ ⭕ 73% Context ]   [ 🪙 OpenCode Zen ]  ← when OpenCode Zen is active
 ```
 
 ### Visual Modes
@@ -297,7 +297,7 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 - **Rich Hover Modal**:
   - **3-Window Breakdown Rows**: Dedicated progress meters for **5-Hour Rolling**, **Weekly**, and **Monthly** limits with live relative reset countdowns (`in 3h 12m`, `in 7d 17h`, `soon`).
   - **3 Quota Overview Cards**: High-level visual cards for quick status glancing.
-  - **Attached Zen Credit Card**: Displays your attached available Zen balance (e.g. `$25.00` or `Ready`), showing whether Zen overflow is ready to take over when Go limits are reached.
+  - **Attached Zen Overflow Card**: Shows whether Zen balance overflow is `Ready` to take over when Go limits are reached (or `Active` when currently overflowing).
   - **Rate-Limited Alert**: Alerts when the plan cap is hit and explains how "Use balance" routes overflow.
   - **Act-On-It Links**: [Upgrade plan](https://opencode.ai/go), [Console & balance](https://opencode.ai/console), and [Usage limits doc](https://opencode.ai/docs/go/).
 
@@ -320,8 +320,8 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 │  │ in 3h 12m│ │ in 5d 8h │ │ in 22d 4h│      │
 │  └──────────┘ └──────────┘ └──────────┘      │
 │                                              │
-│  AVAILABLE ZEN BALANCE                       │
-│  Zen balance ready for overflow      $25.00  │
+│  ZEN BALANCE FALLBACK                        │
+│  Zen balance ready for overflow        Ready │
 ├──────────────────────────────────────────────┤
 │  Last updated 08:30              [ Retry ]   │
 │  Upgrade plan · Console & balance · Doc      │
@@ -330,11 +330,11 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 
 #### Mode B: OpenCode Zen (`opencode`)
 
-- **Zen Credit Pill**: Compact coin badge (`🪙 Zen: $25.00` or `🪙 OpenCode Zen`) in the dock.
+- **Zen Pill**: Compact coin badge (`🪙 OpenCode Zen`) in the composer dock.
 - **Pay-As-You-Go Panel**:
-  - Explains per-token pay-as-you-go billing.
-  - Displays attached available balance card.
-  - Links directly to [OpenCode Console](https://opencode.ai/console) and [Pricing](https://opencode.ai/pricing).
+  - Header: **OpenCode Zen** with `Pay-as-you-go` badge.
+  - Explains per-token pay-as-you-go billing directly from your OpenCode account balance.
+  - Direct links to [OpenCode Console](https://opencode.ai/console) to inspect live credit balances and [Pricing](https://opencode.ai/pricing).
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -342,20 +342,19 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 │  Per-token pay-as-you-go inference           │
 ├──────────────────────────────────────────────┤
 │  AVAILABLE ZEN BALANCE                       │
-│  Zen balance ready for overflow      $25.00  │
+│  Per-token pay-as-you-go inference    Active │
 ├──────────────────────────────────────────────┤
 │  Last updated 08:30              [ Retry ]   │
 │  Upgrade plan · Console & balance · Doc      │
 └──────────────────────────────────────────────┘
 ```
 
-### Attaching Zen Available Credit
+### Zen Account Balance & Overflow
 
-OpenCode does not offer a public REST balance endpoint, so the plugin allows attaching your Zen credit via multiple seamless layers:
+OpenCode Zen operates on per-token pay-as-you-go billing:
 
-1. **DSH Credentials (Recommended)**: Store `OPENCODE_ZEN_CREDIT` or `OPENCODE_ZEN_BALANCE` in `~/.dsh/.credentials.yaml` (e.g. `"$25.00"`).
-2. **Environment Variables**: Set `OPENCODE_ZEN_BALANCE="$25.00"` or `OPENCODE_ZEN_CREDIT="$25.00"` in your shell profile.
-3. **Automatic Zen Detection**: If an `OPENCODE_API_KEY` is present, the plugin automatically detects that Zen pay-as-you-go is configured and displays overflow as **Ready**.
+1. **Automatic Zen Detection**: If an `OPENCODE_API_KEY` (or `oc_sk_...`) is configured in DSH Credentials or environment, the plugin automatically detects that Zen pay-as-you-go is active and marks Zen overflow as **Ready**.
+2. **Live Balance Inspection**: Because credit balances change dynamically with every token generated, the popover provides a direct act-on-it link to the [OpenCode Console](https://opencode.ai/console), where users can view live wallet balances and top up credits without needing artificial static environment variables.
 
 ---
 

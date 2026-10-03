@@ -111,9 +111,6 @@ export class GoUsageService extends TypertRemoteService {
           rolling: { percent: 0, resetsAt: now, status: "ok" },
           source: randomUUID(),
           weekly: { percent: 0, resetsAt: now, status: "ok" },
-          ...(zenInfo.credit === undefined
-            ? {}
-            : { zenCredit: zenInfo.credit }),
           zenOverflow: true,
         };
       }
@@ -176,9 +173,6 @@ export class GoUsageService extends TypertRemoteService {
             rolling: { percent: 0, resetsAt: now, status: "ok" },
             source,
             weekly: { percent: 0, resetsAt: now, status: "ok" },
-            ...(zenInfo.credit === undefined
-              ? {}
-              : { zenCredit: zenInfo.credit }),
             zenOverflow: true,
           };
         }
@@ -217,7 +211,6 @@ export class GoUsageService extends TypertRemoteService {
       return {
         ...usage,
         source,
-        ...(zenInfo.credit === undefined ? {} : { zenCredit: zenInfo.credit }),
         zenOverflow: zenInfo.isConfigured,
       };
     } catch (error: unknown) {
