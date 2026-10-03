@@ -20,7 +20,37 @@ export const RESPONSES_PATH = "/responses";
 export const isCompletionEndpoint = (url: string): boolean =>
   url.includes(RESPONSES_PATH) ||
   url.includes("/chat/completions") ||
-  url.includes("/completions");
+  url.includes("/completions") ||
+  url.includes("/messages");
+
+/** Placeholder `read` schema formatted for Anthropic-compatible /messages. */
+export const DUMMY_READ_TOOL_ANTHROPIC = {
+  description: "Read a file or directory from the local filesystem.",
+  input_schema: {
+    properties: {
+      filePath: {
+        description: "The absolute path to the file",
+        type: "string",
+      },
+    },
+    required: ["filePath"],
+    type: "object",
+  },
+  name: "read",
+} as const;
+
+/** Placeholder `bash` schema formatted for Anthropic-compatible /messages. */
+export const DUMMY_BASH_TOOL_ANTHROPIC = {
+  description: "Execute a bash command.",
+  input_schema: {
+    properties: {
+      command: { description: "The command to execute", type: "string" },
+    },
+    required: ["command"],
+    type: "object",
+  },
+  name: "bash",
+} as const;
 
 /** Placeholder `read` schema the gateway's validator accepts. */
 export const DUMMY_READ_TOOL = {
@@ -188,15 +218,36 @@ export const maybeInjectCoreTools = (
     tools = [];
   }
   const { hasBash, hasRead, isOpenAiFormat } = toolNames(tools);
+  const isAnthropic = url.includes("/messages");
   const useOpenAi =
     isOpenAiFormat ||
     url.includes("/chat/completions") ||
     url.includes("/completions");
+
+  const getReadTool = () => {
+    if (isAnthropic) {
+      return DUMMY_READ_TOOL_ANTHROPIC;
+    }
+    if (useOpenAi) {
+      return DUMMY_READ_TOOL_FUNCTION;
+    }
+    return DUMMY_READ_TOOL;
+  };
+  const getBashTool = () => {
+    if (isAnthropic) {
+      return DUMMY_BASH_TOOL_ANTHROPIC;
+    }
+    if (useOpenAi) {
+      return DUMMY_BASH_TOOL_FUNCTION;
+    }
+    return DUMMY_BASH_TOOL;
+  };
+
   if (!hasRead) {
-    tools.push(useOpenAi ? DUMMY_READ_TOOL_FUNCTION : DUMMY_READ_TOOL);
+    tools.push(getReadTool());
   }
   if (!hasBash) {
-    tools.push(useOpenAi ? DUMMY_BASH_TOOL_FUNCTION : DUMMY_BASH_TOOL);
+    tools.push(getBashTool());
   }
   parsed.tools = tools;
   const newBodyStr = JSON.stringify(parsed);
