@@ -201,7 +201,7 @@ export const patchFetch = (
         : "GET")
     ).toUpperCase();
     if (method === "GET" && isModelsListingUrl(url)) {
-      return enrichModelsResponse(response);
+      return enrichModelsResponse(url, response);
     }
     return response;
   };

@@ -255,26 +255,52 @@ A common question is how `dsh-opencode-patch` compares to Duskriver's [`dsh-open
 
 ---
 
-### 7. Authoritative Model Catalog: Local Shim + Real-Time SWR Updates
+### 7. Authoritative Model Catalogs: Dual Local Shims + Real-Time SWR Updates
 
-A known limitation of OpenCode Go's default gateway is that `GET https://opencode.ai/zen/go/v1/models` frequently returns a truncated subset of models (often only 10 models), omitting human-readable display names, context windows, max tokens, and input modalities.
+A known limitation of OpenCode's default gateway endpoints is that `GET https://opencode.ai/zen/go/v1/models` and `/zen/v1/models` frequently return a truncated subset of models, omitting human-readable display names, context windows, max tokens, and input modalities.
 
-To provide both **100% offline reliability** and **continuous real-time freshness**, `dsh-opencode-patch` implements a **Stale-While-Revalidate (SWR)** catalog architecture:
+To provide both **100% offline reliability** and **continuous real-time freshness**, `dsh-opencode-patch` implements a **Stale-While-Revalidate (SWR)** catalog architecture for both OpenCode Go and OpenCode Zen:
 
-1. **Local Bundled Shim (Zero Latency & Offline)**:
-   - Ships with an embedded baseline catalog of all 33 OpenCode Go subscription models.
+1. **Dual Local Bundled Shims (Zero Latency & Offline)**:
+   - **OpenCode Go (`OPENCODE_GO_CATALOG`)**: Ships with an embedded baseline catalog of all 33 OpenCode Go subscription models.
+   - **OpenCode Zen (`OPENCODE_ZEN_CATALOG`)**: Ships with an embedded baseline catalog of 49 curated Zen models — including **all 36 free-tier models** (`muse-spark-1.3-contributor-free`, `space-bunny-free`, `nemotron-3-ultra-free`, `fledge-alpha-free`, `ling-3.0-flash-fin-free`, `qwen3.6-plus-free`, `kimi-k2.5-free`, `minimax-m3-free`, `glm-5-free`) and top flagship models (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`).
    - Guaranteed immediate startup with no cold-start delay, blocking network calls, or airplane-mode failures.
 2. **Non-Blocking Background Revalidation**:
-   - In the background, `getLiveCatalog()` revalidates against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (matching the OpenCode CLI's canonical refresh cycle).
+   - In the background, `getLiveGoCatalog()` and `getLiveZenCatalog()` revalidate against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (matching the OpenCode CLI's canonical refresh cycle).
    - Newly released models, deprecation notices, and updated token limits are seamlessly merged into the active catalog memory.
    - Network errors or timeouts degrade gracefully without throwing, silently retaining the active catalog.
 3. **Gateway Models Endpoint Auto-Enrichment**:
-   - When DSH or any client requests `GET .../models` on an OpenCode gateway (`/zen/go/v1/models` or `/zen/v1/models`), `patchFetch` intercepts the response and merges it with the live catalog.
+   - When DSH or any client requests `GET .../models` on an OpenCode gateway (`/zen/go/v1/models` or `/zen/v1/models`), `patchFetch` intercepts the response:
+     - If the URL targets OpenCode Go (`/zen/go/...`): merges with `getLiveGoCatalog()`.
+     - If the URL targets OpenCode Zen (`/zen/...`): merges with `getLiveZenCatalog()`.
    - Populates human-friendly names (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`).
    - Injects verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000 tokens).
    - Accurately declares input modalities (`text`, `image`) so vision models function out of the box.
 4. **Native DSH Model Discovery Registration**:
-   - On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`). When DSH's model picker enumerates models for OpenCode Go, it immediately surfaces the full list of all 33+ subscription models.
+   - On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`) for both `opencode-go` and `opencode`. When DSH's model picker enumerates models, it immediately surfaces the full list of all 33+ Go models and all 49+ Zen models.
+
+---
+
+### 8. Key Resolution per Routed Model & Account Overage Differentiation
+
+When working with multiple OpenCode models, different models may route to different providers and even different accounts (for example, a corporate OpenCode Go subscription key alongside a personal OpenCode Zen pay-as-you-go key).
+
+`dsh-opencode-patch` differentiates these routes and their overage behaviors:
+
+1. **How the Key is Resolved per Routed Model (`resolveRoutedKey`)**:
+   - In DSH, each active turn carries the model's `provider` (e.g. `opencode-go` vs. `opencode`).
+   - `resolveRoutedKey(ctx, provider)` inspects loaded Cordis entries (`dsh-llm-pi-ai` provider rows or standalone entries) to find the exact `apiKeyEnv` or literal `apiKey` assigned to that specific provider.
+   - It determines the active account tier (`go` vs. `zen`) and extracts the key prefix (e.g. `sk-68klEy0...` vs. `oc_sk_ac6304...`) to identify the key family.
+2. **Subscription Quota Overage vs. Credit Balance Overage**:
+   - **OpenCode Go (`opencode-go`)**:
+     - Billed on fixed subscription quotas across 3 windows (5h Rolling, Weekly, Monthly %).
+     - **Limit Behavior**: When the monthly limit reaches 100%, requests will be blocked with `GoUsageLimitError` (HTTP 402/429).
+     - **Account Overflow Rule**: Server-side overflow into Zen balance **only works if that specific Go plan's account has "Use balance" enabled in console** ([opencode.ai/workspace/go](https://opencode.ai/workspace/go)).
+     - **Separate Accounts**: If your Zen key belongs to a separate account from your Go key, OpenCode Go's server will **not** automatically debit the other account's Zen wallet. Requests to the Go model remain limited until the quota reset window.
+   - **OpenCode Zen (`opencode`)**:
+     - Billed on per-token pay-as-you-go debits against your account balance.
+     - **Limit Behavior**: There are no rolling quota windows. When account credits hit $0.00, OpenCode returns `HTTP 402 Insufficient account funds`.
+     - **Resolution**: Click the direct Console link in the popover to top up your account wallet balance.
 
 ---
 

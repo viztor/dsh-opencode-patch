@@ -21,6 +21,7 @@ import {
   name as PLUGIN_NAME,
   openCodeSessionIdFor,
   OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
   OPENCODE_UA,
   parseGoUsage,
   patchFetch,
@@ -30,10 +31,13 @@ import {
   usageRemote,
   withStore,
   enrichModelsResponse,
-  getLiveCatalog,
+  getLiveGoCatalog,
+  getLiveZenCatalog,
+  isGoModelsListingUrl,
   isModelsListingUrl,
   parseModelsDevCatalog,
   refreshCatalog,
+  resolveRoutedKey,
 } from "../src/index.ts";
 
 const SESSION_RE = /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
@@ -1656,6 +1660,38 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
   });
 
+  it("identifies model listing URLs accurately", () => {
+    expect(isModelsListingUrl("https://opencode.ai/zen/go/v1/models")).toBe(
+      true
+    );
+    expect(
+      isModelsListingUrl("https://opencode.ai/zen/v1/models?limit=50")
+    ).toBe(true);
+    expect(isGoModelsListingUrl("https://opencode.ai/zen/go/v1/models")).toBe(
+      true
+    );
+    expect(isGoModelsListingUrl("https://opencode.ai/zen/v1/models")).toBe(
+      false
+    );
+    expect(
+      isModelsListingUrl("https://opencode.ai/zen/v1/chat/completions")
+    ).toBe(false);
+    expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
+  });
+
+  it("ships canonical Zen catalog with free-tier and flagship models", () => {
+    expect(OPENCODE_ZEN_CATALOG.length).toBeGreaterThanOrEqual(49);
+    const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
+    expect(freeModels.length).toBe(36);
+
+    const ids = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
+    expect(ids.has("muse-spark-1.3-contributor-free")).toBe(true);
+    expect(ids.has("space-bunny-free")).toBe(true);
+    expect(ids.has("claude-sonnet-4-5")).toBe(true);
+    expect(ids.has("gpt-5.4")).toBe(true);
+    expect(ids.has("gemini-3.8-flash")).toBe(true);
+  });
+
   it("enriches a truncated gateway models response with full catalog metadata", async () => {
     // Upstream gateway returned only 2 models, both missing name/context_window
     const rawGatewayPayload = {
@@ -1667,7 +1703,10 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     };
     const mockResponse = Response.json(rawGatewayPayload);
 
-    const enrichedResponse = await enrichModelsResponse(mockResponse);
+    const enrichedResponse = await enrichModelsResponse(
+      "https://opencode.ai/zen/go/v1/models",
+      mockResponse
+    );
     expect(enrichedResponse.status).toBe(200);
 
     const json = (await enrichedResponse.json()) as {
@@ -1690,6 +1729,19 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     const custom = json.data.find((m) => m.id === "custom-gateway-model");
     expect(custom).toBeDefined();
     expect(custom?.id).toBe("custom-gateway-model");
+
+    // Also verify Zen models enrichment
+    const zenResponse = await enrichModelsResponse(
+      "https://opencode.ai/zen/v1/models",
+      Response.json({ data: [], object: "list" })
+    );
+    const zenJson = (await zenResponse.json()) as {
+      data: Array<{ id: string }>;
+    };
+    expect(zenJson.data.length).toBeGreaterThanOrEqual(49);
+    expect(
+      zenJson.data.some((m) => m.id === "muse-spark-1.3-contributor-free")
+    ).toBe(true);
   });
 
   it("patchFetch transparently enriches GET .../models calls", async () => {
@@ -1719,15 +1771,18 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("parseModelsDevCatalog handles malformed data gracefully", () => {
-    expect(parseModelsDevCatalog(null)).toEqual([]);
-    expect(parseModelsDevCatalog({})).toEqual([]);
-    expect(parseModelsDevCatalog({ "opencode-go": {} })).toEqual([]);
+    expect(parseModelsDevCatalog(null)).toEqual({ go: [], zen: [] });
+    expect(parseModelsDevCatalog({})).toEqual({ go: [], zen: [] });
+    expect(parseModelsDevCatalog({ "opencode-go": {} })).toEqual({
+      go: [],
+      zen: [],
+    });
     expect(
       parseModelsDevCatalog({ "opencode-go": { models: "invalid" } })
-    ).toEqual([]);
+    ).toEqual({ go: [], zen: [] });
   });
 
-  it("parseModelsDevCatalog extracts complete model specifications", () => {
+  it("parseModelsDevCatalog extracts complete model specifications for Go and Zen", () => {
     const raw = {
       "opencode-go": {
         models: {
@@ -1738,21 +1793,35 @@ describe("OpenCode Model Catalog & Enrichment", () => {
           },
         },
       },
+      opencode: {
+        models: {
+          "zen-free-test": {
+            cost: { input: 0, output: 0 },
+            limit: { context: 1000000, output: 128000 },
+            name: "Zen Free Test",
+          },
+        },
+      },
     };
     const parsed = parseModelsDevCatalog(raw);
-    expect(parsed.length).toBe(1);
-    expect(parsed[0]).toEqual({
+    expect(parsed.go.length).toBe(1);
+    expect(parsed.go[0]).toEqual({
       context_window: 2000000,
       id: "new-preview-model",
       input_modalities: ["text", "image"],
       max_output_tokens: 256000,
       name: "New Preview Model",
     });
+    expect(parsed.zen.length).toBe(1);
+    expect(parsed.zen[0]?.is_free).toBe(true);
+    expect(parsed.zen[0]?.name).toBe("Zen Free Test");
   });
 
-  it("getLiveCatalog returns local shim and handles network revalidation", async () => {
-    const initial = getLiveCatalog();
-    expect(initial.length).toBeGreaterThanOrEqual(33);
+  it("getLiveGoCatalog and getLiveZenCatalog return local shims and revalidate", async () => {
+    const initialGo = getLiveGoCatalog();
+    expect(initialGo.length).toBeGreaterThanOrEqual(33);
+    const initialZen = getLiveZenCatalog();
+    expect(initialZen.length).toBeGreaterThanOrEqual(49);
 
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json({
@@ -1765,6 +1834,13 @@ describe("OpenCode Model Catalog & Enrichment", () => {
             },
           },
         },
+        opencode: {
+          models: {
+            "future-zen-model": {
+              name: "Future Zen Model",
+            },
+          },
+        },
       })
     );
 
@@ -1772,9 +1848,10 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       mockFetch as unknown as typeof fetch,
       true
     );
-    expect(updated.length).toBeGreaterThanOrEqual(34);
+    expect(updated.go.length).toBeGreaterThanOrEqual(34);
+    expect(updated.zen.length).toBeGreaterThanOrEqual(50);
 
-    const futureModel = updated.find((m) => m.id === "future-test-model");
+    const futureModel = updated.go.find((m) => m.id === "future-test-model");
     expect(futureModel).toBeDefined();
     expect(futureModel?.name).toBe("Future Test Model");
     expect(futureModel?.context_window).toBe(1500000);
@@ -1788,6 +1865,48 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       mockFailingFetch as unknown as typeof fetch,
       true
     );
-    expect(catalog.length).toBeGreaterThanOrEqual(33);
+    expect(catalog.go.length).toBeGreaterThanOrEqual(33);
+    expect(catalog.zen.length).toBeGreaterThanOrEqual(49);
+  });
+
+  it("resolveRoutedKey identifies routed provider tier and key prefix", async () => {
+    const mockCtx = {
+      loader: {
+        entries: () => [
+          {
+            options: {
+              config: {
+                providers: {
+                  "opencode-go": {
+                    apiKeyEnv: "OPENCODE_GO_API_KEY",
+                  },
+                  opencode: {
+                    apiKeyEnv: "OPENCODE_API_KEY",
+                  },
+                },
+              },
+              id: "llm-pi-ai",
+              name: "@deepseek-ai/dsh-llm-pi-ai",
+            },
+          },
+        ],
+      },
+    };
+
+    process.env.OPENCODE_GO_API_KEY = "sk-68klEy0x2_test_go_key";
+    process.env.OPENCODE_API_KEY = "oc_sk_ac6304e0f930_test_zen_key";
+
+    try {
+      const goDetails = await resolveRoutedKey(mockCtx, "opencode-go");
+      expect(goDetails.tier).toBe("go");
+      expect(goDetails.keyPrefix).toBe("sk-68klEy0");
+
+      const zenDetails = await resolveRoutedKey(mockCtx, "opencode");
+      expect(zenDetails.tier).toBe("zen");
+      expect(zenDetails.keyPrefix).toBe("oc_sk_ac63");
+    } finally {
+      delete process.env.OPENCODE_GO_API_KEY;
+      delete process.env.OPENCODE_API_KEY;
+    }
   });
 });
