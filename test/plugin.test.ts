@@ -30,7 +30,10 @@ import {
   usageRemote,
   withStore,
   enrichModelsResponse,
+  getLiveCatalog,
   isModelsListingUrl,
+  parseModelsDevCatalog,
+  refreshCatalog,
 } from "../src/index.ts";
 
 const SESSION_RE = /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
@@ -1713,5 +1716,78 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     const qwen = json.data.find((m) => m.id === "qwen3.8-flash");
     expect(qwen).toBeDefined();
     expect(qwen?.name).toBe("Qwen3.8 Flash");
+  });
+
+  it("parseModelsDevCatalog handles malformed data gracefully", () => {
+    expect(parseModelsDevCatalog(null)).toEqual([]);
+    expect(parseModelsDevCatalog({})).toEqual([]);
+    expect(parseModelsDevCatalog({ "opencode-go": {} })).toEqual([]);
+    expect(
+      parseModelsDevCatalog({ "opencode-go": { models: "invalid" } })
+    ).toEqual([]);
+  });
+
+  it("parseModelsDevCatalog extracts complete model specifications", () => {
+    const raw = {
+      "opencode-go": {
+        models: {
+          "new-preview-model": {
+            limit: { context: 2000000, output: 256000 },
+            modalities: { input: ["text", "image"] },
+            name: "New Preview Model",
+          },
+        },
+      },
+    };
+    const parsed = parseModelsDevCatalog(raw);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0]).toEqual({
+      context_window: 2000000,
+      id: "new-preview-model",
+      input_modalities: ["text", "image"],
+      max_output_tokens: 256000,
+      name: "New Preview Model",
+    });
+  });
+
+  it("getLiveCatalog returns local shim and handles network revalidation", async () => {
+    const initial = getLiveCatalog();
+    expect(initial.length).toBeGreaterThanOrEqual(33);
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      Response.json({
+        "opencode-go": {
+          models: {
+            "future-test-model": {
+              limit: { context: 1500000, output: 200000 },
+              modalities: { input: ["text"] },
+              name: "Future Test Model",
+            },
+          },
+        },
+      })
+    );
+
+    const updated = await refreshCatalog(
+      mockFetch as unknown as typeof fetch,
+      true
+    );
+    expect(updated.length).toBeGreaterThanOrEqual(34);
+
+    const futureModel = updated.find((m) => m.id === "future-test-model");
+    expect(futureModel).toBeDefined();
+    expect(futureModel?.name).toBe("Future Test Model");
+    expect(futureModel?.context_window).toBe(1500000);
+  });
+
+  it("refreshCatalog degrades gracefully on network errors without throwing", async () => {
+    const mockFailingFetch = vi
+      .fn()
+      .mockRejectedValue(new Error("Network timeout"));
+    const catalog = await refreshCatalog(
+      mockFailingFetch as unknown as typeof fetch,
+      true
+    );
+    expect(catalog.length).toBeGreaterThanOrEqual(33);
   });
 });

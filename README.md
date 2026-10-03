@@ -255,19 +255,26 @@ A common question is how `dsh-opencode-patch` compares to Duskriver's [`dsh-open
 
 ---
 
-### 7. Authoritative Model Catalog Auto-Enrichment & Discovery
+### 7. Authoritative Model Catalog: Local Shim + Real-Time SWR Updates
 
 A known limitation of OpenCode Go's default gateway is that `GET https://opencode.ai/zen/go/v1/models` frequently returns a truncated subset of models (often only 10 models), omitting human-readable display names, context windows, max tokens, and input modalities.
 
-`dsh-opencode-patch` resolves this at two distinct layers:
+To provide both **100% offline reliability** and **continuous real-time freshness**, `dsh-opencode-patch` implements a **Stale-While-Revalidate (SWR)** catalog architecture:
 
-1. **Gateway Models Endpoint Auto-Enrichment**: When DSH or any client requests `GET .../models` on an OpenCode gateway (`/zen/go/v1/models` or `/zen/v1/models`), `patchFetch` intercepts the response and merges it with the canonical 33-model catalog sourced from [`models.dev/api.json`](https://models.dev/api.json).
-   - Every model is populated with its human-friendly `name` (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`).
-   - Every model receives its verified `context_window` (up to 1,000,000+ tokens) and `max_output_tokens` (up to 384,000 tokens).
-   - Input modalities (`text`, `image`) are accurately declared so vision-capable models work out of the box.
-   - If the upstream gateway suffers a temporary outage or truncates the listing, the full 33-model catalog is seamlessly served so model discovery never breaks.
-
-2. **Native DSH Model Discovery Registration**: On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`). When DSH's model picker enumerates models for OpenCode Go, it immediately surfaces the full list of all 33+ subscription models.
+1. **Local Bundled Shim (Zero Latency & Offline)**:
+   - Ships with an embedded baseline catalog of all 33 OpenCode Go subscription models.
+   - Guaranteed immediate startup with no cold-start delay, blocking network calls, or airplane-mode failures.
+2. **Non-Blocking Background Revalidation**:
+   - In the background, `getLiveCatalog()` revalidates against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (matching the OpenCode CLI's canonical refresh cycle).
+   - Newly released models, deprecation notices, and updated token limits are seamlessly merged into the active catalog memory.
+   - Network errors or timeouts degrade gracefully without throwing, silently retaining the active catalog.
+3. **Gateway Models Endpoint Auto-Enrichment**:
+   - When DSH or any client requests `GET .../models` on an OpenCode gateway (`/zen/go/v1/models` or `/zen/v1/models`), `patchFetch` intercepts the response and merges it with the live catalog.
+   - Populates human-friendly names (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`).
+   - Injects verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000 tokens).
+   - Accurately declares input modalities (`text`, `image`) so vision models function out of the box.
+4. **Native DSH Model Discovery Registration**:
+   - On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`). When DSH's model picker enumerates models for OpenCode Go, it immediately surfaces the full list of all 33+ subscription models.
 
 ---
 

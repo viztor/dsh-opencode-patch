@@ -30,7 +30,7 @@ import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
 import { isFetchFunction } from "./guards.ts";
-import { OPENCODE_GO_CATALOG } from "./models-catalog.ts";
+import { getLiveCatalog } from "./models-catalog.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { registerUsageRemotes, GoUsageService } from "./usage.ts";
@@ -106,9 +106,15 @@ export {
   usageRemote,
 } from "./usage-contract.ts";
 export {
+  CATALOG_REVALIDATION_TTL_MS,
+  MODELS_DEV_TIMEOUT_MS,
+  MODELS_DEV_URL,
   OPENCODE_GO_CATALOG,
   enrichModelsResponse,
+  getLiveCatalog,
   isModelsListingUrl,
+  parseModelsDevCatalog,
+  refreshCatalog,
   type CatalogModelSpec,
 } from "./models-catalog.ts";
 
@@ -174,7 +180,7 @@ export const apply = (
     if (typeof ctx.llm?.registerModelDiscovery === "function") {
       ctx.llm.registerModelDiscovery(name, () =>
         Promise.resolve(
-          OPENCODE_GO_CATALOG.map((m) => ({
+          getLiveCatalog().map((m) => ({
             contextWindow: m.context_window,
             id: m.id,
             inputModalities: m.input_modalities,
