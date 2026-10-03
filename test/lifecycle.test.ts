@@ -12,7 +12,12 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apply, type CordisContext } from "../src/index.ts";
+import {
+  apply,
+  type CordisContext,
+  getSessionUsage,
+  clearSessionUsageStore,
+} from "../src/index.ts";
 import {
   collectUnknown,
   createMockStream,
@@ -28,6 +33,58 @@ afterEach(() => {
 });
 
 describe("apply (plugin lifecycle)", () => {
+  it("registers model discovery for both OpenCode routes by default", () => {
+    const registered: string[] = [];
+    const ctx = {
+      effect: () => {},
+      llm: {
+        registerModelDiscovery: (ns: string) => {
+          registered.push(ns);
+        },
+      },
+      on: () => {},
+    } as unknown as CordisContext;
+
+    apply(ctx);
+    // The component's own namespace plus one registration per gateway route,
+    // so DSH's picker can enumerate Go and Zen independently.
+    expect(registered).toContain("dsh-opencode-patch");
+    expect(registered).toContain("opencode-go");
+    expect(registered).toContain("opencode");
+  });
+
+  it("registers no model discovery when enrichModels is off", () => {
+    const registered: string[] = [];
+    const ctx = {
+      effect: () => {},
+      llm: {
+        registerModelDiscovery: (ns: string) => {
+          registered.push(ns);
+        },
+      },
+      on: () => {},
+    } as unknown as CordisContext;
+
+    apply(ctx, { enrichModels: false });
+    expect(registered).toEqual([]);
+  });
+
+  it("survives a host whose llm service has no model discovery", () => {
+    // Discovery is optional: an older host must still get the header patch
+    // and the stream hook rather than failing to mount.
+    let streamHandler: unknown;
+    const ctx = {
+      effect: () => {},
+      llm: {},
+      on: (_event: string, handler: unknown) => {
+        streamHandler = handler;
+      },
+    } as unknown as CordisContext;
+
+    expect(() => apply(ctx)).not.toThrow();
+    expect(typeof streamHandler).toBe("function");
+  });
+
   it("patches globalThis.fetch and restores it on disposer call", () => {
     const originalFetch = globalThis.fetch;
     let disposer: unknown;
@@ -98,6 +155,66 @@ describe("apply (plugin lifecycle)", () => {
       throw new Error("expected async iterable downstream");
     }
     expect(await collectUnknown(result)).toEqual(["stream-chunk-1"]);
+  });
+
+  it("records dollars from a usage chunk without altering the stream", async () => {
+    clearSessionUsageStore();
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    const ctx: CordisContext = {
+      effect: () => {},
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+
+    // A priced Go model, so the recorded cost is non-zero.
+    const usageChunk = {
+      type: "usage",
+      usage: {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        totalTokens: 1_000_000,
+      },
+    };
+    const down = async function* down() {
+      yield "text-delta";
+      yield usageChunk;
+      yield "finish";
+    };
+    const result: unknown = streamHandler(
+      {
+        model: "deepseek-v4.1-flash",
+        provider: "opencode-go",
+        sessionId: "usage-session",
+      },
+      () => down()
+    );
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+
+    // Every chunk survives in order; the observer only watches.
+    expect(await collectUnknown(result)).toEqual([
+      "text-delta",
+      usageChunk,
+      "finish",
+    ]);
+
+    const recorded = getSessionUsage("usage-session");
+    expect(recorded?.turns).toBe(1);
+    expect(recorded?.inputTokens).toBe(1_000_000);
+    expect(recorded?.activeModel).toBe("deepseek-v4.1-flash");
+    // Priced from the catalog's Go rate rather than a hardcoded number.
+    expect(recorded?.costUsd).toBeGreaterThan(0);
   });
 
   it("ignores non-opencode providers and invalid session IDs", () => {

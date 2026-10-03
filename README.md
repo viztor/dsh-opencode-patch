@@ -262,8 +262,9 @@ A known limitation of OpenCode's default gateway endpoints is that `GET https://
 To provide both **100% offline reliability** and **continuous real-time freshness**, `dsh-opencode-patch` implements a **Stale-While-Revalidate (SWR)** catalog architecture for both OpenCode Go and OpenCode Zen:
 
 1. **Dual Local Bundled Shims (Zero Latency & Offline)**:
-   - **OpenCode Go (`OPENCODE_GO_CATALOG`)**: Ships with an embedded baseline catalog of all 33 OpenCode Go subscription models.
-   - **OpenCode Zen (`OPENCODE_ZEN_CATALOG`)**: Ships with an embedded baseline catalog of 49 curated Zen models — including **all 36 free-tier models** (`muse-spark-1.3-contributor-free`, `space-bunny-free`, `nemotron-3-ultra-free`, `fledge-alpha-free`, `ling-3.0-flash-fin-free`, `qwen3.6-plus-free`, `kimi-k2.5-free`, `minimax-m3-free`, `glm-5-free`) and top flagship models (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`).
+   - **OpenCode Go (`OPENCODE_GO_CATALOG`)**: Ships with an embedded baseline of all **29 active** OpenCode Go subscription models, each carrying its per-million-token rates so session pricing works before the first refresh.
+   - **OpenCode Zen (`OPENCODE_ZEN_CATALOG`)**: Ships with an embedded baseline of the **10 active free-tier models** (`muse-spark-1.3-contributor-free`, `space-bunny-free`, `fledge-alpha-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `ling-3.0-flash-fin-free`, `ling-3.1-flash-free`, `longcat-2.5-preview-free`, `mimo-v2.6-flash-free`, `big-pickle`) plus active flagship models (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`).
+   - **Deprecated models are excluded**, so a failed refresh can never resurrect a row the gateway no longer serves.
    - Guaranteed immediate startup with no cold-start delay, blocking network calls, or airplane-mode failures.
 2. **Non-Blocking Background Revalidation**:
    - In the background, `getLiveGoCatalog()` and `getLiveZenCatalog()` revalidate against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (matching the OpenCode CLI's canonical refresh cycle).
@@ -277,11 +278,21 @@ To provide both **100% offline reliability** and **continuous real-time freshnes
    - Injects verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000 tokens).
    - Accurately declares input modalities (`text`, `image`) so vision models function out of the box.
 4. **Native DSH Model Discovery Registration**:
-   - On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`) for both `opencode-go` and `opencode`. When DSH's model picker enumerates models, it immediately surfaces the full list of all 33+ Go models and all 49+ Zen models.
+   - On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`) for both `opencode-go` and `opencode`. When DSH's model picker enumerates models, it immediately surfaces the full active Go and Zen lists.
+   - Everything above — gateway enrichment and discovery — sits behind the **Enrich Models from models.dev** switch, so turning it off leaves both the raw gateway listing and DSH's own catalog untouched.
+
+### 8. Session Spend & Model Rate
+
+The meter can also answer "what has this conversation cost me?" — behind the **Show Session Spend & Model Rate** switch (on by default):
+
+- **Per-turn accounting**: every `llm/stream` usage event is priced with the executing model's rates (input, output, and cache-read) taken from the catalog, then accumulated on the Host. The client never receives the catalog, only the resulting figures.
+- **Mid-session model switches**: the _active_ model label and rate follow whatever model will run the next turn, while cumulative spend and the list of models used are preserved. Switching from a $0.15/M model to a $3/M model re-prices the label without losing what the cheap model already cost.
+- **Free tiers and plan-included models** report `Included in Go Plan` at `$0.00` rather than a misleading rate.
+- **Note on Go plan spend**: on a Go subscription, included usage is covered by the plan rather than billed per token, so this figure is a rate-based _estimate_ of consumption, not an invoice. OpenCode's Console remains the billing source of truth.
 
 ---
 
-### 8. Key Resolution per Routed Model & Account Overage Differentiation
+### 9. Key Resolution per Routed Model & Account Overage Differentiation
 
 When working with multiple OpenCode models, different models may route to different providers and even different accounts (for example, a corporate OpenCode Go subscription key alongside a personal OpenCode Zen pay-as-you-go key).
 
@@ -330,6 +341,7 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 - **Rich Hover Modal**:
   - **3-Window Breakdown Rows**: Dedicated progress meters for **5-Hour Rolling**, **Weekly**, and **Monthly** limits with live relative reset countdowns (`in 3h 12m`, `in 7d 17h`, `soon`).
   - **3 Quota Overview Cards**: High-level visual cards for quick status glancing.
+  - **Session Spend Card** (behind **Show Session Spend & Model Rate**): Accumulated dollars for the current session, labelled with the **active model** and its per-million-token rate. A session that switches models re-prices the _active_ label while keeping the cumulative spend, and a free-tier model reads `Included in Go Plan` at `$0.00`.
   - **Attached Zen Overflow Card**: Shows whether Zen balance overflow is `Ready` to take over when Go limits are reached (or `Active` when currently overflowing).
   - **Rate-Limited Alert**: Alerts when the plan cap is hit and explains how "Use balance" routes overflow.
   - **Act-On-It Links**: [Upgrade plan](https://opencode.ai/go), [Console & balance](https://opencode.ai/console), and [Usage limits doc](https://opencode.ai/docs/go/).
@@ -353,6 +365,10 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 │  │ in 3h 12m│ │ in 5d 8h │ │ in 22d 4h│      │
 │  └──────────┘ └──────────┘ └──────────┘      │
 │                                              │
+│  SESSION SPEND                               │
+│  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
+│                                        $0.42 │
+│                                              │
 │  ZEN BALANCE FALLBACK                        │
 │  Zen balance ready for overflow        Ready │
 ├──────────────────────────────────────────────┤
@@ -363,10 +379,11 @@ The plugin mounts an interactive meter in the composer dock (`conversation.compo
 
 #### Mode B: OpenCode Zen (`opencode`)
 
-- **Zen Pill**: Compact coin badge (`🪙 OpenCode Zen`) in the composer dock.
+- **Zen Pill**: Compact coin badge (`🪙 OpenCode Zen`) in the composer dock. With **Show Session Spend & Model Rate** on, it switches to the session's accumulated dollar figure once the first turn has been priced.
 - **Pay-As-You-Go Panel**:
   - Header: **OpenCode Zen** with `Pay-as-you-go` badge.
   - Explains per-token pay-as-you-go billing directly from your OpenCode account balance.
+  - **Session Spend Card** when the price switch is on, labelled with the active model and its rate.
   - Direct links to [OpenCode Console](https://opencode.ai/console) to inspect live credit balances and [Pricing](https://opencode.ai/pricing).
 
 ```
@@ -406,10 +423,12 @@ Open DSH Web → **Settings → Plugins → OpenCode Patch** (设置 → 插件 
 | **Attach Workspace Project** | `Switch` | `on` | Automatically tags requests with your active workspace folder name (or 'global' if outside a project). Turn off to omit. |
 | **Inject Core Tools** | `Switch` | `on` | Injects dummy `read` + `bash` schemas on free-tier requests to satisfy gateway validation. |
 | **Free Model Marker** | `Text` | `free` | Model-id marker triggering tool schema fallback (`*` = all models). |
+| **Enrich Models from models.dev** | `Switch` | `on` | Merges canonical specs, active free models, and accurate limits from models.dev into OpenCode model listings **and** native DSH model discovery. Turn off to keep the raw gateway listing untouched. |
 | **Providers** | `List` | `opencode, opencode-go` | Comma-separated provider route IDs intercepted by the patch. |
 | **Gateway URLs** | `List` | `opencode.ai/zen` | Comma-separated URL substrings identified as OpenCode gateway traffic. |
 | **Session ID Env Var** | `Text` | `OPENCODE_SESSION_ID` | Environment variable consulted for fallback session IDs outside a turn. |
 | **Enable Go Quota Monitor** | `Switch` | `on` | Mounts the live quota & credit meter in the composer dock. |
+| **Show Session Spend & Model Rate** | `Switch` | `on` | Shows accumulated session cost and the active model's per-million-token rate in the meter. Turn off for quota-only. |
 | **Go Usage Base URL** | `Text` | `https://opencode.ai/zen/go/v1` | OpenCode Go quota statistics API endpoint. |
 | **Go Key Env Var / Credential** | `Text` | `OPENCODE_GO_API_KEY` | Credential reference or env var holding the Go subscription key. |
 | **Quota Meter Provider Markers** | `List` | `opencode-go, opencode` | Provider route substrings that activate the quota meter. |
@@ -442,6 +461,8 @@ Developer diagnostics (`debug` and `debugFile`) are non-volatile and configured 
     originClient: "cli"
     injectProject: true # Attach workspace folder (or 'global'); false omits header
     injectCoreTools: true
+    enrichModels: true # merge models.dev specs + active free models into listings
+    showUsagePrice: true # show session spend + active model rate in the meter
     # File-level only debug options:
     debug: false
     debugFile: "/tmp/dsh-opencode-debug.jsonl"

@@ -33,6 +33,32 @@ describe("resolveConfig", () => {
     expect(resolved.injectCoreTools).toBe(true);
   });
 
+  it("defaults the catalog and price switches on", () => {
+    const resolved = resolveConfig({});
+    // Both features are additive: a row that says nothing gets them.
+    expect(resolved.enrichModels).toBe(true);
+    expect(resolved.showUsagePrice).toBe(true);
+  });
+
+  it("honours an explicit off for the catalog and price switches", () => {
+    const resolved = resolveConfig({
+      enrichModels: false,
+      showUsagePrice: false,
+    });
+    expect(resolved.enrichModels).toBe(false);
+    expect(resolved.showUsagePrice).toBe(false);
+  });
+
+  it("treats a blank catalog/price value as the default", () => {
+    // Blank-is-default is the shared convention for every boolean here.
+    const resolved = resolveConfig({
+      enrichModels: undefined,
+      showUsagePrice: undefined,
+    });
+    expect(resolved.enrichModels).toBe(true);
+    expect(resolved.showUsagePrice).toBe(true);
+  });
+
   it("preserves custom providers and configuration overrides", () => {
     const resolved = resolveConfig({
       debug: true,
@@ -148,6 +174,7 @@ describe("Config schema", () => {
     );
     expect(resolveConfig(validated as PluginConfig)).toMatchObject({
       debug: false,
+      enrichModels: true,
       freeModelMarker: "free",
       gatewayUrls: ["opencode.ai/zen"],
       injectCoreTools: true,
@@ -157,6 +184,7 @@ describe("Config schema", () => {
       originClient: "cli",
       providers: new Set(["opencode", "opencode-go"]),
       sessionIdEnv: "OPENCODE_SESSION_ID",
+      showUsagePrice: true,
       usageBaseURL: "https://opencode.ai/zen/go/v1",
       usageEnabled: true,
       usageKeyEnv: "OPENCODE_GO_API_KEY",
