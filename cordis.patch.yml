@@ -1,7 +1,8 @@
 # dsh-opencode-patch layer.
 #
 # Adds one host plugin row that manages session affinity, OpenCode Zen gateway
-# origin headers, free-tier compatibility, and live Go quota display.
+# origin headers, free-tier compatibility, a models.dev-backed model catalog,
+# and a live Go quota / session-spend meter.
 #
 # NOTE: `name` must equal this package's npm name (dsh-opencode-patch) —
 # the host resolves row names to node_modules paths. `id` is the
@@ -16,9 +17,12 @@
 #   injectProject: boolean      attach active workspace project in x-opencode-project (default true).
 #   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
 #   freeModelMarker: string     model-id substring getting the core-tool fallback ('*' = all, '' = none; default 'free').
+#   enrichModels: boolean       merge the models.dev catalog into gateway model listings and DSH
+#                               model discovery; off leaves both raw (default true).
 #   gatewayUrls: [string]       URL substrings marking OpenCode gateway traffic (default ['opencode.ai/zen']).
 #   sessionIdEnv: string        env var carrying a caller-supplied session id (default 'OPENCODE_SESSION_ID').
 #   usageEnabled: boolean       enable host-side OpenCode Go usage querying (default true).
+#   showUsagePrice: boolean     show session spend + active model rate in the meter (default true).
 #   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
 #   usageKeyEnv: string         environment variable or credential ref for Go key (default 'OPENCODE_GO_API_KEY').
 #   usageProviderMarkers: [str] provider substrings whose quota the meter reports (default ['opencode-go']).
@@ -35,5 +39,7 @@
         userAgent: ""
         injectOriginHeaders: true
         injectCoreTools: true
+        enrichModels: true
         usageEnabled: true
+        showUsagePrice: true
         debug: false
