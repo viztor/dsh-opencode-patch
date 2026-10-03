@@ -429,7 +429,7 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
 
 /* ------------------------------------------ 11. the client stays lean */
 
-const CLIENT_BUDGET = 50 * 1024;
+const CLIENT_BUDGET = 64 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

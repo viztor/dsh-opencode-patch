@@ -256,6 +256,11 @@ const ActiveUsage = ({
     return null;
   }
 
+  const isZen =
+    typeof provider === "string" &&
+    provider.toLowerCase().includes("opencode") &&
+    !provider.toLowerCase().includes("go");
+
   const affecting = usage === undefined ? undefined : getAffectingWindow(usage);
   const isLimited = affecting?.window.status === "rate-limited";
   const displayPercent = affecting?.window.percent ?? 0;
@@ -278,6 +283,47 @@ const ActiveUsage = ({
 
   const locale = getLocale?.();
 
+  let headline: string;
+  if (isZen) {
+    headline = t("zenPaygTitle");
+  } else if (isLimited) {
+    headline = `${affecting?.label} quota limited`;
+  } else {
+    headline = `${displayPercent}% of ${affecting?.label ?? "quota"} used`;
+  }
+
+  let badgeText: string;
+  if (isZen) {
+    badgeText = t("zenPaygBadge");
+  } else if (isLimited) {
+    badgeText = t("usageLimited");
+  } else {
+    badgeText = "Go Plan";
+  }
+
+  let zenCardDesc: string;
+  if (isZen) {
+    zenCardDesc =
+      usage?.zenCredit === undefined
+        ? t("zenPaygDesc")
+        : t("zenOverflowActive");
+  } else if (isLimited) {
+    zenCardDesc = t("zenFallbackNotice");
+  } else {
+    zenCardDesc = t("zenOverflowActive");
+  }
+
+  let zenCardCredit: string;
+  if (usage?.zenCredit !== undefined) {
+    zenCardCredit = usage.zenCredit;
+  } else if (isZen) {
+    zenCardCredit = t("zenPaygBadge");
+  } else if (usage?.zenOverflow === true) {
+    zenCardCredit = "Ready";
+  } else {
+    zenCardCredit = t("zenPaygBadge");
+  }
+
   return (
     <span
       className="dsh-oc-usage-root"
@@ -293,41 +339,60 @@ const ActiveUsage = ({
       <button
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={`${t("usageTitle")}: ${displayPercent}%`}
+        aria-label={
+          isZen
+            ? `${t("zenPaygTitle")}: ${usage?.zenCredit ?? t("zenPaygBadge")}`
+            : `${t("usageTitle")}: ${displayPercent}%`
+        }
         className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
         onClick={() => {
           setOpen((prev) => !prev);
         }}
         type="button"
       >
-        <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
-          <circle
-            className="dsh-oc-usage-ring-track"
-            cx="7"
-            cy="7"
-            r={RADIUS}
-          />
-          {/*
-            Quota colors are CSS custom properties, which do not resolve in SVG
-            presentation attributes — apply the token through `style` instead.
-          */}
-          <circle
-            className="dsh-oc-usage-ring-fill"
-            cx="7"
-            cy="7"
-            r={RADIUS}
-            strokeDasharray={strokeDasharray}
-            style={{ stroke: ringColor }}
-            transform="rotate(-90 7 7)"
-          />
-        </svg>
-        <span>{triggerLabel}</span>
+        {isZen ? (
+          <span className="dsh-oc-zen-pill">
+            <span aria-hidden="true" style={{ fontSize: "11px" }}>
+              🪙
+            </span>
+            <span>
+              {usage?.zenCredit === undefined
+                ? t("zenPaygTitle")
+                : `Zen: ${usage.zenCredit}`}
+            </span>
+          </span>
+        ) : (
+          <>
+            <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+              <circle
+                className="dsh-oc-usage-ring-track"
+                cx="7"
+                cy="7"
+                r={RADIUS}
+              />
+              {/*
+                Quota colors are CSS custom properties, which do not resolve in SVG
+                presentation attributes — apply the token through `style` instead.
+              */}
+              <circle
+                className="dsh-oc-usage-ring-fill"
+                cx="7"
+                cy="7"
+                r={RADIUS}
+                strokeDasharray={strokeDasharray}
+                style={{ stroke: ringColor }}
+                transform="rotate(-90 7 7)"
+              />
+            </svg>
+            <span>{triggerLabel}</span>
+          </>
+        )}
       </button>
 
       {open && (
         <div
           aria-busy={refreshing}
-          aria-label={t("usageTitle")}
+          aria-label={isZen ? t("zenPaygTitle") : t("usageTitle")}
           className="dsh-oc-usage-panel"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -336,113 +401,136 @@ const ActiveUsage = ({
           {/* Header */}
           <div className="dsh-oc-usage-header">
             <div>
-              <div className="dsh-oc-usage-headline">
-                {isLimited
-                  ? `${affecting?.label} quota limited`
-                  : `${displayPercent}% of ${affecting?.label ?? "quota"} used`}
-              </div>
+              <div className="dsh-oc-usage-headline">{headline}</div>
+              {isZen && (
+                <div className="dsh-oc-zen-card-desc">{t("zenPaygDesc")}</div>
+              )}
             </div>
-            {isLimited ? (
-              <span className="dsh-oc-usage-badge dsh-oc-badge-limited">
-                {t("usageLimited")}
-              </span>
-            ) : (
-              <span className="dsh-oc-usage-badge">Go Plan</span>
-            )}
+            <span
+              className={`dsh-oc-usage-badge${isLimited && !isZen ? " dsh-oc-badge-limited" : ""}`}
+            >
+              {badgeText}
+            </span>
           </div>
 
-          {/* Primary Accent Progress Bar */}
-          <div className="dsh-oc-usage-bar-track">
-            <div
-              className="dsh-oc-usage-bar-fill"
-              style={{
-                backgroundColor: ringColor,
-                width: `${clampedPercent}%`,
-              }}
-            />
-          </div>
-
-          {/* Breakdown Section */}
-          {usage !== undefined && (
-            <div className="dsh-oc-usage-breakdown">
-              {/* One row per window; the rate-limited badge now appears on
-                  every window that is limited, not only the monthly one. */}
-              {BREAKDOWN_WINDOWS.map((entry) => {
-                const window: UsageWindow = usage[entry.key];
-                return (
-                  <div key={entry.key}>
-                    <div className="dsh-oc-usage-row">
-                      <span className="dsh-oc-usage-row-left">
-                        <span
-                          className="dsh-oc-usage-dot"
-                          style={{ backgroundColor: getWindowColor(window) }}
-                        />
-                        {t(entry.labelKey)}
-                      </span>
-                      <span className="dsh-oc-usage-row-right">
-                        {window.percent}%
-                      </span>
-                    </div>
-                    <div className="dsh-oc-usage-subrow">
-                      <span>
-                        Resets {formatRelativeReset(window.resetsAt, locale)}
-                      </span>
-                      {window.status === "rate-limited" && (
-                        <span
-                          style={{
-                            color: "var(--dsw-alias-state-error-primary)",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {t("usageLimited")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Divider */}
-          <div className="dsh-oc-usage-divider" />
-
-          {/* Balance Cards (Image 2 pattern) */}
-          {usage !== undefined && (
+          {!isZen && (
             <>
-              <div className="dsh-oc-usage-section-title">Quota Overview</div>
-              <div className="dsh-oc-usage-cards">
-                {BREAKDOWN_WINDOWS.map((entry) => {
-                  const window: UsageWindow = usage[entry.key];
-                  const limited = window.status === "rate-limited";
-                  return (
-                    <div
-                      className={`dsh-oc-usage-card${limited ? " dsh-oc-card-limited" : ""}`}
-                      key={entry.key}
-                    >
-                      <span className="dsh-oc-usage-card-name">
-                        {entry.cardName}
-                      </span>
-                      <span
-                        className="dsh-oc-usage-card-percent"
-                        style={{ color: getWindowColor(window) }}
-                      >
-                        {window.percent}%
-                      </span>
-                      <span className="dsh-oc-usage-card-reset">
-                        {formatRelativeReset(window.resetsAt, locale)}
-                      </span>
-                    </div>
-                  );
-                })}
+              {/* Primary Accent Progress Bar */}
+              <div className="dsh-oc-usage-bar-track">
+                <div
+                  className="dsh-oc-usage-bar-fill"
+                  style={{
+                    backgroundColor: ringColor,
+                    width: `${clampedPercent}%`,
+                  }}
+                />
               </div>
-              {isLimited ? (
-                <div className="dsh-oc-usage-zen-notice">
-                  {t("usageZenFallbackNotice")}
+
+              {/* Breakdown Section */}
+              {usage !== undefined && (
+                <div className="dsh-oc-usage-breakdown">
+                  {/* One row per window; the rate-limited badge now appears on
+                      every window that is limited, not only the monthly one. */}
+                  {BREAKDOWN_WINDOWS.map((entry) => {
+                    const window: UsageWindow = usage[entry.key];
+                    return (
+                      <div key={entry.key}>
+                        <div className="dsh-oc-usage-row">
+                          <span className="dsh-oc-usage-row-left">
+                            <span
+                              className="dsh-oc-usage-dot"
+                              style={{
+                                backgroundColor: getWindowColor(window),
+                              }}
+                            />
+                            {t(entry.labelKey)}
+                          </span>
+                          <span className="dsh-oc-usage-row-right">
+                            {window.percent}%
+                          </span>
+                        </div>
+                        <div className="dsh-oc-usage-subrow">
+                          <span>
+                            Resets{" "}
+                            {formatRelativeReset(window.resetsAt, locale)}
+                          </span>
+                          {window.status === "rate-limited" && (
+                            <span
+                              style={{
+                                color: "var(--dsw-alias-state-error-primary)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {t("usageLimited")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : null}
+              )}
+
+              {/* Divider */}
+              <div className="dsh-oc-usage-divider" />
+
+              {/* Balance Cards (Image 2 pattern) */}
+              {usage !== undefined && (
+                <>
+                  <div className="dsh-oc-usage-section-title">
+                    Quota Overview
+                  </div>
+                  <div className="dsh-oc-usage-cards">
+                    {BREAKDOWN_WINDOWS.map((entry) => {
+                      const window: UsageWindow = usage[entry.key];
+                      const limited = window.status === "rate-limited";
+                      return (
+                        <div
+                          className={`dsh-oc-usage-card${limited ? " dsh-oc-card-limited" : ""}`}
+                          key={entry.key}
+                        >
+                          <span className="dsh-oc-usage-card-name">
+                            {entry.cardName}
+                          </span>
+                          <span
+                            className="dsh-oc-usage-card-percent"
+                            style={{ color: getWindowColor(window) }}
+                          >
+                            {window.percent}%
+                          </span>
+                          <span className="dsh-oc-usage-card-reset">
+                            {formatRelativeReset(window.resetsAt, locale)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </>
           )}
+
+          {/* Attached Zen Credit / Overflow Card */}
+          {(isZen ||
+            usage?.zenCredit !== undefined ||
+            usage?.zenOverflow === true) && (
+            <div className="dsh-oc-zen-card">
+              <div className="dsh-oc-zen-card-left">
+                <span className="dsh-oc-zen-card-title">{t("zenCredit")}</span>
+                <span className="dsh-oc-zen-card-desc">{zenCardDesc}</span>
+              </div>
+              <span className="dsh-oc-zen-card-credit">{zenCardCredit}</span>
+            </div>
+          )}
+
+          {isLimited &&
+          !isZen &&
+          usage?.zenCredit === undefined &&
+          usage?.zenOverflow !== true ? (
+            <div className="dsh-oc-usage-zen-notice">
+              {t("usageZenFallbackNotice")}
+            </div>
+          ) : null}
 
           {/* Failure Alert */}
           {failure !== null && (

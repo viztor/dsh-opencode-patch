@@ -21,6 +21,7 @@ import {
   discoverGoConfig,
   effectiveGoKeyRef,
   resolveGoApiKey,
+  resolveZenCreditInfo,
 } from "./go-discovery.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 import { parseGoUsage, type GoUsage, usageRemote } from "./usage-contract.ts";
@@ -102,6 +103,20 @@ export class GoUsageService extends TypertRemoteService {
     }
 
     if (key === undefined || key.length === 0) {
+      const zenInfo = await resolveZenCreditInfo(this.ctx);
+      if (zenInfo.isConfigured || targetProvider === "opencode") {
+        const now = new Date().toISOString();
+        return {
+          monthly: { percent: 0, resetsAt: now, status: "ok" },
+          rolling: { percent: 0, resetsAt: now, status: "ok" },
+          source: randomUUID(),
+          weekly: { percent: 0, resetsAt: now, status: "ok" },
+          ...(zenInfo.credit === undefined
+            ? {}
+            : { zenCredit: zenInfo.credit }),
+          zenOverflow: true,
+        };
+      }
       this.identity = undefined;
       throw new RemoteError(
         USAGE_UNAVAILABLE,
@@ -153,6 +168,20 @@ export class GoUsageService extends TypertRemoteService {
 
     if (!response.ok) {
       if (response.status === 403 && text.includes("EntitlementError")) {
+        const zenInfo = await resolveZenCreditInfo(this.ctx);
+        if (zenInfo.isConfigured) {
+          const now = new Date().toISOString();
+          return {
+            monthly: { percent: 0, resetsAt: now, status: "ok" },
+            rolling: { percent: 0, resetsAt: now, status: "ok" },
+            source,
+            weekly: { percent: 0, resetsAt: now, status: "ok" },
+            ...(zenInfo.credit === undefined
+              ? {}
+              : { zenCredit: zenInfo.credit }),
+            zenOverflow: true,
+          };
+        }
         throw new RemoteError(
           USAGE_UNAVAILABLE,
           "OpenCode Go subscription required",
@@ -184,7 +213,13 @@ export class GoUsageService extends TypertRemoteService {
 
     try {
       const usage = parseGoUsage(parsed);
-      return { ...usage, source };
+      const zenInfo = await resolveZenCreditInfo(this.ctx);
+      return {
+        ...usage,
+        source,
+        ...(zenInfo.credit === undefined ? {} : { zenCredit: zenInfo.credit }),
+        zenOverflow: zenInfo.isConfigured,
+      };
     } catch (error: unknown) {
       throw new RemoteError(
         USAGE_UNAVAILABLE,

@@ -259,3 +259,69 @@ export const resolveGoKeyForRef = async (
   }
   return undefined;
 };
+
+/** Result of resolving Zen credit/balance status. */
+export interface ZenCreditInfo {
+  credit?: string;
+  isConfigured: boolean;
+}
+
+/**
+ * Resolve attached Zen credit/balance information from credentials, environment,
+ * or provider configuration.
+ *
+ * Checks:
+ * 1. DSH Credentials / environment for `OPENCODE_ZEN_CREDIT`, `OPENCODE_ZEN_BALANCE`,
+ *    or `ZEN_CREDIT`
+ * 2. Checks whether an OpenCode Zen key (`OPENCODE_API_KEY` or `oc_sk_...`) is configured
+ *
+ * @param ctx - plugin context used for credentials service lookup.
+ */
+export const resolveZenCreditInfo = async (
+  ctx: unknown
+): Promise<ZenCreditInfo> => {
+  const resolve = readCredentialsResolver(ctx);
+  const candidates = [
+    "OPENCODE_ZEN_CREDIT",
+    "OPENCODE_ZEN_BALANCE",
+    "ZEN_CREDIT",
+  ];
+
+  if (resolve !== undefined) {
+    const results = await Promise.allSettled(candidates.map((c) => resolve(c)));
+    for (const res of results) {
+      if (
+        res.status === "fulfilled" &&
+        res.value?.value !== undefined &&
+        res.value.value.length > 0
+      ) {
+        return { credit: res.value.value, isConfigured: true };
+      }
+    }
+  }
+
+  for (const envKey of candidates) {
+    const fromEnv = process.env[envKey];
+    if (fromEnv !== undefined && fromEnv.length > 0) {
+      return { credit: fromEnv, isConfigured: true };
+    }
+  }
+
+  // Check if standard Zen API key is configured
+  if (resolve !== undefined) {
+    try {
+      const zenKeyRes = await resolve("OPENCODE_API_KEY");
+      if (zenKeyRes?.value !== undefined && zenKeyRes.value.length > 0) {
+        return { isConfigured: true };
+      }
+    } catch {
+      // Degrade silently to env check
+    }
+  }
+  const generic = process.env.OPENCODE_API_KEY;
+  if (generic !== undefined && generic.length > 0) {
+    return { isConfigured: true };
+  }
+
+  return { isConfigured: false };
+};

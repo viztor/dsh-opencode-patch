@@ -345,6 +345,47 @@ export const STYLES = `
   margin-top: 4px;
 }
 
+.dsh-oc-zen-card {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.dsh-oc-zen-card-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dsh-oc-zen-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.dsh-oc-zen-card-desc {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.dsh-oc-zen-card-credit {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.dsh-oc-zen-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* The "what do I do about this" row. Links, not buttons: both navigate away. */
 .dsh-oc-usage-links {
   display: flex;
