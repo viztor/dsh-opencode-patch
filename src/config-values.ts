@@ -25,6 +25,13 @@ export const ALL_MODELS_MARKER = "*";
 export const DEFAULT_USAGE_PROVIDER_MARKERS = ["opencode-go", "opencode"];
 
 /**
+ * Whether the meter shows session spend and the active model's rate. Shared
+ * here because the host schema's default and the client pill's fallback gate
+ * must agree on the same value.
+ */
+export const DEFAULT_SHOW_USAGE_PRICE = true;
+
+/**
  * Unwrap a schemastery volatile `.get()` node to its current value.
  *
  * Idempotent: plain values pass through untouched, so the host behaves

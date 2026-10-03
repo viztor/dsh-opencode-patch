@@ -16,7 +16,9 @@ import type { ResolvedPluginConfig } from "./config.ts";
 import { readSessionMetaResolver } from "./cordis-context.ts";
 import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
-import { isAsyncIterableLike } from "./guards.ts";
+import { isAsyncIterableLike, isRecord } from "./guards.ts";
+import { findModelSpec } from "./models-catalog.ts";
+import { recordTurnUsage } from "./session-cost.ts";
 import {
   fallbackSessionId,
   headerValueFor,
@@ -141,8 +143,41 @@ export const createStreamHook = (
       }
     }
     const modelProp: unknown = options.model;
+    const modelName = typeof modelProp === "string" ? modelProp : "unknown";
+    const spec = findModelSpec(modelName);
+
+    const wrappedStream = async function* wrappedStream() {
+      for await (const chunk of downstream) {
+        if (
+          isRecord(chunk) &&
+          chunk.type === "usage" &&
+          isRecord(chunk.usage)
+        ) {
+          const u = chunk.usage;
+          const inputTokens =
+            typeof u.inputTokens === "number" ? u.inputTokens : undefined;
+          const outputTokens =
+            typeof u.outputTokens === "number" ? u.outputTokens : undefined;
+          const totalTokens =
+            typeof u.totalTokens === "number" ? u.totalTokens : undefined;
+          const cacheReadTokens =
+            typeof u.cacheReadTokens === "number"
+              ? u.cacheReadTokens
+              : undefined;
+          recordTurnUsage(
+            rawSession,
+            { cacheReadTokens, inputTokens, outputTokens, totalTokens },
+            spec?.cost,
+            modelName,
+            spec?.is_free
+          );
+        }
+        yield chunk;
+      }
+    };
+
     return withStore(
-      downstream,
+      wrappedStream(),
       {
         model: typeof modelProp === "string" ? modelProp : undefined,
         ...(parentValue === undefined ? {} : { parentValue }),

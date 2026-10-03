@@ -30,7 +30,11 @@ import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
 import { isFetchFunction } from "./guards.ts";
-import { getLiveGoCatalog, getLiveZenCatalog } from "./models-catalog.ts";
+import {
+  getLiveGoCatalog,
+  getLiveZenCatalog,
+  type CatalogModelSpec,
+} from "./models-catalog.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { registerUsageRemotes, GoUsageService } from "./usage.ts";
@@ -124,6 +128,16 @@ export {
 } from "./models-catalog.ts";
 export { resolveRoutedKey, type RoutedKeyDetails } from "./go-discovery.ts";
 
+/** One catalog row in the shape DSH's model-discovery surface expects. */
+const toDiscovered = (specs: readonly CatalogModelSpec[]) =>
+  specs.map((m) => ({
+    contextWindow: m.context_window,
+    id: m.id,
+    inputModalities: m.input_modalities,
+    maxTokens: m.max_output_tokens,
+    name: m.name,
+  }));
+
 /**
  * Plugin entry: register the quota service, patch `fetch` for OpenCode
  * traffic, and capture turn state for configured providers.
@@ -182,43 +196,26 @@ export const apply = (
 
   ctx.on?.("llm/stream", createStreamHook(ctx, config, als), { prepend: true });
 
-  try {
-    if (typeof ctx.llm?.registerModelDiscovery === "function") {
-      ctx.llm.registerModelDiscovery(name, () =>
-        Promise.resolve(
-          [...getLiveGoCatalog(), ...getLiveZenCatalog()].map((m) => ({
-            contextWindow: m.context_window,
-            id: m.id,
-            inputModalities: m.input_modalities,
-            maxTokens: m.max_output_tokens,
-            name: m.name,
-          }))
-        )
-      );
-      ctx.llm.registerModelDiscovery("opencode-go", () =>
-        Promise.resolve(
-          getLiveGoCatalog().map((m) => ({
-            contextWindow: m.context_window,
-            id: m.id,
-            inputModalities: m.input_modalities,
-            maxTokens: m.max_output_tokens,
-            name: m.name,
-          }))
-        )
-      );
-      ctx.llm.registerModelDiscovery("opencode", () =>
-        Promise.resolve(
-          getLiveZenCatalog().map((m) => ({
-            contextWindow: m.context_window,
-            id: m.id,
-            inputModalities: m.input_modalities,
-            maxTokens: m.max_output_tokens,
-            name: m.name,
-          }))
-        )
-      );
+  // Model discovery is part of the same "canonical catalog" feature as the
+  // gateway listing enrichment, so both sit behind the one toggle: turning it
+  // off leaves DSH's own catalog and the raw gateway listings untouched.
+  if (config.enrichModels) {
+    try {
+      if (typeof ctx.llm?.registerModelDiscovery === "function") {
+        ctx.llm.registerModelDiscovery(name, () =>
+          Promise.resolve(
+            toDiscovered([...getLiveGoCatalog(), ...getLiveZenCatalog()])
+          )
+        );
+        ctx.llm.registerModelDiscovery("opencode-go", () =>
+          Promise.resolve(toDiscovered(getLiveGoCatalog()))
+        );
+        ctx.llm.registerModelDiscovery("opencode", () =>
+          Promise.resolve(toDiscovered(getLiveZenCatalog()))
+        );
+      }
+    } catch {
+      // Model discovery registration is non-fatal
     }
-  } catch {
-    // Model discovery registration is non-fatal
   }
 };

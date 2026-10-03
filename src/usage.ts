@@ -24,6 +24,7 @@ import {
   resolveZenCreditInfo,
 } from "./go-discovery.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
+import { getSessionUsage } from "./session-cost.ts";
 import { parseGoUsage, type GoUsage, usageRemote } from "./usage-contract.ts";
 
 const USAGE_MAX_BYTES = 1024 * 1024;
@@ -106,9 +107,11 @@ export class GoUsageService extends TypertRemoteService {
       const zenInfo = await resolveZenCreditInfo(this.ctx);
       if (zenInfo.isConfigured || targetProvider === "opencode") {
         const now = new Date().toISOString();
+        const session = getSessionUsage();
         return {
           monthly: { percent: 0, resetsAt: now, status: "ok" },
           rolling: { percent: 0, resetsAt: now, status: "ok" },
+          ...(session === undefined ? {} : { session }),
           source: randomUUID(),
           weekly: { percent: 0, resetsAt: now, status: "ok" },
           zenOverflow: true,
@@ -168,9 +171,11 @@ export class GoUsageService extends TypertRemoteService {
         const zenInfo = await resolveZenCreditInfo(this.ctx);
         if (zenInfo.isConfigured) {
           const now = new Date().toISOString();
+          const session = getSessionUsage();
           return {
             monthly: { percent: 0, resetsAt: now, status: "ok" },
             rolling: { percent: 0, resetsAt: now, status: "ok" },
+            ...(session === undefined ? {} : { session }),
             source,
             weekly: { percent: 0, resetsAt: now, status: "ok" },
             zenOverflow: true,
@@ -208,8 +213,10 @@ export class GoUsageService extends TypertRemoteService {
     try {
       const usage = parseGoUsage(parsed);
       const zenInfo = await resolveZenCreditInfo(this.ctx);
+      const session = getSessionUsage();
       return {
         ...usage,
+        ...(session === undefined ? {} : { session }),
         source,
         zenOverflow: zenInfo.isConfigured,
       };
