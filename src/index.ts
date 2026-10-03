@@ -30,7 +30,7 @@ import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
 import { isFetchFunction } from "./guards.ts";
-import { getLiveCatalog } from "./models-catalog.ts";
+import { getLiveGoCatalog, getLiveZenCatalog } from "./models-catalog.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { registerUsageRemotes, GoUsageService } from "./usage.ts";
@@ -110,13 +110,19 @@ export {
   MODELS_DEV_TIMEOUT_MS,
   MODELS_DEV_URL,
   OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
   enrichModelsResponse,
   getLiveCatalog,
+  getLiveGoCatalog,
+  getLiveZenCatalog,
+  isGoModelsListingUrl,
   isModelsListingUrl,
   parseModelsDevCatalog,
   refreshCatalog,
   type CatalogModelSpec,
+  type ParsedCatalogs,
 } from "./models-catalog.ts";
+export { resolveRoutedKey, type RoutedKeyDetails } from "./go-discovery.ts";
 
 /**
  * Plugin entry: register the quota service, patch `fetch` for OpenCode
@@ -180,7 +186,29 @@ export const apply = (
     if (typeof ctx.llm?.registerModelDiscovery === "function") {
       ctx.llm.registerModelDiscovery(name, () =>
         Promise.resolve(
-          getLiveCatalog().map((m) => ({
+          [...getLiveGoCatalog(), ...getLiveZenCatalog()].map((m) => ({
+            contextWindow: m.context_window,
+            id: m.id,
+            inputModalities: m.input_modalities,
+            maxTokens: m.max_output_tokens,
+            name: m.name,
+          }))
+        )
+      );
+      ctx.llm.registerModelDiscovery("opencode-go", () =>
+        Promise.resolve(
+          getLiveGoCatalog().map((m) => ({
+            contextWindow: m.context_window,
+            id: m.id,
+            inputModalities: m.input_modalities,
+            maxTokens: m.max_output_tokens,
+            name: m.name,
+          }))
+        )
+      );
+      ctx.llm.registerModelDiscovery("opencode", () =>
+        Promise.resolve(
+          getLiveZenCatalog().map((m) => ({
             contextWindow: m.context_window,
             id: m.id,
             inputModalities: m.input_modalities,

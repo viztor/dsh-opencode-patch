@@ -83,18 +83,20 @@ export const discoverGoConfig = (
         isRecord(providers[targetProvider])
       ) {
         readProviderRow(providers[targetProvider], result);
+        continue;
       }
       if (isRecord(providers["opencode-go"])) {
         readProviderRow(providers["opencode-go"], result);
-      }
-      if (isRecord(providers.opencode)) {
+      } else if (isRecord(providers.opencode)) {
         readProviderRow(providers.opencode, result);
-      }
-      for (const pRow of Object.values(providers)) {
-        if (isRecord(pRow)) {
-          const bUrl: unknown = pRow.baseURL;
-          if (typeof bUrl === "string" && bUrl.includes("opencode.ai")) {
-            readProviderRow(pRow, result);
+      } else {
+        for (const pRow of Object.values(providers)) {
+          if (isRecord(pRow)) {
+            const bUrl: unknown = pRow.baseURL;
+            if (typeof bUrl === "string" && bUrl.includes("opencode.ai")) {
+              readProviderRow(pRow, result);
+              break;
+            }
           }
         }
       }
@@ -103,12 +105,19 @@ export const discoverGoConfig = (
     // 2. Standalone provider entries like `id: opencode-go` or `id: opencode`.
     const { id, name } = options;
     if (
-      (typeof targetProvider === "string" &&
-        (id === targetProvider || name === targetProvider)) ||
-      id === "opencode-go" ||
-      id === "opencode" ||
-      name === "dsh-opencode-go" ||
-      name === "dsh-opencode"
+      typeof targetProvider === "string" &&
+      targetProvider.length > 0 &&
+      (id === targetProvider || name === targetProvider)
+    ) {
+      readProviderRow(config, result);
+      continue;
+    }
+    if (
+      targetProvider === undefined &&
+      (id === "opencode-go" ||
+        id === "opencode" ||
+        name === "dsh-opencode-go" ||
+        name === "dsh-opencode")
     ) {
       readProviderRow(config, result);
     }
@@ -294,4 +303,72 @@ export const resolveZenCreditInfo = async (
   }
 
   return { isConfigured: false };
+};
+
+/** Key resolution details for a routed provider. */
+export interface RoutedKeyDetails {
+  key?: string;
+  keyPrefix?: string;
+  provider: string;
+  tier: "go" | "zen" | "unknown";
+}
+
+/**
+ * Resolve the effective API key and account tier for a currently routed provider.
+ *
+ * @param ctx - plugin context
+ * @param provider - routed provider name (e.g. "opencode-go", "opencode")
+ */
+export const resolveRoutedKey = async (
+  ctx: unknown,
+  provider: string
+): Promise<RoutedKeyDetails> => {
+  const discovered = discoverGoConfig(ctx, provider);
+  let key: string | undefined = discovered.literalKey;
+
+  if (key === undefined || key.length === 0) {
+    const ref =
+      discovered.keyEnv ??
+      (provider === "opencode-go" ? DEFAULT_USAGE_KEY_ENV : "OPENCODE_API_KEY");
+    const resolve = readCredentialsResolver(ctx);
+    if (resolve !== undefined) {
+      try {
+        const res = await resolve(ref);
+        if (res?.value !== undefined && res.value.length > 0) {
+          key = res.value;
+        }
+      } catch {
+        // Fall back to env
+      }
+    }
+    if (
+      (key === undefined || key.length === 0) &&
+      process.env[ref] !== undefined
+    ) {
+      key = process.env[ref];
+    }
+  }
+
+  let tier: "go" | "zen" | "unknown" = "unknown";
+  if (
+    provider === "opencode-go" ||
+    (key !== undefined && key.startsWith("sk-"))
+  ) {
+    tier = "go";
+  } else if (
+    provider === "opencode" ||
+    (key !== undefined && key.startsWith("oc_sk_"))
+  ) {
+    tier = "zen";
+  }
+
+  const keyPrefix =
+    key !== undefined && key.length >= 8 ? key.slice(0, 10) : undefined;
+
+  return {
+    key,
+    keyPrefix,
+    provider,
+    tier,
+  };
 };
