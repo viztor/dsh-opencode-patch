@@ -82,7 +82,7 @@ export const en = {
   usageUpgradePlan: "Upgrade plan",
   usageWeekShort: "week",
   usageZenFallbackNotice:
-    "When plan limits are reached, requests can automatically fall back to Zen credits if 'Use balance' is enabled in the OpenCode Console.",
+    "When Go plan limits are reached, requests automatically fall back to Zen balance only if 'Use balance' is enabled on this Go subscription's account in the OpenCode Console. Separate Zen accounts cannot be debited for Go plan overflow.",
   usage_monthly: "Monthly",
   usage_rolling: "5 hours",
   usage_weekly: "Weekly",
@@ -167,7 +167,7 @@ export const zh: Record<keyof typeof en, string> = {
   usageUpgradePlan: "升级套餐",
   usageWeekShort: "周",
   usageZenFallbackNotice:
-    "当套餐额度达到上限时，若在 OpenCode 控制台开启了「使用余额 (Use balance)」，调用将自动回退消耗 Zen 余额。",
+    "当 Go 套餐额度用尽时，仅在当前 Go 订阅账号的控制台中开启了「使用余额 (Use balance)」时才会自动回退；独立账号的 Zen 余额无法跨账号自动承接。",
   usage_monthly: "每月",
   usage_rolling: "5 小时",
   usage_weekly: "每周",
