@@ -704,6 +704,12 @@ const extractSpecs = (
     if (!isRecord(rawModel)) {
       continue;
     }
+    // The bundled shim ships active models only, and a refresh must agree with
+    // it: merging a deprecated entry here would put a row the gateway no longer
+    // serves back into the model picker on the next successful revalidation.
+    if (rawModel.status === "deprecated") {
+      continue;
+    }
     const name =
       typeof rawModel.name === "string" && rawModel.name.length > 0
         ? rawModel.name

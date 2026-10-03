@@ -37,7 +37,7 @@ OpenCode provides inference across multiple upstream APIs through its unified ga
   - `claude-sonnet-4-5`, `claude-opus-4-7`, `claude-haiku-4-5`, `qwen3.8-flash`
 - **OpenAI Responses Protocol** (`https://opencode.ai/zen/v1/responses`):
   - `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `space-bunny-free`
-  - Contributor free-tier models: `muse-spark-1.3-contributor-free`, `muse-spark-1.2-contributor-free`
+  - Contributor free-tier model: `muse-spark-1.3-contributor-free`
 - **OpenAI Chat Completions Protocol** (`https://opencode.ai/zen/v1/chat/completions`):
   - `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`
   - Free-tier models: `nemotron-3-ultra-free`, `ling-3.0-flash-fin-free`, `mimo-v2.6-flash-free`
@@ -47,8 +47,8 @@ OpenCode provides inference across multiple upstream APIs through its unified ga
 ### 2. OpenCode Go (`provider: opencode-go`) — Subscription Quota
 
 - **OpenAI Chat Completions Protocol** (`https://opencode.ai/zen/go/v1/chat/completions`):
-  - `deepseek-v4.1-flash`, `deepseek-v4-pro`, `deepseek-v4-flash`, `qwen3.8-flash`, `qwen3.7-max`, `qwen3.6-plus`
-  - Monitored by the live 3-window quota meter (5-Hour Rolling, Weekly, Monthly limits).
+  - `deepseek-v4.1-flash`, `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `qwen3.8-flash`, `qwen3.8-max`, `qwen3.7-plus`, `kimi-k3`, `kimi-k2.7-code`, `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `grok-4.7`, `grok-4.6`, `minimax-m3`, `minimax-m2.7`, `mimo-v2.6-pro`, `mimo-v2.6-flash`, `gpt-5.6-luna`, `gpt-6-luna`
+  - Monitored by the live 3-window quota meter (5-Hour Rolling, Weekly, Monthly limits). The full set ships in the bundled catalog — see [Authoritative Model Catalogs](#7-authoritative-model-catalogs-dual-local-shims--real-time-swr-updates).
 
 ### 3. Agent Execution Modes Supported
 

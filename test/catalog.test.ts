@@ -234,6 +234,28 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     ).toEqual({ go: [], zen: [] });
   });
 
+  it("drops deprecated models from a refresh so they cannot return", () => {
+    // The shim ships active models only; the refresh has to agree, or a
+    // revalidation would re-add rows the gateway no longer serves.
+    const raw = {
+      "opencode-go": {
+        models: {
+          "still-served": { name: "Still Served" },
+          "gone-away": { name: "Gone Away", status: "deprecated" },
+        },
+      },
+      opencode: {
+        models: {
+          "zen-live": { name: "Zen Live" },
+          "zen-retired": { name: "Zen Retired", status: "deprecated" },
+        },
+      },
+    };
+    const parsed = parseModelsDevCatalog(raw);
+    expect(parsed.go.map((m) => m.id)).toEqual(["still-served"]);
+    expect(parsed.zen.map((m) => m.id)).toEqual(["zen-live"]);
+  });
+
   it("parseModelsDevCatalog extracts complete model specifications for Go and Zen", () => {
     const raw = {
       "opencode-go": {
