@@ -166,7 +166,7 @@ declare module "@deepseek-ai/dsh-typert-protocol" {
   }
   interface TypertRemoteNamespaceMap {
     opencodeGoUsage: {
-      read: () => Promise<RemoteResult<GoUsage>>;
+      read: (query?: UsageQuery) => Promise<RemoteResult<GoUsage>>;
     };
   }
 }
@@ -178,6 +178,50 @@ const usageCodec = {
   typeSymbol: "dsh-opencode-patch#GoUsage",
 };
 
+/**
+ * What the caller may tell the Host about the meter it is rendering.
+ *
+ * Both fields exist to disambiguate, because the Host serves every browser
+ * session and cannot infer either from the request itself:
+ * - `provider` picks the route (and therefore the account) being metered.
+ * - `sessionId` scopes the spend figure to the conversation on screen; without
+ *   it the Host would have to guess, and two open tabs would show the same
+ *   total.
+ */
+export interface UsageQuery {
+  provider?: string;
+  sessionId?: string;
+}
+
+/**
+ * Validate the optional query. The whole value is optional on the wire
+ * (`acceptsUndefined`), as is every field within it.
+ */
+export const parseUsageQuery = (value?: unknown): UsageQuery => {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    throw new TypeError("Invalid OpenCode usage query: expected an object");
+  }
+  const { provider, sessionId } = value;
+  return {
+    ...(typeof provider === "string" && provider.length > 0
+      ? { provider }
+      : {}),
+    ...(typeof sessionId === "string" && sessionId.length > 0
+      ? { sessionId }
+      : {}),
+  };
+};
+
+const usageQueryCodec = {
+  create: () => ({ parse: parseUsageQuery }),
+  mode: "strict" as const,
+  schema: { parse: parseUsageQuery },
+  typeSymbol: "dsh-opencode-patch#UsageQuery",
+};
+
 export const usageRemote: TypertRemoteContribution = {
   descriptors: [
     {
@@ -185,7 +229,17 @@ export const usageRemote: TypertRemoteContribution = {
       invocation: { kind: "direct" },
       method: "read",
       namespace: "opencodeGoUsage",
-      parameters: [],
+      parameters: [
+        {
+          // The query is optional: a caller that knows nothing still gets the
+          // default route and the latest session.
+          acceptsUndefined: true,
+          codec: usageQueryCodec,
+          name: "query",
+          source: "json",
+          wire: "query",
+        },
+      ],
       result: usageCodec,
       service: "opencodeGoUsage",
     },

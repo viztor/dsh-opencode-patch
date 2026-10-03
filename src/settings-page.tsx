@@ -327,7 +327,15 @@ export interface ClientContext {
     directoryFor: (sessionId: unknown) => { store: unknown };
   };
   remote?: {
-    opencodeGoUsage?: { read: () => Promise<unknown> };
+    // Structural view of the Host remote. `query` carries the provider and
+    // session id that scope the reading; both are optional so an older Host
+    // that ignores them still satisfies this shape.
+    opencodeGoUsage?: {
+      read: (query?: {
+        provider?: string;
+        sessionId?: string;
+      }) => Promise<unknown>;
+    };
   };
   slots?: {
     inject: (
@@ -430,11 +438,21 @@ export const apply = (ctx: ClientContext): void => {
       return null;
     }
     const markers = usageMarkers();
+    // The meter is per conversation, so the id this injector was handed is the
+    // one the Host must price. The pill also names the active provider, which
+    // is how the Host knows which route — and therefore which account — is on
+    // screen when Go and Zen are configured with different keys.
+    const meterSessionId = typeof sessionId === "string" ? sessionId : "";
     return {
       directory,
       ...markers,
-      readUsage: async () => {
-        const res: unknown = await ctx.remote?.opencodeGoUsage?.read?.();
+      readUsage: async (provider?: string) => {
+        const res: unknown = await ctx.remote?.opencodeGoUsage?.read?.({
+          ...(provider === undefined || provider.length === 0
+            ? {}
+            : { provider }),
+          ...(meterSessionId.length === 0 ? {} : { sessionId: meterSessionId }),
+        });
         // The envelope is `{ok: true, value} | {ok: false, error}`. Narrowing
         // `ok` to a boolean lets the branch read as plain truthiness — the
         // lint config rejects coercing an `unknown` inside the condition.

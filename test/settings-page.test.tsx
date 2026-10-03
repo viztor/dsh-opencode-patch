@@ -187,6 +187,46 @@ describe("settings-page: apply & slots", () => {
     expect(val).toEqual({ test: 123 });
   });
 
+  it("sends the provider and conversation id with every usage read", async () => {
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+    const remoteUsage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { test: 1 } });
+
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: { directoryFor: () => ({ store: {} }) },
+      remote: { opencodeGoUsage: { read: remoteUsage } },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.composer.dock") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+
+    apply(ctx as never);
+    const injected = dockInjector?.("session-xyz") as {
+      readUsage: (provider?: string) => Promise<unknown>;
+    };
+
+    // Both halves matter: the provider picks the route/account, and the
+    // session id stops two open conversations from reading one total.
+    await injected.readUsage("opencode-go");
+    expect(remoteUsage).toHaveBeenLastCalledWith({
+      provider: "opencode-go",
+      sessionId: "session-xyz",
+    });
+
+    // An unnamed provider omits the key entirely rather than sending "".
+    await injected.readUsage();
+    expect(remoteUsage).toHaveBeenLastCalledWith({ sessionId: "session-xyz" });
+    await injected.readUsage("");
+    expect(remoteUsage).toHaveBeenLastCalledWith({ sessionId: "session-xyz" });
+  });
+
   it("hides the meter when the Host serves no usage service", () => {
     // The Host registers `opencodeGoUsage` only while Usage Quota Tracking is
     // on, so an absent service is how "switched off" reaches the client. The

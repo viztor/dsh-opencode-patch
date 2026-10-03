@@ -286,6 +286,7 @@ To provide both **100% offline reliability** and **continuous real-time freshnes
 The meter can also answer "what has this conversation cost me?" — behind the **Show Session Spend & Model Rate** switch (on by default):
 
 - **Per-turn accounting**: every `llm/stream` usage event is priced with the executing model's rates (input, output, and cache-read) taken from the catalog, then accumulated on the Host. The client never receives the catalog, only the resulting figures.
+- **Scoped per conversation**: the meter sends the provider and the conversation id, so two open sessions (or a subagent) never read one another's totals, and a Go/Zen split across different accounts is metered against the route actually on screen.
 - **Mid-session model switches**: the _active_ model label and rate follow whatever model will run the next turn, while cumulative spend and the list of models used are preserved. Switching from a $0.15/M model to a $3/M model re-prices the label without losing what the cheap model already cost.
 - **Free tiers and plan-included models** report `Included in Go Plan` at `$0.00` rather than a misleading rate.
 - **Note on Go plan spend**: on a Go subscription, included usage is covered by the plan rather than billed per token, so this figure is a rate-based _estimate_ of consumption, not an invoice. OpenCode's Console remains the billing source of truth.

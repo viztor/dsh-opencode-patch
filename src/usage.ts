@@ -25,7 +25,12 @@ import {
 } from "./go-discovery.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 import { getSessionUsage } from "./session-cost.ts";
-import { parseGoUsage, type GoUsage, usageRemote } from "./usage-contract.ts";
+import {
+  parseGoUsage,
+  type GoUsage,
+  type UsageQuery,
+  usageRemote,
+} from "./usage-contract.ts";
 
 const USAGE_MAX_BYTES = 1024 * 1024;
 const USAGE_USER_AGENT = "opencode/1.18.33 dsh-opencode-patch";
@@ -66,8 +71,11 @@ export class GoUsageService extends TypertRemoteService {
     this.options = options;
   }
 
-  async read(query?: { provider?: string }): Promise<GoUsage> {
+  async read(query?: UsageQuery): Promise<GoUsage> {
     const targetProvider = query?.provider;
+    // Spend is per conversation: without this the Host can only guess, and
+    // every open session would read the same (most recent) total.
+    const sessionId = query?.sessionId;
     const discovered = discoverGoConfig(this.ctx, targetProvider);
     const rawBaseURL =
       this.options.baseURL?.() ?? discovered.baseURL ?? DEFAULT_USAGE_BASE_URL;
@@ -107,7 +115,7 @@ export class GoUsageService extends TypertRemoteService {
       const zenInfo = await resolveZenCreditInfo(this.ctx);
       if (zenInfo.isConfigured || targetProvider === "opencode") {
         const now = new Date().toISOString();
-        const session = getSessionUsage();
+        const session = getSessionUsage(sessionId);
         return {
           monthly: { percent: 0, resetsAt: now, status: "ok" },
           rolling: { percent: 0, resetsAt: now, status: "ok" },
@@ -171,7 +179,7 @@ export class GoUsageService extends TypertRemoteService {
         const zenInfo = await resolveZenCreditInfo(this.ctx);
         if (zenInfo.isConfigured) {
           const now = new Date().toISOString();
-          const session = getSessionUsage();
+          const session = getSessionUsage(sessionId);
           return {
             monthly: { percent: 0, resetsAt: now, status: "ok" },
             rolling: { percent: 0, resetsAt: now, status: "ok" },
@@ -213,7 +221,7 @@ export class GoUsageService extends TypertRemoteService {
     try {
       const usage = parseGoUsage(parsed);
       const zenInfo = await resolveZenCreditInfo(this.ctx);
-      const session = getSessionUsage();
+      const session = getSessionUsage(sessionId);
       return {
         ...usage,
         ...(session === undefined ? {} : { session }),
