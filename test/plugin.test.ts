@@ -20,6 +20,7 @@ import {
   isOpenCodeRequest,
   name as PLUGIN_NAME,
   openCodeSessionIdFor,
+  OPENCODE_GO_CATALOG,
   OPENCODE_UA,
   parseGoUsage,
   patchFetch,
@@ -28,6 +29,8 @@ import {
   SESSION_HEADER,
   usageRemote,
   withStore,
+  enrichModelsResponse,
+  isModelsListingUrl,
 } from "../src/index.ts";
 
 const SESSION_RE = /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
@@ -1613,5 +1616,102 @@ describe("OpenCode Go Usage", () => {
 
     const discovered = discoverGoConfig(mockCtx);
     expect(discovered.literalKey).toBe("sk-literal-test-key");
+  });
+});
+
+describe("OpenCode Model Catalog & Enrichment", () => {
+  it("ships the full canonical catalog of 33 OpenCode Go models", () => {
+    expect(OPENCODE_GO_CATALOG.length).toBe(33);
+    for (const model of OPENCODE_GO_CATALOG) {
+      expect(model.id.length).toBeGreaterThan(0);
+      expect(model.name.length).toBeGreaterThan(0);
+      expect(model.context_window).toBeGreaterThan(0);
+      expect(model.max_output_tokens).toBeGreaterThan(0);
+      expect(Array.isArray(model.input_modalities)).toBe(true);
+      expect(model.input_modalities.length).toBeGreaterThan(0);
+    }
+
+    const ids = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
+    expect(ids.has("deepseek-v4.1-flash")).toBe(true);
+    expect(ids.has("deepseek-v4-pro")).toBe(true);
+    expect(ids.has("qwen3.8-flash")).toBe(true);
+    expect(ids.has("grok-4.7")).toBe(true);
+    expect(ids.has("kimi-k3")).toBe(true);
+    expect(ids.has("mimo-v2.6-pro")).toBe(true);
+  });
+
+  it("identifies model listing URLs accurately", () => {
+    expect(isModelsListingUrl("https://opencode.ai/zen/go/v1/models")).toBe(
+      true
+    );
+    expect(
+      isModelsListingUrl("https://opencode.ai/zen/v1/models?limit=50")
+    ).toBe(true);
+    expect(
+      isModelsListingUrl("https://opencode.ai/zen/v1/chat/completions")
+    ).toBe(false);
+    expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
+  });
+
+  it("enriches a truncated gateway models response with full catalog metadata", async () => {
+    // Upstream gateway returned only 2 models, both missing name/context_window
+    const rawGatewayPayload = {
+      data: [
+        { id: "deepseek-v4.1-flash", object: "model" },
+        { id: "custom-gateway-model", object: "model" },
+      ],
+      object: "list",
+    };
+    const mockResponse = Response.json(rawGatewayPayload);
+
+    const enrichedResponse = await enrichModelsResponse(mockResponse);
+    expect(enrichedResponse.status).toBe(200);
+
+    const json = (await enrichedResponse.json()) as {
+      data: Array<{
+        context_window?: number;
+        id: string;
+        name?: string;
+      }>;
+      object: string;
+    };
+    expect(json.object).toBe("list");
+    // Should contain all 33 catalog models + the 1 custom gateway model = 34 models
+    expect(json.data.length).toBe(34);
+
+    const deepseek = json.data.find((m) => m.id === "deepseek-v4.1-flash");
+    expect(deepseek).toBeDefined();
+    expect(deepseek?.name).toBe("DeepSeek V4.1 Flash");
+    expect(deepseek?.context_window).toBe(1000000);
+
+    const custom = json.data.find((m) => m.id === "custom-gateway-model");
+    expect(custom).toBeDefined();
+    expect(custom?.id).toBe("custom-gateway-model");
+  });
+
+  it("patchFetch transparently enriches GET .../models calls", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("/models")) {
+        return Response.json({
+          data: [{ id: "deepseek-v4-flash", object: "model" }],
+          object: "list",
+        });
+      }
+      return new Response("OK", { status: 200 });
+    });
+
+    const patched = patchFetch(mockFetch, als, resolveConfig());
+    const res = await patched("https://opencode.ai/zen/go/v1/models");
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as {
+      data: Array<{ id: string; name?: string }>;
+    };
+    expect(json.data.length).toBeGreaterThanOrEqual(33);
+
+    const qwen = json.data.find((m) => m.id === "qwen3.8-flash");
+    expect(qwen).toBeDefined();
+    expect(qwen?.name).toBe("Qwen3.8 Flash");
   });
 });

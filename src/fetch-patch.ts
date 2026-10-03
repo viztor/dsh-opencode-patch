@@ -13,6 +13,7 @@
 import type { AsyncLocalStorage } from "node:async_hooks";
 
 import { DEFAULT_GATEWAY_URLS, type ResolvedPluginConfig } from "./config.ts";
+import { enrichModelsResponse, isModelsListingUrl } from "./models-catalog.ts";
 import {
   fallbackSessionId,
   OPENCODE_UA,
@@ -131,7 +132,7 @@ export const patchFetch = (
   als: AsyncLocalStorage<ActiveTurnState>,
   config: ResolvedPluginConfig
 ): typeof fetch => {
-  const patchedFetch = function patchedFetch(
+  const patchedFetch = async function patchedFetch(
     this: unknown,
     input: RequestInfo | URL,
     init?: RequestInit
@@ -191,7 +192,18 @@ export const patchFetch = (
         newInit.body = newBody;
       }
     }
-    return original.call(this, input, newInit);
+
+    const response = await original.call(this, input, newInit);
+    const method = (
+      init?.method ??
+      (typeof Request !== "undefined" && input instanceof Request
+        ? input.method
+        : "GET")
+    ).toUpperCase();
+    if (method === "GET" && isModelsListingUrl(url)) {
+      return enrichModelsResponse(response);
+    }
+    return response;
   };
   return patchedFetch;
 };
