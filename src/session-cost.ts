@@ -181,7 +181,17 @@ export const recordTurnUsage = (
 
   const updated: MutableSessionUsage = {
     // Switching models mid-session replaces the "active" identity, so the
-    // meter always describes the model that will run the next turn.
+    // meter always describes the model that will run the next turn. A turn
+    // that names no model keeps the previous identity rather than blanking it.
+    ...(existing.activeModel === undefined
+      ? {}
+      : { activeModel: existing.activeModel }),
+    ...(existing.activeRate === undefined
+      ? {}
+      : { activeRate: existing.activeRate }),
+    ...(existing.activeIsFree === undefined
+      ? {}
+      : { activeIsFree: existing.activeIsFree }),
     ...(named
       ? {
           activeIsFree: isFree,

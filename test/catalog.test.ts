@@ -23,8 +23,10 @@ import {
   refreshCatalog,
   resolveConfig,
   resolveRoutedKey,
+  SESSION_HEADER,
   type ActiveTurnState,
 } from "../src/index.ts";
+import { createCaptureFetch, headerOf, SESSION_RE } from "./test-helpers.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -32,8 +34,8 @@ afterEach(() => {
 });
 
 describe("OpenCode Model Catalog & Enrichment", () => {
-  it("ships the full canonical catalog of 33 OpenCode Go models", () => {
-    expect(OPENCODE_GO_CATALOG.length).toBe(33);
+  it("ships only active, priced models in the bundled Go shim", () => {
+    expect(OPENCODE_GO_CATALOG.length).toBe(29);
     for (const model of OPENCODE_GO_CATALOG) {
       expect(model.id.length).toBeGreaterThan(0);
       expect(model.name.length).toBeGreaterThan(0);
@@ -41,6 +43,10 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       expect(model.max_output_tokens).toBeGreaterThan(0);
       expect(Array.isArray(model.input_modalities)).toBe(true);
       expect(model.input_modalities.length).toBeGreaterThan(0);
+      // Pricing is what makes the spend meter work before the first refresh.
+      expect(model.cost).toBeDefined();
+      expect(model.cost?.input).toBeGreaterThanOrEqual(0);
+      expect(model.cost?.output).toBeGreaterThanOrEqual(0);
     }
 
     const ids = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
@@ -52,17 +58,14 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(ids.has("mimo-v2.6-pro")).toBe(true);
   });
 
-  it("identifies model listing URLs accurately", () => {
-    expect(isModelsListingUrl("https://opencode.ai/zen/go/v1/models")).toBe(
-      true
-    );
-    expect(
-      isModelsListingUrl("https://opencode.ai/zen/v1/models?limit=50")
-    ).toBe(true);
-    expect(
-      isModelsListingUrl("https://opencode.ai/zen/v1/chat/completions")
-    ).toBe(false);
-    expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
+  it("excludes models the gateway no longer serves", () => {
+    // These are deprecated upstream; shipping them would put dead rows in the
+    // picker whenever the SWR refresh has not succeeded.
+    const deprecated = ["qwen3.7-max", "kimi-k2.6", "grok-4.5", "qwen3.6-plus"];
+    const ids = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
+    for (const id of deprecated) {
+      expect(ids.has(id)).toBe(false);
+    }
   });
 
   it("identifies model listing URLs accurately", () => {
@@ -84,10 +87,11 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
   });
 
-  it("ships canonical Zen catalog with free-tier and flagship models", () => {
-    expect(OPENCODE_ZEN_CATALOG.length).toBeGreaterThanOrEqual(49);
+  it("ships active Zen free tiers and flagships in the bundled shim", () => {
+    expect(OPENCODE_ZEN_CATALOG.length).toBe(22);
     const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
-    expect(freeModels.length).toBe(36);
+    // Only the free tiers the gateway still serves.
+    expect(freeModels.length).toBe(10);
 
     const ids = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
     expect(ids.has("muse-spark-1.3-contributor-free")).toBe(true);
@@ -95,6 +99,10 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(ids.has("claude-sonnet-4-5")).toBe(true);
     expect(ids.has("gpt-5.4")).toBe(true);
     expect(ids.has("gemini-3.8-flash")).toBe(true);
+    // Deprecated Zen free tiers must not reappear.
+    expect(ids.has("qwen3.6-plus-free")).toBe(false);
+    expect(ids.has("minimax-m3-free")).toBe(false);
+    expect(ids.has("kimi-k2.5-free")).toBe(false);
   });
 
   it("enriches a truncated gateway models response with full catalog metadata", async () => {
@@ -123,8 +131,8 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       object: string;
     };
     expect(json.object).toBe("list");
-    // Should contain all 33 catalog models + the 1 custom gateway model = 34 models
-    expect(json.data.length).toBe(34);
+    // Every bundled Go model plus the one custom row the gateway added.
+    expect(json.data.length).toBe(OPENCODE_GO_CATALOG.length + 1);
 
     const deepseek = json.data.find((m) => m.id === "deepseek-v4.1-flash");
     expect(deepseek).toBeDefined();
@@ -143,7 +151,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     const zenJson = (await zenResponse.json()) as {
       data: Array<{ id: string }>;
     };
-    expect(zenJson.data.length).toBeGreaterThanOrEqual(49);
+    expect(zenJson.data.length).toBe(OPENCODE_ZEN_CATALOG.length);
     expect(
       zenJson.data.some((m) => m.id === "muse-spark-1.3-contributor-free")
     ).toBe(true);
@@ -168,11 +176,50 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     const json = (await res.json()) as {
       data: Array<{ id: string; name?: string }>;
     };
-    expect(json.data.length).toBeGreaterThanOrEqual(33);
+    expect(json.data.length).toBeGreaterThanOrEqual(OPENCODE_GO_CATALOG.length);
 
     const qwen = json.data.find((m) => m.id === "qwen3.8-flash");
     expect(qwen).toBeDefined();
     expect(qwen?.name).toBe("Qwen3.8 Flash");
+  });
+
+  it("leaves the raw gateway listing alone when enrichModels is off", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    // The gateway advertises one bare model with no name or limits.
+    const upstream = {
+      data: [{ id: "deepseek-v4-flash", object: "model" }],
+      object: "list",
+    };
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => Response.json(upstream));
+
+    const patched = patchFetch(
+      mockFetch,
+      als,
+      resolveConfig({ enrichModels: false })
+    );
+    const response = await patched("https://opencode.ai/zen/go/v1/models");
+    const json = (await response.json()) as typeof upstream;
+
+    // Byte-for-byte the gateway's answer: no catalog rows merged in, and no
+    // name/context back-filled onto the one model it did advertise.
+    expect(json).toEqual(upstream);
+  });
+
+  it("still fixes session headers when enrichModels is off", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture, mockFetch } = createCaptureFetch();
+    const patched = patchFetch(
+      mockFetch,
+      als,
+      resolveConfig({ enrichModels: false })
+    );
+
+    await patched("https://opencode.ai/zen/go/v1/models");
+    // Turning off the catalog must not disable the header repair this plugin
+    // exists for.
+    expect(headerOf(capture.init, SESSION_HEADER)).toMatch(SESSION_RE);
   });
 
   it("parseModelsDevCatalog handles malformed data gracefully", () => {
@@ -224,9 +271,9 @@ describe("OpenCode Model Catalog & Enrichment", () => {
 
   it("getLiveGoCatalog and getLiveZenCatalog return local shims and revalidate", async () => {
     const initialGo = getLiveGoCatalog();
-    expect(initialGo.length).toBeGreaterThanOrEqual(33);
+    expect(initialGo.length).toBe(OPENCODE_GO_CATALOG.length);
     const initialZen = getLiveZenCatalog();
-    expect(initialZen.length).toBeGreaterThanOrEqual(49);
+    expect(initialZen.length).toBe(OPENCODE_ZEN_CATALOG.length);
 
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json({
@@ -253,8 +300,8 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       mockFetch as unknown as typeof fetch,
       true
     );
-    expect(updated.go.length).toBeGreaterThanOrEqual(34);
-    expect(updated.zen.length).toBeGreaterThanOrEqual(50);
+    expect(updated.go.length).toBe(OPENCODE_GO_CATALOG.length + 1);
+    expect(updated.zen.length).toBe(OPENCODE_ZEN_CATALOG.length + 1);
 
     const futureModel = updated.go.find((m) => m.id === "future-test-model");
     expect(futureModel).toBeDefined();
@@ -263,15 +310,26 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("refreshCatalog degrades gracefully on network errors without throwing", async () => {
+    const before = {
+      go: getLiveGoCatalog().length,
+      zen: getLiveZenCatalog().length,
+    };
     const mockFailingFetch = vi
       .fn()
       .mockRejectedValue(new Error("Network timeout"));
+
     const catalog = await refreshCatalog(
       mockFailingFetch as unknown as typeof fetch,
       true
     );
-    expect(catalog.go.length).toBeGreaterThanOrEqual(33);
-    expect(catalog.zen.length).toBeGreaterThanOrEqual(49);
+
+    // A failed refresh must resolve (never throw) and leave the active
+    // catalog exactly as it was, so the meter keeps working offline.
+    expect(catalog.go.length).toBe(before.go);
+    expect(catalog.zen.length).toBe(before.zen);
+    expect(catalog.go.length).toBeGreaterThanOrEqual(
+      OPENCODE_GO_CATALOG.length
+    );
   });
 
   it("resolveRoutedKey identifies routed provider tier and key prefix", async () => {

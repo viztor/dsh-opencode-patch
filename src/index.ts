@@ -127,6 +127,16 @@ export {
   type ParsedCatalogs,
 } from "./models-catalog.ts";
 export { resolveRoutedKey, type RoutedKeyDetails } from "./go-discovery.ts";
+export {
+  calculateTurnCost,
+  clearSessionUsageStore,
+  formatModelRate,
+  formatUsd,
+  getSessionUsage,
+  recordTurnUsage,
+  type ModelCostRate,
+  type SessionUsageSnapshot,
+} from "./session-cost.ts";
 
 /** One catalog row in the shape DSH's model-discovery surface expects. */
 const toDiscovered = (specs: readonly CatalogModelSpec[]) =>
