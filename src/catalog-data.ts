@@ -24,6 +24,18 @@ export interface CatalogModelSpec {
   is_free?: boolean;
   max_output_tokens: number;
   name: string;
+  /**
+   * The SDK this model needs, present only when it differs from the provider's
+   * default.
+   *
+   * models.dev sets `provider.npm` as an OVERRIDE: `opencode`'s provider-level
+   * value is `@ai-sdk/openai-compatible`, so the 53 models carrying no override
+   * speak that, while the 32 carrying `@ai-sdk/openai` are served on the
+   * Responses API and the 23 carrying `@ai-sdk/anthropic` on Messages. That is
+   * the vendor's own statement of the split, which is why `responses-routes.ts`
+   * dispatches on it rather than on a list we would have to maintain.
+   */
+  provider_npm?: string;
 }
 
 /**
@@ -532,6 +544,11 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     is_free: true,
     max_output_tokens: 131_072,
     name: "Muse Spark 1.3 Free",
+    // The one shim entry naming a different SDK than the provider's default.
+    // Regenerate this alongside the rest of the shim: without it a cold start
+    // (before the first live refresh) would not know muse needs the Responses
+    // plane and would dispatch it to the completions route.
+    provider_npm: "@ai-sdk/openai",
   },
   {
     context_window: 1_000_000,

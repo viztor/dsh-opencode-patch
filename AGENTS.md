@@ -296,7 +296,13 @@ const groups = catalog.flatMap(…).filter(group => group.models.length > 0)
 
 Two seams the tests pin, both silent failures otherwise: the redirect target must be claimed by the layer (`responses-routes.test.ts`), and the redirect must consult the **unfiltered** registry (`lifecycle.test.ts` — a test whose `effect` is a no-op would silently stop covering it).
 
-**What the table is, and is not.** It is a membership check over a short list — no per-model metadata. The list has to track the vendor (if the gateway moves a model back to completions, the redirect sends it to `/responses` and it 500s with no hint), and nothing can pin that automatically; the seam test pins table↔layer, not table↔reality.
+**Where the split comes from — the vendor's per-model SDK, not a list.** models.dev names `provider.npm` **only as an override** of the provider's default, so its PRESENCE is the signal. `opencode`'s provider-level value is `@ai-sdk/openai-compatible`; measured 2026-10-05 across its 116 models: 53 name nothing (the default), **32 name `@ai-sdk/openai`**, 23 name `@ai-sdk/anthropic`, 8 name `@ai-sdk/google`. `@ai-sdk/openai` is the OpenAI SDK proper, which speaks the Responses API — the same mapping OpenCode's own adapter applies. So `responsesRouteFor(provider, model, providerNpm)` reads `PROTOCOL_FOR_SDK`, and the catalog carries `provider_npm` on each spec (`extractSpecs`), read back through `findModelSpec`.
+
+The hand-written list this replaced named ONE model — `muse-spark-1.3-contributor-free` — and **31 more were already on the wrong side of it**. `gpt-5`, `gpt-5.1`, `gpt-5-codex` and the rest of the `@ai-sdk/openai` set would have been dispatched to the completions route and failed.
+
+**Two things this does NOT solve.** `@ai-sdk/anthropic` (23 models) and `@ai-sdk/google` (8) map to no route we declare, so they still go to completions and fail — deliberately: `supportedProtocols()` is `openai-completions`, `openai-responses` and `anthropic-messages`, and guessing a target would be worse than the honest failure. And the redirect is not bounded by what `opencode-responses` actually lists: a second `@ai-sdk/openai` model added to the `opencode` route would redirect to a route that does not serve it and fail as "model not found". Add it to both routes when you add one.
+
+**The bundled shim must carry `provider_npm` too.** It answers before the first live refresh, so a cold start with the field missing would dispatch muse to the completions route — with nothing pointing at the cause. `responses-routes.test.ts` pins it.
 
 Two planes on one host: **Zen** `https://opencode.ai/zen/v1` (pay-as-you-go + free tier) and **Go** `https://opencode.ai/zen/go/v1` (subscription). `toGoBaseURL` rewrites a Zen base into a Go one because they share a host.
 

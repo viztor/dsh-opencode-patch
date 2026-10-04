@@ -88,7 +88,16 @@ export const createStreamHook = (
     // `prepared` is deliberately dropped. It is bound to the SOURCE route's
     // adapter and already-resolved model, so re-resolving on the target route is
     // not a loss — it is the only correct thing to do.
-    const redirect = responsesRouteFor(providerKey, options.model);
+    const redirect = responsesRouteFor(
+      providerKey,
+      options.model,
+      // The vendor's own statement of the split: a model naming a different SDK
+      // than the route's is served on a different API. Read from the catalog
+      // rather than from a list we would have to notice changing.
+      typeof options.model === "string"
+        ? findModelSpec(options.model)?.provider_npm
+        : undefined
+    );
     // Take the call over only when the target route is really registered.
     // Without this, a layer that failed to load would replace the gateway's own
     // error with a "no adapter for provider" one, which is harder to act on and

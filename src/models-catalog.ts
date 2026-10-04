@@ -148,6 +148,16 @@ const extractSpecs = (
     }
     const is_free =
       id.includes("free") || (cost?.input === 0 && cost?.output === 0);
+    // models.dev sets `provider.npm` only as an override of the provider's
+    // default SDK, so its PRESENCE is the signal: a model naming `@ai-sdk/openai`
+    // is served on the Responses API, one naming nothing uses the default.
+    const provider = isRecord(rawModel.provider)
+      ? rawModel.provider
+      : undefined;
+    const provider_npm =
+      typeof provider?.npm === "string" && provider.npm.length > 0
+        ? provider.npm
+        : undefined;
 
     results.push({
       context_window,
@@ -158,6 +168,7 @@ const extractSpecs = (
       ...(is_free ? { is_free: true } : {}),
       max_output_tokens,
       name,
+      ...(provider_npm === undefined ? {} : { provider_npm }),
     });
   }
   return results;
