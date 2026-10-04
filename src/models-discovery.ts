@@ -196,12 +196,12 @@ const withoutRoute = (value: unknown, key: "id" | "provider"): unknown =>
  * - `joinProviderDirectory` (Settings → Models) maps `listConfigurableProviders`
  *   and then pushes a row for **every remaining registered provider** — so
  *   filtering only the configurable directory would not hide it.
- * - `modelAvailable` resolves through the same registry.
  *
- * There is no hidden flag on any of them. Filtering `listProviders` is what
- * actually removes the route from the UI; `listModels` and
- * `listConfigurableProviders` are filtered too, so a surface that reaches either
- * directly is covered as well.
+ * `listModels` is deliberately NOT patched. Every consumer of it in the Host
+ * iterates `listProviders()` first — `buildModelCatalog`, `modelAvailable` and
+ * `acp`'s model control all do — so once the registry omits the route, nothing
+ * reaches its model list. Filtering it as well would be a third patch guarding
+ * nothing.
  *
  * Nothing in dispatch reads these: the adapter registry resolves a route
  * internally, and the `llm/stream` hook uses {@link isResponsesRouteRegistered}
@@ -221,12 +221,10 @@ export const hideResponsesRoute = (
   }
   const {
     listConfigurableProviders: originalListConfigurableProviders,
-    listModels: originalListModels,
     listProviders: originalListProviders,
   } = llm;
   if (
     typeof originalListProviders !== "function" &&
-    typeof originalListModels !== "function" &&
     typeof originalListConfigurableProviders !== "function"
   ) {
     return undefined;
@@ -249,21 +247,9 @@ export const hideResponsesRoute = (
       );
     };
   }
-  if (typeof originalListModels === "function") {
-    patched.listModels = function listModels(
-      this: unknown,
-      provider: string
-    ): unknown {
-      return provider === RESPONSES_ROUTE
-        ? Promise.resolve([])
-        : Reflect.apply(originalListModels, this, [provider]);
-    };
-  }
-
   const installed: string[] = [];
   const restoreFrom: Record<string, unknown> = {
     listConfigurableProviders: originalListConfigurableProviders,
-    listModels: originalListModels,
     listProviders: originalListProviders,
   };
   try {

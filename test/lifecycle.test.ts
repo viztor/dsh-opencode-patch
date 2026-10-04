@@ -124,30 +124,29 @@ describe("apply (plugin lifecycle)", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("ties the catalog patch to the plugin fiber", async () => {
-    // The patch replaces a Host method. Registered OUTSIDE an effect it would
+  it("ties the listing patch to the plugin fiber", () => {
+    // The patch replaces Host methods. Registered OUTSIDE an effect it would
     // never be undone, so every live reload would stack another wrapper and
     // disabling the plugin would leave it hiding the route.
     let cleanup: (() => void) | undefined;
-    const originalListModels = async (): Promise<unknown[]> => [
-      { id: "muse-spark-1.3-contributor-free" },
+    const routes = [
+      { id: "opencode", name: "opencode" },
+      { id: RESPONSES_ROUTE, name: RESPONSES_ROUTE },
     ];
     const ctx: CordisContext = {
       effect: (fn: () => unknown) => {
         cleanup = fn() as (() => void) | undefined;
       },
-      llm: { listModels: originalListModels },
+      llm: { listProviders: () => routes },
       on: () => {},
     };
 
     apply(ctx);
 
     expect(typeof cleanup).toBe("function");
-    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([]);
+    expect(ctx.llm?.listProviders?.()).toEqual([routes[0]]);
     cleanup?.();
-    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([
-      { id: "muse-spark-1.3-contributor-free" },
-    ]);
+    expect(ctx.llm?.listProviders?.()).toEqual(routes);
   });
 
   it("hands a responses-format model to the responses route", async () => {

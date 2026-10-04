@@ -263,7 +263,7 @@ Two things that would be nicer, and are **not possible** — checked so nobody r
 - **A custom `api` id that dispatches per model.** pi-ai has exactly this machinery: `stream(model)` dispatches on `model.api` through `getApiProvider(api)`, and `registerApiProvider({api, stream, streamSimple}, sourceId)` adds implementations. But `llm-pi-ai`'s `supportedProtocols()` is `Object.keys(PROTOCOLS)` — a hardcoded table — so a route naming any other protocol is rejected by the config schema.
 - **Taking over the `opencode` route's adapter.** `llm.registerAdapter` throws `DUPLICATE_ADAPTER` for a route that already has one.
 
-**Keeping the internal route out of every listing a user sees.** Three surfaces enumerate providers, and the route has to be absent from all of them or it appears as a provider the user is invited to configure. There is **no hidden flag** on any of them:
+**Keeping the internal route out of every listing a user sees — two patches, not three.** DSH has **no "internal provider" concept**: a route registered with the LLM service is surfaced by every listing, with no flag to mark it hidden. Two listings enumerate providers, and the route must be absent from both:
 
 - `buildModelCatalog` (`packages/api/session-controller/src/catalog.ts`) turns every registered route into a group and drops the groups whose model list is empty.
 - `joinProviderDirectory` (`packages/client/ui-settings-models/src/client/store.ts`) maps `listConfigurableProviders`, then pushes a row for **every remaining registered provider**:
@@ -280,11 +280,11 @@ Two things that would be nicer, and are **not possible** — checked so nobody r
 
 - `modelAvailable` resolves through the same registry.
 
-`hideResponsesRoute` (`models-discovery.ts`) therefore patches `listProviders`, `listConfigurableProviders` **and** `listModels`, and is installed inside the fiber effect so unloading restores all three.
+`hideResponsesRoute` (`models-discovery.ts`) therefore patches exactly those two, inside the fiber effect so unloading restores both. **`listModels` is deliberately NOT patched**: every Host consumer of it iterates `listProviders()` first — `buildModelCatalog` (`session-controller/src/catalog.ts:27`), `modelAvailable` (`:83`, after a `listProviders().some(…)` check) and `acp`'s model control (`model-control.ts:158`) — so once the registry omits the route, nothing reaches its model list. Patching it too would be a third wrapper guarding nothing.
 
 **The catch: the redirect must not read the filtered listing.** `isResponsesRouteRegistered()` reads the ORIGINAL `listProviders`, captured at install. Asking the patched method would always answer "no" and the re-dispatch would never fire. `stream-hook.ts` uses that helper, not `ctx.llm.listProviders`.
 
-Nothing in dispatch reads these methods: the adapter registry resolves a route internally, so hiding it from the UI cannot break serving it.
+Nothing in dispatch reads either method: the adapter registry resolves a route internally, so hiding it from the UI cannot break serving it. The one alternative needing fewer patches — the plugin registering its own adapter via `llm.registerAdapter` — means implementing the Responses protocol client ourselves, which is the untestable work this design exists to avoid.
 
 ```ts
 const providers = ctx.llm.listProviders()
