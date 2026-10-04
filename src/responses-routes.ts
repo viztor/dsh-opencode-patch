@@ -1,11 +1,17 @@
 /**
- * The gateway's Responses-API plane, as a dispatch table.
+ * Which models the gateway serves on the Responses API, and where to send them.
  *
- * OpenCode Zen serves exactly one model over `/responses` and every other model
- * over `/chat/completions` (measured 2026-10-04 against
- * `https://opencode.ai/zen/v1`: every other free model answers `403
- * FreeTierError` on `/chat/completions` and `500` on `/responses`;
- * `muse-spark-1.3-contributor-free` is the exact inverse).
+ * OpenCode Zen's provider-level SDK is `@ai-sdk/openai-compatible`; models.dev
+ * names a DIFFERENT SDK per model only when that model needs one. Measured
+ * 2026-10-05 against `https://models.dev/api.json`, across the 116 `opencode`
+ * models: 53 name nothing (the default), **32 name `@ai-sdk/openai`**, 23 name
+ * `@ai-sdk/anthropic`, 8 name `@ai-sdk/google`.
+ *
+ * `@ai-sdk/openai` is the OpenAI SDK proper, which speaks the Responses API —
+ * the same mapping OpenCode's own adapter applies. So the split is read from the
+ * vendor's metadata rather than kept as a list of model ids we would have to
+ * notice changing: the hand-written list this replaced named ONE model, and 31
+ * more were already on the wrong side of it.
  *
  * DSH cannot express "this model speaks a different format" — `llm-pi-ai`
  * carries one `api` per ROUTE (`modelProfile`/`modelOverride` both exclude
@@ -13,28 +19,35 @@
  * So the format has to be a property of a route, and the model has to be
  * dispatched to the route whose `api` already names it.
  *
- * This table is the one place that knows the split. {@link responsesRouteFor}
- * answers "which route should this call go to instead", and the `llm/stream`
- * hook in `stream-hook.ts` acts on it. The route itself is declared by this
- * plugin's own layer (`cordis.patch.yml`), so nothing here is user configuration.
+ * {@link responsesRouteFor} answers "which route should this call go to
+ * instead"; the `llm/stream` hook in `stream-hook.ts` acts on it. The route
+ * itself is declared in the profile (`cordis.patch.yml`), because a second
+ * `llm-pi-ai` row cannot mount.
  *
  * @module dsh-opencode-patch/responses-routes
  */
 
-/** Route id serving the gateway's Responses-API plane. Declared in `cordis.patch.yml`. */
+/** Route id serving the gateway's Responses-API plane. */
 export const RESPONSES_ROUTE = "opencode-responses";
+
+/** The SDK whose presence means "this model is served on the Responses API". */
+export const RESPONSES_SDK = "@ai-sdk/openai";
+
+/**
+ * The pi-ai protocol each SDK a model may name corresponds to, when that
+ * protocol is not the route's own. Keys are models.dev `provider.npm` values.
+ *
+ * Only entries that CHANGE the answer belong here. `@ai-sdk/google` is absent
+ * because `llm-pi-ai` has no such protocol — `supportedProtocols()` is
+ * `openai-completions`, `openai-responses`, `anthropic-messages` — so those
+ * models have no route to be dispatched to.
+ */
+const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
+  [RESPONSES_SDK]: "openai-responses",
+};
 
 /** Route ids whose models are dispatched through {@link RESPONSES_ROUTE}. */
 const COMPLETIONS_ROUTES = new Set<string>(["opencode"]);
-
-/**
- * Model ids the gateway serves on `/responses` rather than `/chat/completions`.
- * Move a model between here and the route's `models` list in `cordis.patch.yml`
- * when the gateway moves it — `responses-routes.test.ts` asserts the two agree.
- */
-export const RESPONSES_FORMAT_MODELS: readonly string[] = [
-  "muse-spark-1.3-contributor-free",
-];
 
 /**
  * The route a call should be dispatched through instead, or `undefined` when the
@@ -46,11 +59,13 @@ export const RESPONSES_FORMAT_MODELS: readonly string[] = [
  *
  * @param provider - the route the caller selected.
  * @param model - the model id it selected.
+ * @param providerNpm - that model's `provider.npm` from the catalog, if any.
  * @returns the route to dispatch through, or `undefined` to dispatch as asked.
  */
 export const responsesRouteFor = (
   provider: unknown,
-  model: unknown
+  model: unknown,
+  providerNpm?: unknown
 ): string | undefined => {
   if (typeof provider !== "string" || !COMPLETIONS_ROUTES.has(provider)) {
     return undefined;
@@ -58,5 +73,11 @@ export const responsesRouteFor = (
   if (typeof model !== "string") {
     return undefined;
   }
-  return RESPONSES_FORMAT_MODELS.includes(model) ? RESPONSES_ROUTE : undefined;
+  if (
+    typeof providerNpm !== "string" ||
+    PROTOCOL_FOR_SDK[providerNpm] !== "openai-responses"
+  ) {
+    return undefined;
+  }
+  return RESPONSES_ROUTE;
 };
