@@ -40,19 +40,27 @@ import {
   hideResponsesRoute,
 } from "./models-discovery.ts";
 import { registerResponsesProvider } from "./responses-provider.ts";
+import { isServableSdk } from "./responses-routes.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { GoUsageService, registerUsageRemotes } from "./usage.ts";
 
-/** One catalog row in the shape DSH's model-discovery surface expects. */
+/**
+ * One catalog row in the shape DSH's model-discovery surface expects.
+ *
+ * Models whose SDK no route serves are dropped: offering them would be offering
+ * a model that cannot work, and the user has no way to tell that from the row.
+ */
 const toDiscovered = (specs: readonly CatalogModelSpec[]) =>
-  specs.map((m) => ({
-    contextWindow: m.context_window,
-    id: m.id,
-    inputModalities: sanitizeModalities(m.input_modalities),
-    maxTokens: m.max_output_tokens,
-    name: m.name,
-  }));
+  specs
+    .filter((m) => isServableSdk(m.provider_npm))
+    .map((m) => ({
+      contextWindow: m.context_window,
+      id: m.id,
+      inputModalities: sanitizeModalities(m.input_modalities),
+      maxTokens: m.max_output_tokens,
+      name: m.name,
+    }));
 
 /** Tell a row still configured under the pre-rename id/package to update. */
 const logRenameNotice = (ctx: CordisContext): void => {

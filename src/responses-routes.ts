@@ -74,6 +74,22 @@ export const isInternalRoute = (id: unknown): boolean =>
   typeof id === "string" && INTERNAL_ROUTES.includes(id);
 
 /**
+ * Whether a model can be served at all.
+ *
+ * A model naming no SDK speaks the route's own api, and one naming an SDK in
+ * {@link PROTOCOL_FOR_SDK} has a route to be dispatched to. Anything else names
+ * a protocol `llm-pi-ai` does not implement, so offering it would be offering a
+ * model that cannot work — it must not reach a listing the user picks from.
+ *
+ * @param providerNpm - the model's `provider.npm` from the catalog, if any.
+ * @returns true when the model has somewhere to be served from.
+ */
+export const isServableSdk = (providerNpm?: unknown): boolean =>
+  providerNpm === undefined ||
+  (typeof providerNpm === "string" &&
+    PROTOCOL_FOR_SDK[providerNpm] !== undefined);
+
+/**
  * The route a call should be dispatched through instead, or `undefined` when the
  * call is already going to the right place.
  *

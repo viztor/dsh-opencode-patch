@@ -21,13 +21,14 @@ import type { CordisContext } from "./cordis-context.ts";
 import { isRecord } from "./guards.ts";
 import {
   getLiveGoCatalog,
+  findModelSpec,
   getLiveZenCatalog,
   isRetiredModel,
   sanitizeModalities,
   type CatalogModelSpec,
   type CatalogProvider,
 } from "./models-catalog.ts";
-import { isInternalRoute } from "./responses-routes.ts";
+import { isInternalRoute, isServableSdk } from "./responses-routes.ts";
 
 export interface DiscoveryCandidate {
   contextWindow?: number;
@@ -188,8 +189,12 @@ const withoutRoute = (value: unknown, key: "id" | "provider"): unknown =>
     ? value.filter((entry) => !(isRecord(entry) && isInternalRoute(entry[key])))
     : value;
 
+/** Whether a model can be served from some route. */
+const isServableModel = (id: unknown): boolean =>
+  typeof id !== "string" || isServableSdk(findModelSpec(id)?.provider_npm);
+
 /**
- * Keep the internal Responses route out of every listing a user sees.
+ * Keep the internal routes out of every listing a user sees.
  *
  * Three surfaces enumerate providers, and the route has to be absent from all
  * of them or it shows up as a provider the user is invited to configure:
@@ -225,11 +230,13 @@ export const hideResponsesRoute = (
   }
   const {
     listConfigurableProviders: originalListConfigurableProviders,
+    listModels: originalListModels,
     listProviders: originalListProviders,
   } = llm;
   if (
     typeof originalListProviders !== "function" &&
-    typeof originalListConfigurableProviders !== "function"
+    typeof originalListConfigurableProviders !== "function" &&
+    typeof originalListModels !== "function"
   ) {
     return undefined;
   }
@@ -251,9 +258,32 @@ export const hideResponsesRoute = (
       );
     };
   }
+  if (typeof originalListModels === "function") {
+    // Filtering `listModels` is not about hiding the internal routes — nothing
+    // reaches it for those, because `listProviders` no longer names them. It is
+    // about what a user CAN pick: the `opencode` route's own list may name a
+    // model whose SDK no route serves, and selecting it would fail with nothing
+    // in the row to say why.
+    patched.listModels = async function listModels(
+      this: unknown,
+      provider: string
+    ): Promise<unknown> {
+      if (isInternalRoute(provider)) {
+        return [];
+      }
+      const models = await Reflect.apply(originalListModels, this, [provider]);
+      return Array.isArray(models)
+        ? models.filter(
+            (model) => !isRecord(model) || isServableModel(model.id)
+          )
+        : models;
+    };
+  }
+
   const installed: string[] = [];
   const restoreFrom: Record<string, unknown> = {
     listConfigurableProviders: originalListConfigurableProviders,
+    listModels: originalListModels,
     listProviders: originalListProviders,
   };
   try {

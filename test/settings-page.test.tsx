@@ -173,6 +173,7 @@ describe("settings-page: apply & slots", () => {
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
 
     const val = await injected.readUsage();
