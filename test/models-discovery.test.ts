@@ -303,17 +303,19 @@ describe("models-discovery: hiding the internal Responses route", () => {
     expect(isRouteRegistered(RESPONSES_ROUTE)).toBe(true);
   });
 
-  it("leaves listModels alone, because nothing reaches it", async () => {
-    // Every Host consumer of listModels iterates listProviders() first —
-    // buildModelCatalog, modelAvailable and acp's model control all do — so
-    // filtering it as well would be a third patch guarding nothing.
+  it("keeps servable models and empties the internal routes", async () => {
+    // Filtering `listModels` is not about hiding the internal routes — nothing
+    // reaches it for those. It is about what a user CAN pick: a model whose SDK
+    // no route serves must not reach a listing they choose from. A model the
+    // catalog does not know names no SDK, which is the route's own api.
     const { ctx, seen } = hostWith();
     const stop = hideResponsesRoute(ctx);
 
-    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([
-      { id: `${RESPONSES_ROUTE}-model` },
+    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([]);
+    await expect(ctx.llm?.listModels?.("opencode")).resolves.toEqual([
+      { id: "opencode-model" },
     ]);
-    expect(seen).toEqual([RESPONSES_ROUTE]);
+    expect(seen).toEqual(["opencode"]);
 
     stop?.();
     expect(ctx.llm?.listProviders?.()).toHaveLength(2);

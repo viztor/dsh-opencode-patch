@@ -11,10 +11,11 @@ import {
   ANTHROPIC_ROUTE,
   ANTHROPIC_SDK,
   findModelSpec,
+  internalRouteFor,
+  isServableSdk,
   parseModelsDevCatalog,
   RESPONSES_ROUTE,
   RESPONSES_SDK,
-  internalRouteFor,
 } from "../src/index.ts";
 
 const MUSE = "muse-spark-1.3-contributor-free";
@@ -39,6 +40,15 @@ describe("responses-routes: the SDK mapping", () => {
     expect(
       internalRouteFor("opencode", "claude-sonnet-4-5", ANTHROPIC_SDK)
     ).toBe(ANTHROPIC_ROUTE);
+  });
+
+  it("knows which SDKs it cannot serve", () => {
+    // 8 opencode models name @ai-sdk/google and llm-pi-ai has no such protocol,
+    // so those must never reach a listing the user picks from.
+    expect(isServableSdk()).toBe(true);
+    expect(isServableSdk(RESPONSES_SDK)).toBe(true);
+    expect(isServableSdk(ANTHROPIC_SDK)).toBe(true);
+    expect(isServableSdk("@ai-sdk/google")).toBe(false);
   });
 
   it("leaves a model naming no SDK on its own route", () => {

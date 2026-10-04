@@ -30,6 +30,7 @@ describe("resolveConfig", () => {
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
     expect(resolved.debug).toBe(false);
     expect(resolved.debugFile).toBeUndefined();
@@ -92,11 +93,13 @@ describe("resolveConfig", () => {
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
     expect([...resolveConfig({ providers: [""] }).providers]).toEqual([
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
   });
 
@@ -120,6 +123,7 @@ describe("resolveConfig", () => {
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
 
     const custom = resolveConfig({
@@ -154,6 +158,7 @@ describe("resolveConfig", () => {
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
   });
 });
@@ -198,7 +203,12 @@ describe("Config schema", () => {
       injectUserAgent: true,
       keySource: "auto",
       originClient: "cli",
-      providers: new Set(["opencode", "opencode-go", "opencode-responses"]),
+      providers: new Set([
+        "opencode",
+        "opencode-go",
+        "opencode-responses",
+        "opencode-anthropic",
+      ]),
       sessionIdEnv: "OPENCODE_SESSION_ID",
       showUsagePrice: true,
       usageBaseURL: "https://opencode.ai/zen/go/v1",
@@ -241,7 +251,12 @@ describe("Config schema", () => {
 });
 
 describe("isOpenCodeRequest (endpoint differentiation)", () => {
-  const providers = new Set(["opencode", "opencode-go", "opencode-responses"]);
+  const providers = new Set([
+    "opencode",
+    "opencode-go",
+    "opencode-responses",
+    "opencode-anthropic",
+  ]);
 
   it("identifies opencode.ai/zen endpoints", () => {
     expect(
