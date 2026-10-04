@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   registerResponsesProvider,
-  responsesModelProfiles,
+  modelsForSdk,
   RESPONSES_SDK,
 } from "../src/index.ts";
 import type { CordisContext } from "../src/index.ts";
@@ -19,7 +19,7 @@ describe("responses-provider: the model list", () => {
     // Every model whose provider.npm names the OpenAI SDK is served on
     // /responses, so the route covers all of them. The bundled shim seeds one;
     // a live refresh widens it without a code change.
-    const models = responsesModelProfiles();
+    const models = modelsForSdk(RESPONSES_SDK);
     expect(models.length).toBeGreaterThan(0);
     expect(models.map((m) => m.id)).toContain(MUSE);
     for (const model of models) {
@@ -30,7 +30,7 @@ describe("responses-provider: the model list", () => {
   });
 
   it("lists each model once, even across both planes", () => {
-    const ids = responsesModelProfiles().map((m) => m.id);
+    const ids = modelsForSdk(RESPONSES_SDK).map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

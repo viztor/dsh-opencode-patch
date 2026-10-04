@@ -18,8 +18,8 @@ import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
 import { isAsyncIterableLike, isRecord } from "./guards.ts";
 import { findModelSpec } from "./models-catalog.ts";
-import { isResponsesRouteRegistered } from "./models-discovery.ts";
-import { responsesRouteFor } from "./responses-routes.ts";
+import { isRouteRegistered } from "./models-discovery.ts";
+import { internalRouteFor } from "./responses-routes.ts";
 import { recordTurnUsage } from "./session-cost.ts";
 import {
   fallbackSessionId,
@@ -88,7 +88,7 @@ export const createStreamHook = (
     // `prepared` is deliberately dropped. It is bound to the SOURCE route's
     // adapter and already-resolved model, so re-resolving on the target route is
     // not a loss — it is the only correct thing to do.
-    const redirect = responsesRouteFor(
+    const redirect = internalRouteFor(
       providerKey,
       options.model,
       // The vendor's own statement of the split: a model naming a different SDK
@@ -106,7 +106,7 @@ export const createStreamHook = (
     if (
       redirect !== undefined &&
       typeof ctx.llm?.stream === "function" &&
-      isResponsesRouteRegistered()
+      isRouteRegistered(redirect)
     ) {
       return ctx.llm.stream({ ...options, provider: redirect });
     }

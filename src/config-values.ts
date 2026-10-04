@@ -32,6 +32,7 @@ export const DEFAULT_PROVIDERS = [
   "opencode",
   "opencode-go",
   "opencode-responses",
+  "opencode-anthropic",
 ];
 
 /**
