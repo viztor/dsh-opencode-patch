@@ -155,17 +155,23 @@ export {
 export {
   decorateModelDiscovery,
   hideResponsesRoute,
-  isResponsesRouteRegistered,
+  isRouteRegistered,
   mergeDiscoveredModels,
   resolveDiscoveryProvider,
   type DiscoveryCandidate,
 } from "./models-discovery.ts";
 export {
+  ANTHROPIC_ROUTE,
+  ANTHROPIC_SDK,
+  INTERNAL_ROUTES,
+  internalRouteFor,
+  isInternalRoute,
+  PROTOCOL_FOR_SDK,
   RESPONSES_ROUTE,
   RESPONSES_SDK,
-  responsesRouteFor,
+  ROUTE_FOR_PROTOCOL,
 } from "./responses-routes.ts";
 export {
+  modelsForSdk,
   registerResponsesProvider,
-  responsesModelProfiles,
 } from "./responses-provider.ts";

@@ -8,11 +8,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  ANTHROPIC_ROUTE,
+  ANTHROPIC_SDK,
   findModelSpec,
   parseModelsDevCatalog,
   RESPONSES_ROUTE,
   RESPONSES_SDK,
-  responsesRouteFor,
+  internalRouteFor,
 } from "../src/index.ts";
 
 const MUSE = "muse-spark-1.3-contributor-free";
@@ -22,18 +24,27 @@ describe("responses-routes: the SDK mapping", () => {
     // models.dev names `provider.npm` only as an OVERRIDE of the provider's
     // default, so its presence is the signal. 32 of the 116 opencode models
     // carry it; the hand-written list this replaced named one.
-    expect(responsesRouteFor("opencode", "gpt-5", RESPONSES_SDK)).toBe(
+    expect(internalRouteFor("opencode", "gpt-5", RESPONSES_SDK)).toBe(
       RESPONSES_ROUTE
     );
-    expect(responsesRouteFor("opencode", MUSE, RESPONSES_SDK)).toBe(
+    expect(internalRouteFor("opencode", MUSE, RESPONSES_SDK)).toBe(
       RESPONSES_ROUTE
     );
+  });
+
+  it("redirects a model that names the Anthropic SDK too", () => {
+    // 23 of the 116 opencode models name @ai-sdk/anthropic, and llm-pi-ai
+    // implements anthropic-messages — so the same mechanism covers them. A
+    // Responses-only table would have left all 23 on the completions route.
+    expect(
+      internalRouteFor("opencode", "claude-sonnet-4-5", ANTHROPIC_SDK)
+    ).toBe(ANTHROPIC_ROUTE);
   });
 
   it("leaves a model naming no SDK on its own route", () => {
     // 53 models carry no override and speak the provider default. Omitting the
     // SDK is how the catalog expresses that — absent, never a placeholder.
-    expect(responsesRouteFor("opencode", "space-bunny-free")).toBeUndefined();
+    expect(internalRouteFor("opencode", "space-bunny-free")).toBeUndefined();
   });
 
   it("leaves an SDK it has no protocol for on its own route", () => {
@@ -41,7 +52,7 @@ describe("responses-routes: the SDK mapping", () => {
     // anthropic-messages. There is no google route to dispatch to, so guessing
     // one would be worse than the honest failure.
     expect(
-      responsesRouteFor("opencode", "gemini-3-pro", "@ai-sdk/google")
+      internalRouteFor("opencode", "gemini-3-pro", "@ai-sdk/google")
     ).toBeUndefined();
   });
 
@@ -49,14 +60,14 @@ describe("responses-routes: the SDK mapping", () => {
     // The redirected call re-enters the same hook with the target route already
     // set. Redirecting that would recurse until the stack ran out.
     expect(
-      responsesRouteFor(RESPONSES_ROUTE, MUSE, RESPONSES_SDK)
+      internalRouteFor(RESPONSES_ROUTE, MUSE, RESPONSES_SDK)
     ).toBeUndefined();
   });
 
   it("ignores malformed options", () => {
-    expect(responsesRouteFor(null, MUSE, RESPONSES_SDK)).toBeUndefined();
-    expect(responsesRouteFor("opencode", null, RESPONSES_SDK)).toBeUndefined();
-    expect(responsesRouteFor("opencode", MUSE, 42)).toBeUndefined();
+    expect(internalRouteFor(null, MUSE, RESPONSES_SDK)).toBeUndefined();
+    expect(internalRouteFor("opencode", null, RESPONSES_SDK)).toBeUndefined();
+    expect(internalRouteFor("opencode", MUSE, 42)).toBeUndefined();
   });
 });
 
