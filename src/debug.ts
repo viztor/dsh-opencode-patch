@@ -36,6 +36,6 @@ export const recordDebug = async (
     await appendFile(file, `${JSON.stringify(entry)}\n`, "utf-8");
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    ctx.logger?.warn?.("[dsh-opencode] debugFile write failed: %s", msg);
+    ctx.logger?.warn?.("[dsh-opencode-patch] debugFile write failed: %s", msg);
   }
 };

@@ -1,12 +1,7 @@
 /**
- * Coercion readers shared by the host config resolver and the client card.
- *
- * The host reads raw row YAML (possibly carrying schemastery volatile
- * `.get()` nodes); the client reads the schema-resolved snapshot the settings
- * scope serves. Both need the same "absent or invalid means default"
- * semantics, so both call the readers here rather than duplicating the rules.
- * Dependency-free by design: importing schemastery into the client bundle
- * would ship the validator to the browser for no reason.
+ * Coercion readers shared by the host config resolver and the client card, so
+ * both apply the same "absent or invalid means default" rule. Dependency-free by
+ * design: importing schemastery would ship the validator to the browser.
  *
  * @module dsh-opencode-patch/config-values
  */
@@ -17,12 +12,27 @@ import { isUnknownArray } from "./guards.ts";
 export const ALL_MODELS_MARKER = "*";
 
 /**
- * Provider-route markers that make the Go quota meter visible on the client.
- * A route matches when it contains any marker case-insensitively. Shared
- * here because both the host schema's default and the pill's fallback gate
- * read the same list.
+ * Provider routes the plugin claims: intercepted for headers, and the routes
+ * whose quota the meter reports. One list, because they are the same set — a
+ * route we do not intercept carries no OpenCode headers and has no quota to
+ * show.
+ *
+ * `opencode-responses` is the gateway's Responses-API plane. It has to be a
+ * separate route because `llm-pi-ai` carries one `api` per route and offers no
+ * per-model override, and the gateway serves exactly one Zen model
+ * (`muse-spark-1.3-contributor-free`) on `/responses` — everything else on
+ * `/chat/completions`. The plugin declares that route in its own layer
+ * (`cordis.patch.yml`), so it must claim it here too: an unclaimed route gets
+ * no session header, no origin headers, and no key injection.
+ *
+ * Shared here rather than in `config.ts` so the client bundle can read the same
+ * default without importing schemastery.
  */
-export const DEFAULT_USAGE_PROVIDER_MARKERS = ["opencode-go", "opencode"];
+export const DEFAULT_PROVIDERS = [
+  "opencode",
+  "opencode-go",
+  "opencode-responses",
+];
 
 /**
  * Whether the meter shows session spend and the active model's rate. Shared
@@ -30,6 +40,26 @@ export const DEFAULT_USAGE_PROVIDER_MARKERS = ["opencode-go", "opencode"];
  * must agree on the same value.
  */
 export const DEFAULT_SHOW_USAGE_PRICE = true;
+
+/**
+ * Which credential source wins when more than one resolves.
+ *
+ * Declared here rather than in `config.ts` so the client card can read the same
+ * list without importing schemastery. `AGENTS.md` → "Key resolution" records what
+ * each policy orders, and why the default is not a behaviour change.
+ */
+export const KEY_SOURCE_POLICIES = ["auto", "request", "configured"] as const;
+
+/** One accepted {@link KEY_SOURCE_POLICIES} value. */
+export type KeySourcePolicy = (typeof KEY_SOURCE_POLICIES)[number];
+
+/** Policy applied when a row does not name one. */
+export const DEFAULT_KEY_SOURCE: KeySourcePolicy = "auto";
+
+/** Whether `value` is one of the accepted policies. */
+export const isKeySourcePolicy = (value: unknown): value is KeySourcePolicy =>
+  typeof value === "string" &&
+  (KEY_SOURCE_POLICIES as readonly string[]).includes(value);
 
 /**
  * Unwrap a schemastery volatile `.get()` node to its current value.
@@ -51,12 +81,8 @@ export const unwrapNode = (val: unknown): unknown => {
 };
 
 /**
- * Read a boolean: an explicit boolean wins, anything else inherits
- * `fallback`. Non-boolean junk degrades to the default instead of toggling
- * the feature off (or on) by accident.
- *
- * @param value - raw value, possibly a volatile node.
- * @param fallback - default applied when the value is not a boolean.
+ * Read a boolean: an explicit boolean wins, non-boolean junk degrades to
+ * `fallback` rather than toggling the feature by accident.
  */
 export const readBoolean = (value: unknown, fallback: boolean): boolean => {
   const raw: unknown = unwrapNode(value);

@@ -1,10 +1,6 @@
 /**
- * Structural type guards over `unknown` values.
- *
- * Every narrow step in the plugin goes through a predicate declared here so
- * the lint's `no-unsafe-type-assertion` stays honest: the code proves the
- * shape instead of casting to it. The module is dependency-free and
- * side-effect-free, so host and client bundles can both import it.
+ * Structural type guards over `unknown` values, so every narrow step proves a
+ * shape instead of casting to it. Dependency-free: host and client both import it.
  *
  * @module dsh-opencode-patch/guards
  */
@@ -26,10 +22,6 @@ export const isRecord = (value: unknown): value is Record<string, unknown> => {
 /** True for any array, regardless of element type. */
 export const isUnknownArray = (value: unknown): value is unknown[] =>
   Array.isArray(value);
-
-/** True for a string with at least one character. */
-export const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0;
 
 /** True for any callable value (method guard for `Reflect.apply`). */
 export const isFunctionLike = (

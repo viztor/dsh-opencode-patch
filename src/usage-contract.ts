@@ -1,8 +1,6 @@
 /**
- * Remote contract and validation for OpenCode Go account usage statistics.
- *
- * Modeled on the Typert protocol so the host can fetch usage stats using server-side
- * credentials without ever exposing tokens to the browser client.
+ * Remote contract and validation for OpenCode Go account usage. A Typert remote,
+ * so the host fetches with server-side credentials and never exposes the key.
  *
  * @module dsh-opencode-patch/usage-contract
  */
@@ -12,6 +10,7 @@ import type {
   TypertRemoteContribution,
 } from "@deepseek-ai/dsh-typert-protocol";
 
+import { isRecord } from "./guards.ts";
 import type { SessionUsageSnapshot } from "./session-cost.ts";
 
 export interface UsageWindow {
@@ -31,9 +30,6 @@ export interface GoUsage {
   /** Whether Zen balance overflow fallback is active or configured. */
   zenOverflow?: boolean;
 }
-
-const isRecord = (val: unknown): val is Record<string, unknown> =>
-  typeof val === "object" && val !== null;
 
 const parseWindow = (
   row: Record<string, unknown>,
@@ -152,11 +148,9 @@ declare module "@deepseek-ai/dsh-typert-protocol" {
   interface RemoteErrorDetailsMap {
     "opencode-go/usage-unavailable": {
       /**
-       * `false` when the account has no OpenCode Go credential at all, which is
-       * a configuration state rather than a fault: there is no quota to show,
-       * so the client renders nothing instead of an unavailable meter. A
-       * transient failure leaves it `true`/absent and stays visible with a
-       * retry.
+       * `false` when the account has no Go credential at all — a configuration
+       * state, not a fault, so the client renders nothing rather than an
+       * unavailable meter.
        */
       readonly configured?: boolean;
       readonly retainPrevious: boolean;
@@ -179,14 +173,9 @@ const usageCodec = {
 };
 
 /**
- * What the caller may tell the Host about the meter it is rendering.
- *
- * Both fields exist to disambiguate, because the Host serves every browser
- * session and cannot infer either from the request itself:
- * - `provider` picks the route (and therefore the account) being metered.
- * - `sessionId` scopes the spend figure to the conversation on screen; without
- *   it the Host would have to guess, and two open tabs would show the same
- *   total.
+ * What the caller may tell the Host about the meter it is rendering. Both fields
+ * disambiguate: `provider` picks the route (hence the account) being metered, and
+ * `sessionId` scopes the spend figure to the conversation on screen.
  */
 export interface UsageQuery {
   provider?: string;

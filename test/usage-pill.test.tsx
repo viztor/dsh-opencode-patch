@@ -18,9 +18,14 @@ import {
   UsagePill,
 } from "../src/usage-pill.tsx";
 import {
+  CIRCUMFERENCE,
+  describeUsage,
   formatRelativeReset,
   getAffectingWindow,
+  isZenProvider,
   matchesAny,
+  parseFailure,
+  ringGeometry,
 } from "../src/usage-ui.ts";
 
 const createMockUsage = (overrides?: Partial<GoUsage>): GoUsage => ({
@@ -165,16 +170,29 @@ describe("usage-pill: UsagePill component gating", () => {
     expect(element).toBeNull();
   });
 
-  it("renders null when current model is missing or undefined", () => {
-    const store = createStore({});
-
+  it("shows the meter while the provider is still unknown", () => {
+    // `current` stays null until a selection is SAVED, so a fresh session has no
+    // provider to match. That is "unknown", not "not OpenCode" — hiding on it
+    // made the meter vanish for the whole session. The Host's read is the
+    // authority on whether there is a Go account: it answers `configured: false`
+    // when there is not, and the panel renders nothing for that.
     const element = UsagePill({
-      directory: store,
+      directory: createStore({}),
       readUsage: async () => createMockUsage(),
       t: (k: string) => k,
     });
 
-    expect(element).toBeNull();
+    expect(element).not.toBeNull();
+  });
+
+  it("shows the meter for a pending selection before it settles", () => {
+    const element = UsagePill({
+      directory: createStore({ pending: { provider: "opencode-go" } }),
+      readUsage: async () => createMockUsage(),
+      t: (k: string) => k,
+    });
+
+    expect(element).not.toBeNull();
   });
 
   it("mounts ActiveUsage when active model is opencode-go", () => {
@@ -223,7 +241,7 @@ describe("usage-pill: UsagePill component gating", () => {
 
     const element = UsagePill({
       directory: store,
-      providerMarkers: ["my-custom-route"],
+      meterProviders: ["my-custom-route"],
       readUsage: async () => createMockUsage(),
       t: (k: string) => k,
     });
@@ -244,7 +262,7 @@ describe("usage-pill: UsagePill component gating", () => {
     const element = UsagePill({
       directory: store,
       modelMarkers: ["only-this-model"],
-      providerMarkers: ["only-this-route"],
+      meterProviders: ["only-this-route"],
       readUsage: async () => createMockUsage(),
       t: (k: string) => k,
     });
@@ -263,7 +281,7 @@ describe("usage-pill: UsagePill component gating", () => {
     const element = UsagePill({
       directory: store,
       modelMarkers: [],
-      providerMarkers: [],
+      meterProviders: [],
       readUsage: async () => createMockUsage(),
       t: (k: string) => k,
     });
@@ -271,5 +289,109 @@ describe("usage-pill: UsagePill component gating", () => {
     expect(element).not.toBeNull();
     assert.ok(element);
     expect(element.type).toBeDefined();
+  });
+});
+
+describe("usage-pill: derived copy & failure parsing", () => {
+  const t = (key: string): string => `t:${key}`;
+
+  it("distinguishes the Zen route from the Go plan", () => {
+    expect(isZenProvider("opencode")).toBe(true);
+    expect(isZenProvider("OPENCODE")).toBe(true);
+    expect(isZenProvider("opencode-go")).toBe(false);
+    expect(isZenProvider("OpenCode-Go")).toBe(false);
+    expect(isZenProvider("deepseek")).toBe(false);
+    expect(isZenProvider()).toBe(false);
+  });
+
+  it("describes a healthy Go reading with the bottleneck window", () => {
+    const usage = createMockUsage({
+      weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
+    });
+    const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
+    expect(copy.headline).toBe("80% of Weekly used");
+    expect(copy.badgeText).toBe("Go Plan");
+    expect(copy.zenCardDesc).toBe("t:zenOverflowActive");
+    expect(copy.zenCardCredit).toBe("t:zenPaygBadge");
+  });
+
+  it("flags a rate-limited window in the headline and badge", () => {
+    const usage = createMockUsage({
+      monthly: { percent: 100, resetsAt: isoAt(1000), status: "rate-limited" },
+    });
+    const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
+    expect(copy.headline).toBe("Monthly quota limited");
+    expect(copy.badgeText).toBe("t:usageLimited");
+    expect(copy.zenCardDesc).toBe("t:zenFallbackNotice");
+  });
+
+  it("switches the copy to pay-as-you-go on a Zen route", () => {
+    const usage = createMockUsage({ zenOverflow: true });
+    const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
+    expect(copy.headline).toBe("t:zenPaygTitle");
+    expect(copy.badgeText).toBe("t:zenPaygBadge");
+    expect(copy.zenCardDesc).toBe("t:zenPaygDesc");
+    expect(copy.zenCardCredit).toBe("t:zenPaygBadge");
+  });
+
+  it("reports Zen overflow as Ready until the plan is actually limited", () => {
+    const usage = createMockUsage({ zenOverflow: true });
+    expect(
+      describeUsage(usage, getAffectingWindow(usage), false, t).zenCardCredit
+    ).toBe("Ready");
+
+    const limited = createMockUsage({
+      monthly: { percent: 100, resetsAt: isoAt(1000), status: "rate-limited" },
+      zenOverflow: true,
+    });
+    expect(
+      describeUsage(limited, getAffectingWindow(limited), false, t)
+        .zenCardCredit
+    ).toBe("Active");
+  });
+
+  it("parses a typed usage-unavailable rejection", () => {
+    const failure = parseFailure({
+      code: "opencode-go/usage-unavailable",
+      details: {
+        configured: false,
+        retainPrevious: true,
+        retryable: true,
+        source: "abc",
+      },
+      message: "nope",
+    });
+    expect(failure).toEqual({
+      configured: false,
+      message: "nope",
+      retainPrevious: true,
+      source: "abc",
+    });
+  });
+
+  it("falls back to a plain message for an untyped error", () => {
+    expect(parseFailure(new Error("boom"))).toEqual({
+      message: "boom",
+      retainPrevious: false,
+    });
+    expect(parseFailure("boom")).toEqual({
+      message: "boom",
+      retainPrevious: false,
+    });
+  });
+
+  it("clamps the ring percentage and derives its dash array", () => {
+    const mid = ringGeometry(50);
+    expect(mid.clampedPercent).toBe(50);
+    expect(mid.strokeDasharray).toBe(
+      `${(CIRCUMFERENCE * 50) / 100} ${CIRCUMFERENCE}`
+    );
+
+    // Out-of-range input clamps rather than drawing a broken ring.
+    expect(ringGeometry(-10).clampedPercent).toBe(0);
+    expect(ringGeometry(150).clampedPercent).toBe(100);
+    expect(ringGeometry(150).strokeDasharray).toBe(
+      `${CIRCUMFERENCE} ${CIRCUMFERENCE}`
+    );
   });
 });

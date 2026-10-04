@@ -13,6 +13,12 @@
 import type { AsyncLocalStorage } from "node:async_hooks";
 
 import { DEFAULT_GATEWAY_URLS, type ResolvedPluginConfig } from "./config.ts";
+import {
+  extractApiKeyFromHeaders,
+  getCapturedApiKey,
+  recordCapturedApiKey,
+  tierForRequest,
+} from "./key-capture.ts";
 import { enrichModelsResponse, isModelsListingUrl } from "./models-catalog.ts";
 import {
   fallbackSessionId,
@@ -146,6 +152,45 @@ export const patchFetch = (
 
     const headers = new Headers(readHeaderSource(input, init));
 
+    // Capture the API key from the request headers so that quota monitoring,
+    // usage display, and key resolution don't have to rely purely on static env vars.
+    const requestKey = extractApiKeyFromHeaders(headers);
+    if (requestKey !== undefined) {
+      recordCapturedApiKey(requestKey, state?.provider, url);
+    }
+
+    // Ensure an Authorization header is present if the caller omitted it or provided a dummy value.
+    const authHeader =
+      headers.get("authorization") ?? headers.get("Authorization");
+    if (
+      authHeader === null ||
+      authHeader.length === 0 ||
+      authHeader === "Bearer undefined" ||
+      authHeader === "Bearer null" ||
+      authHeader === "Bearer unused"
+    ) {
+      // The captured key is looked up by tier as well as by provider: a user
+      // may have named the route anything, and a provider-id miss must not hide
+      // a key that is already known to work. Under the `configured` policy the
+      // declared credential wins outright, so the capture is skipped entirely.
+      const tier = tierForRequest(url, state?.provider);
+      const captured =
+        config.keySource === "configured"
+          ? undefined
+          : getCapturedApiKey(
+              state?.provider,
+              tier === "unknown" ? undefined : tier
+            );
+      const fallbackKey =
+        captured ??
+        (url.includes("/zen/go") || state?.provider === "opencode-go"
+          ? process.env.OPENCODE_GO_API_KEY
+          : process.env.OPENCODE_API_KEY);
+      if (typeof fallbackKey === "string" && fallbackKey.length > 0) {
+        headers.set("Authorization", `Bearer ${fallbackKey}`);
+      }
+    }
+
     // 1. Session header: ALWAYS injected for OpenCode requests
     const sessionVal = resolveSessionHeader(
       state,
@@ -194,6 +239,36 @@ export const patchFetch = (
     }
 
     const response = await original.call(this, input, newInit);
+
+    // If upstream returns 403 FreeTierError, demultiplex it to HTTP 400 so DSH's
+    // error classifier doesn't falsely categorize it as an invalid API key ("AUTH").
+    if (response.status === 403) {
+      try {
+        const cloned = response.clone();
+        const text = await cloned.text();
+        if (
+          text.includes("FreeTierError") ||
+          text.includes("from within OpenCode")
+        ) {
+          return Response.json(
+            {
+              error: {
+                message:
+                  "OpenCode's free tier can only be used from within OpenCode. Use space-bunny-free or a pay-as-you-go model.",
+                type: "free_tier_restricted",
+              },
+            },
+            {
+              status: 400,
+              statusText: "Bad Request",
+            }
+          );
+        }
+      } catch {
+        // Fall back to original response on clone/text errors
+      }
+    }
+
     const method = (
       init?.method ??
       (typeof Request !== "undefined" && input instanceof Request

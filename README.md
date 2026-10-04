@@ -264,7 +264,7 @@ To provide both **100% offline reliability** and **continuous real-time freshnes
 1. **Dual Local Bundled Shims (Zero Latency & Offline)**:
    - **OpenCode Go (`OPENCODE_GO_CATALOG`)**: Ships with an embedded baseline of all **29 active** OpenCode Go subscription models, each carrying its per-million-token rates so session pricing works before the first refresh.
    - **OpenCode Zen (`OPENCODE_ZEN_CATALOG`)**: Ships with an embedded baseline of the **10 active free-tier models** (`muse-spark-1.3-contributor-free`, `space-bunny-free`, `fledge-alpha-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `ling-3.0-flash-fin-free`, `ling-3.1-flash-free`, `longcat-2.5-preview-free`, `mimo-v2.6-flash-free`, `big-pickle`) plus active flagship models (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`).
-   - **Deprecated models are excluded**, so a failed refresh can never resurrect a row the gateway no longer serves.
+   - **Deprecated models are excluded**, so a failed refresh can never resurrect a row the gateway no longer serves. Suppression follows the provider-specific OpenCode CLI listing: the three Zen-route Muse Spark 1.2 IDs (`muse-spark-1.2`, `muse-spark-1.2-contributor`, and `muse-spark-1.2-contributor-free`) are omitted from Zen enrichment and discovery, while the paid Go 1.2 contributor entry remains available because the CLI still lists it.
    - Guaranteed immediate startup with no cold-start delay, blocking network calls, or airplane-mode failures.
 2. **Non-Blocking Background Revalidation**:
    - In the background, `getLiveGoCatalog()` and `getLiveZenCatalog()` revalidate against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (matching the OpenCode CLI's canonical refresh cycle).
@@ -277,9 +277,14 @@ To provide both **100% offline reliability** and **continuous real-time freshnes
    - Populates human-friendly names (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`).
    - Injects verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000 tokens).
    - Accurately declares input modalities (`text`, `image`) so vision models function out of the box.
-4. **Native DSH Model Discovery Registration**:
-   - On the host runtime, `dsh-opencode-patch` registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`) for both `opencode-go` and `opencode`. When DSH's model picker enumerates models, it immediately surfaces the full active Go and Zen lists.
-   - Everything above — gateway enrichment and discovery — sits behind the **Enrich Models from models.dev** switch, so turning it off leaves both the raw gateway listing and DSH's own catalog untouched.
+   - Omits the provider-retired Muse Spark 1.2 rows listed below, even when the gateway still returns them.
+4. **Settings “Fetch Available Models” Decoration**:
+   - DSH asks the adapter that owns a route first. For an installed `opencode` route, `llm-pi-ai` answers from its packaged catalog without calling the gateway, so response enrichment alone cannot alter that answer.
+   - The plugin therefore decorates the hosted discovery result for claimed OpenCode routes: it preserves the adapter’s rows and order, appends missing canonical rows such as `space-bunny-free`, and removes provider-retired rows such as Zen’s Muse Spark 1.2 entries.
+   - Like response enrichment, this is candidate metadata for the settings surface to adopt; it does not rewrite already saved route configuration.
+5. **Native DSH Model Discovery Registration**:
+   - On the host runtime, `dsh-opencode-patch` also registers with DSH's native model discovery service (`ctx.llm.registerModelDiscovery`) for both `opencode-go` and `opencode`.
+   - Gateway enrichment, discovery decoration, and these registrations sit behind the **Enrich Models from models.dev** switch, so turning it off leaves raw gateway listings, adapter discovery answers, and DSH's own catalog untouched.
 
 ### 8. Session Spend & Model Rate
 
@@ -453,8 +458,6 @@ Developer diagnostics (`debug` and `debugFile`) are non-volatile and configured 
     freeModelMarker: "free"
     usageEnabled: true
     usageBaseURL: "https://opencode.ai/zen/go/v1"
-    usageKeyEnv: "OPENCODE_GO_API_KEY"
-    usageProviderMarkers:
       - opencode-go
       - opencode
     injectUserAgent: true
@@ -479,6 +482,7 @@ Developer diagnostics (`debug` and `debugFile`) are non-volatile and configured 
 | `400 MissingSessionID` | No session header attached | Ensure `dsh-opencode-patch` is listed in your profile's `bundles` array. |
 | Auto Review fails with `TRANSPORT: Connection error` | DSH Web host process has not been restarted since update | Stop and restart `dsh web` to load the updated `lib/index.mjs` module. |
 | Quota ring never appears for a Go model | No OpenCode Go credential resolves, or active provider is not `opencode-go` | Store `OPENCODE_GO_API_KEY` in DSH Credentials and ensure the active model routes through `opencode-go`. |
+| A documented catalog model is missing from settings Fetch, or a retired model persists there | The running host loaded an older built plugin module, enrichment is off, or the owning adapter answered from its packaged catalog | Rebuild with `pnpm run build`, restart `dsh web` (a browser refresh only reloads the client bundle), keep **Enrich Models from models.dev** on, fetch from the matching `opencode` or `opencode-go` route, and search for the exact model ID (for example, `space-bunny-free`). |
 | Popover shows "Limit reached" in red | Account has reached 100% of rolling or monthly quota | Open [OpenCode Console](https://opencode.ai/console) and enable "Use balance" to fall back to Zen credits. |
 | Non-OpenCode models misbehaving | Unrelated to this patch | Traffic to non-OpenCode providers (OpenAI, DeepSeek, Anthropic) passes through untouched. |
 

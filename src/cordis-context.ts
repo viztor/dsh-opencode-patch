@@ -11,6 +11,7 @@
  * @module dsh-opencode-patch/cordis-context
  */
 
+import { readString } from "./config-values.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 
 /** Logging + lifecycle capabilities `apply()` uses. */
@@ -23,6 +24,26 @@ export interface CordisContext {
       ns: string,
       discover: () => Promise<unknown>
     ) => void;
+    discoverModels?: (
+      settingsNs: string,
+      request?: unknown,
+      signal?: AbortSignal
+    ) => Promise<unknown>;
+    /**
+     * Re-dispatch a generation. Used to hand a call to the route whose `api`
+     * already names the format it needs, instead of translating the protocol.
+     */
+    stream?: (options: unknown) => unknown;
+    /** Registered provider routes, for checking a target exists before using it. */
+    listProviders?: () => unknown;
+    /** Routes offered in Settings → Models. */
+    listConfigurableProviders?: () => unknown;
+    /**
+     * The models one route advertises. The browser catalog turns each route into
+     * a group and DROPS groups with no models, so this is how an internal route
+     * stays out of the picker.
+     */
+    listModels?: (provider: string) => Promise<unknown>;
   };
   logger?: {
     info?: (msg: string, ...args: unknown[]) => void;
@@ -156,9 +177,6 @@ export type SessionMetaResolver = (
   sessionId: string
 ) => SessionMeta | undefined;
 
-/** Parent session lookup function. */
-export type ParentSessionResolver = (sessionId: string) => string | undefined;
-
 /**
  * Read the session metadata lookup function from `ctx.get("sessions")` or `ctx.sessions`,
  * returning `undefined` when the Host serves no session service.
@@ -170,14 +188,15 @@ export const readSessionMetaResolver = (
     return undefined;
   }
   let sessions: unknown;
-  if ("sessions" in ctx) {
-    const { sessions: candidate } = ctx;
-    if (isRecord(candidate)) {
-      sessions = candidate;
-    }
-  } else if (isFunctionLike(ctx.get)) {
+  if (isFunctionLike(ctx.get)) {
     try {
       sessions = Reflect.apply(ctx.get, ctx, ["sessions"]);
+    } catch {
+      return undefined;
+    }
+  } else {
+    try {
+      sessions = Reflect.get(ctx, "sessions");
     } catch {
       return undefined;
     }
@@ -196,33 +215,15 @@ export const readSessionMetaResolver = (
       if (!isRecord(header)) {
         return undefined;
       }
-      const parentSession =
-        typeof header.parentSession === "string" &&
-        header.parentSession.length > 0
-          ? header.parentSession
-          : undefined;
-      const cwd =
-        typeof header.cwd === "string" && header.cwd.length > 0
-          ? header.cwd
-          : undefined;
+      // Blank fields are absent, not values: a whitespace-only cwd would
+      // otherwise become the `x-opencode-project` header. `readString` is the
+      // same rule the config readers use, so "absent or blank means default"
+      // holds in one place.
+      const parentSession = readString(header.parentSession);
+      const cwd = readString(header.cwd);
       return { cwd, parentSession };
     } catch {
       return undefined;
     }
   };
-};
-
-/**
- * Read the parent session lookup function from `ctx.get("sessions")` or `ctx.sessions`,
- * returning `undefined` when the Host serves no session service.
- */
-export const readParentSessionResolver = (
-  ctx: unknown
-): ParentSessionResolver | undefined => {
-  const metaResolver = readSessionMetaResolver(ctx);
-  if (metaResolver === undefined) {
-    return undefined;
-  }
-  return (sessionId: string): string | undefined =>
-    metaResolver(sessionId)?.parentSession;
 };

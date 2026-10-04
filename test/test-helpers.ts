@@ -4,6 +4,7 @@
  * @module test/test-helpers
  */
 
+import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -163,3 +164,140 @@ export const createMockContext = () =>
     // the contribution.
     reflect: { provide: () => disposeNoop },
   }) as never;
+
+/* ------------------------------------------------ React element tree helpers */
+
+/**
+ * A React element as the jsx runtime builds it.
+ *
+ * The settings card and the quota meter are asserted by walking the element
+ * tree their function components return — no DOM, no renderer. `type` is the
+ * component function or an intrinsic tag; `props.children` carries the
+ * subtree.
+ */
+export interface TestElement {
+  props: { children?: unknown; [key: string]: unknown };
+  type: unknown;
+}
+
+export const isElement = (node: unknown): node is TestElement =>
+  typeof node === "object" &&
+  node !== null &&
+  "type" in node &&
+  "props" in node &&
+  typeof (node as { props: unknown }).props === "object";
+
+/** The name a component or intrinsic tag renders under. */
+export const elementName = (type: unknown): string => {
+  if (typeof type === "string") {
+    return type;
+  }
+  if (typeof type === "function") {
+    return type.name || "fn";
+  }
+  return String(type);
+};
+
+/** An element's children as a flat list, however the runtime nested them. */
+const childrenOf = (node: TestElement): unknown[] => {
+  const flat: unknown[] = [];
+  const walk = (value: unknown): void => {
+    // React flattens nested child arrays and drops the values it renders as
+    // nothing, so the traversal must too — otherwise a `.map()`ed option list
+    // is invisible to these helpers.
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        walk(child);
+      }
+      return;
+    }
+    if (value === undefined || value === null || typeof value === "boolean") {
+      return;
+    }
+    flat.push(value);
+  };
+  walk(node.props.children);
+  return flat;
+};
+
+/** Every element named `type`, in document order. */
+export const findAll = (
+  node: unknown,
+  type: string,
+  acc: TestElement[] = []
+): TestElement[] => {
+  if (!isElement(node)) {
+    return acc;
+  }
+  if (elementName(node.type) === type) {
+    acc.push(node);
+  }
+  for (const child of childrenOf(node)) {
+    findAll(child, type, acc);
+  }
+  return acc;
+};
+
+/** Every element whose name is in `types`, in document order. */
+export const findAllOf = (
+  node: unknown,
+  types: ReadonlySet<string>,
+  acc: TestElement[] = []
+): TestElement[] => {
+  if (!isElement(node)) {
+    return acc;
+  }
+  if (types.has(elementName(node.type))) {
+    acc.push(node);
+  }
+  for (const child of childrenOf(node)) {
+    findAllOf(child, types, acc);
+  }
+  return acc;
+};
+
+/** The first element named `type`; throws when the tree has none. */
+export const firstOf = (tree: unknown, type: string): TestElement => {
+  const [found] = findAll(tree, type);
+  assert.ok(found, `expected a ${type} in the tree`);
+  return found;
+};
+
+/** Every element satisfying `predicate`, in document order. */
+export const findAllWhere = (
+  node: unknown,
+  predicate: (element: TestElement) => boolean,
+  acc: TestElement[] = []
+): TestElement[] => {
+  if (!isElement(node)) {
+    return acc;
+  }
+  if (predicate(node)) {
+    acc.push(node);
+  }
+  for (const child of childrenOf(node)) {
+    findAllWhere(child, predicate, acc);
+  }
+  return acc;
+};
+
+/** Every string or number rendered anywhere in the subtree, in order. */
+export const collectText = (node: unknown, acc: string[] = []): string[] => {
+  if (typeof node === "string" || typeof node === "number") {
+    acc.push(String(node));
+    return acc;
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      collectText(child, acc);
+    }
+    return acc;
+  }
+  if (!isElement(node)) {
+    return acc;
+  }
+  for (const child of childrenOf(node)) {
+    collectText(child, acc);
+  }
+  return acc;
+};

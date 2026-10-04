@@ -5,3 +5,6 @@ coverage/
 .DS_Store
 *.log
 *.tgz
+
+# Agent workspace: session notes and scratch data, not source.
+.workbuddy-ai/

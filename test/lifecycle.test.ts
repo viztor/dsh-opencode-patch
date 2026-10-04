@@ -17,6 +17,7 @@ import {
   type CordisContext,
   getSessionUsage,
   clearSessionUsageStore,
+  RESPONSES_ROUTE,
 } from "../src/index.ts";
 import {
   collectUnknown,
@@ -123,6 +124,136 @@ describe("apply (plugin lifecycle)", () => {
     globalThis.fetch = originalFetch;
   });
 
+  it("ties the catalog patch to the plugin fiber", async () => {
+    // The patch replaces a Host method. Registered OUTSIDE an effect it would
+    // never be undone, so every live reload would stack another wrapper and
+    // disabling the plugin would leave it hiding the route.
+    let cleanup: (() => void) | undefined;
+    const originalListModels = async (): Promise<unknown[]> => [
+      { id: "muse-spark-1.3-contributor-free" },
+    ];
+    const ctx: CordisContext = {
+      effect: (fn: () => unknown) => {
+        cleanup = fn() as (() => void) | undefined;
+      },
+      llm: { listModels: originalListModels },
+      on: () => {},
+    };
+
+    apply(ctx);
+
+    expect(typeof cleanup).toBe("function");
+    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([]);
+    cleanup?.();
+    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([
+      { id: "muse-spark-1.3-contributor-free" },
+    ]);
+  });
+
+  it("hands a responses-format model to the responses route", async () => {
+    // The gateway serves muse on /responses and everything else on
+    // /chat/completions, and llm-pi-ai carries one `api` per route. So the call
+    // is re-dispatched to the route whose `api` already names the format rather
+    // than translated at the transport — DSH's own adapter then speaks it.
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    const dispatched: unknown[] = [];
+    let nextCalls = 0;
+
+    const ctx: CordisContext = {
+      // The redirect asks the hiding patch whether the route is registered, so
+      // the effect has to actually run for this test to mean anything.
+      effect: (fn: () => unknown) => {
+        fn();
+      },
+      llm: {
+        listConfigurableProviders: () => [{ provider: "opencode" }],
+        listModels: async () => [{ id: "muse-spark-1.3-contributor-free" }],
+        listProviders: () => [{ id: "opencode" }, { id: "opencode-responses" }],
+        stream: (options: unknown) => {
+          dispatched.push(options);
+          return createMockStream("from-responses-route");
+        },
+      },
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+    const result: unknown = streamHandler(
+      { model: "muse-spark-1.3-contributor-free", provider: "opencode" },
+      () => {
+        nextCalls += 1;
+        return createMockStream("from-opencode-route");
+      }
+    );
+
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toMatchObject({
+      model: "muse-spark-1.3-contributor-free",
+      provider: "opencode-responses",
+    });
+    // The redirect replaces the dispatch; running both would bill twice.
+    expect(nextCalls).toBe(0);
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+    expect(await collectUnknown(result)).toEqual(["from-responses-route"]);
+  });
+
+  it("dispatches normally when the responses route is not registered", async () => {
+    // A layer that failed to load must not turn the gateway's own error into a
+    // "no adapter for provider" one, which points at the wrong thing.
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    let nextCalls = 0;
+
+    const ctx: CordisContext = {
+      effect: (fn: () => unknown) => {
+        fn();
+      },
+      llm: {
+        listModels: async () => [],
+        // The route really is absent, so the redirect must stand down.
+        listProviders: () => [{ id: "opencode" }],
+        stream: () => createMockStream("should-not-be-used"),
+      },
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+    const result: unknown = streamHandler(
+      { model: "muse-spark-1.3-contributor-free", provider: "opencode" },
+      () => {
+        nextCalls += 1;
+        return createMockStream("from-opencode-route");
+      }
+    );
+
+    expect(nextCalls).toBe(1);
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+    expect(await collectUnknown(result)).toEqual(["from-opencode-route"]);
+  });
+
   it("attaches to llm/stream and derives session ID", async () => {
     let streamHandler:
       | ((options: unknown, next: () => unknown) => unknown)
@@ -155,6 +286,68 @@ describe("apply (plugin lifecycle)", () => {
       throw new Error("expected async iterable downstream");
     }
     expect(await collectUnknown(result)).toEqual(["stream-chunk-1"]);
+  });
+
+  it("survives context proxies where direct sessions access throws without inject", async () => {
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+
+    // Simulate Cordis proxy trap that throws when `ctx.sessions` is read directly
+    const proxyTarget: Record<string, unknown> = {
+      effect: () => {},
+      get: (serviceName: string) =>
+        serviceName === "sessions"
+          ? {
+              get: (id: string) => ({
+                header: {
+                  cwd: "/workspace/project",
+                  parentSession: "ses_parent",
+                },
+                id,
+              }),
+            }
+          : null,
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+
+    const ctx = new Proxy(proxyTarget, {
+      get(target, prop, receiver) {
+        if (prop === "sessions") {
+          throw new Error('cannot get property "sessions" without inject');
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+      has(target, prop) {
+        if (prop === "sessions") {
+          return true;
+        }
+        return Reflect.has(target, prop);
+      },
+    }) as unknown as CordisContext;
+
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+
+    const result: unknown = streamHandler(
+      {
+        model: "muse-spark-1.3-contributor-free",
+        provider: "opencode",
+        sessionId: "dsh-session-proxy-check",
+      },
+      () => createMockStream("stream-ok")
+    );
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+    expect(await collectUnknown(result)).toEqual(["stream-ok"]);
   });
 
   it("records dollars from a usage chunk without altering the stream", async () => {
