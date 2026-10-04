@@ -32,3 +32,27 @@ jobs:
       - run: pnpm run test
       - run: pnpm run build
       - run: node --experimental-strip-types scripts/check.ts
+
+  # The live gateway contract: the only job that talks to OpenCode itself, so a
+  # vendor payload change fails here rather than in a user's meter.
+  #
+  # Secrets are not exposed to fork or Dependabot PRs, and every credentialed
+  # case skips when its key is absent — so this stays green there while still
+  # checking that the endpoints answer. Add OPENCODE_API_KEY (Zen) and
+  # OPENCODE_GO_API_KEY (Go plan) under Settings → Secrets → Actions to arm the
+  # keyed cases.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:e2e
+        env:
+          OPENCODE_E2E: "1"
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}

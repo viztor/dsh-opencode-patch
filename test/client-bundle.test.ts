@@ -73,6 +73,7 @@ const evaluateBundle = (): {
     }
     if (name === "@deepseek-ai/dsh-client-ui-primitives") {
       return {
+        Button: () => null,
         SegmentedControl: () => null,
         SettingsForm: () => null,
         SettingsFormModel: class {
@@ -171,6 +172,7 @@ describe("client-bundle: artifact & VM loader boundary", () => {
       }
       if (name === "@deepseek-ai/dsh-client-ui-primitives") {
         return {
+          Button: () => null,
           SettingsForm: () => null,
           SettingsFormModel: class {
             actions() {
@@ -221,6 +223,7 @@ describe("client-bundle: artifact & VM loader boundary", () => {
       }
       if (name === "@deepseek-ai/dsh-client-ui-primitives") {
         return {
+          Button: () => null,
           SettingsForm: () => null,
           SettingsFormModel: class {
             actions() {

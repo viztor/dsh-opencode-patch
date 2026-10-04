@@ -15,6 +15,9 @@ import {
   DUMMY_READ_TOOL,
   OPENCODE_UA,
   SESSION_HEADER,
+  clearCapturedApiKeys,
+  getCapturedApiKey,
+  recordCapturedApiKey,
   openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
@@ -30,6 +33,7 @@ import {
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_SESSION_ID;
+  clearCapturedApiKeys();
 });
 
 describe("patchFetch", () => {
@@ -488,5 +492,67 @@ describe("patchFetch", () => {
       });
     });
     expect(toolNamesOf(parseJsonBody(fullCap.init?.body))).toHaveLength(2);
+  });
+
+  it("captures API key from request headers on intercepted OpenCode requests", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { mockFetch } = createCaptureFetch();
+    const patched = patchFetch(mockFetch, als, resolveConfig());
+
+    expect(getCapturedApiKey("opencode-go")).toBeUndefined();
+
+    await als.run(
+      { provider: "opencode-go", value: "ses_header_key" },
+      async () => {
+        await patched("https://opencode.ai/zen/go/v1/chat/completions", {
+          headers: {
+            Authorization: "Bearer sk-intercepted-go-key-xyz",
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+      }
+    );
+
+    expect(getCapturedApiKey("opencode-go")).toBe("sk-intercepted-go-key-xyz");
+    expect(getCapturedApiKey(undefined, "go")).toBe(
+      "sk-intercepted-go-key-xyz"
+    );
+  });
+
+  it("picks the captured key for the request's TIER, not the most recent one", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const { capture, mockFetch } = createCaptureFetch();
+    const patched = patchFetch(mockFetch, als, resolveConfig());
+
+    // A Go key captured first…
+    recordCapturedApiKey(
+      "sk-go-key-aaa",
+      "opencode-go",
+      "https://opencode.ai/zen/go/v1/chat/completions"
+    );
+    // …then a Zen key, so "most recently seen" is now the WRONG tier for a Go
+    // call. A Zen key sent to the Go quota endpoint is rejected outright.
+    recordCapturedApiKey(
+      "oc_sk_zen_key_bbb",
+      "opencode",
+      "https://opencode.ai/zen/v1/messages"
+    );
+
+    await als.run(
+      // A route the user renamed: the provider-id lookup misses by design, so
+      // the tier is what has to save this.
+      { provider: "my-renamed-route", value: "ses_renamed" },
+      async () => {
+        await patched("https://opencode.ai/zen/go/v1/chat/completions", {
+          headers: { Authorization: "Bearer unused" },
+          method: "POST",
+        });
+      }
+    );
+
+    expect(headerOf(capture.init, "authorization")).toBe(
+      "Bearer sk-go-key-aaa"
+    );
   });
 });

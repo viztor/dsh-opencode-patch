@@ -3,16 +3,25 @@
  *
  * The Go plan's key and endpoint normally live in another plugin's row (an
  * `llm-pi-ai` provider registry or a standalone `opencode-go` entry) rather
- * than in this one, so before prompting the user for config the plugin reads
- * what the composition already declares and only falls back to its own
- * `usageKeyEnv`/`usageBaseURL` settings afterwards.
+ * than in this one, so this module reads what the composition already declares
+ * and falls back to a built-in default. There is deliberately **no** row setting
+ * for the credential reference: a knob here would duplicate the provider row's
+ * own `apiKeyEnv`, and the live request is the better source anyway
+ * (`key-capture.ts`). `usageBaseURL` remains as the one endpoint override.
+ *
+ * Credential *capture* — pulling a key off a live request and classifying its
+ * tier — lives in `key-capture.ts`. This module owns the plan side: which
+ * endpoint, which credential reference, and the policy that orders the two
+ * sources against each other.
  *
  * @module dsh-opencode-patch/go-discovery
  */
 
+import type { KeySourcePolicy } from "./config-values.ts";
 import { DEFAULT_USAGE_BASE_URL, DEFAULT_USAGE_KEY_ENV } from "./config.ts";
 import { isLoaderHost, readCredentialsResolver } from "./cordis-context.ts";
 import { isRecord } from "./guards.ts";
+import { extractApiKeyFromHeaders, getCapturedApiKey } from "./key-capture.ts";
 
 /** Gateway settings found in other entries, if any. */
 export interface DiscoveredGoConfig {
@@ -36,6 +45,24 @@ const readProviderRow = (
   const baseURL: unknown = row.baseURL;
   if (typeof baseURL === "string" && baseURL.length > 0) {
     into.baseURL = baseURL;
+  }
+
+  if (into.literalKey === undefined) {
+    const fromHeaders = extractApiKeyFromHeaders(row.headers);
+    if (fromHeaders !== undefined) {
+      into.literalKey = fromHeaders;
+    }
+  }
+  if (into.literalKey === undefined && isRecord(row.options)) {
+    const optKey: unknown = row.options.apiKey;
+    if (typeof optKey === "string" && optKey.length > 0) {
+      into.literalKey = optKey;
+    } else {
+      const fromOptHeaders = extractApiKeyFromHeaders(row.options.headers);
+      if (fromOptHeaders !== undefined) {
+        into.literalKey = fromOptHeaders;
+      }
+    }
   }
 };
 
@@ -127,6 +154,20 @@ export const discoverGoConfig = (
 };
 
 /**
+ * Point a Zen base URL at the Go quota endpoint.
+ *
+ * The two share a host, so a base URL discovered from a Zen provider row
+ * (`…/zen/v1`) still addresses the Go plan's `/usage` once rewritten; every
+ * other URL passes through untouched.
+ *
+ * @param url - candidate base URL.
+ */
+export const toGoBaseURL = (url: string): string =>
+  url.includes("opencode.ai/zen/v1")
+    ? url.replace("opencode.ai/zen/v1", "opencode.ai/zen/go/v1")
+    : url;
+
+/**
  * Base URL for Go quota requests: an explicit non-default config wins,
  * otherwise a discovered gateway URL, otherwise the configured default.
  *
@@ -144,13 +185,7 @@ export const resolveGoBaseURL = (
   }
   const discovered = discoverGoConfig(ctx, targetProvider);
   if (discovered.baseURL !== undefined && discovered.baseURL.length > 0) {
-    if (discovered.baseURL.includes("opencode.ai/zen/v1")) {
-      return discovered.baseURL.replace(
-        "opencode.ai/zen/v1",
-        "opencode.ai/zen/go/v1"
-      );
-    }
-    return discovered.baseURL;
+    return toGoBaseURL(discovered.baseURL);
   }
   return configured;
 };
@@ -158,67 +193,129 @@ export const resolveGoBaseURL = (
 /**
  * The effective credential reference for Go key lookups.
  *
- * An explicit non-default config wins outright; when the config still says
- * the default, a reference discovered from the composition refines it, so an
- * `apiKeyEnv` shipped by the provider registry is honored without the user
- * copying it into this row.
+ * The composition is the only place a reference comes from: an `apiKeyEnv`
+ * declared by the provider registry is honoured as-is, and the built-in default
+ * is the fallback. There is deliberately no row setting for this — a knob here
+ * would duplicate the provider row's own declaration, which is exactly the
+ * setting a user has already made once.
  *
  * @param discovered - result of {@link discoverGoConfig} (reuse when already computed).
- * @param configuredKeyEnv - the row's `usageKeyEnv` setting, if any.
  */
-export const effectiveGoKeyRef = (
-  discovered: DiscoveredGoConfig,
-  configuredKeyEnv?: string
-): string => {
-  const explicit =
-    configuredKeyEnv !== undefined && configuredKeyEnv.trim().length > 0
-      ? configuredKeyEnv.trim()
-      : undefined;
-  if (explicit !== undefined && explicit !== DEFAULT_USAGE_KEY_ENV) {
-    return explicit;
+export const effectiveGoKeyRef = (discovered: DiscoveredGoConfig): string =>
+  discovered.keyEnv ?? DEFAULT_USAGE_KEY_ENV;
+
+/**
+ * One lookup step a policy can consult.
+ *
+ * `captured` is scoped to the route in hand; `capturedAny` accepts a key
+ * captured under any route. They are separate steps so `auto` can keep
+ * credentials ahead of the any-route fallback, exactly as it always has.
+ */
+type KeySourceStep = "captured" | "capturedAny" | "configured" | "literal";
+
+/**
+ * The lookup order each policy imposes — the only thing the user is choosing
+ * between.
+ *
+ * `auto` reproduces the original precedence exactly, so the default is not a
+ * behaviour change: composition first, then a captured key in the right tier,
+ * then credentials/env, then any captured key. `request` promotes both captured
+ * steps above the declared sources; `configured` does the reverse.
+ *
+ * Tier safety is orthogonal and applies to all three: a step that returns a key
+ * for the wrong tier is never consulted, because the Go endpoint rejects a Zen
+ * key outright.
+ */
+const KEY_SOURCE_ORDER: Record<KeySourcePolicy, readonly KeySourceStep[]> = {
+  auto: ["literal", "captured", "configured", "capturedAny"],
+  configured: ["literal", "configured", "captured", "capturedAny"],
+  request: ["captured", "capturedAny", "literal", "configured"],
+};
+
+/** First non-empty result from a policy's steps, or `undefined`. */
+const firstResolved = async (
+  order: readonly KeySourceStep[],
+  steps: Record<KeySourceStep, () => unknown>
+): Promise<string | undefined> => {
+  for (const step of order) {
+    // Sequential on purpose: the order IS the policy, and a later step must not
+    // run (or be able to throw) once an earlier one has answered.
+    // oxlint-disable-next-line no-await-in-loop -- see above; order is the contract.
+    const value: unknown = await steps[step]();
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
   }
-  return discovered.keyEnv ?? explicit ?? DEFAULT_USAGE_KEY_ENV;
+  return undefined;
 };
 
 /**
  * Resolve the Go API key without ever exposing it to the client.
  *
- * Order: a literal `apiKey` discovered in another entry (composition wins
- * over config), then the credential service for the effective reference
- * (explicit config, unless it is just the default — discovery refines the
- * default), then environment fallbacks.
+ * Order is {@link KEY_SOURCE_ORDER}`[policy]`; with the default `auto` that is
+ * a literal `apiKey` discovered in another entry, then a captured key for the
+ * Go tier, then the credential service and environment, then any captured key.
  *
  * @param ctx - the plugin context used for discovery and credentials.
- * @param configuredKeyEnv - the row's `usageKeyEnv` setting.
  * @param targetProvider - optional specific provider route id to prioritize.
+ * @param policy - which source wins when several resolve.
  * @returns the key, or `undefined` when nothing resolves — the caller raises
  * the typed `MISSING_CREDENTIAL` error instead of a raw one.
  */
-export const resolveGoApiKey = async (
+export const resolveGoApiKey = (
   ctx: unknown,
-  configuredKeyEnv?: string,
-  targetProvider?: string
+  targetProvider?: string,
+  policy: KeySourcePolicy = "auto"
 ): Promise<string | undefined> => {
   const discovered = discoverGoConfig(ctx, targetProvider);
-  if (
-    typeof discovered.literalKey === "string" &&
-    discovered.literalKey.length > 0
-  ) {
-    return discovered.literalKey;
-  }
-  const ref = effectiveGoKeyRef(discovered, configuredKeyEnv);
-  const key = await resolveGoKeyForRef(ctx, ref);
-  return key;
+  return firstResolved(KEY_SOURCE_ORDER[policy], {
+    captured: () => getCapturedApiKey(targetProvider, "go"),
+    capturedAny: () => getCapturedApiKey(undefined, "go"),
+    configured: () => resolveGoKeyForRef(ctx, effectiveGoKeyRef(discovered)),
+    literal: () => discovered.literalKey,
+  });
 };
 
 /**
- * Look one credential reference up through the credential service, then the
- * environment. Never throws: a failing credentials service degrades to the
- * env path.
+ * Resolve one credential reference through the credentials service, then the
+ * environment.
  *
- * Zen keys (`OPENCODE_API_KEY` / `oc_sk_...`) are excluded here because Zen
- * keys lack the OpenCode Go subscription entitlement and will 403 when sent
- * to the Go quota endpoint.
+ * Never throws: a failing credentials service degrades to the env path.
+ *
+ * @param ctx - the plugin context used for credentials.
+ * @param ref - credential reference to look up.
+ */
+const resolveRef = async (
+  ctx: unknown,
+  ref: string
+): Promise<string | undefined> => {
+  const resolve = readCredentialsResolver(ctx);
+  if (resolve !== undefined) {
+    try {
+      const hit = await resolve(ref);
+      if (hit?.value !== undefined && hit.value.length > 0) {
+        return hit.value;
+      }
+    } catch {
+      // Fall through to the environment.
+    }
+  }
+  const fromEnv = process.env[ref];
+  return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : undefined;
+};
+
+/** Whether a resolved value is a usable Go credential. Zen keys are not. */
+const isUsableGoKey = (value: string | undefined): value is string =>
+  value !== undefined && value.length > 0 && !value.startsWith("oc_sk_");
+
+/**
+ * Look one credential reference up for the Go quota endpoint.
+ *
+ * Zen keys (`OPENCODE_API_KEY` / `oc_sk_…`) are excluded because Zen keys lack
+ * the OpenCode Go subscription entitlement and will 403 when sent to the Go
+ * quota endpoint. That exclusion is why this is not just {@link resolveRef}: the
+ * routed-provider lookup below must accept a Zen key, because there the Zen tier
+ * is the target rather than a mistake.
  *
  * @param ctx - the plugin context used for credentials.
  * @param ref - effective credential reference from {@link effectiveGoKeyRef}.
@@ -227,44 +324,35 @@ export const resolveGoKeyForRef = async (
   ctx: unknown,
   ref: string
 ): Promise<string | undefined> => {
-  const isZenRef = ref === "OPENCODE_API_KEY";
-  const resolve = readCredentialsResolver(ctx);
-  if (resolve !== undefined) {
-    const candidates = isZenRef
+  const candidates =
+    ref === "OPENCODE_API_KEY"
       ? [DEFAULT_USAGE_KEY_ENV]
       : [ref, DEFAULT_USAGE_KEY_ENV];
+
+  // Every reference is tried through the credentials service before the
+  // environment is consulted at all, so a stored credential always beats a
+  // stale exported variable.
+  const resolve = readCredentialsResolver(ctx);
+  if (resolve !== undefined) {
     const results = await Promise.allSettled(
       candidates.map((candidate) => resolve(candidate))
     );
-    for (const res of results) {
-      if (
-        res.status === "fulfilled" &&
-        res.value?.value !== undefined &&
-        res.value.value.length > 0 &&
-        !res.value.value.startsWith("oc_sk_")
-      ) {
-        return res.value.value;
+    for (const result of results) {
+      if (result.status !== "fulfilled") {
+        continue;
+      }
+      const value = result.value?.value;
+      if (isUsableGoKey(value)) {
+        return value;
       }
     }
   }
 
-  if (!isZenRef) {
-    const fromEnv = process.env[ref];
-    if (
-      fromEnv !== undefined &&
-      fromEnv.length > 0 &&
-      !fromEnv.startsWith("oc_sk_")
-    ) {
-      return fromEnv;
+  for (const candidate of candidates) {
+    const value = process.env[candidate];
+    if (isUsableGoKey(value)) {
+      return value;
     }
-  }
-  const fallback = process.env[DEFAULT_USAGE_KEY_ENV];
-  if (
-    fallback !== undefined &&
-    fallback.length > 0 &&
-    !fallback.startsWith("oc_sk_")
-  ) {
-    return fallback;
   }
   return undefined;
 };
@@ -278,31 +366,22 @@ export interface ZenCreditInfo {
  * Resolve whether OpenCode Zen pay-as-you-go is configured.
  *
  * Checks whether an OpenCode Zen key (`OPENCODE_API_KEY` or `oc_sk_...`)
- * is configured in DSH credentials or environment.
+ * is configured in DSH credentials or environment. There is no endpoint to ask
+ * for a balance, so this answers "can the Go plan overflow into Zen credit?"
+ * rather than "how much credit is left".
  *
  * @param ctx - plugin context used for credentials service lookup.
  */
 export const resolveZenCreditInfo = async (
   ctx: unknown
 ): Promise<ZenCreditInfo> => {
-  const resolve = readCredentialsResolver(ctx);
-
-  if (resolve !== undefined) {
-    try {
-      const zenKeyRes = await resolve("OPENCODE_API_KEY");
-      if (zenKeyRes?.value !== undefined && zenKeyRes.value.length > 0) {
-        return { isConfigured: true };
-      }
-    } catch {
-      // Degrade silently to env check
-    }
-  }
-  const generic = process.env.OPENCODE_API_KEY;
-  if (generic !== undefined && generic.length > 0) {
+  const capturedZen = getCapturedApiKey("opencode", "zen");
+  if (capturedZen !== undefined && capturedZen.length > 0) {
     return { isConfigured: true };
   }
 
-  return { isConfigured: false };
+  const zenKey = await resolveRef(ctx, "OPENCODE_API_KEY");
+  return { isConfigured: zenKey !== undefined };
 };
 
 /** Key resolution details for a routed provider. */
@@ -316,44 +395,36 @@ export interface RoutedKeyDetails {
 /**
  * Resolve the effective API key and account tier for a currently routed provider.
  *
+ * Unlike {@link resolveGoApiKey} this never rejects a Zen key: the routed
+ * provider *is* the tier, so a Zen route legitimately resolves a Zen key.
+ *
  * @param ctx - plugin context
  * @param provider - routed provider name (e.g. "opencode-go", "opencode")
+ * @param policy - which source wins when several resolve.
  */
 export const resolveRoutedKey = async (
   ctx: unknown,
-  provider: string
+  provider: string,
+  policy: KeySourcePolicy = "auto"
 ): Promise<RoutedKeyDetails> => {
   const discovered = discoverGoConfig(ctx, provider);
-  let key: string | undefined = discovered.literalKey;
+  const isGoRoute = provider === "opencode-go";
+  const configuredRef =
+    discovered.keyEnv ??
+    (isGoRoute ? DEFAULT_USAGE_KEY_ENV : "OPENCODE_API_KEY");
 
-  if (key === undefined || key.length === 0) {
-    const ref =
-      discovered.keyEnv ??
-      (provider === "opencode-go" ? DEFAULT_USAGE_KEY_ENV : "OPENCODE_API_KEY");
-    const resolve = readCredentialsResolver(ctx);
-    if (resolve !== undefined) {
-      try {
-        const res = await resolve(ref);
-        if (res?.value !== undefined && res.value.length > 0) {
-          key = res.value;
-        }
-      } catch {
-        // Fall back to env
-      }
-    }
-    if (
-      (key === undefined || key.length === 0) &&
-      process.env[ref] !== undefined
-    ) {
-      key = process.env[ref];
-    }
-  }
+  const key = await firstResolved(KEY_SOURCE_ORDER[policy], {
+    captured: () => getCapturedApiKey(provider, isGoRoute ? "go" : undefined),
+    capturedAny: () => getCapturedApiKey(undefined, isGoRoute ? "go" : "zen"),
+    configured: () => resolveRef(ctx, configuredRef),
+    literal: () => discovered.literalKey,
+  });
 
+  // Inverse precedence of `recordCapturedApiKey`: here the routed provider is
+  // authoritative, because the resolved key may be a shared or fallback
+  // credential whose prefix says nothing about the route in use.
   let tier: "go" | "zen" | "unknown" = "unknown";
-  if (
-    provider === "opencode-go" ||
-    (key !== undefined && key.startsWith("sk-"))
-  ) {
+  if (isGoRoute || (key !== undefined && key.startsWith("sk-"))) {
     tier = "go";
   } else if (
     provider === "opencode" ||

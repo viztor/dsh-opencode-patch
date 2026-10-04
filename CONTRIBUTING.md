@@ -14,9 +14,27 @@ pnpm install     # install dependencies
 pnpm run check   # format + lint + types; must be zero *errors* (warnings are reported, not gating)
 pnpm run test    # Vitest suite, must be fully green and deterministic
 pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, lib/client.js
+pnpm run test:e2e   # opt-in end-to-end suite; talks to the real OpenCode gateway
 ```
 
 > Note: in some shells `pnpm exec` stalls; invoke the binary directly if so: `node node_modules/.pnpm/vite-plus@*/node_modules/vite-plus/bin/vp <cmd>`.
+
+## End-to-end suite
+
+`pnpm run test:e2e` runs `test/e2e/**/*.e2e.ts` through its own config (`vitest.e2e.config.ts`), so `pnpm run test` stays a fully offline, deterministic unit run. Nothing here is collected by the unit suite.
+
+```sh
+OPENCODE_E2E=1 OPENCODE_API_KEY=… OPENCODE_GO_API_KEY=… pnpm run test:e2e
+```
+
+- `OPENCODE_E2E=1` is required; without it every case skips, so a bare `pnpm run test:e2e` is a safe no-op.
+- `OPENCODE_API_KEY` (Zen) arms the live `/models` enrichment case; `OPENCODE_GO_API_KEY` (Go plan) arms the live `/usage` case. Each block skips when its key is absent, which is why the CI `e2e` job stays green on fork PRs (secrets are not exposed to them) while still checking the endpoints answer.
+- `OPENCODE_ZEN_BASE_URL` / `OPENCODE_GO_BASE_URL` retarget the suite at a mirror.
+
+Two files, two jobs:
+
+- `opencode-live.e2e.ts` — the only place the plugin meets the real API. It catches what a stub cannot: **the vendor changing the payload**. The meter parses `/zen/go/v1/usage` and the picker consumes an enriched `/models` listing, so both shapes are asserted against the live service. The unkeyed cases assert reachability (never a 404) and that our header set does not change the gateway's verdict on a request — compared against the same call without it, rather than hardcoding a status the vendor may tighten.
+- `patched-fetch-headers.e2e.ts` — a local `node:http` listener, so the _outgoing_ header set crosses a real socket. The live gateway cannot echo a request back; everywhere else in the suite the injected headers are asserted against a captured `fetch`.
 
 ## Live profile loop
 

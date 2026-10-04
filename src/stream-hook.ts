@@ -18,6 +18,8 @@ import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
 import { isAsyncIterableLike, isRecord } from "./guards.ts";
 import { findModelSpec } from "./models-catalog.ts";
+import { isResponsesRouteRegistered } from "./models-discovery.ts";
+import { responsesRouteFor } from "./responses-routes.ts";
 import { recordTurnUsage } from "./session-cost.ts";
 import {
   fallbackSessionId,
@@ -50,6 +52,9 @@ type StreamHandler = (options: unknown, next: () => unknown) => unknown;
  */
 export const createStreamHook = (
   ctx: DebugContext & {
+    llm?: {
+      stream?: (options: unknown) => unknown;
+    };
     logger?: {
       info?: (msg: string, ...args: unknown[]) => void;
     };
@@ -70,6 +75,31 @@ export const createStreamHook = (
     const providerKey = String(providerProp);
     if (!providers.has(providerKey)) {
       return next();
+    }
+
+    // A model the gateway serves on /responses cannot be dispatched through a
+    // chat-completions route. Rather than translating the protocol at the
+    // transport, hand the call to the route whose `api` already says
+    // `openai-responses`: the adapter then speaks the format natively and
+    // nothing about the response has to be rewritten. Returning here rather than
+    // continuing means the redirected call does the session/debug/turn-state
+    // work exactly once — its own pass through this hook.
+    //
+    // `prepared` is deliberately dropped. It is bound to the SOURCE route's
+    // adapter and already-resolved model, so re-resolving on the target route is
+    // not a loss — it is the only correct thing to do.
+    const redirect = responsesRouteFor(providerKey, options.model);
+    // Take the call over only when the target route is really registered.
+    // Without this, a layer that failed to load would replace the gateway's own
+    // error with a "no adapter for provider" one, which is harder to act on and
+    // points at the wrong thing. Asked of the UNFILTERED registry — the route is
+    // deliberately absent from every listing a user sees.
+    if (
+      redirect !== undefined &&
+      typeof ctx.llm?.stream === "function" &&
+      isResponsesRouteRegistered()
+    ) {
+      return ctx.llm.stream({ ...options, provider: redirect });
     }
     const sessionProp: unknown = options.sessionId;
     let rawSession: string;

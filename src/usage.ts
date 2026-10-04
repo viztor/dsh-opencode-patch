@@ -16,12 +16,14 @@ import {
   TypertRemoteService,
 } from "@deepseek-ai/dsh-typert-protocol";
 
+import type { KeySourcePolicy } from "./config-values.ts";
 import { DEFAULT_USAGE_BASE_URL } from "./config.ts";
 import {
   discoverGoConfig,
   effectiveGoKeyRef,
   resolveGoApiKey,
   resolveZenCreditInfo,
+  toGoBaseURL,
 } from "./go-discovery.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 import { getSessionUsage } from "./session-cost.ts";
@@ -29,6 +31,7 @@ import {
   parseGoUsage,
   type GoUsage,
   type UsageQuery,
+  type UsageWindow,
   usageRemote,
 } from "./usage-contract.ts";
 
@@ -41,8 +44,8 @@ const USAGE_UNAVAILABLE = "opencode-go/usage-unavailable";
 export interface UsageOptions {
   /** Explicit quota endpoint getter; discovery/defaults apply when absent. */
   baseURL?: () => string;
-  /** Explicit key reference (env var / credential name) from plugin config. */
-  keyEnv?: string;
+  /** Which credential source wins; the composition and capture cover the rest. */
+  keySource?: KeySourcePolicy;
   /** Escape hatch for callers that resolve the key themselves. */
   resolveApiKey?: () => Promise<string | undefined>;
 }
@@ -57,6 +60,32 @@ const isMissingCredential = (error: unknown): boolean => {
   const code: unknown = error.code;
   return code === "MISSING_CREDENTIAL";
 };
+
+/**
+ * The reading served when the account is on Zen overflow: Go has no quota to
+ * report (no key, or a Go subscription the account is not entitled to), so
+ * every window sits at zero and the meter hands over to Zen balance.
+ *
+ * @param source - opaque host identity for the endpoint/account.
+ * @param sessionId - conversation whose spend to attach, when known.
+ */
+const zenOverflowUsage = (source: string, sessionId?: string): GoUsage => {
+  const resetsAt = new Date().toISOString();
+  const window = (): UsageWindow => ({ percent: 0, resetsAt, status: "ok" });
+  const session = getSessionUsage(sessionId);
+  return {
+    monthly: window(),
+    rolling: window(),
+    ...(session === undefined ? {} : { session }),
+    source,
+    weekly: window(),
+    zenOverflow: true,
+  };
+};
+
+/** Normalize a base URL to the Go `/usage` endpoint, without a trailing slash. */
+const usageEndpointBase = (rawBaseURL: string): string =>
+  toGoBaseURL(rawBaseURL).replace(/\/$/, "");
 
 export class GoUsageService extends TypertRemoteService {
   private identity?: { baseURL: string; key: string; source: string };
@@ -79,17 +108,18 @@ export class GoUsageService extends TypertRemoteService {
     const discovered = discoverGoConfig(this.ctx, targetProvider);
     const rawBaseURL =
       this.options.baseURL?.() ?? discovered.baseURL ?? DEFAULT_USAGE_BASE_URL;
-    const normalizedBaseURL = rawBaseURL.includes("opencode.ai/zen/v1")
-      ? rawBaseURL.replace("opencode.ai/zen/v1", "opencode.ai/zen/go/v1")
-      : rawBaseURL;
-    const baseURL = normalizedBaseURL.replace(/\/$/, "");
-    const keyRef = effectiveGoKeyRef(discovered, this.options.keyEnv);
+    const baseURL = usageEndpointBase(rawBaseURL);
+    const keyRef = effectiveGoKeyRef(discovered);
 
     let key: string | undefined;
     try {
       key = this.options.resolveApiKey
         ? await this.options.resolveApiKey()
-        : await resolveGoApiKey(this.ctx, this.options.keyEnv, targetProvider);
+        : await resolveGoApiKey(
+            this.ctx,
+            targetProvider,
+            this.options.keySource ?? "auto"
+          );
     } catch (error: unknown) {
       this.identity = undefined;
       const missing = isMissingCredential(error);
@@ -114,16 +144,7 @@ export class GoUsageService extends TypertRemoteService {
     if (key === undefined || key.length === 0) {
       const zenInfo = await resolveZenCreditInfo(this.ctx);
       if (zenInfo.isConfigured || targetProvider === "opencode") {
-        const now = new Date().toISOString();
-        const session = getSessionUsage(sessionId);
-        return {
-          monthly: { percent: 0, resetsAt: now, status: "ok" },
-          rolling: { percent: 0, resetsAt: now, status: "ok" },
-          ...(session === undefined ? {} : { session }),
-          source: randomUUID(),
-          weekly: { percent: 0, resetsAt: now, status: "ok" },
-          zenOverflow: true,
-        };
+        return zenOverflowUsage(randomUUID(), sessionId);
       }
       this.identity = undefined;
       throw new RemoteError(
@@ -178,16 +199,7 @@ export class GoUsageService extends TypertRemoteService {
       if (response.status === 403 && text.includes("EntitlementError")) {
         const zenInfo = await resolveZenCreditInfo(this.ctx);
         if (zenInfo.isConfigured) {
-          const now = new Date().toISOString();
-          const session = getSessionUsage(sessionId);
-          return {
-            monthly: { percent: 0, resetsAt: now, status: "ok" },
-            rolling: { percent: 0, resetsAt: now, status: "ok" },
-            ...(session === undefined ? {} : { session }),
-            source,
-            weekly: { percent: 0, resetsAt: now, status: "ok" },
-            zenOverflow: true,
-          };
+          return zenOverflowUsage(source, sessionId);
         }
         throw new RemoteError(
           USAGE_UNAVAILABLE,

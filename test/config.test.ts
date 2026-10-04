@@ -10,7 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   Config,
+  DEFAULT_KEY_SOURCE,
   isOpenCodeRequest,
+  KEY_SOURCE_POLICIES,
   resolveConfig,
   type ActiveTurnState,
   type PluginConfig,
@@ -24,7 +26,11 @@ afterEach(() => {
 describe("resolveConfig", () => {
   it("fills default providers, toggles, and debug flags", () => {
     const resolved = resolveConfig({});
-    expect([...resolved.providers]).toEqual(["opencode", "opencode-go"]);
+    expect([...resolved.providers]).toEqual([
+      "opencode",
+      "opencode-go",
+      "opencode-responses",
+    ]);
     expect(resolved.debug).toBe(false);
     expect(resolved.debugFile).toBeUndefined();
     expect(resolved.injectUserAgent).toBe(true);
@@ -85,10 +91,12 @@ describe("resolveConfig", () => {
     expect([...resolveConfig({ providers: [] }).providers]).toEqual([
       "opencode",
       "opencode-go",
+      "opencode-responses",
     ]);
     expect([...resolveConfig({ providers: [""] }).providers]).toEqual([
       "opencode",
       "opencode-go",
+      "opencode-responses",
     ]);
   });
 
@@ -108,7 +116,11 @@ describe("resolveConfig", () => {
     expect(defaults.injectProject).toBe(true);
     expect(defaults.freeModelMarker).toBe("free");
     expect(defaults.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
-    expect(defaults.usageProviderMarkers).toEqual(["opencode-go", "opencode"]);
+    expect([...defaults.providers]).toEqual([
+      "opencode",
+      "opencode-go",
+      "opencode-responses",
+    ]);
 
     const custom = resolveConfig({
       freeModelMarker: "  preview  ",
@@ -116,14 +128,14 @@ describe("resolveConfig", () => {
       injectProject: false,
       originClient: "desktop",
       sessionIdEnv: "MY_SESSION",
-      usageProviderMarkers: ["go-relay"],
+      providers: ["go-relay"],
     });
     expect(custom.gatewayUrls).toEqual(["relay.example.com/zen"]);
     expect(custom.originClient).toBe("desktop");
     expect(custom.injectProject).toBe(false);
     expect(custom.freeModelMarker).toBe("preview");
     expect(custom.sessionIdEnv).toBe("MY_SESSION");
-    expect(custom.usageProviderMarkers).toEqual(["go-relay"]);
+    expect([...custom.providers]).toEqual(["go-relay"]);
 
     // Blank strings and empty lists fall back instead of disabling the knob.
     const blank = resolveConfig({
@@ -131,14 +143,18 @@ describe("resolveConfig", () => {
       gatewayUrls: [],
       originClient: "",
       sessionIdEnv: "",
-      usageProviderMarkers: ["", " "],
+      providers: ["", " "],
     });
     expect(blank.gatewayUrls).toEqual(["opencode.ai/zen"]);
     expect(blank.originClient).toBe("cli");
     expect(blank.injectProject).toBe(true);
     expect(blank.freeModelMarker).toBe("free");
     expect(blank.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
-    expect(blank.usageProviderMarkers).toEqual(["opencode-go", "opencode"]);
+    expect([...blank.providers]).toEqual([
+      "opencode",
+      "opencode-go",
+      "opencode-responses",
+    ]);
   });
 });
 
@@ -160,14 +176,13 @@ describe("Config schema", () => {
         "injectOriginHeaders",
         "injectProject",
         "injectUserAgent",
+        "keySource",
         "originClient",
         "providers",
         "sessionIdEnv",
         "showUsagePrice",
         "usageBaseURL",
         "usageEnabled",
-        "usageKeyEnv",
-        "usageProviderMarkers",
         "userAgent",
         // oxlint-disable-next-line unicorn/no-array-sort -- array literal is fresh, so in-place sort mutates nothing shared.
       ].sort()
@@ -181,15 +196,29 @@ describe("Config schema", () => {
       injectOriginHeaders: true,
       injectProject: true,
       injectUserAgent: true,
+      keySource: "auto",
       originClient: "cli",
-      providers: new Set(["opencode", "opencode-go"]),
+      providers: new Set(["opencode", "opencode-go", "opencode-responses"]),
       sessionIdEnv: "OPENCODE_SESSION_ID",
       showUsagePrice: true,
       usageBaseURL: "https://opencode.ai/zen/go/v1",
       usageEnabled: true,
-      usageKeyEnv: "OPENCODE_GO_API_KEY",
-      usageProviderMarkers: ["opencode-go", "opencode"],
     });
+  });
+
+  it("accepts each key-source policy and degrades an unknown one to auto", () => {
+    // The policy is user-facing and hand-editable, so a typo must not fail the
+    // plugin load — it falls back to the default like every other knob.
+    for (const policy of KEY_SOURCE_POLICIES) {
+      expect(resolveConfig({ keySource: policy }).keySource).toBe(policy);
+    }
+    expect(resolveConfig({}).keySource).toBe(DEFAULT_KEY_SOURCE);
+    expect(resolveConfig({ keySource: "live" as never }).keySource).toBe(
+      DEFAULT_KEY_SOURCE
+    );
+    expect(resolveConfig({ keySource: "" as never }).keySource).toBe(
+      DEFAULT_KEY_SOURCE
+    );
   });
 
   it("resolves validated and raw rows identically", () => {
@@ -200,7 +229,8 @@ describe("Config schema", () => {
       {},
       { providers: ["opencode"] },
       { injectUserAgent: false, usageEnabled: false, debug: true },
-      { usageKeyEnv: "X", usageBaseURL: "https://example.invalid" },
+      { keySource: "request" },
+      { usageBaseURL: "https://example.invalid" },
     ];
     for (const row of cases) {
       expect(resolveConfig(Config(row) as unknown as PluginConfig)).toEqual(
@@ -211,7 +241,7 @@ describe("Config schema", () => {
 });
 
 describe("isOpenCodeRequest (endpoint differentiation)", () => {
-  const providers = new Set(["opencode", "opencode-go"]);
+  const providers = new Set(["opencode", "opencode-go", "opencode-responses"]);
 
   it("identifies opencode.ai/zen endpoints", () => {
     expect(

@@ -184,6 +184,10 @@ export function SettingsValueField(props: KitProps) {
   return { props, type: "SettingsValueField" };
 }
 
+export function Button(props: KitProps) {
+  return { props, type: "Button" };
+}
+
 export function Switch(props: KitProps) {
   return { props, type: "Switch" };
 }
