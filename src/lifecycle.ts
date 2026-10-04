@@ -39,6 +39,7 @@ import {
   decorateModelDiscovery,
   hideResponsesRoute,
 } from "./models-discovery.ts";
+import { registerResponsesProvider } from "./responses-provider.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { GoUsageService, registerUsageRemotes } from "./usage.ts";
@@ -121,7 +122,17 @@ const installFetchPatch = (
     // stream hook is used, because the redirect asks it whether the route is
     // really registered.
     const stopCatalogHiding = hideResponsesRoute(ctx);
+    // Own the Responses route from here, so the user configures nothing: they
+    // keep the `opencode` provider and key they already have. Best-effort — a
+    // route declared in the profile still works if this cannot register. The
+    // registration is async (it imports `llm-pi-ai` lazily), so the disposer
+    // arrives after the effect body has returned.
+    let stopResponsesProvider: (() => void) | undefined;
+    void (async () => {
+      stopResponsesProvider = await registerResponsesProvider(ctx);
+    })();
     return () => {
+      stopResponsesProvider?.();
       stopCatalogHiding?.();
       stopDiscoveryDecoration?.();
       if (globalThis.fetch === patched) {
