@@ -289,7 +289,7 @@ describe("models-discovery: hiding the internal Responses route", () => {
     ]);
   });
 
-  it("still reports the route as registered, so the redirect fires", async () => {
+  it("still reports the route as registered, so the redirect fires", () => {
     // The redirect asks whether it has somewhere to go. Asked of the FILTERED
     // listing the answer would always be no and the re-dispatch would never
     // happen — which is why the check reads the original.
@@ -297,28 +297,25 @@ describe("models-discovery: hiding the internal Responses route", () => {
     const stop = hideResponsesRoute(ctx);
 
     expect(isResponsesRouteRegistered()).toBe(true);
-    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([]);
+    expect(ctx.llm?.listProviders?.()).toHaveLength(1);
 
     stop?.();
-    // Unloading must not leave a stale "registered" answer behind either.
     expect(isResponsesRouteRegistered()).toBe(true);
   });
 
-  it("reports no models for the route and passes others through", async () => {
+  it("leaves listModels alone, because nothing reaches it", async () => {
+    // Every Host consumer of listModels iterates listProviders() first —
+    // buildModelCatalog, modelAvailable and acp's model control all do — so
+    // filtering it as well would be a third patch guarding nothing.
     const { ctx, seen } = hostWith();
     const stop = hideResponsesRoute(ctx);
 
-    await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([]);
-    await expect(ctx.llm?.listModels?.("opencode")).resolves.toEqual([
-      { id: "opencode-model" },
-    ]);
-    // The Host method must not even be asked about the hidden route.
-    expect(seen).toEqual(["opencode"]);
-
-    stop?.();
     await expect(ctx.llm?.listModels?.(RESPONSES_ROUTE)).resolves.toEqual([
       { id: `${RESPONSES_ROUTE}-model` },
     ]);
+    expect(seen).toEqual([RESPONSES_ROUTE]);
+
+    stop?.();
     expect(ctx.llm?.listProviders?.()).toHaveLength(2);
   });
 
