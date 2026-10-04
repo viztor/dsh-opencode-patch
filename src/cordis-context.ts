@@ -39,6 +39,14 @@ export interface CordisContext {
     /** Routes offered in Settings → Models. */
     listConfigurableProviders?: () => unknown;
     /**
+     * Register an adapter for routes the plugin owns. Used to serve the
+     * gateway's Responses plane without the user declaring anything.
+     */
+    registerAdapter?: (
+      providers: readonly string[],
+      adapter: unknown
+    ) => { dispose?: () => void } | undefined;
+    /**
      * The models one route advertises. The browser catalog turns each route into
      * a group and DROPS groups with no models, so this is how an internal route
      * stays out of the picker.
