@@ -34,6 +34,7 @@ describe("config-values: shared defaults", () => {
       "opencode",
       "opencode-go",
       "opencode-responses",
+      "opencode-anthropic",
     ]);
     expect(DEFAULT_SHOW_USAGE_PRICE).toBe(true);
   });

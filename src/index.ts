@@ -166,6 +166,7 @@ export {
   INTERNAL_ROUTES,
   internalRouteFor,
   isInternalRoute,
+  isServableSdk,
   PROTOCOL_FOR_SDK,
   RESPONSES_ROUTE,
   RESPONSES_SDK,
