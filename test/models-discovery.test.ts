@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decorateModelDiscovery,
   hideResponsesRoute,
-  isResponsesRouteRegistered,
+  isRouteRegistered,
   mergeDiscoveredModels,
   resolveConfig,
   resolveDiscoveryProvider,
@@ -296,11 +296,11 @@ describe("models-discovery: hiding the internal Responses route", () => {
     const { ctx } = hostWith();
     const stop = hideResponsesRoute(ctx);
 
-    expect(isResponsesRouteRegistered()).toBe(true);
+    expect(isRouteRegistered(RESPONSES_ROUTE)).toBe(true);
     expect(ctx.llm?.listProviders?.()).toHaveLength(1);
 
     stop?.();
-    expect(isResponsesRouteRegistered()).toBe(true);
+    expect(isRouteRegistered(RESPONSES_ROUTE)).toBe(true);
   });
 
   it("leaves listModels alone, because nothing reaches it", async () => {

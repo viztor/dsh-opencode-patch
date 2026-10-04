@@ -27,7 +27,7 @@ import {
   type CatalogModelSpec,
   type CatalogProvider,
 } from "./models-catalog.ts";
-import { RESPONSES_ROUTE } from "./responses-routes.ts";
+import { isInternalRoute } from "./responses-routes.ts";
 
 export interface DiscoveryCandidate {
   contextWindow?: number;
@@ -165,23 +165,27 @@ export const mergeDiscoveredModels = (
 let registeredRoutes: (() => unknown) | undefined;
 
 /**
- * Whether the internal Responses route is really registered on the Host.
+ * Whether a route the plugin owns is really registered on the Host.
+ *
+ * The redirect must consult the UNFILTERED registry: the patched listing
+ * deliberately omits every internal route, so asking it would always answer "no"
+ * and the re-dispatch would never fire.
+ *
+ * @param routeId - the internal route to test for.
  * @returns true when the unfiltered registry still carries the route.
  */
-export const isResponsesRouteRegistered = (): boolean => {
+export const isRouteRegistered = (routeId: string): boolean => {
   const routes = registeredRoutes?.();
   return (
     Array.isArray(routes) &&
-    routes.some((route) => isRecord(route) && route.id === RESPONSES_ROUTE)
+    routes.some((route) => isRecord(route) && route.id === routeId)
   );
 };
 
-/** Drop one route from a Host listing, leaving every other entry untouched. */
+/** Drop every internal route from a Host listing, leaving other entries alone. */
 const withoutRoute = (value: unknown, key: "id" | "provider"): unknown =>
   Array.isArray(value)
-    ? value.filter(
-        (entry) => !(isRecord(entry) && entry[key] === RESPONSES_ROUTE)
-      )
+    ? value.filter((entry) => !(isRecord(entry) && isInternalRoute(entry[key])))
     : value;
 
 /**
