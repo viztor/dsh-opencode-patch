@@ -14,17 +14,24 @@
 import z from "@deepseek-ai/schemastery";
 
 import {
+  DEFAULT_KEY_SOURCE,
+  DEFAULT_PROVIDERS,
   DEFAULT_SHOW_USAGE_PRICE,
-  DEFAULT_USAGE_PROVIDER_MARKERS,
+  isKeySourcePolicy,
+  KEY_SOURCE_POLICIES,
+  type KeySourcePolicy,
   readBoolean,
   readString,
   readStringList,
 } from "./config-values.ts";
 
-export { DEFAULT_SHOW_USAGE_PRICE, DEFAULT_USAGE_PROVIDER_MARKERS };
-
-/** Provider route keys the plugin intercepts out of the box. */
-export const DEFAULT_PROVIDERS = ["opencode", "opencode-go"];
+export {
+  DEFAULT_KEY_SOURCE,
+  DEFAULT_PROVIDERS,
+  DEFAULT_SHOW_USAGE_PRICE,
+  KEY_SOURCE_POLICIES,
+  type KeySourcePolicy,
+};
 
 /**
  * URL substrings that mark a request as OpenCode gateway traffic even when no
@@ -68,14 +75,13 @@ export const CONFIG_DEFAULTS = {
   injectOriginHeaders: true,
   injectProject: DEFAULT_INJECT_PROJECT,
   injectUserAgent: true,
+  keySource: DEFAULT_KEY_SOURCE,
   originClient: DEFAULT_ORIGIN_CLIENT,
   providers: DEFAULT_PROVIDERS,
   sessionIdEnv: DEFAULT_SESSION_ID_ENV,
   showUsagePrice: DEFAULT_SHOW_USAGE_PRICE,
   usageBaseURL: DEFAULT_USAGE_BASE_URL,
   usageEnabled: true,
-  usageKeyEnv: DEFAULT_USAGE_KEY_ENV,
-  usageProviderMarkers: DEFAULT_USAGE_PROVIDER_MARKERS,
 } as const;
 
 /** The raw shape a cordis row's `config` may carry (all optional). */
@@ -89,6 +95,7 @@ export interface PluginConfig {
   injectOriginHeaders?: boolean;
   injectProject?: boolean;
   injectUserAgent?: boolean;
+  keySource?: KeySourcePolicy;
   originClient?: string;
   providers?: string[];
   sessionIdEnv?: string;
@@ -96,8 +103,6 @@ export interface PluginConfig {
   userAgent?: string;
   usageBaseURL?: string;
   usageEnabled?: boolean;
-  usageKeyEnv?: string;
-  usageProviderMarkers?: string[];
 }
 
 /** The fully-defaulted shape the plugin's runtime branches read. */
@@ -113,6 +118,8 @@ export interface ResolvedPluginConfig {
   injectOriginHeaders: boolean;
   injectProject: boolean;
   injectUserAgent: boolean;
+  /** Which credential source wins when more than one resolves. */
+  keySource: KeySourcePolicy;
   originClient: string;
   providers: Set<string>;
   sessionIdEnv: string;
@@ -120,8 +127,6 @@ export interface ResolvedPluginConfig {
   userAgent?: string;
   usageBaseURL: string;
   usageEnabled: boolean;
-  usageKeyEnv: string;
-  usageProviderMarkers: string[];
 }
 
 /**
@@ -132,6 +137,17 @@ export interface ResolvedPluginConfig {
  *
  * @param rawInput - raw or validated row config.
  */
+/**
+ * A row's key-source policy, or the default when it names something else.
+ *
+ * Deliberately lenient: a typo in a hand-edited row degrades to `auto` rather
+ * than failing the plugin load.
+ */
+const resolvedKeySource = (raw: unknown): KeySourcePolicy => {
+  const value = readString(raw);
+  return isKeySourcePolicy(value) ? value : CONFIG_DEFAULTS.keySource;
+};
+
 export const resolveConfig = (
   rawInput: PluginConfig = {}
 ): ResolvedPluginConfig => {
@@ -139,7 +155,6 @@ export const resolveConfig = (
 
   const providers = readStringList(config.providers);
   const gatewayUrls = readStringList(config.gatewayUrls);
-  const usageProviderMarkers = readStringList(config.usageProviderMarkers);
 
   return {
     debug: readBoolean(config.debug, CONFIG_DEFAULTS.debug),
@@ -168,6 +183,7 @@ export const resolveConfig = (
       config.injectUserAgent,
       CONFIG_DEFAULTS.injectUserAgent
     ),
+    keySource: resolvedKeySource(config.keySource),
     originClient:
       readString(config.originClient) ?? CONFIG_DEFAULTS.originClient,
     providers: new Set(
@@ -186,11 +202,6 @@ export const resolveConfig = (
       config.usageEnabled,
       CONFIG_DEFAULTS.usageEnabled
     ),
-    usageKeyEnv: readString(config.usageKeyEnv) ?? CONFIG_DEFAULTS.usageKeyEnv,
-    usageProviderMarkers:
-      usageProviderMarkers.length > 0
-        ? usageProviderMarkers
-        : [...CONFIG_DEFAULTS.usageProviderMarkers],
   };
 };
 
@@ -231,6 +242,13 @@ export const Config = z.object({
     .volatile()
     .description(
       "Custom User-Agent string. Leave blank to use the canonical OpenCode CLI one."
+    ),
+  keySource: z
+    .string()
+    .default(CONFIG_DEFAULTS.keySource)
+    .volatile()
+    .description(
+      "Which credential source wins when several resolve: auto (composition, then a key captured from a live request), request (live request first), or configured (declared key first). An unrecognised value falls back to auto."
     ),
   injectOriginHeaders: z
     .boolean()
@@ -292,18 +310,6 @@ export const Config = z.object({
     .default(CONFIG_DEFAULTS.usageBaseURL)
     .volatile()
     .description("OpenCode Go gateway base URL."),
-  usageKeyEnv: z
-    .string()
-    .default(CONFIG_DEFAULTS.usageKeyEnv)
-    .volatile()
-    .description("Environment variable or credential ref for the Go key."),
-  usageProviderMarkers: z
-    .array(z.string())
-    .default([...CONFIG_DEFAULTS.usageProviderMarkers])
-    .volatile()
-    .description(
-      "Provider-route markers that show the Go quota meter in the composer."
-    ),
   debug: z
     .boolean()
     .default(CONFIG_DEFAULTS.debug)

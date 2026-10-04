@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { KEY_SOURCE_POLICIES } from "../src/config-values.ts";
+import { Config } from "../src/index.ts";
+import { CARD_FIELDS, CONFIG_ONLY_FIELDS } from "../src/settings-fields.ts";
 import {
   apply,
   LEGACY_NS,
@@ -10,46 +13,27 @@ import {
   PKG,
   SPECS,
 } from "../src/settings-page.tsx";
+import {
+  elementName,
+  findAll,
+  findAllWhere,
+  firstOf,
+  type TestElement,
+} from "./test-helpers.ts";
 
-interface TestElement {
-  props: { children?: unknown; [key: string]: unknown };
-  type: unknown;
-}
+/** Every control component the card can render, keyed by the register's `kind`. */
+const COMPONENT_BY_KIND = {
+  boolean: "SettingsBooleanField",
+  select: "SettingsChoiceField",
+} as const;
 
-const isElement = (node: unknown): node is TestElement =>
-  typeof node === "object" &&
-  node !== null &&
-  "type" in node &&
-  "props" in node &&
-  typeof (node as { props: unknown }).props === "object";
+const CONTROL_TYPES: ReadonlySet<string> = new Set(
+  Object.values(COMPONENT_BY_KIND)
+);
 
-const nameOf = (type: unknown): string => {
-  if (typeof type === "string") return type;
-  if (typeof type === "function") return type.name || "fn";
-  return String(type);
-};
-
-const findAll = (
-  node: unknown,
-  type: string,
-  acc: TestElement[] = []
-): TestElement[] => {
-  if (!isElement(node)) return acc;
-  if (nameOf(node.type) === type) acc.push(node);
-  const { children } = node.props;
-  if (Array.isArray(children)) {
-    for (const child of children) findAll(child, type, acc);
-  } else if (children !== undefined) {
-    findAll(children, type, acc);
-  }
-  return acc;
-};
-
-const firstOf = (tree: unknown, type: string): TestElement => {
-  const [found] = findAll(tree, type);
-  assert.ok(found, `expected a ${type} in the tree`);
-  return found;
-};
+/** The card's controls, in document order. */
+const controlsInOrder = (tree: unknown): TestElement[] =>
+  findAllWhere(tree, (element) => CONTROL_TYPES.has(elementName(element.type)));
 
 describe("settings-page: apply & slots", () => {
   it("registers dictionaries for modern and legacy namespaces without throwing", () => {
@@ -106,6 +90,8 @@ describe("settings-page: apply & slots", () => {
         bind: () => (k: string) => k,
         register: () => () => {},
       },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>, component: unknown) => {
@@ -155,6 +141,8 @@ describe("settings-page: apply & slots", () => {
           read: remoteUsage,
         },
       },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
@@ -174,14 +162,18 @@ describe("settings-page: apply & slots", () => {
     // Valid session ID returns injected props
     const injected = dockInjector?.("valid") as {
       directory: unknown;
-      providerMarkers: string[];
+      meterProviders: string[];
       readUsage: () => Promise<unknown>;
       t: (k: string) => string;
     };
     expect(injected).toBeDefined();
     expect(injected.directory).toEqual({ isDirectory: true });
-    // No scope in this context: the meter falls back to the plugin defaults.
-    expect(injected.providerMarkers).toEqual(["opencode-go", "opencode"]);
+    // No scope in this context: the meter falls back to the claimed routes.
+    expect(injected.meterProviders).toEqual([
+      "opencode",
+      "opencode-go",
+      "opencode-responses",
+    ]);
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });
@@ -197,6 +189,8 @@ describe("settings-page: apply & slots", () => {
       effect: (fn: () => unknown) => fn(),
       modelDirectories: { directoryFor: () => ({ store: {} }) },
       remote: { opencodeGoUsage: { read: remoteUsage } },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
@@ -239,6 +233,8 @@ describe("settings-page: apply & slots", () => {
       modelDirectories: {
         directoryFor: () => ({ store: {} }),
       },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
@@ -254,7 +250,77 @@ describe("settings-page: apply & slots", () => {
     expect(dockInjector?.("session")).toBeNull();
   });
 
-  it("passes configured quota-meter markers from the scope to the injector", () => {
+  it("degrades to no meter when the model-directory service throws", () => {
+    // `directoryFor` throws for a session it cannot resolve yet (a composer
+    // rendered before its session is bound). The injector must swallow that
+    // rather than take the whole dock slot down with it.
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: {
+        directoryFor: () => {
+          throw new Error("ui-model-selection: resolved no scope");
+        },
+      },
+      remote: {
+        opencodeGoUsage: { read: async () => ({ ok: true, value: {} }) },
+      },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.composer.dock") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+
+    expect(() => apply(ctx as never)).not.toThrow();
+    expect(dockInjector).toBeDefined();
+    expect(dockInjector?.("session")).toBeNull();
+  });
+
+  it("resolves the model directory from the injected scope, not the root context", () => {
+    // The bug this pins: `ctx.modelDirectories` read off the ROOT context is
+    // undefined, so the injector bailed and the meter never mounted — silently,
+    // because every access was optional. Both services arrive on the scope
+    // `ctx.inject` hands over (`ui-model-selection` uses the same idiom), so the
+    // root context here carries neither.
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+    const injectedScope = {
+      modelDirectories: {
+        directoryFor: () => ({ store: { isDirectory: true } }),
+      },
+      remote: { opencodeGoUsage: { read: async () => ({ ok: true }) } },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.composer.dock") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(injectedScope),
+      locale: {
+        bind: () => (k: string) => k,
+        register: () => () => {},
+      },
+    };
+
+    apply(ctx as never);
+
+    expect(dockInjector).toBeDefined();
+    expect(dockInjector?.("valid")).not.toBeNull();
+  });
+
+  it("passes the claimed provider routes from the scope to the injector", () => {
     let dockInjector: ((sessionId: unknown) => unknown) | undefined;
 
     const ctx = {
@@ -267,7 +333,7 @@ describe("settings-page: apply & slots", () => {
             user: {},
             value: {
               usageModelMarkers: ["custom-go-model"],
-              usageProviderMarkers: ["custom-go-route"],
+              providers: ["custom-go-route"],
             },
             writable: true,
           }),
@@ -285,6 +351,8 @@ describe("settings-page: apply & slots", () => {
           read: async () => ({ ok: true, value: {} }),
         },
       },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
@@ -297,9 +365,9 @@ describe("settings-page: apply & slots", () => {
 
     apply(ctx as never);
     const injected = dockInjector?.("valid") as {
-      providerMarkers: string[];
+      meterProviders: string[];
     };
-    expect(injected.providerMarkers).toEqual(["custom-go-route"]);
+    expect(injected.meterProviders).toEqual(["custom-go-route"]);
   });
 
   it("unpacks remote errors properly in readUsage", async () => {
@@ -319,6 +387,8 @@ describe("settings-page: apply & slots", () => {
           read: remoteUsage,
         },
       },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
@@ -340,6 +410,8 @@ describe("settings-page: apply & slots", () => {
   it("degrades gracefully if configForms is missing or not a valid scope", () => {
     const ctx = {
       effect: (fn: () => unknown) => fn(),
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: vi.fn(),
         register: vi.fn(),
@@ -381,6 +453,8 @@ describe("settings-page: OpencodeCard rendering", () => {
         bind: () => (k: string) => k,
         register: () => () => {},
       },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>, component: unknown) => {
@@ -455,35 +529,35 @@ describe("settings-page: OpencodeCard rendering", () => {
     const form = firstOf(tree, "SettingsForm");
     expect(form).toBeDefined();
 
-    // Boolean fields render as SettingsBooleanField (with Switch inside),
-    // text/list fields remain SettingsValueField. Total = 14 (debug/debugFile are file-only, usageModelMarkers removed).
-    const valueFields = findAll(tree, "SettingsValueField");
+    // Every register entry renders exactly one control: booleans as
+    // SettingsBooleanField (with Switch inside), the enum as SettingsChoiceField.
     const boolFields = findAll(tree, "SettingsBooleanField");
-    expect(valueFields.length + boolFields.length).toBe(14);
-    // 9 text/list fields, 5 boolean fields:
-    expect(valueFields.length).toBe(9);
-    expect(boolFields.length).toBe(5);
-    const ids = valueFields.map((f) => f.props.id);
-    for (const knob of [
-      "freeModelMarker",
-      "gatewayUrls",
-      "originClient",
-      "sessionIdEnv",
-      "usageBaseURL",
-      "usageKeyEnv",
-      "usageProviderMarkers",
-    ]) {
-      expect(ids).toContain(`plugin-config-opencode-${knob}`);
-    }
-    const boolIds = boolFields.map((f) => f.props.id);
-    for (const knob of [
-      "injectUserAgent",
-      "injectOriginHeaders",
-      "injectProject",
-      "injectCoreTools",
-      "usageEnabled",
-    ]) {
-      expect(boolIds).toContain(`plugin-config-opencode-${knob}`);
+    const choiceFields = findAll(tree, "SettingsChoiceField");
+    const valueFields = findAll(tree, "SettingsValueField");
+    expect(boolFields.length + choiceFields.length + valueFields.length).toBe(
+      CARD_FIELDS.length
+    );
+    // The card shows only the decisions a user makes — 7 toggles and 1 enum.
+    // Every literal/marker override is config-only (see CONFIG_ONLY_FIELDS), so
+    // no text or list field renders at all.
+    expect(boolFields.length).toBe(7);
+    expect(choiceFields.length).toBe(1);
+    expect(valueFields.length).toBe(0);
+    const [choiceField] = choiceFields;
+    assert.ok(choiceField, "expected a SettingsChoiceField");
+    expect(choiceField.props.id).toBe("plugin-config-opencode-keySource");
+    // The enum's choices are copy-resolved before they reach the control.
+    expect(
+      (choiceField.props.options as { label: string; value: string }[]).map(
+        (option) => option.value
+      )
+    ).toEqual([...KEY_SOURCE_POLICIES]);
+
+    // No config-only knob may appear as a control: the simplified UI has to stay
+    // simplified, and an override must not become editable by accident.
+    const renderedIds = [...boolFields, ...choiceFields].map((f) => f.props.id);
+    for (const { field } of CONFIG_ONLY_FIELDS) {
+      expect(renderedIds).not.toContain(`plugin-config-opencode-${field}`);
     }
 
     // Test boolean field edit: first boolean field is injectUserAgent
@@ -493,15 +567,10 @@ describe("settings-page: OpencodeCard rendering", () => {
     onBoolEdit("false");
     expect(edits).toContainEqual({ field: "injectUserAgent", text: "false" });
 
-    // Test text field edit via the first SettingsValueField (userAgent)
-    const [firstValueField] = valueFields;
-    assert.ok(firstValueField);
-    const onEdit = firstValueField.props.onEdit as (val: string) => void;
-    onEdit("opencode/custom");
-    expect(edits).toContainEqual({
-      field: "userAgent",
-      text: "opencode/custom",
-    });
+    // Test enum edit: the select stages the raw option value.
+    const onChoiceEdit = choiceField.props.onEdit as (text: string) => void;
+    onChoiceEdit("request");
+    expect(edits).toContainEqual({ field: "keySource", text: "request" });
 
     // Test reset callback
     const onReset = firstBool.props.onReset as () => void;
@@ -544,6 +613,100 @@ describe("settings-page: OpencodeCard rendering", () => {
       expect(f.props.disabled).toBe(true);
     }
   });
+
+  const renderPage = (Card: ReturnType<typeof mountCard>) => {
+    const state = {
+      fields: {},
+      shell: {
+        available: true,
+        dirty: false,
+        failed: false,
+        invalid: false,
+        saving: false,
+        writable: true,
+      },
+    };
+    return Card({
+      discard: () => {},
+      edit: () => {},
+      resetField: () => {},
+      save: () => {},
+      t: (k: string) => k,
+      useOpencodeCard: (selector: (s: typeof state) => unknown) =>
+        selector(state),
+      view: "page",
+    });
+  };
+
+  it("renders one control per register entry, in register order", () => {
+    const tree = renderPage(mountCard());
+    const controls = controlsInOrder(tree);
+
+    // The card's field list is the register's, so it cannot drift again.
+    expect(controls.map((f) => f.props.id)).toEqual(
+      CARD_FIELDS.map((entry) => `plugin-config-opencode-${entry.field}`)
+    );
+    // The control kind follows the register's `kind`, not a second list.
+    expect(controls.map((f) => elementName(f.type))).toEqual(
+      CARD_FIELDS.map((entry) => COMPONENT_BY_KIND[entry.kind])
+    );
+    // Labels come from the register's copy keys, so the two cannot disagree.
+    expect(controls.map((f) => f.props.label)).toEqual(
+      CARD_FIELDS.map((entry) => entry.labelKey)
+    );
+  });
+
+  it("offers exactly the key-source policies the host accepts", () => {
+    // The select's values and the config enum are two lists in two modules; a
+    // value offered here but not accepted there would be silently coerced back
+    // to the default on save.
+    const entry = CARD_FIELDS.find((field) => field.field === "keySource");
+    assert.ok(entry, "expected a keySource register entry");
+    expect(entry.kind).toBe("select");
+    expect((entry.options ?? []).map((option) => option.value)).toEqual([
+      ...KEY_SOURCE_POLICIES,
+    ]);
+  });
+
+  it("renders the documented enrichModels and showUsagePrice switches", () => {
+    // Regression guard: both were declared in the spec register and translated
+    // (en + zh) but omitted from the card's hand-written JSX, so the switches
+    // documented in the README could not be reached from the UI.
+    const ids = controlsInOrder(renderPage(mountCard())).map((f) => f.props.id);
+    expect(ids).toContain("plugin-config-opencode-enrichModels");
+    expect(ids).toContain("plugin-config-opencode-showUsagePrice");
+  });
+
+  it("renders one heading per group, in register order", () => {
+    const headings = findAll(renderPage(mountCard()), "GroupHeading");
+    const groups = [...new Set(CARD_FIELDS.map((entry) => entry.group))];
+    expect(headings).toHaveLength(groups.length);
+    expect(headings.map((heading) => heading.props.label)).toEqual(groups);
+    // Only the first heading drops the separator rule.
+    expect(headings.map((heading) => heading.props.first)).toEqual(
+      groups.map((_, index) => index === 0)
+    );
+  });
+});
+
+describe("settings-page: field register", () => {
+  it("derives SPECS from CARD_FIELDS in the same order", () => {
+    expect(SPECS.map((s) => s.field)).toEqual(CARD_FIELDS.map((f) => f.field));
+  });
+
+  it("gives every register entry a usable draft conversion", () => {
+    for (const entry of CARD_FIELDS) {
+      const spec = SPECS.find((s) => s.field === entry.field);
+      assert.ok(spec, `expected a spec for ${entry.field}`);
+      expect(typeof spec.format).toBe("function");
+      expect(typeof spec.parse).toBe("function");
+    }
+  });
+
+  it("declares each field at most once", () => {
+    const fields = CARD_FIELDS.map((entry) => entry.field);
+    expect(new Set(fields).size).toBe(fields.length);
+  });
 });
 
 describe("settings-page: field specs", () => {
@@ -556,50 +719,72 @@ describe("settings-page: field specs", () => {
   it("covers every field the card renders, in render order", () => {
     expect(SPECS.map((s) => s.field)).toEqual([
       "injectUserAgent",
-      "userAgent",
       "injectOriginHeaders",
-      "originClient",
       "injectProject",
-      "injectCoreTools",
-      "freeModelMarker",
       "enrichModels",
-      "providers",
-      "gatewayUrls",
-      "sessionIdEnv",
+      "injectCoreTools",
       "usageEnabled",
       "showUsagePrice",
-      "usageBaseURL",
-      "usageKeyEnv",
-      "usageProviderMarkers",
+      "keySource",
     ]);
   });
 
-  it("round-trips list fields as arrays, not strings", () => {
-    const providers = specOf("providers");
-    expect(providers.format(["opencode", "opencode-go"])).toBe(
-      "opencode, opencode-go"
-    );
-    expect(providers.parse("opencode , opencode-go ")).toEqual({
-      kind: "set",
-      value: ["opencode", "opencode-go"],
-    });
-    // An empty draft clears the field so it re-inherits the default.
-    expect(providers.parse(" , ")).toEqual({ kind: "clear" });
-    // A non-list stored value renders as an empty draft rather than junk.
-    expect(providers.format("not-a-list")).toBe("");
+  it("partitions the schema into card fields and config-only knobs", () => {
+    // The card deliberately hides the override knobs, so the two lists must
+    // together cover every schema key exactly once. A knob in neither would be
+    // unreachable; a knob in both would contradict CONFIG_ONLY_FIELDS.
+    // oxlint-disable-next-line unicorn/no-array-sort -- `Object.keys` returns a fresh array, so in-place sort mutates nothing shared.
+    const schemaKeys = Object.keys(Config({})).sort();
+    const cardFields = CARD_FIELDS.map((entry) => entry.field);
+    const configOnly = CONFIG_ONLY_FIELDS.map((entry) => entry.field);
+    const covered = [...cardFields, ...configOnly];
+
+    // oxlint-disable-next-line unicorn/no-array-sort -- the spread above is a fresh array, so nothing shared is mutated.
+    expect(covered.sort()).toEqual(schemaKeys);
+    expect(new Set(covered).size).toBe(covered.length);
+    for (const entry of CONFIG_ONLY_FIELDS) {
+      expect(entry.reason.length).toBeGreaterThan(0);
+    }
   });
 
-  it("keeps boolean and text fields on their stock semantics", () => {
+  it("keeps each group's fields contiguous", () => {
+    // The card inserts a heading wherever the group changes, so a field whose
+    // group is not adjacent to its siblings would render the heading twice.
+    const seen = new Set<string>();
+    let previous: string | undefined;
+    for (const entry of CARD_FIELDS) {
+      if (entry.group !== previous) {
+        expect(
+          seen.has(entry.group),
+          `${entry.field} reopens group ${entry.group} after it closed`
+        ).toBe(false);
+        seen.add(entry.group);
+        previous = entry.group;
+      }
+    }
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("keeps the boolean kind on its stock semantics", () => {
     const inject = specOf("injectCoreTools");
     expect(inject.format(true)).toBe("true");
     expect(inject.format("not-a-boolean")).toBe("");
     expect(inject.parse("TRUE")).toEqual({ kind: "set", value: true });
     expect(inject.parse("")).toEqual({ kind: "clear" });
     expect(inject.parse("maybe")).toBeUndefined();
+  });
 
-    const marker = specOf("freeModelMarker");
-    expect(marker.format("free")).toBe("free");
-    expect(marker.parse("  pro  ")).toEqual({ kind: "set", value: "pro" });
-    expect(marker.parse("   ")).toEqual({ kind: "clear" });
+  it("refuses a select draft outside the option set", () => {
+    // The enum is the card's only non-boolean kind, so its conversion is the one
+    // that must reject a value the schema would not accept.
+    const source = specOf("keySource");
+    expect(source.format("request")).toBe("request");
+    expect(source.format(42)).toBe("");
+    expect(source.parse("configured")).toEqual({
+      kind: "set",
+      value: "configured",
+    });
+    expect(source.parse("")).toEqual({ kind: "clear" });
+    expect(source.parse("hand-edited")).toBeUndefined();
   });
 });

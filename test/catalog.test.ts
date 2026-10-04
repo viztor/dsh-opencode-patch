@@ -6,6 +6,7 @@
  * @module test/catalog.test
  */
 
+import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,14 +19,18 @@ import {
   getLiveZenCatalog,
   isGoModelsListingUrl,
   isModelsListingUrl,
+  isRetiredModel,
   parseModelsDevCatalog,
   patchFetch,
   refreshCatalog,
   resolveConfig,
   resolveRoutedKey,
+  sanitizeModalities,
+  RETIRED_ZEN_MODEL_IDS,
   SESSION_HEADER,
   type ActiveTurnState,
 } from "../src/index.ts";
+import { findModelSpec } from "../src/models-catalog.ts";
 import { createCaptureFetch, headerOf, SESSION_RE } from "./test-helpers.ts";
 
 afterEach(() => {
@@ -65,6 +70,28 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     const ids = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
     for (const id of deprecated) {
       expect(ids.has(id)).toBe(false);
+    }
+  });
+
+  it("retires Muse Spark 1.2 only where OpenCode CLI omits it", () => {
+    expect([...RETIRED_ZEN_MODEL_IDS].toSorted()).toEqual(
+      [
+        "muse-spark-1.2",
+        "muse-spark-1.2-contributor",
+        "muse-spark-1.2-contributor-free",
+      ].toSorted()
+    );
+    expect(isRetiredModel("go", "muse-spark-1.2-contributor")).toBe(false);
+    expect(isRetiredModel("zen", "muse-spark-1.2")).toBe(true);
+    expect(isRetiredModel("zen", "muse-spark-1.2-contributor")).toBe(true);
+    expect(isRetiredModel("zen", "muse-spark-1.2-contributor-free")).toBe(true);
+
+    const liveGoIds = new Set(getLiveGoCatalog().map((m) => m.id));
+    const liveZenIds = new Set(getLiveZenCatalog().map((m) => m.id));
+    // The CLI still lists this paid Go entry, so the patch must preserve it.
+    expect(liveGoIds.has("muse-spark-1.2-contributor")).toBe(true);
+    for (const id of RETIRED_ZEN_MODEL_IDS) {
+      expect(liveZenIds.has(id)).toBe(false);
     }
   });
 
@@ -155,6 +182,46 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(
       zenJson.data.some((m) => m.id === "muse-spark-1.3-contributor-free")
     ).toBe(true);
+  });
+
+  it("preserves Space Bunny while removing retired Muse 1.2 rows", async () => {
+    const goResponse = await enrichModelsResponse(
+      "https://opencode.ai/zen/go/v1/models",
+      Response.json({
+        data: [
+          { id: "space-bunny-free", object: "model" },
+          { id: "muse-spark-1.2-contributor", object: "model" },
+        ],
+        object: "list",
+      })
+    );
+    const goJson = (await goResponse.json()) as {
+      data: Array<{ id: string }>;
+    };
+    expect(goJson.data.some((m) => m.id === "space-bunny-free")).toBe(true);
+    expect(goJson.data.some((m) => m.id === "muse-spark-1.2-contributor")).toBe(
+      true
+    );
+
+    const zenResponse = await enrichModelsResponse(
+      "https://opencode.ai/zen/v1/models",
+      Response.json({
+        data: [
+          { id: "space-bunny-free", object: "model" },
+          { id: "muse-spark-1.2", object: "model" },
+          { id: "muse-spark-1.2-contributor-free", object: "model" },
+        ],
+        object: "list",
+      })
+    );
+    const zenJson = (await zenResponse.json()) as {
+      data: Array<{ id: string }>;
+    };
+    expect(zenJson.data.some((m) => m.id === "space-bunny-free")).toBe(true);
+    expect(zenJson.data.some((m) => m.id === "muse-spark-1.2")).toBe(false);
+    expect(
+      zenJson.data.some((m) => m.id === "muse-spark-1.2-contributor-free")
+    ).toBe(false);
   });
 
   it("patchFetch transparently enriches GET .../models calls", async () => {
@@ -306,12 +373,21 @@ describe("OpenCode Model Catalog & Enrichment", () => {
               modalities: { input: ["text"] },
               name: "Future Test Model",
             },
+            "muse-spark-1.2-contributor": {
+              name: "Muse Spark 1.2 Contributor",
+            },
           },
         },
         opencode: {
           models: {
             "future-zen-model": {
               name: "Future Zen Model",
+            },
+            "muse-spark-1.2": {
+              name: "Muse Spark 1.2",
+            },
+            "muse-spark-1.2-contributor-free": {
+              name: "Muse Spark 1.2 Free",
             },
           },
         },
@@ -329,6 +405,13 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(futureModel).toBeDefined();
     expect(futureModel?.name).toBe("Future Test Model");
     expect(futureModel?.context_window).toBe(1500000);
+    expect(updated.go.some((m) => m.id === "muse-spark-1.2-contributor")).toBe(
+      true
+    );
+    expect(updated.zen.some((m) => m.id === "muse-spark-1.2")).toBe(false);
+    expect(
+      updated.zen.some((m) => m.id === "muse-spark-1.2-contributor-free")
+    ).toBe(false);
   });
 
   it("refreshCatalog degrades gracefully on network errors without throwing", async () => {
@@ -393,5 +476,75 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       delete process.env.OPENCODE_GO_API_KEY;
       delete process.env.OPENCODE_API_KEY;
     }
+  });
+
+  it("sanitizeModalities restricts modalities strictly to text and image", () => {
+    expect(
+      sanitizeModalities(["text", "image", "video", "audio", "pdf"])
+    ).toEqual(["text", "image"]);
+    expect(sanitizeModalities(["video", "pdf"])).toEqual(["text"]);
+    expect(sanitizeModalities(null)).toEqual(["text"]);
+    expect(sanitizeModalities([])).toEqual(["text"]);
+    expect(sanitizeModalities(["image"])).toEqual(["image"]);
+  });
+
+  it("all bundled Go and Zen models contain only DSH-supported modalities", () => {
+    for (const model of [...OPENCODE_GO_CATALOG, ...OPENCODE_ZEN_CATALOG]) {
+      for (const modality of model.input_modalities) {
+        expect(["text", "image"]).toContain(modality);
+      }
+    }
+  });
+});
+
+describe("findModelSpec", () => {
+  it("resolves a Go model together with its pricing rate", () => {
+    // The stream hook prices each turn through this lookup, so the rate must
+    // ride along with the spec.
+    const spec = findModelSpec("deepseek-v4.1-flash");
+    assert.ok(spec, "expected the Go shim to carry deepseek-v4.1-flash");
+    expect(spec.id).toBe("deepseek-v4.1-flash");
+    expect(spec.name).toBe("DeepSeek V4.1 Flash");
+    expect(spec.context_window).toBe(1_000_000);
+    expect(spec.cost).toEqual({ cache_read: 0.003, input: 0.15, output: 0.6 });
+    expect(spec.is_free).toBeUndefined();
+  });
+
+  it("resolves a free Zen model, marked free at an explicit zero rate", () => {
+    const spec = findModelSpec("mimo-v2.6-flash-free");
+    assert.ok(spec, "expected the Zen shim to carry mimo-v2.6-flash-free");
+    expect(spec.is_free).toBe(true);
+    expect(spec.context_window).toBe(200_000);
+    expect(spec.max_output_tokens).toBe(32_000);
+    // A free model still carries an explicit zero rate, so the stream hook
+    // prices it as $0 rather than falling back to "unknown model" handling.
+    expect(spec.cost).toEqual({ cache_read: 0, input: 0, output: 0 });
+  });
+
+  it("still resolves an id retired on Zen but listed on Go", () => {
+    // Retirement is PROVIDER-SCOPED: the OpenCode CLI keeps serving the paid Go
+    // 1.2 contributor entry, so the Go catalog retains it while Zen drops it.
+    // A provider-blind lookup therefore finds it — and must keep doing so, or
+    // Go sessions would lose pricing for a model the gateway still serves.
+    expect(isRetiredModel("zen", "muse-spark-1.2-contributor")).toBe(true);
+    expect(isRetiredModel("go", "muse-spark-1.2-contributor")).toBe(false);
+
+    const spec = findModelSpec("muse-spark-1.2-contributor");
+    assert.ok(spec, "expected the Go shim to keep muse-spark-1.2-contributor");
+    expect(spec.id).toBe("muse-spark-1.2-contributor");
+  });
+
+  it("never resolves a Zen-retired id that no provider still lists", () => {
+    for (const id of ["muse-spark-1.2", "muse-spark-1.2-contributor-free"]) {
+      expect(RETIRED_ZEN_MODEL_IDS.has(id)).toBe(true);
+      expect(findModelSpec(id)).toBeUndefined();
+    }
+  });
+
+  it("returns undefined for unknown or empty ids", () => {
+    expect(findModelSpec("not-a-real-model")).toBeUndefined();
+    expect(findModelSpec("")).toBeUndefined();
+    // Case matters: model ids are exact.
+    expect(findModelSpec("DeepSeek-V4.1-Flash")).toBeUndefined();
   });
 });

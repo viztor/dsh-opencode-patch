@@ -1,15 +1,8 @@
 /**
  * Composer-dock component displaying OpenCode Go quota and rate limits.
  *
- * Shows a compact circular progress ring in `conversation.composer.dock` —
- * beside the host's own Context meter — reflecting the hourly or bottleneck
- * quota currently affecting the session. Hovering or clicking reveals a
- * detailed breakdown with rolling, weekly, and monthly meters, countdown
- * timers, balance cards, and links for acting on a hit cap.
- *
- * It renders nothing when the account has no OpenCode Go credential, when the
- * host serves no usage service (the quota toggle is off), or when a non-Go
- * provider is active: an unactionable "unavailable" meter is worse than none.
+ * Owns the meter's *state* (polling, dismissal, retry, gating); `usage-panel.tsx`
+ * renders it and `usage-ui.ts` reads it, so both are testable without a DOM.
  *
  * @module dsh-opencode-patch/usage-pill
  */
@@ -21,21 +14,19 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { DEFAULT_USAGE_PROVIDER_MARKERS } from "./config-values.ts";
-import { isRecord } from "./guards.ts";
-import type { GoUsage, UsageWindow } from "./usage-contract.ts";
+import { DEFAULT_PROVIDERS } from "./config-values.ts";
+import type { GoUsage } from "./usage-contract.ts";
+import { UsagePanel, UsageTrigger } from "./usage-panel.tsx";
 import {
-  BREAKDOWN_WINDOWS,
-  CIRCUMFERENCE,
-  formatRelativeReset,
+  describeUsage,
   getAffectingWindow,
-  GO_CONSOLE_URL,
-  GO_LIMITS_DOC_URL,
-  GO_PLAN_URL,
   getWindowColor,
+  isZenProvider,
   matchesAny,
-  RADIUS,
+  parseFailure,
+  ringGeometry,
   STYLES,
+  type UsageFailure,
 } from "./usage-ui.ts";
 
 export interface SnapshotStore<T> {
@@ -43,11 +34,20 @@ export interface SnapshotStore<T> {
   subscribe: (onStoreChange: () => void) => () => void;
 }
 
+/** The provider/model pair the directory reports for one selection. */
+interface DirectorySelection {
+  model?: string;
+  provider?: string;
+}
+
 export interface ModelDirectoryState {
-  current?: {
-    model?: string;
-    provider?: string;
-  };
+  /**
+   * Saved selection, retained even when it leaves the catalog — and `null` until
+   * one is saved, which is why the gate must not read it as "not OpenCode".
+   */
+  current?: DirectorySelection;
+  /** Selection submitted by the latest `select` until it settles; null otherwise. */
+  pending?: DirectorySelection;
 }
 
 export interface UsagePillProps {
@@ -58,57 +58,18 @@ export interface UsagePillProps {
    */
   modelMarkers?: readonly string[];
   /**
-   * Provider-route markers that reveal the meter. Defaults to the Go route
-   * marker when absent or empty.
+   * Provider routes the meter is shown for — the same list the host claims
+   * traffic for. Defaults to the stock routes when absent or empty.
    */
-  providerMarkers?: readonly string[];
+  meterProviders?: readonly string[];
   readUsage: (provider?: string) => Promise<GoUsage>;
   /** Whether to show accumulated session spend and the active model's rate. */
   showUsagePrice?: boolean;
   t: (key: string) => string;
 }
 
-interface UsageFailure {
-  /**
-   * `false` when the Host reports the account has no OpenCode Go credential.
-   * That is a configuration state rather than a fault — there is no quota to
-   * measure — so the meter renders nothing instead of an unavailable state
-   * the user cannot act on.
-   */
-  configured?: boolean;
-  message?: string;
-  retainPrevious: boolean;
-  source?: string;
-}
-
 const noop = (): void => {
   /* no-op */
-};
-
-const parseFailure = (error: unknown): UsageFailure => {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "opencode-go/usage-unavailable"
-  ) {
-    const details =
-      "details" in error && isRecord(error.details) ? error.details : {};
-    return {
-      ...(details.configured === false ? { configured: false } : {}),
-      message:
-        "message" in error && typeof error.message === "string"
-          ? error.message
-          : undefined,
-      retainPrevious:
-        details.retryable === true && details.retainPrevious === true,
-      source: typeof details.source === "string" ? details.source : undefined,
-    };
-  }
-  return {
-    message: error instanceof Error ? error.message : String(error),
-    retainPrevious: false,
-  };
 };
 
 interface ActiveUsageProps extends Omit<UsagePillProps, "directory"> {
@@ -259,10 +220,7 @@ const ActiveUsage = ({
     return null;
   }
 
-  const isZen =
-    typeof provider === "string" &&
-    provider.toLowerCase().includes("opencode") &&
-    !provider.toLowerCase().includes("go");
+  const isZen = isZenProvider(provider);
 
   const affecting = usage === undefined ? undefined : getAffectingWindow(usage);
   const isLimited = affecting?.window.status === "rate-limited";
@@ -272,10 +230,7 @@ const ActiveUsage = ({
       ? "var(--dsw-alias-state-success-primary)"
       : getWindowColor(affecting.window);
 
-  // Clamp stroke dash array for circular SVG meter
-  const clampedPercent = Math.min(100, Math.max(0, displayPercent));
-  const dashLength = (CIRCUMFERENCE * clampedPercent) / 100;
-  const strokeDasharray = `${dashLength} ${CIRCUMFERENCE}`;
+  const { clampedPercent, strokeDasharray } = ringGeometry(displayPercent);
 
   let triggerLabel = "…";
   if (usage !== undefined) {
@@ -286,41 +241,13 @@ const ActiveUsage = ({
 
   const locale = getLocale?.();
 
-  let headline: string;
-  if (isZen) {
-    headline = t("zenPaygTitle");
-  } else if (isLimited) {
-    headline = `${affecting?.label} quota limited`;
-  } else {
-    headline = `${displayPercent}% of ${affecting?.label ?? "quota"} used`;
-  }
-
-  let badgeText: string;
-  if (isZen) {
-    badgeText = t("zenPaygBadge");
-  } else if (isLimited) {
-    badgeText = t("usageLimited");
-  } else {
-    badgeText = "Go Plan";
-  }
-
-  let zenCardDesc: string;
-  if (isZen) {
-    zenCardDesc = t("zenPaygDesc");
-  } else if (isLimited) {
-    zenCardDesc = t("zenFallbackNotice");
-  } else {
-    zenCardDesc = t("zenOverflowActive");
-  }
-
-  let zenCardCredit: string;
-  if (isZen) {
-    zenCardCredit = t("zenPaygBadge");
-  } else if (usage?.zenOverflow === true) {
-    zenCardCredit = isLimited ? "Active" : "Ready";
-  } else {
-    zenCardCredit = t("zenPaygBadge");
-  }
+  // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
+  const { badgeText, headline, zenCardCredit, zenCardDesc } = describeUsage(
+    usage,
+    affecting,
+    isZen,
+    t
+  );
 
   return (
     <span
@@ -334,266 +261,44 @@ const ActiveUsage = ({
         the component unmounts; nothing is appended to `document.head`.
       */}
       <style>{STYLES}</style>
-      <button
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label={
-          isZen
-            ? `${t("zenPaygTitle")} (${t("zenPaygBadge")})`
-            : `${t("usageTitle")}: ${displayPercent}%`
-        }
-        className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
+      <UsageTrigger
+        displayPercent={displayPercent}
+        isLimited={isLimited}
+        isZen={isZen}
         onClick={() => {
           setOpen((prev) => !prev);
         }}
-        type="button"
-      >
-        {isZen ? (
-          <span className="dsh-oc-zen-pill">
-            <span aria-hidden="true" style={{ fontSize: "11px" }}>
-              🪙
-            </span>
-            <span>
-              {showUsagePrice &&
-              usage?.session !== undefined &&
-              usage.session.costUsd > 0
-                ? usage.session.costFormatted
-                : t("zenPaygTitle")}
-            </span>
-          </span>
-        ) : (
-          <>
-            <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
-              <circle
-                className="dsh-oc-usage-ring-track"
-                cx="7"
-                cy="7"
-                r={RADIUS}
-              />
-              {/*
-                Quota colors are CSS custom properties, which do not resolve in SVG
-                presentation attributes — apply the token through `style` instead.
-              */}
-              <circle
-                className="dsh-oc-usage-ring-fill"
-                cx="7"
-                cy="7"
-                r={RADIUS}
-                strokeDasharray={strokeDasharray}
-                style={{ stroke: ringColor }}
-                transform="rotate(-90 7 7)"
-              />
-            </svg>
-            <span>{triggerLabel}</span>
-          </>
-        )}
-      </button>
-
+        open={open}
+        ringColor={ringColor}
+        showUsagePrice={showUsagePrice}
+        strokeDasharray={strokeDasharray}
+        t={t}
+        triggerLabel={triggerLabel}
+        usage={usage}
+      />
       {open && (
-        <div
-          aria-busy={refreshing}
-          aria-label={isZen ? t("zenPaygTitle") : t("usageTitle")}
-          className="dsh-oc-usage-panel"
+        <UsagePanel
+          badgeText={badgeText}
+          clampedPercent={clampedPercent}
+          failure={failure}
+          headline={headline}
+          isLimited={isLimited}
+          isZen={isZen}
+          locale={locale}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
-          role="dialog"
-        >
-          {/* Header */}
-          <div className="dsh-oc-usage-header">
-            <div>
-              <div className="dsh-oc-usage-headline">{headline}</div>
-              {isZen && (
-                <div className="dsh-oc-zen-card-desc">{t("zenPaygDesc")}</div>
-              )}
-            </div>
-            <span
-              className={`dsh-oc-usage-badge${isLimited && !isZen ? " dsh-oc-badge-limited" : ""}`}
-            >
-              {badgeText}
-            </span>
-          </div>
-
-          {!isZen && (
-            <>
-              {/* Primary Accent Progress Bar */}
-              <div className="dsh-oc-usage-bar-track">
-                <div
-                  className="dsh-oc-usage-bar-fill"
-                  style={{
-                    backgroundColor: ringColor,
-                    width: `${clampedPercent}%`,
-                  }}
-                />
-              </div>
-
-              {/* Breakdown Section */}
-              {usage !== undefined && (
-                <div className="dsh-oc-usage-breakdown">
-                  {/* One row per window; the rate-limited badge now appears on
-                      every window that is limited, not only the monthly one. */}
-                  {BREAKDOWN_WINDOWS.map((entry) => {
-                    const window: UsageWindow = usage[entry.key];
-                    return (
-                      <div key={entry.key}>
-                        <div className="dsh-oc-usage-row">
-                          <span className="dsh-oc-usage-row-left">
-                            <span
-                              className="dsh-oc-usage-dot"
-                              style={{
-                                backgroundColor: getWindowColor(window),
-                              }}
-                            />
-                            {t(entry.labelKey)}
-                          </span>
-                          <span className="dsh-oc-usage-row-right">
-                            {window.percent}%
-                          </span>
-                        </div>
-                        <div className="dsh-oc-usage-subrow">
-                          <span>
-                            Resets{" "}
-                            {formatRelativeReset(window.resetsAt, locale)}
-                          </span>
-                          {window.status === "rate-limited" && (
-                            <span
-                              style={{
-                                color: "var(--dsw-alias-state-error-primary)",
-                                fontWeight: 600,
-                              }}
-                            >
-                              {t("usageLimited")}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Divider */}
-              <div className="dsh-oc-usage-divider" />
-
-              {/* Balance Cards (Image 2 pattern) */}
-              {usage !== undefined && (
-                <>
-                  <div className="dsh-oc-usage-section-title">
-                    Quota Overview
-                  </div>
-                  <div className="dsh-oc-usage-cards">
-                    {BREAKDOWN_WINDOWS.map((entry) => {
-                      const window: UsageWindow = usage[entry.key];
-                      const limited = window.status === "rate-limited";
-                      return (
-                        <div
-                          className={`dsh-oc-usage-card${limited ? " dsh-oc-card-limited" : ""}`}
-                          key={entry.key}
-                        >
-                          <span className="dsh-oc-usage-card-name">
-                            {entry.cardName}
-                          </span>
-                          <span
-                            className="dsh-oc-usage-card-percent"
-                            style={{ color: getWindowColor(window) }}
-                          >
-                            {window.percent}%
-                          </span>
-                          <span className="dsh-oc-usage-card-reset">
-                            {formatRelativeReset(window.resetsAt, locale)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
-          {/* Session spend & active-model rate. Priced on the Host from
-              models.dev rates, so the client never ships the catalog. */}
-          {showUsagePrice && usage?.session !== undefined && (
-            <div className="dsh-oc-zen-card">
-              <div className="dsh-oc-zen-card-left">
-                <span className="dsh-oc-zen-card-title">
-                  {t("sessionSpend")}
-                </span>
-                <span className="dsh-oc-zen-card-desc">
-                  {usage.session.includedInPlan === true
-                    ? t("includedInPlan")
-                    : `${usage.session.activeModel ?? ""} · ${usage.session.activeRateFormatted ?? ""}`}
-                </span>
-              </div>
-              <span className="dsh-oc-zen-card-credit">
-                {usage.session.costFormatted}
-              </span>
-            </div>
-          )}
-
-          {/* Attached Zen Overflow Card */}
-          {(isZen || usage?.zenOverflow === true) && (
-            <div className="dsh-oc-zen-card">
-              <div className="dsh-oc-zen-card-left">
-                <span className="dsh-oc-zen-card-title">{t("zenCredit")}</span>
-                <span className="dsh-oc-zen-card-desc">{zenCardDesc}</span>
-              </div>
-              <span className="dsh-oc-zen-card-credit">{zenCardCredit}</span>
-            </div>
-          )}
-
-          {isLimited && !isZen && usage?.zenOverflow !== true ? (
-            <div className="dsh-oc-usage-zen-notice">
-              {t("usageZenFallbackNotice")}
-            </div>
-          ) : null}
-
-          {/* Failure Alert */}
-          {failure !== null && (
-            <div className="dsh-oc-usage-warning" role="alert">
-              <strong>{t("usageRefreshFailed")}</strong>
-              <p>{failure.message ?? t("usageUnavailable")}</p>
-            </div>
-          )}
-
-          {/* Footer with updated timestamp & retry */}
-          <div className="dsh-oc-usage-footer">
-            <span>
-              {current === null
-                ? t("usageLoading")
-                : `${t("usageLastUpdated")} ${new Date(current.updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
-            </span>
-            <button
-              className="dsh-oc-usage-retry"
-              disabled={refreshing}
-              onClick={() => {
-                retry.current();
-              }}
-              type="button"
-            >
-              {refreshing ? t("usageRefreshing") : t("usageRetry")}
-            </button>
-          </div>
-          {/*
-            The meter says a limit was hit; these say what to do about it.
-            Both open in a new tab so the console is not lost, and both carry
-            rel="noreferrer noopener" because the target is a third party.
-          */}
-          <div className="dsh-oc-usage-links">
-            <a href={GO_PLAN_URL} rel="noreferrer noopener" target="_blank">
-              {t("usageUpgradePlan")}
-            </a>
-            <a href={GO_CONSOLE_URL} rel="noreferrer noopener" target="_blank">
-              {t("usageConsole")}
-            </a>
-            <a
-              href={GO_LIMITS_DOC_URL}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              {t("usageLimitsDoc")}
-            </a>
-          </div>
-        </div>
+          refreshing={refreshing}
+          retry={() => {
+            retry.current();
+          }}
+          ringColor={ringColor}
+          showUsagePrice={showUsagePrice}
+          t={t}
+          updatedAt={current === null ? null : current.updatedAt}
+          usage={usage}
+          zenCardCredit={zenCardCredit}
+          zenCardDesc={zenCardDesc}
+        />
       )}
     </span>
   );
@@ -601,8 +306,8 @@ const ActiveUsage = ({
 
 export const UsagePill = ({
   directory,
+  meterProviders,
   modelMarkers: _modelMarkers,
-  providerMarkers,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
   const state = useSyncExternalStore(
@@ -611,17 +316,20 @@ export const UsagePill = ({
     directory.getSnapshot
   );
 
-  const provider = state?.current?.provider ?? "";
-  // The settings scope passes the configured markers at inject time; an
-  // absent or empty list falls back to the plugin defaults, so direct
-  // callers (and older injected props) keep the stock Go gate.
+  const provider = state?.current?.provider ?? state?.pending?.provider ?? "";
+  // The settings scope passes the claimed routes at inject time; an absent or
+  // empty list falls back to the stock ones, so direct callers (and older
+  // injected props) keep the default gate.
   const providers =
-    providerMarkers !== undefined && providerMarkers.length > 0
-      ? providerMarkers
-      : DEFAULT_USAGE_PROVIDER_MARKERS;
-  const isOpenCodeGo = matchesAny(provider, providers);
-
-  if (!isOpenCodeGo) {
+    meterProviders !== undefined && meterProviders.length > 0
+      ? meterProviders
+      : DEFAULT_PROVIDERS;
+  // No saved or pending selection means the provider is UNKNOWN, not "not
+  // OpenCode" — and `current` stays null until a selection is saved, so hiding
+  // on it made the meter vanish for a whole fresh session. The Host is the
+  // authority on whether there is a Go account to report: its read answers
+  // `configured: false` when there is not, and the panel renders nothing then.
+  if (provider.length > 0 && !matchesAny(provider, providers)) {
     return null;
   }
 

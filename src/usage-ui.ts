@@ -1,38 +1,42 @@
 /**
- * Presentation data and pure helpers for the OpenCode Go quota meter.
- *
- * Geometry constants, the "where to act" links, window/breakdown helpers,
- * and the stylesheet — all stateless, so meter behavior can be unit-tested
- * without React while `usage-pill.tsx` stays about gating and component
- * state. No React and no host-only imports (client bundle boundary).
+ * Presentation data and pure helpers for the OpenCode Go quota meter: geometry,
+ * action links, window/breakdown helpers and the stylesheet. Stateless and
+ * dependency-free, so meter behavior is unit-testable without React.
  *
  * @module dsh-opencode-patch/usage-ui
  */
 
+import { isRecord } from "./guards.ts";
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 
 export const RADIUS = 5.5;
 export const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /**
- * Where a user acts on what this meter shows.
+ * Clamp a quota percentage to the ring's range and derive its dash array.
  *
- * The meter reports the Go plan's rolling/weekly/monthly limits, so the useful
- * destinations are the plan page (raise the limit), the console (see the actual
- * usage and Zen balance), and the limits reference (understand the numbers).
- * All three are the vendor's own public pages.
+ * Shared by the trigger ring (which strokes `strokeDasharray`) and the panel
+ * progress bar (which uses `clampedPercent` as a width), so both render the
+ * same number.
  *
- * There is deliberately no balance *number* in this meter. OpenCode exposes no
- * endpoint for account credit: of every plausible route under
- * `https://opencode.ai/zen/v1` and `/zen/go/v1` — `balance`, `credits`,
- * `billing`, `account`, `me`, `key`, `limits`, `plan`, `subscription` — only
- * `/models` and `/zen/go/v1/usage` exist (the rest 404, while `/models` returns
- * 200 on the same key, so the 404s are real absences rather than an auth
- * problem). The usage payload carries only `status`, `percent`, and `resetsAt`
- * per window — no currency — and a dollar figure cannot be derived from the
- * percentage either, because the monthly cap is per *model* ($15/$30/$60 on Go,
- * $60–$240 on Go Plus) while usage accrues across models. The console is the
- * only place the balance is shown, so the link goes there.
+ * @param percent - the raw quota percentage; out-of-range values clamp.
+ */
+export const ringGeometry = (
+  percent: number
+): { clampedPercent: number; strokeDasharray: string } => {
+  const clampedPercent = Math.min(100, Math.max(0, percent));
+  const dashLength = (CIRCUMFERENCE * clampedPercent) / 100;
+  return {
+    clampedPercent,
+    strokeDasharray: `${dashLength} ${CIRCUMFERENCE}`,
+  };
+};
+
+/**
+ * Where a user acts on what this meter shows. The console is the ONLY place a
+ * balance appears: OpenCode exposes no credit endpoint and the payload carries
+ * no currency, so no dollar figure can be derived from a percentage.
+ * `AGENTS.md` → "OpenCode endpoints" records the probed surface behind that.
  */
 export const GO_PLAN_URL = "https://opencode.ai/go";
 export const GO_CONSOLE_URL = "https://opencode.ai/console";
@@ -491,4 +495,123 @@ export const getAffectingWindow = (usage: GoUsage): AffectingWindowResult => {
   }
   // Default to rolling hourly quota when all are 0
   return { key: "rolling", label: "5-Hour", window: usage.rolling };
+};
+
+/**
+ * Whether a provider route is OpenCode Zen rather than Go.
+ *
+ * Both routes share the `opencode` prefix, so the distinguishing signal is
+ * the presence of `go`: `opencode-go` is the subscription plan, plain
+ * `opencode` is Zen pay-as-you-go.
+ */
+export const isZenProvider = (provider?: string): boolean => {
+  if (typeof provider !== "string") {
+    return false;
+  }
+  const lower = provider.toLowerCase();
+  return lower.includes("opencode") && !lower.includes("go");
+};
+
+/** The localized copy the meter's header, badge and Zen card render. */
+export interface UsageCopy {
+  badgeText: string;
+  headline: string;
+  zenCardCredit: string;
+  zenCardDesc: string;
+}
+
+/**
+ * Derive the meter's user-facing copy from the active reading.
+ *
+ * Pure: the component owns state, this owns wording. `t` is the bound
+ * translator; `affecting` is the bottleneck window (or `undefined` while the
+ * first read is in flight).
+ */
+export const describeUsage = (
+  usage: GoUsage | undefined,
+  affecting: AffectingWindowResult | undefined,
+  isZen: boolean,
+  t: (key: string) => string
+): UsageCopy => {
+  const isLimited = affecting?.window.status === "rate-limited";
+  const percent = affecting?.window.percent ?? 0;
+
+  let headline: string;
+  if (isZen) {
+    headline = t("zenPaygTitle");
+  } else if (isLimited) {
+    headline = `${affecting?.label} quota limited`;
+  } else {
+    headline = `${percent}% of ${affecting?.label ?? "quota"} used`;
+  }
+
+  let badgeText: string;
+  if (isZen) {
+    badgeText = t("zenPaygBadge");
+  } else if (isLimited) {
+    badgeText = t("usageLimited");
+  } else {
+    badgeText = "Go Plan";
+  }
+
+  let zenCardDesc: string;
+  if (isZen) {
+    zenCardDesc = t("zenPaygDesc");
+  } else if (isLimited) {
+    zenCardDesc = t("zenFallbackNotice");
+  } else {
+    zenCardDesc = t("zenOverflowActive");
+  }
+
+  let zenCardCredit: string;
+  if (isZen) {
+    zenCardCredit = t("zenPaygBadge");
+  } else if (usage?.zenOverflow === true) {
+    zenCardCredit = isLimited ? "Active" : "Ready";
+  } else {
+    zenCardCredit = t("zenPaygBadge");
+  }
+
+  return { badgeText, headline, zenCardCredit, zenCardDesc };
+};
+
+/**
+ * A failed usage read, normalized from whatever the Host remote threw.
+ *
+ * `configured === false` is the "no credential at all" state: a configuration
+ * fact rather than a fault, which the meter renders as nothing instead of an
+ * unavailable state the user cannot act on.
+ */
+export interface UsageFailure {
+  configured?: boolean;
+  message?: string;
+  retainPrevious: boolean;
+  source?: string;
+}
+
+/** Normalize a Host remote rejection into a {@link UsageFailure}. */
+export const parseFailure = (error: unknown): UsageFailure => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "opencode-go/usage-unavailable"
+  ) {
+    const details =
+      "details" in error && isRecord(error.details) ? error.details : {};
+    return {
+      ...(details.configured === false ? { configured: false } : {}),
+      message:
+        "message" in error && typeof error.message === "string"
+          ? error.message
+          : undefined,
+      retainPrevious:
+        details.retryable === true && details.retainPrevious === true,
+      source: typeof details.source === "string" ? details.source : undefined,
+    };
+  }
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    retainPrevious: false,
+  };
 };

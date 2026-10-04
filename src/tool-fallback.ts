@@ -16,13 +16,6 @@ import { isRecord, isUnknownArray } from "./guards.ts";
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
 
-/** Check whether a request URL targets a model completion endpoint. */
-export const isCompletionEndpoint = (url: string): boolean =>
-  url.includes(RESPONSES_PATH) ||
-  url.includes("/chat/completions") ||
-  url.includes("/completions") ||
-  url.includes("/messages");
-
 /** Placeholder `read` schema formatted for Anthropic-compatible /messages. */
 export const DUMMY_READ_TOOL_ANTHROPIC = {
   description: "Read a file or directory from the local filesystem.",

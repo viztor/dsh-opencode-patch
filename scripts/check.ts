@@ -492,6 +492,48 @@ if (bundleTitle === cardCopy.title) {
   );
 }
 
+/* ------------------------------- 13. the live suite stays wired and opt-in */
+
+const e2eConfigPath = join(ROOT, "vitest.e2e.config.ts");
+const e2eScript: unknown = pkg.scripts?.["test:e2e"];
+if (!existsSync(e2eConfigPath)) {
+  fail("vitest.e2e.config.ts is missing — `pnpm run test:e2e` has no config");
+} else if (
+  typeof e2eScript !== "string" ||
+  !e2eScript.includes("vitest.e2e.config.ts")
+) {
+  fail(
+    "the test:e2e script does not use vitest.e2e.config.ts, so the E2E files " +
+      "would either be collected by the unit run or never run at all"
+  );
+} else {
+  ok("the E2E suite has its own config and script");
+}
+
+// The unit run must stay offline. An E2E file matched by the unit `include`
+// would start reaching the network on every `pnpm test`.
+const unitInclude =
+  /include:\s*\[([^\]]*)\]/u.exec(
+    readFileSync(join(ROOT, "vite.config.ts"), "utf8")
+  )?.[1] ?? "";
+if (unitInclude.includes("e2e")) {
+  fail(
+    "the unit test include matches E2E files; `pnpm test` would stop being " +
+      "offline and deterministic"
+  );
+} else {
+  ok("the unit test include excludes the E2E files");
+}
+
+if (/pnpm run test:e2e/u.test(ci)) {
+  ok("ci.yml runs the live E2E suite");
+} else {
+  fail(
+    "ci.yml does not run `pnpm run test:e2e`; the live gateway contract would " +
+      "go unchecked until a user's meter broke"
+  );
+}
+
 /* ------------------------------------------------------------------- report */
 
 for (const note of notes) console.log(`  ok   ${note}`);
