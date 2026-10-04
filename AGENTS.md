@@ -231,7 +231,11 @@ if (this.flows.has(flow.key)) {
 }
 ```
 
-Its own API docs state the rule: "One flow per key: two plugins claiming the same key would each write a record in their own format." Everything else about a second instance is fine — `settingsNs = ctx.fiber.entry?.options.id ?? NS` namespaces it by ROW ID, so the routes and settings do not collide — but the auth flows do, and they are registered unconditionally. **The route therefore has to be declared on the row that already exists**, i.e. wherever the user's `providers` block lives.
+Its own API docs state the rule: "One flow per key: two plugins claiming the same key would each write a record in their own format." Everything else about a second instance is fine — `settingsNs = ctx.fiber.entry?.options.id ?? NS` namespaces it by ROW ID, so the routes and settings do not collide — but the auth flows do, and they are registered unconditionally.
+
+**So the plugin registers the route itself** (`responses-provider.ts`), which is the only shape that needs nothing from the user: they keep the `opencode` provider and key they already have. **Nothing is reimplemented** — `llm-pi-ai` exports `PiAiAdapter` (its pi-ai-event-to-`StreamChunk` translation), `resolveProfiles` (the resolver that materialises defaults and models), and `credentialStoreFrom` / `authContextFrom`; its exports map carries `"./src/*"`, so the two that are not re-exported from the root are reachable by deep path. That module is glue, not a protocol client.
+
+Two behaviours that matter: the route's model list is read from the catalog's `provider_npm`, so it covers **every** Responses model rather than the one a hand-written list named — which is why adding `gpt-5` to the user's `opencode` list now needs no second route; and registration **defers** when the profile already declares the route, so a deployment that hand-declares it keeps its own model list instead of having it overridden. It never throws: a profile without `llm-pi-ai` degrades to "the route you declared still works".
 
 **`opencode-responses` names no `apiKeyEnv` — but a keyless route ALONE throws.** This is a trap: `provider.ts` says a route naming no credential is "deliberately unauthenticated", which reads as "it will just send no key". It does not. pi-ai's implementations resolve the key like this (`dist/api/openai-responses.js`):
 
