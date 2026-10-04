@@ -31,7 +31,7 @@
 
 OpenCode's gateways expect request traits DSH does not send by default: a valid `x-opencode-session` on every turn, official CLI origin proof (`User-Agent`, client/project headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier requests. DSH subagents, background evaluations, and experimental modes like **Auto Review** also invoke the LLM in standalone sessions where `sessionId` is omitted or unlinked.
 
-The plugin restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
+The plugin restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
 
 **Highlights**
 
@@ -123,7 +123,28 @@ OpenCode serves inference across multiple upstream protocols through one gateway
 - **OpenAI Chat Completions** (`https://opencode.ai/zen/go/v1/chat/completions`): `deepseek-v4.1-flash`, `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `qwen3.8-flash`, `qwen3.8-max`, `qwen3.7-plus`, `kimi-k3`, `kimi-k2.7-code`, `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `grok-4.7`, `grok-4.6`, `minimax-m3`, `minimax-m2.7`, `mimo-v2.6-pro`, `mimo-v2.6-flash`, `gpt-5.6-luna`, `gpt-6-luna`
 - Monitored by the live 3-window quota meter (5-hour rolling, weekly, monthly). The full set ships in the bundled catalog — see [Authoritative Model Catalogs](#7-authoritative-model-catalogs-dual-local-shims--real-time-swr-updates).
 
-### 3. Execution modes covered
+### 3. How a model's protocol is chosen — and why you configure nothing
+
+Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **different** SDK per model only when that model needs one, so the presence of `provider.npm` is the signal — and it is what decides the wire protocol. Nothing is matched by hand:
+
+| models.dev `provider.npm` | models | protocol | served from |
+| :-- | --: | :-- | :-- |
+| _(absent)_ | 53 | OpenAI Chat Completions | the route you configured |
+| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 23 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 8 | _(no such protocol in DSH)_ | **not offered** |
+
+Counts are the 116 `opencode` models in `models.dev` as of 2026-10-05.
+
+The patch **registers the two internal routes itself** at boot, and keeps them out of both the model picker and _Settings → Models_. That gives three properties worth stating plainly:
+
+- **You configure nothing.** Your existing `opencode` provider and its key are all that is needed — every routed model authenticates with the same credential, resolved through the credentials service, never re-asked for.
+- **You keep choosing.** The picker still shows exactly the models you listed. Selecting one is matched to the right protocol automatically, so adding any Responses or Messages model to your list is enough; no second route to declare.
+- **You are never offered a model that cannot work.** The 8 `@ai-sdk/google` models are dropped from the discovery list _and_ from what the `opencode` route reports, because DSH implements no such protocol and selecting one could only fail — with nothing in the row to say why.
+
+If your profile already declares `opencode-responses` or `opencode-anthropic`, the patch leaves it alone and uses yours: your model list wins.
+
+### 4. Execution modes covered
 
 | Mode | What the patch does |
 | :-- | :-- |
@@ -234,7 +255,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 
 | Knob | Default | Why it stays in config |
 | :-- | :-- | :-- |
-| `providers` | `opencode`, `opencode-go`, `opencode-responses` | Route ids to intercept; must cover every route this layer declares |
+| `providers` | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` | Route ids to intercept; must cover every route this layer declares |
 | `gatewayUrls` | `opencode.ai/zen` | URL substrings marking gateway traffic; only a mirror or relay changes them |
 | `userAgent` | empty (= canonical CLI UA) | Literal override; the default is what the gateway expects |
 | `originClient` | `cli` | Literal `x-opencode-client` value |
@@ -253,6 +274,7 @@ These exist in the schema but render no control — each is a literal, a marker,
           - opencode
           - opencode-go
           - opencode-responses
+          - opencode-anthropic
         gatewayUrls:
           - opencode.ai/zen
         sessionIdEnv: "OPENCODE_SESSION_ID"
@@ -298,7 +320,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 | :-- | :-- |
 | **Plugin package** | `dsh-opencode-patch` on npm + the [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) / [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) scoped aliases |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
-| **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses` |
+| **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` |
 | **Gateways** | `opencode.ai/zen/v1` (`/responses`, `/chat/completions`, `/messages`, `:streamGenerateContent`), `zen/go/v1` (`/chat/completions`) |
 | **Supported models** | `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3-contributor-free`, `qwen3.8-flash` |
 | **Verification gate** | `vp check` clean, **266** deterministic tests green, full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
@@ -468,7 +490,7 @@ OpenCode's gateway `GET …/models` endpoints frequently return a truncated subs
 1. **Dual bundled shims (zero latency, offline):** `OPENCODE_GO_CATALOG` carries all **29 active** Go subscription models with per-million-token rates, so session pricing works before the first refresh; `OPENCODE_ZEN_CATALOG` carries the **10 active free-tier models** (`muse-spark-1.3-contributor-free`, `space-bunny-free`, `fledge-alpha-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `ling-3.0-flash-fin-free`, `ling-3.1-flash-free`, `longcat-2.5-preview-free`, `mimo-v2.6-flash-free`, `big-pickle`) plus flagships (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`). Retired models are excluded so a failed refresh can never resurrect a row the gateway no longer serves — the three Zen-route Muse Spark 1.2 ids are suppressed, while the paid Go 1.2 contributor entry stays (the CLI still lists it). Startup is instant: no cold-start delay, blocking network calls, or airplane-mode failures.
 2. **Background revalidation:** both catalogs revalidate against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (the OpenCode CLI's canonical cycle), merging new models, deprecations and updated limits. Errors degrade gracefully and retain the active catalog.
 3. **Gateway models-endpoint enrichment:** `patchFetch` intercepts `GET …/models` on OpenCode routes and merges the live Go or Zen catalog — human-friendly names (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`), verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000), correct input modalities (`text`, `image`), with retired Muse Spark 1.2 rows omitted.
-4. **Settings “Fetch Available Models” decoration:** DSH asks the route's own adapter first, and for an installed `opencode` route `llm-pi-ai` answers from its packaged catalog without calling the gateway. The plugin therefore decorates the hosted discovery result: adapter rows and order are preserved, missing canonical rows (e.g. `space-bunny-free`) appended, provider-retired rows removed. This is candidate metadata for the settings surface — it never rewrites saved route configuration.
+4. **Settings “Fetch Available Models” decoration:** DSH asks the route's own adapter first, and for an installed `opencode` route `llm-pi-ai` answers from its packaged catalog without calling the gateway. The plugin therefore decorates the hosted discovery result: adapter rows and order are preserved, missing canonical rows (e.g. `space-bunny-free`) appended, provider-retired rows removed, and **models whose protocol DSH cannot speak dropped** — offering one could only fail. This is candidate metadata for the settings surface — it never rewrites saved route configuration.
 5. **Native model discovery registration:** on the host runtime the plugin also registers with `ctx.llm.registerModelDiscovery` for `opencode-go` and `opencode`. All three enrichments sit behind the **Enrich Models from Models.dev** switch.
 
 ### 8. Session spend & model rate
