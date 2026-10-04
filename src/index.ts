@@ -138,6 +138,7 @@ export {
   OPENCODE_ZEN_CATALOG,
   RETIRED_ZEN_MODEL_IDS,
   enrichModelsResponse,
+  findModelSpec,
   getLiveCatalog,
   getLiveGoCatalog,
   getLiveZenCatalog,
@@ -160,7 +161,7 @@ export {
   type DiscoveryCandidate,
 } from "./models-discovery.ts";
 export {
-  RESPONSES_FORMAT_MODELS,
   RESPONSES_ROUTE,
+  RESPONSES_SDK,
   responsesRouteFor,
 } from "./responses-routes.ts";
