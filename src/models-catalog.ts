@@ -68,6 +68,16 @@ export const sanitizeModalities = (
 /** TTL for cached models before triggering a background revalidation (60 minutes). */
 export const CATALOG_REVALIDATION_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * What an enriched row falls back to when neither the live row nor the catalog
+ * describes the model. Matches the shim's own defaults, so a model that reaches
+ * the picker before either source knows it is still fully described.
+ */
+const FALLBACK_CONTEXT_WINDOW = 1_000_000;
+
+/** @see FALLBACK_CONTEXT_WINDOW */
+const FALLBACK_MAX_OUTPUT_TOKENS = 131_072;
+
 /** Timeout for models.dev revalidation requests (8 seconds). */
 export const MODELS_DEV_TIMEOUT_MS = 8000;
 
@@ -406,14 +416,24 @@ export const enrichModelsResponse = async (
     const input_modalities = sanitizeModalities(rawModalities);
     const enriched = {
       ...item,
+      // A live row the catalog does not describe must still be fully described.
+      // The gateway adds models before models.dev — or the bundled shim — knows
+      // them, and DSH needs a number to size the context meter; a row carrying
+      // `undefined` here reaches the picker as a model with no limits at all.
       context_window:
-        item.context_window ?? item.contextWindow ?? spec?.context_window,
+        item.context_window ??
+        item.contextWindow ??
+        spec?.context_window ??
+        FALLBACK_CONTEXT_WINDOW,
       id,
       input: input_modalities,
       input_modalities,
       inputModalities: input_modalities,
       max_output_tokens:
-        item.max_output_tokens ?? item.maxTokens ?? spec?.max_output_tokens,
+        item.max_output_tokens ??
+        item.maxTokens ??
+        spec?.max_output_tokens ??
+        FALLBACK_MAX_OUTPUT_TOKENS,
       name: item.name ?? item.displayName ?? spec?.name ?? id,
       object: "model",
       owned_by: item.owned_by ?? "opencode",
