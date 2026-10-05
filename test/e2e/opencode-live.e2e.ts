@@ -109,7 +109,11 @@ describe.skipIf(!LIVE)("live OpenCode gateway", () => {
   );
 });
 
-describe.skipIf(!LIVE || ZEN_KEY === undefined)(
+// `!key`, never `key === undefined`: an unset GitHub Actions secret expands to
+// the EMPTY STRING, not to nothing, so the equality check this replaced let the
+// keyed suites run with an empty bearer token — and fail as a 401 that looks
+// like the endpoint breaking rather than the secret being missing.
+describe.skipIf(!LIVE || !ZEN_KEY)(
   "live Zen model listing (OPENCODE_API_KEY)",
   () => {
     it(
@@ -160,30 +164,27 @@ describe.skipIf(!LIVE || ZEN_KEY === undefined)(
   }
 );
 
-describe.skipIf(!LIVE || GO_KEY === undefined)(
-  "live Go usage (OPENCODE_GO_API_KEY)",
-  () => {
-    it(
-      "parses the real /usage payload the meter renders",
-      async () => {
-        const response = await fetch(`${GO_BASE}/usage`, {
-          headers: { Authorization: `Bearer ${GO_KEY}` },
-        });
-        expect(response.ok).toBe(true);
+describe.skipIf(!LIVE || !GO_KEY)("live Go usage (OPENCODE_GO_API_KEY)", () => {
+  it(
+    "parses the real /usage payload the meter renders",
+    async () => {
+      const response = await fetch(`${GO_BASE}/usage`, {
+        headers: { Authorization: `Bearer ${GO_KEY}` },
+      });
+      expect(response.ok).toBe(true);
 
-        const usage: GoUsage = parseGoUsage(await response.json());
-        for (const key of WINDOW_KEYS) {
-          const window = usage[key];
-          expect(typeof window.percent).toBe("number");
-          expect(Number.isFinite(window.percent)).toBe(true);
-          expect(window.percent).toBeGreaterThanOrEqual(0);
-          expect(window.percent).toBeLessThanOrEqual(100);
-          expect(["ok", "rate-limited"]).toContain(window.status);
-          // The meter renders a countdown from this, so it must be a real date.
-          expect(Number.isNaN(Date.parse(window.resetsAt))).toBe(false);
-        }
-      },
-      TIMEOUT_MS
-    );
-  }
-);
+      const usage: GoUsage = parseGoUsage(await response.json());
+      for (const key of WINDOW_KEYS) {
+        const window = usage[key];
+        expect(typeof window.percent).toBe("number");
+        expect(Number.isFinite(window.percent)).toBe(true);
+        expect(window.percent).toBeGreaterThanOrEqual(0);
+        expect(window.percent).toBeLessThanOrEqual(100);
+        expect(["ok", "rate-limited"]).toContain(window.status);
+        // The meter renders a countdown from this, so it must be a real date.
+        expect(Number.isNaN(Date.parse(window.resetsAt))).toBe(false);
+      }
+    },
+    TIMEOUT_MS
+  );
+});
