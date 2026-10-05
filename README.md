@@ -140,13 +140,29 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 Counts are the 116 `opencode` models in `models.dev` as of 2026-10-05.
 
-The patch **registers the two internal routes itself** at boot, and keeps them out of both the model picker and _Settings → Models_. That gives three properties worth stating plainly:
+The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 
-- **You configure nothing.** Your existing `opencode` provider and its key are all that is needed — every routed model authenticates with the same credential, resolved through the credentials service, never re-asked for.
-- **You keep choosing.** The picker still shows exactly the models you listed. Selecting one is matched to the right protocol automatically, so adding any Responses or Messages model to your list is enough; no second route to declare.
+- **You keep choosing.** The picker shows exactly the models you listed. Selecting one is matched to the right protocol automatically, so adding any Responses or Messages model to your list is enough — no second route to declare by hand.
 - **You are never offered a model that cannot work.** The 8 `@ai-sdk/google` models are dropped from the discovery list _and_ from what the `opencode` route reports, because DSH implements no such protocol and selecting one could only fail — with nothing in the row to say why.
+- **One credential.** Every routed model authenticates with the `opencode` key you already configured, resolved through the credentials service and never re-asked for.
 
-If your profile already declares `opencode-responses` or `opencode-anthropic`, the patch leaves it alone and uses yours: your model list wins.
+**What is still yours to declare:** the route itself. `opencode-responses` — and `opencode-anthropic`, once you use an Anthropic-plane model — must exist in your profile's `llm-pi-ai` `providers` block, listing the models it serves:
+
+```yaml
+opencode-responses:
+  api: openai-responses
+  baseURL: https://opencode.ai/zen/v1
+  headers:
+    authorization: Bearer unused # swapped for your key by the fetch patch
+  models:
+    - id: muse-spark-1.3-contributor-free
+      name: Muse Spark 1.3 Free
+      contextWindow: 1048576
+      maxTokens: 131072
+      input: [text, image]
+```
+
+A plugin-owned route — one you would not have to declare at all — is the intended end state and is implemented in `responses-provider.ts`, but **it cannot activate yet**: `llm-pi-ai` does not export the profile resolver (`resolveProfiles`) from its package root, and its published `exports` map ships only `lib/`, so the deep path that would reach it does not exist in an installed copy. Until it is exported, the plugin registers nothing and says so in the log. **Do not remove the route from your profile yet** — doing so would leave the model with nowhere to be served from.
 
 ### 4. Execution modes covered
 
