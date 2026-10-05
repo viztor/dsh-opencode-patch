@@ -233,12 +233,28 @@ if (this.flows.has(flow.key)) {
 
 Its own API docs state the rule: "One flow per key: two plugins claiming the same key would each write a record in their own format." Everything else about a second instance is fine — `settingsNs = ctx.fiber.entry?.options.id ?? NS` namespaces it by ROW ID, so the routes and settings do not collide — but the auth flows do, and they are registered unconditionally.
 
-**So the plugin registers the route itself** (`responses-provider.ts`) — **but it cannot activate, and this is the honest state.** Two blockers, both measured against the installed copy:
+**So the plugin registers the route itself** (`responses-provider.ts`) — **but it cannot activate, and the reason is upstream.** Measured against the installed copy, not this repo:
 
-1. **The package is not resolvable from the plugin's location.** The plugin is symlinked into the profile but lives in this repo, and Node resolves from the real path, so `import('@deepseek-ai/dsh-llm-pi-ai')` raises `ERR_MODULE_NOT_FOUND`. Declaring it as a dependency fixes this one.
-2. **`resolveProfiles` is unreachable even then.** The published package ships only `lib/` (no `src/`), so the `"./src/*"` exports entry names a path that does not exist in an installed copy; and the root export list is `Config, PiAiAdapter, apply, inject, name, recordKeyFor, supportedProtocols` — no resolver. `PiAiAdapter`'s `profiles()` needs a `ResolvedPiAiProviderProfile`, and hand-building one means reproducing the resolver's defaults, which is the duplication this design exists to avoid.
+1. **The package is not resolvable from the plugin's location.** The plugin is symlinked into the profile but lives in this repo, and Node resolves from the real path, so `import('@deepseek-ai/dsh-llm-pi-ai')` raises `ERR_MODULE_NOT_FOUND`. (It _is_ resolvable from the DSH install's `…/dlx/<hash>/node_modules/.pnpm/node_modules/`, so this half is fixable by declaring the dependency.)
+2. **`resolveProfiles` is unreachable even when the package resolves.** The root exports exactly `Config, PiAiAdapter, apply, inject, name, recordKeyFor, supportedProtocols`. And the deep path the exports map advertises is dead in every installed copy:
 
-So the code is the right shape and stays, self-healing the day `resolveProfiles` is exported from the package root. **Until then it registers nothing**, logs why, and the route must be declared in the profile — **do not remove it from a profile on the assumption that the plugin owns it.**
+   ```jsonc
+   "files":   ["lib/index.js", "lib/types/**/*.d.ts"],  // ships no src/
+   "exports": { "./src/*": "./src/*", … }                // advertises src/*
+   ```
+
+   The tarball contains `LICENSE README* lib package.json node_modules` — no `src/`. Even shipping it would not help: Node does not strip types inside `node_modules`, so a `src/*.ts` import could not load.
+
+3. **Copying it is not viable.** `resolveProfiles` pulls in `./catalog.ts` plus `@deepseek-ai/dsh-credentials`, `dsh-timeout`, `dsh-llm`, `dsh-util-values` and `schemastery`; none are root-exported. `PiAiAdapter` reads sixteen fields off the profile, among them `piProvider` (a pi-ai `Provider` built by the unexported `catalogModels`) and `modelErrors`/`catalogError`. Re-implementing that is re-implementing the module.
+
+**The fix is one line upstream** — `llm-pi-ai/src/index.ts`:
+
+```ts
+export { resolveProfiles } from "./config.ts";
+export { credentialStoreFrom, authContextFrom } from "./auth.ts";
+```
+
+`lib/index.js` is a single bundled file, so exporting from the barrel is enough to make all three reachable. The code here self-heals the day that lands. **Until then it registers nothing**, says so in the log at `info`, and the route must be declared in the profile — **do not remove it from a profile on the assumption that the plugin owns it.**
 
 When it does activate, two behaviours matter: the route's model list is read from the catalog's `provider_npm`, so it covers **every** Responses model rather than the one a hand-written list named; and registration **defers** per route when the profile already declares it, so a deployment that hand-declares one keeps its own model list. It never throws.
 

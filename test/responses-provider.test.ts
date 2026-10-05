@@ -44,14 +44,16 @@ describe("responses-provider: registration is best-effort", () => {
   it("does not throw when llm-pi-ai cannot be imported", async () => {
     // This repository does not depend on `llm-pi-ai`; a deployment that lacks
     // it must degrade to "a route declared in the profile still works" rather
-    // than failing the boot. Every failure is reported, never silent.
-    const warn = vi.fn();
+    // than failing the boot. Reported at INFO, not warning: this is the
+    // expected state today, not a fault, and a warning on every boot would read
+    // as a bug in a deployment where nothing is wrong.
+    const info = vi.fn();
     const ctx = {
       llm: { registerAdapter: vi.fn() },
-      logger: { warn },
+      logger: { info },
     } as unknown as CordisContext;
     await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalled();
+    expect(info).toHaveBeenCalled();
     expect(ctx.llm?.registerAdapter).not.toHaveBeenCalled();
   });
 

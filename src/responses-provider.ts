@@ -225,8 +225,13 @@ export const registerResponsesProvider = async (
       }
     };
   } catch (error) {
-    ctx.logger?.warn?.(
-      "[dsh-opencode-patch] could not register the internal routes (%s); a route declared in the profile still works",
+    // `info`, not `warn`: this is the expected state today, not a fault. The
+    // usual cause is that `llm-pi-ai` ships only `lib/` and exports no profile
+    // resolver, so the module that would build the adapter is unreachable from
+    // here. Reporting it at warning level on every boot would read as a bug in
+    // a deployment where nothing is wrong and every route still works.
+    ctx.logger?.info?.(
+      "[dsh-opencode-patch] internal routes stay unregistered (%s); routes declared in the profile are unaffected",
       error instanceof Error ? error.message : String(error)
     );
     return undefined;
