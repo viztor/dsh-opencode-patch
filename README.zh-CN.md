@@ -140,13 +140,29 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 数量为 `models.dev` 中 `opencode` 的 116 个模型，统计于 2026-10-05。
 
-插件在启动时**自己注册这两条内部路由**，并把它们同时挡在模型选择器和 _Settings → Models_ 之外。由此有三条值得明说的性质：
+插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
-- **你什么都不用配。** 现有的 `opencode` provider 和 key 就够了 —— 所有路由模型共用同一份凭据，经凭据服务解析，**不会重新问你要**。
-- **你的挑选仍然有效。** 选择器显示的就是你列出的模型；选中后会**自动匹配到正确的协议**，所以往列表里加任何 Responses / Messages 模型即可，不需要再声明第二条路由。
+- **你的挑选仍然有效。** 选择器显示的就是你列出的模型；选中后会**自动匹配到正确的协议**，所以往列表里加任何 Responses / Messages 模型即可，不需要再手工声明第二条路由。
 - **永远不会提供跑不通的模型。** 那 8 个 `@ai-sdk/google` 模型会从"获取可用模型"**和** `opencode` 路由自己的报告中**双双剔除** —— DSH 没有对应协议，选了只会失败，而且行里没有任何东西能告诉你原因。
+- **一份凭据。** 所有路由模型共用你已配置的 `opencode` key，经凭据服务解析，**不会重新问你要**。
 
-如果你 profile 里已经声明了 `opencode-responses` 或 `opencode-anthropic`，插件会让路并使用你的 —— **你的模型列表赢**。
+**仍然需要你自己声明的：路由本身。** `opencode-responses`（以及你用上 Anthropic 平面模型后的 `opencode-anthropic`）必须存在于 profile 的 `llm-pi-ai` `providers` 块里，并列出它服务的模型：
+
+```yaml
+opencode-responses:
+  api: openai-responses
+  baseURL: https://opencode.ai/zen/v1
+  headers:
+    authorization: Bearer unused # 由 fetch 补丁换成你的 key
+  models:
+    - id: muse-spark-1.3-contributor-free
+      name: Muse Spark 1.3 Free
+      contextWindow: 1048576
+      maxTokens: 131072
+      input: [text, image]
+```
+
+**插件自己拥有路由**（即你完全不必声明）是目标形态，代码已在 `responses-provider.ts` 实现，但**目前无法生效**：`llm-pi-ai` 没有从包根导出 profile 解析器（`resolveProfiles`），而它发布的 `exports` 只带 `lib/`，所以那条能拿到它的深路径在安装副本里并不存在。在它被导出之前，插件不会注册任何东西，只会在日志里说明原因。**暂时不要从 profile 里删掉那条路由** —— 删了模型就没有地方被服务了。
 
 ### 4. 覆盖的执行模式
 
