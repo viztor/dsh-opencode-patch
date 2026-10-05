@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenCode on DeepSeek Harness">
   <title>OpenCode on DSH</title>
   <defs>
-    <linearGradient id="oc-frame" x1="17.6" y1="14" x2="46.4" y2="50" gradientUnits="userSpaceOnUse">
+    <linearGradient id="oc-frame" x1="21.6" y1="18" x2="50.4" y2="54" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4D6BFE"/>
       <stop offset="1" stop-color="#8B5CF6"/>
     </linearGradient>
@@ -9,11 +9,19 @@
   <!--
     The DeepSeek Harness icon family: a softly tinted rounded square carrying
     one vibrant glyph — pale lavender container, DeepSeek-blue to purple hue.
-    The glyph is OpenCode's own mark, exact proportions: a 4:5 block frame with
-    a windowed counter (favicon geometry 256×320 / 64px walls, scaled ×0.1125
-    and centered) — the frame alone, no inner block. Frame in the family
-    gradient. Hard corners are deliberate — OpenCode is a blocky mark.
+
+    The glyph is OpenCode's own mark at exact proportions: a 4:5 block frame
+    with a windowed counter (favicon geometry 256×320 / 64px walls, scaled
+    ×0.1125) — the frame alone, no inner block. Hard corners are deliberate;
+    OpenCode is a blocky mark.
+
+    One plane is served by the gateway and several are not: the same frame
+    repeats once, offset up and left, in the family's pale tint. The vibrant
+    frame is the plane the model you picked actually speaks; the pale one is
+    the protocol it does not, and which the patch routes around. Two shapes,
+    one mark — legible at 16px, where the offset still reads as depth.
   -->
   <rect x="2" y="2" width="60" height="60" rx="15" fill="#EDEBFE"/>
-  <path fill-rule="evenodd" d="M17.6 14 H46.4 V50 H17.6 Z M24.8 21.2 H39.2 V42.8 H24.8 Z" fill="url(#oc-frame)"/>
+  <path fill-rule="evenodd" d="M13.6 10 H42.4 V46 H13.6 Z M20.8 17.2 H35.2 V38.8 H20.8 Z" fill="#C7BFFA"/>
+  <path fill-rule="evenodd" d="M21.6 18 H50.4 V54 H21.6 Z M28.8 25.2 H43.2 V46.8 H28.8 Z" fill="url(#oc-frame)"/>
 </svg>

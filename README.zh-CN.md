@@ -12,6 +12,10 @@
     <a href="https://github.com/viztor/dsh-opencode-patch/actions/workflows/release.yml"><img src="https://github.com/viztor/dsh-opencode-patch/actions/workflows/release.yml/badge.svg" alt="Release" /></a>
     <a href="https://github.com/viztor/dsh-opencode-patch/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/dsh-opencode-patch.svg" alt="license" /></a>
     <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/dsh-opencode-patch.svg" alt="node" /></a>
+    <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript" /></a>
+    <a href="#-quick-start"><img src="https://img.shields.io/badge/DSH-host%20plugin-4D6BFE.svg" alt="DSH host plugin" /></a>
+    <a href="#-quick-start"><img src="https://img.shields.io/badge/config-zero-8B5CF6.svg" alt="zero-config" /></a>
+    <a href="./CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome" /></a>
   </p>
 
   <p>
@@ -31,7 +35,7 @@
 
 OpenCode 网关要求 DSH 默认不会发送的请求特征：每一轮都携带有效的 `x-opencode-session`、官方 CLI 的来源证明（`User-Agent`、client/project 请求头、`ses_…` 形式的 ID），以及免费层请求上的 `read`/`bash` 工具定义。DSH 子代理、后台评估以及 **Auto Review** 等实验模式，还会在 `sessionId` 缺失或未关联的独立会话中调用 LLM。
 
-插件在网络层补齐所有缺失的协议要素——**且仅针对 OpenCode 路由**（`opencode` / `opencode-go` / `opencode-responses`）。其余全部流量（DeepSeek、OpenAI、Anthropic、GitHub）原样通过。
+插件在网络层补齐所有缺失的协议要素——**且仅针对 OpenCode 路由**（`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`）。其余全部流量（DeepSeek、OpenAI、Anthropic、GitHub）原样通过。
 
 **亮点**
 
@@ -123,7 +127,28 @@ OpenCode 通过一个网关在多种上游协议上提供推理，本补丁覆�
 - **OpenAI Chat Completions** (`https://opencode.ai/zen/go/v1/chat/completions`)：`deepseek-v4.1-flash`、`deepseek-v4-pro`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`qwen3.8-flash`、`qwen3.8-max`、`qwen3.7-plus`、`kimi-k3`、`kimi-k2.7-code`、`glm-5.3`、`glm-5.3-flash`、`glm-5.2`、`grok-4.7`、`grok-4.6`、`minimax-m3`、`minimax-m2.7`、`mimo-v2.6-pro`、`mimo-v2.6-flash`、`gpt-5.6-luna`、`gpt-6-luna`
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
 
-### 3. 覆盖的执行模式
+### 3. 模型的协议是怎么定的 —— 以及为什么你什么都不用配
+
+Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在该模型需要不同 SDK 时**才逐模型标注 `provider.npm` —— 所以这个字段的**存在本身就是信号**，它决定走哪条线路协议。没有任何手工匹配：
+
+| models.dev `provider.npm` | 模型数 | 协议 | 服务自 |
+| :-- | --: | :-- | :-- |
+| _（缺失）_ | 53 | OpenAI Chat Completions | 你配置的路由 |
+| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 23 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 8 | _（DSH 无此协议）_ | **不提供** |
+
+数量为 `models.dev` 中 `opencode` 的 116 个模型，统计于 2026-10-05。
+
+插件在启动时**自己注册这两条内部路由**，并把它们同时挡在模型选择器和 _Settings → Models_ 之外。由此有三条值得明说的性质：
+
+- **你什么都不用配。** 现有的 `opencode` provider 和 key 就够了 —— 所有路由模型共用同一份凭据，经凭据服务解析，**不会重新问你要**。
+- **你的挑选仍然有效。** 选择器显示的就是你列出的模型；选中后会**自动匹配到正确的协议**，所以往列表里加任何 Responses / Messages 模型即可，不需要再声明第二条路由。
+- **永远不会提供跑不通的模型。** 那 8 个 `@ai-sdk/google` 模型会从"获取可用模型"**和** `opencode` 路由自己的报告中**双双剔除** —— DSH 没有对应协议，选了只会失败，而且行里没有任何东西能告诉你原因。
+
+如果你 profile 里已经声明了 `opencode-responses` 或 `opencode-anthropic`，插件会让路并使用你的 —— **你的模型列表赢**。
+
+### 4. 覆盖的执行模式
 
 | 模式 | 补丁做什么 |
 | :-- | :-- |
@@ -234,7 +259,7 @@ OpenCode 通过一个网关在多种上游协议上提供推理，本补丁覆�
 
 | 配置项 | 默认值 | 保留在配置中的原因 |
 | :-- | :-- | :-- |
-| `providers` | `opencode`, `opencode-go`, `opencode-responses` | 要拦截的路由 id；必须覆盖本层声明的每一条路由 |
+| `providers` | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` | 要拦截的路由 id；必须覆盖本层声明的每一条路由 |
 | `gatewayUrls` | `opencode.ai/zen` | 标记网关流量的 URL 子串；只有镜像或中继才会改它们 |
 | `userAgent` | 空（= 规范 CLI UA） | 字面覆盖；默认值就是网关所期望的值 |
 | `originClient` | `cli` | `x-opencode-client` 的字面值 |
@@ -253,6 +278,7 @@ OpenCode 通过一个网关在多种上游协议上提供推理，本补丁覆�
           - opencode
           - opencode-go
           - opencode-responses
+          - opencode-anthropic
         gatewayUrls:
           - opencode.ai/zen
         sessionIdEnv: "OPENCODE_SESSION_ID"
@@ -298,7 +324,7 @@ OpenCode 通过一个网关在多种上游协议上提供推理，本补丁覆�
 | :-- | :-- |
 | **插件包** | npm 上的 `dsh-opencode-patch`，外加 [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) / [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) 作用域别名 |
 | **宿主 profile** | DSH Web profile（`patchReload: live`） |
-| **声明的路由** | `opencode`、`opencode-go`、`opencode-responses` |
+| **声明的路由** | `opencode`、`opencode-go`、`opencode-responses`、`opencode-anthropic` |
 | **网关** | `opencode.ai/zen/v1`（`/responses`、`/chat/completions`、`/messages`、`:streamGenerateContent`）、`zen/go/v1`（`/chat/completions`） |
 | **支持的模型** | `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3-contributor-free`、`qwen3.8-flash` |
 | **验证关卡** | `vp check` 干净、**266** 个确定性测试全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
