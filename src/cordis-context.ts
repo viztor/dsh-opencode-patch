@@ -53,6 +53,12 @@ export interface CordisContext {
      */
     listModels?: (provider: string) => Promise<unknown>;
   };
+  /**
+   * A child context whose reads and writes of `name` resolve in a new scope.
+   * Used to hide the authorization seam from a mounted `llm-pi-ai` instance, so
+   * it registers no auth flows and cannot collide with the host's own.
+   */
+  isolate?: (name: string) => CordisContext;
   logger?: {
     info?: (msg: string, ...args: unknown[]) => void;
     warn?: (msg: string, ...args: unknown[]) => void;
@@ -66,7 +72,15 @@ export interface CordisContext {
     ) => unknown,
     options?: { prepend?: boolean }
   ) => void;
-  plugin?: (plugin: unknown, options?: unknown) => void;
+  /**
+   * Start a plugin in this context and return its fiber. A plugin is a function
+   * or an object with an `apply` method — which is exactly what `llm-pi-ai`
+   * exports, so this is how the plugin mounts it.
+   */
+  plugin?: (
+    plugin: unknown,
+    config?: unknown
+  ) => { dispose?: () => void } | undefined;
 }
 
 /** One loaded cordis entry's identifying options. */

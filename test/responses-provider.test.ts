@@ -1,18 +1,36 @@
 /**
- * `responses-provider.ts` — the plugin registering the Responses route itself,
- * so the user keeps their existing provider and key and changes nothing.
+ * `responses-provider.ts` — the plugin registering the gateway's non-default
+ * planes itself, so the user keeps their existing provider and key.
  */
+
+import { createRequire } from "node:module";
 
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  registerResponsesProvider,
   modelsForSdk,
+  registerResponsesProvider,
   RESPONSES_SDK,
 } from "../src/index.ts";
 import type { CordisContext } from "../src/index.ts";
 
 const MUSE = "muse-spark-1.3-contributor-free";
+
+/**
+ * Whether the host plugin this module mounts is reachable from here.
+ *
+ * Resolved rather than imported: the package is deliberately not a dependency
+ * (see the module header), so a static import would be a type error and a
+ * build-time requirement the plugin must not have.
+ */
+const hostPluginReachable = ((): boolean => {
+  try {
+    createRequire(import.meta.url).resolve("@deepseek-ai/dsh-llm-pi-ai");
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 describe("responses-provider: the model list", () => {
   it("comes from the catalog, not from a hand-written list", () => {
@@ -33,6 +51,10 @@ describe("responses-provider: the model list", () => {
     const ids = modelsForSdk(RESPONSES_SDK).map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("serves nothing for a protocol no model names", () => {
+    expect(modelsForSdk("@ai-sdk/does-not-exist")).toEqual([]);
+  });
 });
 
 describe("responses-provider: registration is best-effort", () => {
@@ -41,25 +63,80 @@ describe("responses-provider: registration is best-effort", () => {
     await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
   });
 
-  it("does not throw when llm-pi-ai cannot be imported", async () => {
-    // This repository does not depend on `llm-pi-ai`; a deployment that lacks
-    // it must degrade to "a route declared in the profile still works" rather
-    // than failing the boot. Reported at INFO, not warning: this is the
-    // expected state today, not a fault, and a warning on every boot would read
-    // as a bug in a deployment where nothing is wrong.
+  it("does not throw when the host plugin cannot be reached", async () => {
+    // `llm-pi-ai` is a profile bundle, so it is not always resolvable from a
+    // plugin's own location. A deployment where it is not must degrade to "the
+    // route you declared still works", not fail the boot — and must say so at
+    // INFO, because that is an expected state rather than a fault.
     const info = vi.fn();
     const ctx = {
-      llm: { registerAdapter: vi.fn() },
+      llm: { listProviders: () => [], registerAdapter: vi.fn() },
       logger: { info },
     } as unknown as CordisContext;
     await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
-    expect(info).toHaveBeenCalled();
     expect(ctx.llm?.registerAdapter).not.toHaveBeenCalled();
+    if (!hostPluginReachable) {
+      expect(info).toHaveBeenCalled();
+    }
+  });
+
+  it("defers to routes the profile already declares", async () => {
+    const plugin = vi.fn();
+    const ctx = {
+      isolate: () => ({ plugin }),
+      llm: {
+        listProviders: () => [
+          { id: "opencode" },
+          { id: "opencode-responses" },
+          { id: "opencode-anthropic" },
+        ],
+        registerAdapter: vi.fn(),
+      },
+      logger: {},
+    } as unknown as CordisContext;
+    await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
+    expect(plugin).not.toHaveBeenCalled();
   });
 
   it("names the SDK it dispatches on", () => {
     // The constant the whole split hangs off; a typo here would silently stop
     // redirecting every Responses model.
     expect(RESPONSES_SDK).toBe("@ai-sdk/openai");
+  });
+});
+
+// The mount itself is only meaningful where the host plugin is reachable, which
+// is not the case in this repository: it is a profile bundle, and declaring it
+// here drags in ~1000 lockfile lines and a pnpm install failure over ignored
+// build scripts. Verified by hand against a real cordis app; see AGENTS.md.
+describe.skipIf(!hostPluginReachable)("responses-provider: the mount", () => {
+  it("mounts below an isolated authorization scope", async () => {
+    // The whole reason this works: `llm-pi-ai` registers an authorization flow
+    // per installed catalog provider, and `authorization.registerFlow` throws
+    // DUPLICATE_FLOW on a second instance. Its own comment says a composition
+    // without that seam "still works" — and cordis's `isolate` creates exactly
+    // such a scope, so the inject never resolves.
+    const isolated: string[] = [];
+    const mounted: unknown[] = [];
+    const ctx = {
+      isolate: (name: string) => {
+        isolated.push(name);
+        return {
+          plugin: (plugin: unknown, config: unknown) => {
+            mounted.push({ plugin, config });
+            return { dispose: () => {} };
+          },
+        };
+      },
+      llm: { listProviders: () => [], registerAdapter: vi.fn() },
+      logger: {},
+    } as unknown as CordisContext;
+
+    const stop = await registerResponsesProvider(ctx);
+
+    expect(isolated).toEqual(["authorization"]);
+    expect(mounted.length).toBeGreaterThan(0);
+    expect(typeof stop).toBe("function");
+    stop?.();
   });
 });
