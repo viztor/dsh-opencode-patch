@@ -6,6 +6,22 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.13.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.12.0...v0.13.0) (2026-10-05)
+
+
+### Features
+
+* cover the Anthropic plane too, keyed off the vendor's SDK ([3c23f86](https://github.com/viztor/dsh-opencode-patch/commit/3c23f86c454855b524e0697077f0e4e892859a88))
+* own the Responses route from the plugin, so the user changes nothing ([05184bc](https://github.com/viztor/dsh-opencode-patch/commit/05184bc6db34d085c390705be220c7296657bb2d))
+* serve OpenCode's Responses-only model by re-dispatching, not translating ([b03c0cf](https://github.com/viztor/dsh-opencode-patch/commit/b03c0cff0e7fe9ee09a9b510740231fc417ed8bf))
+
+
+### Bug Fixes
+
+* describe a live model neither the catalog nor the shim knows ([5758d01](https://github.com/viztor/dsh-opencode-patch/commit/5758d01ad7c0e8e0a1496ce0fee3d7cdfa9ebe13))
+* never offer a model whose protocol has no route ([a870842](https://github.com/viztor/dsh-opencode-patch/commit/a870842d5454d12990001657a47b40db417bef2b))
+* read the Responses split from the vendor's SDK, not a model list ([2980ae9](https://github.com/viztor/dsh-opencode-patch/commit/2980ae9ffdfc0f50afae9949462bbad77f40eeb0))
+
 ## [0.12.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.11.0...v0.12.0) (2026-10-03)
 
 
