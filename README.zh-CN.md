@@ -162,7 +162,7 @@ opencode-responses:
       input: [text, image]
 ```
 
-**插件自己拥有路由**（即你完全不必声明）是目标形态，代码已在 `responses-provider.ts` 实现，但**目前无法生效**：`llm-pi-ai` 没有从包根导出 profile 解析器（`resolveProfiles`），而它发布的 `exports` 只带 `lib/`，所以那条能拿到它的深路径在安装副本里并不存在。在它被导出之前，插件不会注册任何东西，只会在日志里说明原因。**暂时不要从 profile 里删掉那条路由** —— 删了模型就没有地方被服务了。
+**插件自己拥有路由**（即你完全不必声明）是目标形态，机制已实现并**通过端到端验证**：`responses-provider.ts` 在 `isolate("authorization")` 之下挂载宿主自己的 `llm-pi-ai`，因此它注册路由时**一个 authorization flow 都不注册**，不会与宿主的实例冲突。**尚未解决的是运行时如何找到那个包**：它是 profile bundle，从插件、从 profile、从 CLI 入口都解析不到；而把它声明成依赖会拖进近千行锁文件、并因忽略构建脚本让 `pnpm install` 直接失败。在解析路径落地之前，插件不会注册任何东西，只会在日志里说明原因。**暂时不要从 profile 里删掉那条路由** —— 删了模型就没有地方被服务了。
 
 ### 4. 覆盖的执行模式
 
