@@ -233,28 +233,16 @@ if (this.flows.has(flow.key)) {
 
 Its own API docs state the rule: "One flow per key: two plugins claiming the same key would each write a record in their own format." Everything else about a second instance is fine — `settingsNs = ctx.fiber.entry?.options.id ?? NS` namespaces it by ROW ID, so the routes and settings do not collide — but the auth flows do, and they are registered unconditionally.
 
-**So the plugin registers the route itself** (`responses-provider.ts`) — **but it cannot activate, and the reason is upstream.** Measured against the installed copy, not this repo:
+**So the plugin mounts the host's own `llm-pi-ai` below an isolated authorization scope** (`responses-provider.ts`) — **and that mechanism is verified end-to-end**, against a real cordis app with stub `llm`/`settings`/`authorization` services:
 
-1. **The package is not resolvable from the plugin's location.** The plugin is symlinked into the profile but lives in this repo, and Node resolves from the real path, so `import('@deepseek-ai/dsh-llm-pi-ai')` raises `ERR_MODULE_NOT_FOUND`. (It _is_ resolvable from the DSH install's `…/dlx/<hash>/node_modules/.pnpm/node_modules/`, so this half is fixable by declaring the dependency.)
-2. **`resolveProfiles` is unreachable even when the package resolves.** The root exports exactly `Config, PiAiAdapter, apply, inject, name, recordKeyFor, supportedProtocols`. And the deep path the exports map advertises is dead in every installed copy:
-
-   ```jsonc
-   "files":   ["lib/index.js", "lib/types/**/*.d.ts"],  // ships no src/
-   "exports": { "./src/*": "./src/*", … }                // advertises src/*
-   ```
-
-   The tarball contains `LICENSE README* lib package.json node_modules` — no `src/`. Even shipping it would not help: Node does not strip types inside `node_modules`, so a `src/*.ts` import could not load.
-
-3. **Copying it is not viable.** `resolveProfiles` pulls in `./catalog.ts` plus `@deepseek-ai/dsh-credentials`, `dsh-timeout`, `dsh-llm`, `dsh-util-values` and `schemastery`; none are root-exported. `PiAiAdapter` reads sixteen fields off the profile, among them `piProvider` (a pi-ai `Provider` built by the unexported `catalogModels`) and `modelErrors`/`catalogError`. Re-implementing that is re-implementing the module.
-
-**The fix is one line upstream** — `llm-pi-ai/src/index.ts`:
-
-```ts
-export { resolveProfiles } from "./config.ts";
-export { credentialStoreFrom, authContextFrom } from "./auth.ts";
+```
+adapters registered  : ["opencode-anthropic"]
+auth flows registered: 0
 ```
 
-`lib/index.js` is a single bundled file, so exporting from the barrel is enough to make all three reachable. The code here self-heals the day that lands. **Until then it registers nothing**, says so in the log at `info`, and the route must be declared in the profile — **do not remove it from a profile on the assumption that the plugin owns it.**
+**Why it works.** `llm-pi-ai` is written as a plugin, not a library: it exports `apply`/`inject`/`name` plus what a configuration surface needs (`Config`, `PiAiAdapter`, the profile types), and keeps `resolveProfiles`/`credentialStoreFrom`/`authContextFrom` internal — its published `exports` map advertises `"./src/*"` while `files` ships only `lib/`, so that path is dead in every installed copy, and Node does not strip types inside `node_modules` anyway. `apply(ctx, config)` is the supported entry and resolves all of that itself. It cannot be mounted twice for one reason: `registerPiAiFlows` registers an authorization flow per installed catalog provider and `authorization.registerFlow` throws `DUPLICATE_FLOW`. Its own comment names the escape — the flows are _"scoped to the authorization seam rather than injected outright, because a composition without it (headless, ACP) simply has no surface to sign in from, while everything else this plugin does still works"_ — and cordis's `isolate(name)` creates exactly that scope: below it, reads and writes of `name` resolve in a new label. Measured: a plugin injecting `authorization` under `isolate('authorization')` never fires, while the same plugin in the parent scope does.
+
+**What is NOT solved: reaching the package at runtime.** Measured from this repo — `import('@deepseek-ai/dsh-llm-pi-ai')` fails; from the profile's `package.json` fails (the profile has no `@deepseek-ai/` at all); from the running CLI's entry fails (`dsh` does not depend on it directly — it arrives through `@deepseek-ai/dsh-base`). The only place it resolves is the DSH install's `…/dlx/<hash>/node_modules/.pnpm/node_modules/`, which means finding the install root from `process.argv[1]`. **Declaring it as a dependency is not the answer**: it pulls ~1000 lockfile lines through `@google/genai` and `protobufjs`, and pnpm then refuses the install over their build scripts — which would break every consumer's `pnpm install`. `loadPiAi` tries the bare specifier and then the profile path; until a candidate hits, **the route must be declared in the profile — do not remove it from a profile on the assumption that the plugin owns it.**
 
 When it does activate, two behaviours matter: the route's model list is read from the catalog's `provider_npm`, so it covers **every** Responses model rather than the one a hand-written list named; and registration **defers** per route when the profile already declares it, so a deployment that hand-declares one keeps its own model list. It never throws.
 

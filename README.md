@@ -162,7 +162,7 @@ opencode-responses:
       input: [text, image]
 ```
 
-A plugin-owned route — one you would not have to declare at all — is the intended end state and is implemented in `responses-provider.ts`, but **it cannot activate yet**: `llm-pi-ai` does not export the profile resolver (`resolveProfiles`) from its package root, and its published `exports` map ships only `lib/`, so the deep path that would reach it does not exist in an installed copy. Until it is exported, the plugin registers nothing and says so in the log. **Do not remove the route from your profile yet** — doing so would leave the model with nowhere to be served from.
+A plugin-owned route — one you would not have to declare at all — is the intended end state, and the mechanism is implemented and **verified end-to-end**: `responses-provider.ts` mounts the host's own `llm-pi-ai` below `isolate("authorization")`, so it registers the route with **zero** authorization flows and cannot collide with the host's instance. What is **not** solved is reaching that package at runtime: it is a profile bundle, so it is not resolvable from the plugin, the profile, or the CLI's entry point, and declaring it as a dependency pulls ~1000 lockfile lines and breaks `pnpm install` over ignored build scripts. Until a resolution path lands, the plugin registers nothing and says so in the log. **Do not remove the route from your profile yet** — doing so would leave the model with nowhere to be served from.
 
 ### 4. Execution modes covered
 
