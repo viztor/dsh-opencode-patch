@@ -548,3 +548,27 @@ describe("findModelSpec", () => {
     expect(findModelSpec("DeepSeek-V4.1-Flash")).toBeUndefined();
   });
 });
+
+describe("enrichModelsResponse: a model neither source describes", () => {
+  it("still describes it fully, so the picker never shows a row with no limits", async () => {
+    // The gateway adds models before models.dev — or the bundled shim — knows
+    // them. DSH sizes its context meter from these numbers, and the live e2e
+    // asserts every row the picker sees carries them; an `undefined` here
+    // reaches the UI as a model with no limits at all.
+    const url = "https://opencode.ai/zen/v1/models";
+    const upstream = Response.json({
+      data: [{ id: "brand-new-model-nobody-knows", object: "model" }],
+    });
+
+    const response = await enrichModelsResponse(url, upstream);
+    const body = (await response.json()) as { data: Record<string, unknown>[] };
+    const row = body.data.find(
+      (entry) => entry.id === "brand-new-model-nobody-knows"
+    );
+    expect(row).toBeDefined();
+    expect(typeof row?.context_window).toBe("number");
+    expect(typeof row?.max_output_tokens).toBe("number");
+    expect(row?.context_window).toBeGreaterThan(0);
+    expect(row?.max_output_tokens).toBeGreaterThan(0);
+  });
+});
