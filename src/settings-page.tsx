@@ -45,12 +45,22 @@ export const LEGACY_NS = "dsh-opencode";
 export const PKG = "dsh-opencode-patch";
 export const LEGACY_PKG = "@viztor/dsh-opencode";
 
+/**
+ * The services this bundle reaches. Cordis refuses access to one the caller has
+ * not declared, and the check is on the NAME — so `remote.session` is its own
+ * key, not a property of `remote`. `ModelDirectoryResolver.directoryFor` reads
+ * it internally, which is why the meter threw
+ * `cannot get property "remote.session" without inject` and rendered nothing.
+ * The official client plugins declare it the same way
+ * (ui-model-selection/src/client/index.ts:107).
+ */
 export const inject = [
   "slots",
   "locale",
   "configForms",
   "modelDirectories",
   "remote",
+  "remote.session",
 ];
 
 export interface ClientContext {
