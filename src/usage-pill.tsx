@@ -349,7 +349,15 @@ export const UsagePill = ({
   // the honest state, and it is safe to return here: this is the component's
   // only hook.
   if (directory === undefined) {
-    return null;
+    // TEMPORARY: a visible marker instead of silence. "The meter shows nothing"
+    // has two causes that look identical from outside — the Host handed us no
+    // model directory, or this entry never mounted — and this tells them apart
+    // without the console. Remove once the meter renders.
+    return React.createElement(
+      "span",
+      { style: { fontSize: "0.75em", opacity: 0.6 } },
+      "[opencode 计量表: 无模型目录]"
+    );
   }
 
   const provider = state?.current?.provider ?? state?.pending?.provider ?? "";

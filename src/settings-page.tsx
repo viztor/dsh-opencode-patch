@@ -257,12 +257,17 @@ export const apply = (ctx: ClientContext): void => {
     };
 
   const registerMeter = (meterScope: ClientContext): void => {
-    meterScope.slots?.inject?.("conversation.composer.dock", () =>
+    // `conversation.input.right` renders in the composer bar's trailing controls,
+    // immediately BEFORE `conversation.input.model` — so it is the seat beside
+    // the model selector. `conversation.input.left` is the far end of the leading
+    // tools group instead, a whole row away. Both are list slots, so both are
+    // open to a plugin; this is the requested position.
+    meterScope.slots?.inject?.("conversation.input.right", () =>
       meterScope.slots?.register?.(
         {
           id: "dsh-opencode-patch-usage",
           inject: createUsageInjector(meterScope),
-          name: "conversation.composer.dock",
+          name: "conversation.input.right",
           order: 50,
         },
         UsagePill
