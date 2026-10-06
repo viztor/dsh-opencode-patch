@@ -269,6 +269,9 @@ export const registerUsageRemotes = (ctx: unknown): void => {
   // no remote face for the meter and says nothing about it, which is why "the
   // meter renders nothing" has been unanswerable from the browser. Remove once
   // the meter renders.
+  const effect: unknown = isRecord(ctx)
+    ? Reflect.get(ctx, "effect")
+    : undefined;
   const say = (reason: string): void => {
     const line = `[dsh-opencode-patch] usage remote: ${reason}\n`;
     const logger: unknown = isRecord(ctx) ? ctx.logger : undefined;
@@ -289,12 +292,19 @@ export const registerUsageRemotes = (ctx: unknown): void => {
   }
   say("waiting for the typert service to register the remote face");
   ctx.inject(["typert"], (scope: unknown) => {
-    if (!isRecord(scope) || !isFunctionLike(scope.effect)) {
-      say("typert scope has no effect(); no remote face registered");
+    if (!isRecord(scope)) {
+      say("typert scope is not an object; no remote face registered");
+      return;
+    }
+    // `effect` comes from the PLUGIN context, not the injected scope. The scope
+    // handed to an inject callback is not guaranteed to carry it, and when it did
+    // not the registration was skipped — which the file log showed as
+    // "typert scope has no effect()" on every run after a successful one.
+    if (!isFunctionLike(effect)) {
+      say("ctx.effect is unavailable; no remote face registered");
       return;
     }
     say("typert resolved; registering the remote face");
-    const { effect } = scope;
     const registerDescriptor = (): void => {
       const typert: unknown = scope.typert;
       if (!isRecord(typert) || !isFunctionLike(typert.register)) {
@@ -323,7 +333,7 @@ export const registerUsageRemotes = (ctx: unknown): void => {
       }
     };
     try {
-      Reflect.apply(effect, scope, [registerDescriptor]);
+      Reflect.apply(effect, ctx, [registerDescriptor]);
     } catch (error) {
       say(
         `effect threw: ${error instanceof Error ? error.message : String(error)}`
