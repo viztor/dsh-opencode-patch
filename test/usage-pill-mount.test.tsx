@@ -202,7 +202,14 @@ describe("usage-pill: failure handling", () => {
       .mockRejectedValue(usageUnavailable({ configured: false }));
     const view = await renderPill(readUsage);
 
-    expect(view.container.querySelector(".dsh-oc-usage-root")).toBeNull();
+    // `waitFor`, not a bare assertion. `renderPill` waits only for the read to
+    // have been CALLED, so a bare `toBeNull()` here races the rejection: before
+    // React processes it the component still renders its trigger, and the test
+    // failed roughly one run in six. `waitFor` retries until the callback stops
+    // throwing, which is the settled state this actually asserts.
+    await waitFor(() => {
+      expect(view.container.querySelector(".dsh-oc-usage-root")).toBeNull();
+    });
   });
 
   it("shows a failure trigger when the read fails", async () => {
