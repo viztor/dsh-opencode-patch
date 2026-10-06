@@ -61,6 +61,12 @@ export const inject = [
   "modelDirectories",
   "remote",
   "remote.session",
+  // Our own remote, declared the way every Host plugin declares one
+  // (`remote.job`, `remote.workspace`, `remote.session`, …). Without the key
+  // cordis resolves the access to undefined rather than throwing, so
+  // `remote.opencodeGoUsage.read` reads as "missing" and the meter renders
+  // nothing — silently.
+  "remote.opencodeGoUsage",
 ];
 
 export interface ClientContext {
