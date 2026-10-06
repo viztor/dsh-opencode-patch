@@ -141,12 +141,29 @@ const noopDisposer = (): void => {
 const modelDirectoryStore = (
   ctx: ClientContext,
   sessionId: unknown
-): unknown => {
-  try {
-    return ctx.modelDirectories?.directoryFor?.(sessionId)?.store;
-  } catch {
-    return undefined;
+): { reason?: string; store?: unknown } => {
+  if (ctx.modelDirectories === undefined) {
+    return { reason: "no modelDirectories service" };
   }
+  if (typeof ctx.modelDirectories.directoryFor !== "function") {
+    return { reason: "no directoryFor" };
+  }
+  let directory: unknown;
+  try {
+    directory = ctx.modelDirectories.directoryFor(sessionId);
+  } catch (error) {
+    return {
+      reason: `directoryFor threw: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (directory === undefined || directory === null) {
+    return { reason: "directoryFor returned nothing" };
+  }
+  const { store } = directory as { store?: unknown };
+  if (store === undefined) {
+    return { reason: "directory has no store" };
+  }
+  return { store };
 };
 
 export const apply = (ctx: ClientContext): void => {
@@ -205,7 +222,8 @@ export const apply = (ctx: ClientContext): void => {
       // throws inside the renderer and takes the whole slot entry, and the
       // composer dock with it. Absence has to be expressed as "no props", which
       // the pill already renders as nothing.
-      const directory: unknown = modelDirectoryStore(meterScope, sessionId);
+      const probe = modelDirectoryStore(meterScope, sessionId);
+      const directory: unknown = probe.store;
       // TEMPORARY diagnostic: "the meter shows nothing" has two very different
       // causes — the Host handed us no directory for this session, or the entry
       // never mounted at all — and they are indistinguishable from the outside.
@@ -216,7 +234,7 @@ export const apply = (ctx: ClientContext): void => {
         sessionId: typeof sessionId === "string" ? sessionId : typeof sessionId,
       });
       if (directory === undefined || directory === null) {
-        return {};
+        return { reason: probe.reason ?? "no directory" };
       }
       // No Host usage service means no meter: it registers only when tracking is
       // on, and an unavailable state the user cannot act on is worse than
