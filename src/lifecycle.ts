@@ -132,15 +132,32 @@ const installFetchPatch = (
     const stopCatalogHiding = hideResponsesRoute(ctx);
     // Own the Responses route from here, so the user configures nothing: they
     // keep the `opencode` provider and key they already have. Best-effort — a
-    // route declared in the profile still works if this cannot register. The
-    // registration is async (it imports `llm-pi-ai` lazily), so the disposer
-    // arrives after the effect body has returned.
+    // route declared in the profile still works if this cannot register.
+    // The registration is async (it reads `llm-pi-ai` off the loader), so the
+    // disposer cannot live in a local the effect body fills in later: an effect
+    // that re-runs before the mount settles would find `undefined` here, release
+    // nothing, and leave the previous mount's routes registered — and the mount
+    // that then arrives would be an orphan owned by a disposed effect. So the
+    // effect owns the WITHDRAWAL, not the mount: a mount that completes after
+    // disposal is released on the spot, and one that completes before it is
+    // released by the disposer below.
     let stopResponsesProvider: (() => void) | undefined;
+    let released = false;
+    const releaseResponsesProvider = (): void => {
+      released = true;
+      stopResponsesProvider?.();
+      stopResponsesProvider = undefined;
+    };
     void (async () => {
-      stopResponsesProvider = await registerResponsesProvider(ctx);
+      const stop = await registerResponsesProvider(ctx);
+      if (released) {
+        stop?.();
+        return;
+      }
+      stopResponsesProvider = stop;
     })();
     return () => {
-      stopResponsesProvider?.();
+      releaseResponsesProvider();
       stopCatalogHiding?.();
       stopDiscoveryDecoration?.();
       if (globalThis.fetch === patched) {
