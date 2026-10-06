@@ -164,7 +164,14 @@ export const mergeDiscoveredModels = (
  * deliberately omits the route, so checking the patched method would make the
  * redirect never fire.
  */
-let registeredRoutes: (() => unknown) | undefined;
+/**
+ * Kept WITH its receiver. A method read off the service and called detached
+ * runs with `this === undefined`, and the LLM registry reads its own state
+ * through `this` — so the detached call surfaces as
+ * "Cannot read properties of undefined (reading 'adapters')", which names the
+ * registry's internals rather than the call that broke the receiver.
+ */
+let registeredRoutes: { list: () => unknown; receiver: unknown } | undefined;
 
 /**
  * Whether a route the plugin owns is really registered on the Host.
@@ -177,7 +184,10 @@ let registeredRoutes: (() => unknown) | undefined;
  * @returns true when the unfiltered registry still carries the route.
  */
 export const isRouteRegistered = (routeId: string): boolean => {
-  const routes = registeredRoutes?.();
+  const routes =
+    registeredRoutes === undefined
+      ? undefined
+      : Reflect.apply(registeredRoutes.list, registeredRoutes.receiver, []);
   return (
     Array.isArray(routes) &&
     routes.some((route) => isRecord(route) && route.id === routeId)
@@ -249,7 +259,9 @@ export const hideResponsesRoute = (
   ) {
     return undefined;
   }
-  registeredRoutes = originalListProviders;
+  if (typeof originalListProviders === "function") {
+    registeredRoutes = { list: originalListProviders, receiver: llm };
+  }
 
   const patched: Record<string, unknown> = {};
   if (typeof originalListProviders === "function") {
