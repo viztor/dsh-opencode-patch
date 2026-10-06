@@ -1,0 +1,57 @@
+# Keep the two things a release depends on current, and the toolchain they run
+# on. Release automation is the part of this repository that cannot be tested
+# until it matters, so the actions it runs are the highest-value thing to keep
+# un-stale.
+version: 2
+
+updates:
+  # The release path. A stale action here is how a tag silently stops producing a
+  # publish, and the workflow would still be green.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - ci
+      - dependencies
+    commit-message:
+      prefix: ci
+    groups:
+      # One PR for the whole action set: they move together and are only ever
+      # validated as a set by a real run.
+      actions:
+        patterns:
+          - "*"
+
+  # The plugin's own dependencies. Grouped so a routine bump does not arrive as
+  # a dozen PRs; the lockfile is the unit that is actually tested.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: build
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      dependencies:
+        dependency-type: production
+      # A toolchain upgrade that fails `scripts/check.ts`'s toolchain guards is
+      # expected; so is one that rewrites the lockfile wholesale.
+      tooling:
+        patterns:
+          - vite-plus
+          - ultracite
+          - typescript
+          - vitest
+          - "@vitest/*"

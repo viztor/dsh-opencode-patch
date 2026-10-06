@@ -208,6 +208,62 @@ describe("apply (plugin lifecycle)", () => {
     expect(await collectUnknown(result)).toEqual(["from-responses-route"]);
   });
 
+  it("reads the SDK from the ZEN plane, not a Go-first lookup", async () => {
+    // The measured mis-route: models.dev's `opencode-go` names
+    // `@ai-sdk/anthropic` for `qwen3.8-max` while its `opencode` names the
+    // completions default, and a Go-first lookup therefore sent a ZEN request to
+    // the anthropic route. The live gateway serves `qwen3.8-max` on
+    // `/chat/completions` and answers `400 ModelProtocolUnsupported` on
+    // `/messages`, so the redirect was a hard failure rather than a preference.
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    const dispatched: unknown[] = [];
+    let nextCalls = 0;
+
+    const ctx: CordisContext = {
+      effect: (fn: () => unknown) => {
+        fn();
+      },
+      llm: {
+        listConfigurableProviders: () => [{ provider: "opencode" }],
+        listModels: async () => [{ id: "qwen3.8-max" }],
+        listProviders: () => [{ id: "opencode" }, { id: "opencode-anthropic" }],
+        stream: (options: unknown) => {
+          dispatched.push(options);
+          return createMockStream("should-not-be-dispatched");
+        },
+      },
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+
+    apply(ctx);
+    if (typeof streamHandler !== "function") {
+      throw new TypeError("stream handler not registered");
+    }
+    const result: unknown = streamHandler(
+      { model: "qwen3.8-max", provider: "opencode" },
+      () => {
+        nextCalls += 1;
+        return createMockStream("from-opencode-route");
+      }
+    );
+
+    // The Zen plane declares no SDK for it, so it stays on the route the user
+    // configured — which is the endpoint that actually serves it.
+    expect(dispatched).toHaveLength(0);
+    expect(nextCalls).toBe(1);
+    if (!isAsyncIterableLike(result)) {
+      throw new Error("expected async iterable downstream");
+    }
+    expect(await collectUnknown(result)).toEqual(["from-opencode-route"]);
+  });
+
   it("dispatches normally when the responses route is not registered", async () => {
     // A layer that failed to load must not turn the gateway's own error into a
     // "no adapter for provider" one, which points at the wrong thing.

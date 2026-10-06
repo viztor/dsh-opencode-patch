@@ -133,12 +133,12 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol | served from |
 | :-- | --: | :-- | :-- |
-| _(absent)_ | 53 | OpenAI Chat Completions | the route you configured |
-| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 23 | Anthropic Messages | `opencode-anthropic` |
-| `@ai-sdk/google` | 8 | _(no such protocol in DSH)_ | **not offered** |
+| _(absent)_ | 26 | OpenAI Chat Completions | the route you configured |
+| `@ai-sdk/openai` | 30 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 7 | _(no such protocol in DSH)_ | **not offered** |
 
-Counts are the 116 `opencode` models in `models.dev` as of 2026-10-05.
+Counts are the 80 **active** `opencode` models in `models.dev` as of 2026-10-05, measured 2026-10-05 — the remaining 36 of the 116 listed are deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
 
 The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 
@@ -146,7 +146,7 @@ The patch **keeps those two routes out of both the model picker and _Settings �
 - **You are never offered a model that cannot work.** The 8 `@ai-sdk/google` models are dropped from the discovery list _and_ from what the `opencode` route reports, because DSH implements no such protocol and selecting one could only fail — with nothing in the row to say why.
 - **One credential.** Every routed model authenticates with the `opencode` key you already configured, resolved through the credentials service and never re-asked for.
 
-**What is still yours to declare:** the route itself. `opencode-responses` — and `opencode-anthropic`, once you use an Anthropic-plane model — must exist in your profile's `llm-pi-ai` `providers` block, listing the models it serves:
+**The route, if you would rather declare it yourself:** `opencode-responses` — and `opencode-anthropic`, once you use an Anthropic-plane model — can live in your profile's `llm-pi-ai` `providers` block, listing the models it serves. Declaring it is a choice, not a requirement:
 
 ```yaml
 opencode-responses:
@@ -162,7 +162,11 @@ opencode-responses:
       input: [text, image]
 ```
 
-A plugin-owned route — one you would not have to declare at all — is the intended end state, and the mechanism is implemented and **verified end-to-end**: `responses-provider.ts` mounts the host's own `llm-pi-ai` below `isolate("authorization")`, so it registers the route with **zero** authorization flows and cannot collide with the host's instance. What is **not** solved is reaching that package at runtime: it is a profile bundle, so it is not resolvable from the plugin, the profile, or the CLI's entry point, and declaring it as a dependency pulls ~1000 lockfile lines and breaks `pnpm install` over ignored build scripts. Until a resolution path lands, the plugin registers nothing and says so in the log. **Do not remove the route from your profile yet** — doing so would leave the model with nowhere to be served from.
+**The plugin registers that route for you**, so the block above is optional. `responses-provider.ts` mounts the host's own `llm-pi-ai` in-process, isolated from the authorization and settings seams and behind an `llm` facade that forwards only the adapter registration — so the route lands without duplicating the catalog directory, the settings namespace, or a single sign-in flow. This is verified against the real harness, not a stub: the route registers, the host's 41 catalog entries and 41 sign-in flows are untouched, and unloading withdraws the route again.
+
+The routes inherit **your** credential: each one names the same `apiKeyEnv` your `opencode` route already declares, so a custom key reference is never asked for twice. Routes your profile already declares are left alone — the plugin defers to your model list rather than overriding it.
+
+If your host has no loaded `llm-pi-ai` entry, the plugin registers nothing and says so in the log; declare the route in your profile in that case.
 
 ### 4. Execution modes covered
 

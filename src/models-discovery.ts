@@ -21,7 +21,8 @@ import type { CordisContext } from "./cordis-context.ts";
 import { isRecord } from "./guards.ts";
 import {
   getLiveGoCatalog,
-  findModelSpec,
+  catalogPlaneForRoute,
+  findModelSpecOn,
   getLiveZenCatalog,
   isRetiredModel,
   sanitizeModalities,
@@ -189,9 +190,17 @@ const withoutRoute = (value: unknown, key: "id" | "provider"): unknown =>
     ? value.filter((entry) => !(isRecord(entry) && isInternalRoute(entry[key])))
     : value;
 
-/** Whether a model can be served from some route. */
-const isServableModel = (id: unknown): boolean =>
-  typeof id !== "string" || isServableSdk(findModelSpec(id)?.provider_npm);
+/**
+ * Whether a model can be served, judged by the SDK the PLANE IN HAND declares.
+ *
+ * The plane matters: `qwen3.8-max`, `minimax-m2.7` and `minimax-m3` are
+ * `@ai-sdk/anthropic` on Go and the default (completions) on Zen, so a Go-first
+ * lookup filters a Zen listing by a Go fact. Same seam as the redirect's — see
+ * `findModelSpecOn`.
+ */
+const isServableModel = (id: unknown, route: string): boolean =>
+  typeof id !== "string" ||
+  isServableSdk(findModelSpecOn(catalogPlaneForRoute(route), id)?.provider_npm);
 
 /**
  * Keep the internal routes out of every listing a user sees.
@@ -274,7 +283,7 @@ export const hideResponsesRoute = (
       const models = await Reflect.apply(originalListModels, this, [provider]);
       return Array.isArray(models)
         ? models.filter(
-            (model) => !isRecord(model) || isServableModel(model.id)
+            (model) => !isRecord(model) || isServableModel(model.id, provider)
           )
         : models;
     };

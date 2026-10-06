@@ -138,7 +138,9 @@ export {
   OPENCODE_ZEN_CATALOG,
   RETIRED_ZEN_MODEL_IDS,
   enrichModelsResponse,
+  catalogPlaneForRoute,
   findModelSpec,
+  findModelSpecOn,
   getLiveCatalog,
   getLiveGoCatalog,
   getLiveZenCatalog,
@@ -173,6 +175,8 @@ export {
   ROUTE_FOR_PROTOCOL,
 } from "./responses-routes.ts";
 export {
+  inheritedCredentialRef,
+  loadPiAi,
   modelsForSdk,
   registerResponsesProvider,
 } from "./responses-provider.ts";

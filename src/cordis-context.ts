@@ -14,16 +14,59 @@
 import { readString } from "./config-values.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 
+/**
+ * The disposer `llm.registerAdapter` returns.
+ *
+ * It is a **callable**, not an object with a `dispose` method, and it carries an
+ * atomic route swap: `replace(providers)` re-points the same adapter at a new
+ * route set. A stand-in handed to a plugin that expects the real contract has to
+ * answer both, or the plugin's own re-registration path throws on a missing
+ * method rather than on the conflict it should be reporting.
+ */
+export type AdapterRegistrationLike = (() => void) & {
+  replace?: (providers: readonly string[]) => void;
+};
+
+/**
+ * The directory counterpart of {@link AdapterRegistrationLike}: withdraws every
+ * configurable provider a registration holds, and swaps them atomically.
+ */
+export type DirectoryRegistrationLike = (() => void) & {
+  replace?: (entries: readonly unknown[]) => void;
+};
+
 /** Logging + lifecycle capabilities `apply()` uses. */
 export interface CordisContext {
   effect?: (fn: () => unknown, name?: string) => void;
+  /**
+   * A child context with extra metadata on top of this scope, prototypally
+   * inheriting every property. Own properties of the metadata shadow the
+   * inherited ones, which is how a service can be shadowed for one subtree
+   * without the parent being mutated.
+   */
+  extend?: (meta?: Record<string, unknown>) => CordisContext;
   get?: (name: string) => unknown;
   inject?: (deps: string[], cb: (scope: unknown) => void) => void;
+  /**
+   * The loader's entry list. Every configured entry the host loaded keeps its
+   * raw import result there, which is how the plugin reaches a package it is
+   * deliberately not a dependency of.
+   */
+  loader?: LoaderService;
   llm?: {
+    /**
+     * Offer to interrogate provider endpoints on behalf of one settings
+     * namespace. Uniqueness is by namespace, so a second registration under the
+     * same one is a conflict rather than a replacement.
+     */
     registerModelDiscovery?: (
       ns: string,
-      discover: () => Promise<unknown>
-    ) => void;
+      discover: (request?: unknown, signal?: AbortSignal) => Promise<unknown>
+    ) => (() => void) | undefined;
+    /** Declare routes a plugin can activate through configuration. */
+    registerConfigurableProviders?: (
+      entries: readonly unknown[]
+    ) => DirectoryRegistrationLike | undefined;
     discoverModels?: (
       settingsNs: string,
       request?: unknown,
@@ -45,7 +88,7 @@ export interface CordisContext {
     registerAdapter?: (
       providers: readonly string[],
       adapter: unknown
-    ) => { dispose?: () => void } | undefined;
+    ) => AdapterRegistrationLike | undefined;
     /**
      * The models one route advertises. The browser catalog turns each route into
      * a group and DROPS groups with no models, so this is how an internal route
@@ -77,10 +120,23 @@ export interface CordisContext {
    * or an object with an `apply` method — which is exactly what `llm-pi-ai`
    * exports, so this is how the plugin mounts it.
    */
-  plugin?: (
-    plugin: unknown,
-    config?: unknown
-  ) => { dispose?: () => void } | undefined;
+  plugin?: (plugin: unknown, config?: unknown) => PluginFiber | undefined;
+}
+
+/**
+ * The fiber `ctx.plugin` starts a plugin in.
+ *
+ * **Not thenable.** Cordis's `Fiber` has no `then`, so `await fiber` resolves
+ * immediately with the fiber itself and swallows nothing: `await()` is the
+ * method that waits for the lifecycle work and rethrows a startup or
+ * config-validation error. Without calling it, a mount that failed validation
+ * looks exactly like one that succeeded.
+ */
+export interface PluginFiber {
+  /** Wait for current lifecycle work, rethrowing a startup error if any. */
+  await?: () => Promise<unknown>;
+  /** Dispose and unload; resolves once the unwind is complete. */
+  dispose?: () => Promise<unknown>;
 }
 
 /** One loaded cordis entry's identifying options. */
@@ -166,10 +222,23 @@ export const readCredentialsResolver = (
   };
 };
 
-/** Structural claim satisfied by any context exposing `loader.entries()`. */
+/**
+ * Structural claim satisfied by any context exposing the loader's entry list.
+ *
+ * `unwrapExports` is what turns an entry's RAW import result into the plugin
+ * object the registry would have applied — the same normalization the loader
+ * itself performs, so a default-export or CJS-interop shape needs no second
+ * guess here.
+ */
 export interface LoaderHost {
-  loader: { entries: () => Iterable<unknown> };
+  loader: {
+    entries: () => Iterable<unknown>;
+    unwrapExports?: (exports: unknown) => unknown;
+  };
 }
+
+/** The loader surface, as the plugin reads it off its own context. */
+export type LoaderService = LoaderHost["loader"];
 
 /**
  * True when `ctx` exposes the loader's entry list. Iteration itself is the

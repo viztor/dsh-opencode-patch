@@ -6,6 +6,12 @@ on:
     tags-ignore: ["v*.*.*"]
   pull_request:
   workflow_dispatch:
+  # Nightly, so a vendor-side change is caught here rather than by a user's
+  # meter. The e2e suite is the only thing that talks to OpenCode, and the
+  # bundled catalog is the only thing that tracks models.dev — both are exactly
+  # the kind of contract that rots quietly between commits.
+  schedule:
+    - cron: "37 4 * * *"
 
 permissions:
   contents: read
@@ -16,7 +22,11 @@ concurrency:
 
 jobs:
   check:
+    name: check · test · build · gate
     runs-on: ubuntu-latest
+    # A hung test otherwise burns the six-hour default. Everything here is
+    # offline and fast; twenty minutes is generous, not tight.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       # No `version:` input: pnpm/action-setup refuses to run when it is given
@@ -32,6 +42,46 @@ jobs:
       - run: pnpm run test
       - run: pnpm run build
       - run: node --experimental-strip-types scripts/check.ts
+      # Coverage as its own step, not folded into `test`: the ratchet only means
+      # something if it can fail a build. Uploaded so a PR can be diffed against
+      # `main` rather than only against the threshold.
+      - run: pnpm run test:coverage
+      - name: upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+          retention-days: 7
+
+  # The bundled catalog is generated from models.dev, and the one field that went
+  # stale before (`provider_npm`) put nine models on an endpoint that cannot
+  # serve them — a WRONG answer rather than a missing one, and invisible to the
+  # unit suite. Regenerating on a schedule turns the vendor's next change into a
+  # diff to review instead of a bug to diagnose.
+  #
+  # Skipped on pull_request: it reaches the public internet, and a fork's copy
+  # of the job would answer "stale" for everyone.
+  catalog:
+    name: catalog freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: is src/catalog-data.ts still current?
+        run: |
+          # Exits 1 on a stale shim and prints what would change.
+          pnpm run catalog:shim || {
+            echo "::error::src/catalog-data.ts is out of date — run 'pnpm run catalog:shim -- --write' and commit the result."
+            exit 1
+          }
 
   # The live gateway contract: the only job that talks to OpenCode itself, so a
   # vendor payload change fails here rather than in a user's meter.
@@ -42,7 +92,9 @@ jobs:
   # OPENCODE_GO_API_KEY (Go plan) under Settings → Secrets → Actions to arm the
   # keyed cases.
   e2e:
+    name: e2e · live gateway
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
