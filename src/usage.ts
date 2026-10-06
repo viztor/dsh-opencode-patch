@@ -264,17 +264,34 @@ const hasInject = (
  * still works headless, just without a remote face for the quota meter.
  */
 export const registerUsageRemotes = (ctx: unknown): void => {
+  // TEMPORARY diagnostics on every silent exit. Each one leaves the client with
+  // no remote face for the meter and says nothing about it, which is why "the
+  // meter renders nothing" has been unanswerable from the browser. Remove once
+  // the meter renders.
+  const say = (reason: string): void => {
+    const logger: unknown = isRecord(ctx) ? ctx.logger : undefined;
+    if (isRecord(logger) && typeof logger.info === "function") {
+      Reflect.apply(logger.info, logger, [
+        `[dsh-opencode-patch] usage remote: ${reason}`,
+      ]);
+    }
+  };
   if (!hasInject(ctx)) {
+    say("ctx.inject is unavailable; no remote face registered");
     return;
   }
+  say("waiting for the typert service to register the remote face");
   ctx.inject(["typert"], (scope: unknown) => {
     if (!isRecord(scope) || !isFunctionLike(scope.effect)) {
+      say("typert scope has no effect(); no remote face registered");
       return;
     }
+    say("typert resolved; registering the remote face");
     const { effect } = scope;
     const registerDescriptor = (): void => {
       const typert: unknown = scope.typert;
       if (!isRecord(typert) || !isFunctionLike(typert.register)) {
+        say("typert.register is unavailable; no remote face registered");
         return;
       }
       const { register } = typert;
