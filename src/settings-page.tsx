@@ -299,8 +299,13 @@ export const apply = (ctx: ClientContext): void => {
   // `ctx.modelDirectories` straight off the root context is not guaranteed —
   // it came back undefined, so the injector bailed and the meter never mounted.
   // An assembly without service injection still gets the old root-context path.
+  // `remote` is load-bearing and was missing: `directoryFor()` reaches
+  // `remote.session` internally, and cordis refuses that access unless the
+  // caller declared the service — so the call threw
+  // `cannot get property "remote.session" without inject`, which the try/catch
+  // turned into "no directory" and the meter silently rendered nothing.
   if (typeof ctx.inject === "function") {
-    ctx.inject(["modelDirectories", "slots"], registerMeter);
+    ctx.inject(["modelDirectories", "remote", "slots"], registerMeter);
   } else {
     registerMeter(ctx);
   }
