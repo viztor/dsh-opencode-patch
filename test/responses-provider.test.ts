@@ -228,13 +228,16 @@ const createHost = (options: { onPlugin?: (config: unknown) => void } = {}) => {
     ) {
       options.onPlugin?.(config);
       const record = subject as Partial<FakePiAi>;
-      const callback = record.apply as () => unknown;
+      // Named for what it IS — the plugin's own `apply` — rather than
+      // `callback`, which is what the enclosing registry helper calls its own
+      // parameter and what the linter rightly refused to shadow.
+      const applyFn = record.apply as () => unknown;
       // The registry's own rule: the FIRST instance's schema is the one on
       // record, and it validates whatever every later mount is handed.
-      let runtime = runtimes.get(callback);
+      let runtime = runtimes.get(applyFn);
       if (runtime === undefined) {
         runtime = { Config: record.Config };
-        runtimes.set(callback, runtime);
+        runtimes.set(applyFn, runtime);
       }
       const resolved =
         runtime.Config === undefined ? config : runtime.Config(config);
@@ -877,7 +880,14 @@ describe("responses-provider: the credential is the user's, not ours", () => {
 
 describe("responses-provider: the loader contract", () => {
   const PI_AI_NAME = "@deepseek-ai/dsh-llm-pi-ai";
-  const plugin = { apply: () => undefined, name: PI_AI_NAME };
+  // A body rather than `() => undefined`: these cases never run the plugin, and
+  // an arrow whose whole body is `undefined` says the return value matters.
+  const plugin = {
+    apply: (): void => {
+      /* never invoked by these cases */
+    },
+    name: PI_AI_NAME,
+  };
 
   it("reads entries from a generator, which is what the loader yields", () => {
     // `entries()` is a generator, not an array; a stand-in that returned an
@@ -982,109 +992,55 @@ describe("responses-provider: the loader contract", () => {
   });
 });
 
-describe("responses-provider: the loader contract", () => {
-  const PI_AI_NAME = "@deepseek-ai/dsh-llm-pi-ai";
-  const plugin = { apply: () => undefined, name: PI_AI_NAME };
+describe("responses-provider: the loader's degraded shapes", () => {
+  // Each of these is a shape a real host can hand over — a registry that throws,
+  // an `entries()` that yields something that is not a list — and each has to
+  // degrade to "no internal route", never to a failed boot.
 
-  it("reads entries from a generator, which is what the loader yields", () => {
-    // `entries()` is a generator, not an array; a stand-in that returned an
-    // array would never exercise this path.
-    function* entries() {
-      yield { options: { name: "other" }, moduleNamespace: {} };
-      yield { options: { name: PI_AI_NAME }, moduleNamespace: plugin };
-    }
-    expect(loadPiAi({ loader: { entries } })).toBe(plugin);
+  it("treats an entries() that yields a primitive as no entries", () => {
+    // `entries` is typed as an array but is a generator in practice; a host that
+    // returned a scalar would otherwise iterate its characters.
+    expect(loadPiAi({ loader: { entries: () => 42 } })).toBeUndefined();
   });
 
-  it("reaches the loader through the service registry when it is not a property", () => {
-    const ctx = {
-      get: (name: string) =>
-        name === "loader"
-          ? {
-              entries: () => [
-                { options: { name: PI_AI_NAME }, moduleNamespace: plugin },
-              ],
-            }
-          : undefined,
-    };
-    expect(loadPiAi(ctx)).toBe(plugin);
+  it("treats an entries() that yields a non-iterable object as no entries", () => {
+    expect(loadPiAi({ loader: { entries: () => ({}) } })).toBeUndefined();
   });
 
-  it("accepts the raw namespace when the loader does not normalize exports", () => {
-    const ctx = {
-      loader: {
-        entries: () => [
-          { options: { name: PI_AI_NAME }, moduleNamespace: plugin },
-        ],
-      },
-    };
-    expect(loadPiAi(ctx)).toBe(plugin);
+  it("treats a loader without a usable entries() as absent", () => {
+    expect(loadPiAi({ loader: {} })).toBeUndefined();
+    expect(loadPiAi({ loader: { entries: "not a function" } })).toBeUndefined();
   });
 
-  it("reports a namespace that carries no apply as absent", () => {
+  it("survives a service registry whose get() throws", () => {
+    // The registry is another plugin's service; asking it is not guaranteed to
+    // work, and a throw here must not take the boot with it.
     const ctx = {
-      loader: {
-        entries: () => [
-          {
-            options: { name: PI_AI_NAME },
-            moduleNamespace: { name: PI_AI_NAME },
-          },
-        ],
+      get: () => {
+        throw new Error("registry unavailable");
       },
     };
     expect(loadPiAi(ctx)).toBeUndefined();
-  });
-
-  it("survives a loader whose entries() throws", () => {
-    const ctx = {
-      loader: {
-        entries: () => {
-          throw new Error("loader unavailable");
-        },
-      },
-    };
-    expect(loadPiAi(ctx)).toBeUndefined();
+    // The credential reference still answers with its documented default.
     expect(inheritedCredentialRef(ctx)).toBe("OPENCODE_API_KEY");
   });
 
-  it("ignores entries that carry no options, no config, or no source route", () => {
-    const ctx = {
-      loader: {
-        entries: () => [
-          null,
-          { options: null },
-          { options: { config: null } },
-          { options: { config: { providers: null } } },
-          { options: { config: { providers: { opencode: null } } } },
-          {
-            options: { config: { providers: { opencode: { apiKeyEnv: "" } } } },
-          },
-          {
-            options: {
-              config: { providers: { opencode: { apiKeyEnv: "REAL_KEY" } } },
-            },
-          },
-        ],
-      },
-    };
-    expect(inheritedCredentialRef(ctx)).toBe("REAL_KEY");
+  it("ignores a loader the registry resolves to something that is not one", () => {
+    expect(loadPiAi({ get: () => "not a loader" })).toBeUndefined();
+    expect(loadPiAi({ get: () => null })).toBeUndefined();
+    expect(
+      loadPiAi({
+        get: () => {
+          /* the registry holds no loader */
+        },
+      })
+    ).toBeUndefined();
   });
 
-  it("lists each model once when both planes carry it", () => {
-    const shared = {
-      context_window: 1,
-      id: "shared-model",
-      input_modalities: ["text"],
-      max_output_tokens: 1,
-      name: "Shared",
-      provider_npm: "@ai-sdk/openai",
-    };
-    const catalog = [
-      shared,
-      { ...shared },
-      { ...shared, id: "other", provider_npm: undefined },
-    ];
-    const models = modelsForSdk("@ai-sdk/openai", catalog);
-    expect(models.map((m) => m.id)).toEqual(["shared-model"]);
+  it("treats a context that is not a context as absent", () => {
+    for (const ctx of [undefined, null, 42, "ctx"]) {
+      expect(loadPiAi(ctx)).toBeUndefined();
+      expect(inheritedCredentialRef(ctx)).toBe("OPENCODE_API_KEY");
+    }
   });
 });

@@ -310,20 +310,6 @@ const declaredRoutes = (llm: CordisContext["llm"]): Set<unknown> => {
   );
 };
 
-/**
- * A handle for a registration this module never makes.
- *
- * The host's only use of it is `replace` on a later configuration change, so
- * one shared pair of no-ops answers both that and a call, rather than a fresh
- * closure per publishing call that nothing would ever reach.
- */
-const noopPublish = (): void => undefined;
-
-/** @see noopPublish */
-const NOOP_DIRECTORY_HANDLE = Object.assign(noopPublish, {
-  replace: noopPublish,
-});
-
 /** Withdraw one registration, whichever handle shape the registry returned. */
 const releaseRegistration = (handle: unknown): void => {
   try {
