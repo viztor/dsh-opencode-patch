@@ -295,16 +295,32 @@ export const registerUsageRemotes = (ctx: unknown): void => {
         return;
       }
       const { register } = typert;
-      Reflect.apply(register, typert, [
-        {
-          face: "host",
-          invocations: usageRemote.descriptors,
-          model: { events: [], objects: [], services: [] },
-          package: usageRemote.package,
-          schemas: [],
-        },
-      ]);
+      try {
+        Reflect.apply(register, typert, [
+          {
+            face: "host",
+            invocations: usageRemote.descriptors,
+            model: { events: [], objects: [], services: [] },
+            package: usageRemote.package,
+            schemas: [],
+          },
+        ]);
+        say("remote face registered");
+      } catch (error) {
+        // TEMPORARY: `register` validates the package, the schemas and every
+        // invocation, so a rejection here is the likeliest reason the client
+        // never sees the namespace — and it would otherwise be silent.
+        say(
+          `typert.register rejected: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     };
-    Reflect.apply(effect, scope, [registerDescriptor]);
+    try {
+      Reflect.apply(effect, scope, [registerDescriptor]);
+    } catch (error) {
+      say(
+        `effect threw: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   });
 };
