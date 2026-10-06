@@ -82,7 +82,18 @@ const installUsageService = (
   ctx: CordisContext,
   config: ResolvedPluginConfig
 ): void => {
+  // TEMPORARY diagnostic: the meter renders nothing when this service is
+  // absent, and "absent" has two causes — the switch is off, or the composition
+  // has no `plugin`. Say which. Remove once the meter renders.
+  ctx.logger?.info?.(
+    "[dsh-opencode-patch] usage service: enabled=%s plugin=%s",
+    config.usageEnabled,
+    typeof ctx.plugin
+  );
   if (!config.usageEnabled || typeof ctx.plugin !== "function") {
+    ctx.logger?.info?.(
+      "[dsh-opencode-patch] usage service NOT registered; the meter will render nothing"
+    );
     return;
   }
   ctx.plugin(GoUsageService, {
