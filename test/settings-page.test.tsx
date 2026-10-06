@@ -157,7 +157,7 @@ describe("settings-page: apply & slots", () => {
     expect(dockInjector).toBeDefined();
 
     // Invalid session ID returns null
-    expect(dockInjector?.("invalid")).toBeNull();
+    expect(dockInjector?.("invalid")).toEqual({});
 
     // Valid session ID returns injected props
     const injected = dockInjector?.("valid") as {
@@ -248,7 +248,7 @@ describe("settings-page: apply & slots", () => {
 
     apply(ctx as never);
     expect(dockInjector).toBeDefined();
-    expect(dockInjector?.("session")).toBeNull();
+    expect(dockInjector?.("session")).toEqual({});
   });
 
   it("degrades to no meter when the model-directory service throws", () => {
@@ -281,7 +281,7 @@ describe("settings-page: apply & slots", () => {
 
     expect(() => apply(ctx as never)).not.toThrow();
     expect(dockInjector).toBeDefined();
-    expect(dockInjector?.("session")).toBeNull();
+    expect(dockInjector?.("session")).toEqual({});
   });
 
   it("resolves the model directory from the injected scope, not the root context", () => {

@@ -200,15 +200,20 @@ export const apply = (ctx: ClientContext): void => {
 
   const createUsageInjector =
     (meterScope: ClientContext) => (sessionId: unknown) => {
+      // An EMPTY object, never `null`: the Host hands this return value straight
+      // to its own inject binder, which reads `hooks` off it — so a null face
+      // throws inside the renderer and takes the whole slot entry, and the
+      // composer dock with it. Absence has to be expressed as "no props", which
+      // the pill already renders as nothing.
       const directory: unknown = modelDirectoryStore(meterScope, sessionId);
       if (directory === undefined || directory === null) {
-        return null;
+        return {};
       }
       // No Host usage service means no meter: it registers only when tracking is
       // on, and an unavailable state the user cannot act on is worse than
       // absence.
       if (typeof meterScope.remote?.opencodeGoUsage?.read !== "function") {
-        return null;
+        return {};
       }
       const markers = usageMarkers();
       // The id the Host must price; the pill also names the active provider,

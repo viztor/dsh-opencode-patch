@@ -50,8 +50,23 @@ export interface ModelDirectoryState {
   pending?: DirectorySelection;
 }
 
+/**
+ * Stands in when the injector has no directory to hand over.
+ *
+ * Optional rather than required because absence is a real state: the injector
+ * returns no props when the Host has no model directory or no usage service, and
+ * the Host reads `hooks` off whatever it returns — so the pill has to render
+ * from nothing rather than the entry throwing inside the renderer.
+ */
+const NO_DIRECTORY: SnapshotStore<ModelDirectoryState> = {
+  getSnapshot: () => ({}),
+  subscribe: () => () => {
+    // Nothing to unsubscribe from.
+  },
+};
+
 export interface UsagePillProps {
-  directory: SnapshotStore<ModelDirectoryState>;
+  directory?: SnapshotStore<ModelDirectoryState>;
   getLocale?: () => string;
   /**
    * Deprecated: model markers are no longer used for gating. Kept optional for backward compatibility.
@@ -310,11 +325,22 @@ export const UsagePill = ({
   modelMarkers: _modelMarkers,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
+  // A fallback rather than an early return: `useSyncExternalStore` is a hook, so
+  // the call has to happen either way.
+  const store = directory ?? NO_DIRECTORY;
   const state = useSyncExternalStore(
-    directory.subscribe,
-    directory.getSnapshot,
-    directory.getSnapshot
+    store.subscribe,
+    store.getSnapshot,
+    store.getSnapshot
   );
+
+  // No directory means the injector had nothing to hand over — the Host has no
+  // model directory for this session, or no usage service. Rendering nothing is
+  // the honest state, and it is safe to return here: this is the component's
+  // only hook.
+  if (directory === undefined) {
+    return null;
+  }
 
   const provider = state?.current?.provider ?? state?.pending?.provider ?? "";
   // The settings scope passes the claimed routes at inject time; an absent or
