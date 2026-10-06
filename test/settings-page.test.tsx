@@ -97,7 +97,7 @@ describe("settings-page: apply & slots", () => {
         register: (entry: Record<string, unknown>, component: unknown) => {
           if (entry.name === "plugins.bundle.config") {
             bundleRegistrations.push({ entry, component });
-          } else if (entry.name === "conversation.composer.dock") {
+          } else if (entry.name === "conversation.input.right") {
             dockRegistrations.push({ entry, component });
           } else if (entry.name === "conversation.input.right") {
             inputRegistrations.push({ entry, component });
@@ -146,7 +146,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
@@ -195,7 +195,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
@@ -239,7 +239,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
@@ -272,7 +272,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
@@ -299,7 +299,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
@@ -357,7 +357,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
@@ -393,7 +393,7 @@ describe("settings-page: apply & slots", () => {
       slots: {
         inject: (_name: string, fn: () => void) => fn(),
         register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.composer.dock") {
+          if (entry.name === "conversation.input.right") {
             dockInjector = entry.inject as (s: unknown) => unknown;
           }
         },
