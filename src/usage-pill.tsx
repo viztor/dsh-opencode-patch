@@ -82,6 +82,8 @@ export interface UsagePillProps {
    * Deprecated: model markers are no longer used for gating. Kept optional for backward compatibility.
    */
   modelMarkers?: readonly string[];
+  /** Why the meter has no directory; set only on the diagnostic path. */
+  reason?: string;
   /**
    * Provider routes the meter is shown for — the same list the host claims
    * traffic for. Defaults to the stock routes when absent or empty.
@@ -333,6 +335,7 @@ export const UsagePill = ({
   directory,
   meterProviders,
   modelMarkers: _modelMarkers,
+  reason,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
   // A fallback rather than an early return: `useSyncExternalStore` is a hook, so
@@ -356,7 +359,7 @@ export const UsagePill = ({
     return React.createElement(
       "span",
       { style: { fontSize: "0.75em", opacity: 0.6 } },
-      "[opencode 计量表: 无模型目录]"
+      `[opencode 计量表: ${reason ?? "无模型目录"}]`
     );
   }
 
