@@ -243,7 +243,18 @@ const createHost = (options: { onPlugin?: (config: unknown) => void } = {}) => {
       const fiberCtx = makeCtx(this, new Map(isolateChain), entryId);
       fiberCtx.fiber = { entry: { options: { id: entryId } } };
       fiberCtx.effect = (fn: () => unknown) => fn();
-      fiberCtx.on = () => {};
+      // Faithful: the host fires `loader/volatile-update` after a config change,
+      // and the mounted plugin answers it by re-running its directory sync — which
+      // is the only path that reaches the handle our facade hands back.
+      const volatile: (() => void)[] = [];
+      fiberCtx.on = (event?: string, callback?: unknown) => {
+        if (
+          event === "loader/volatile-update" &&
+          typeof callback === "function"
+        ) {
+          volatile.push(callback as () => void);
+        }
+      };
       fiberCtx.logger = { error: () => {}, info: () => {}, warn: () => {} };
       fiberCtx.inject = (deps: string[], cb: (scope: HostCtx) => void) => {
         // An unresolved dependency simply never fires — that is what isolating
@@ -256,6 +267,9 @@ const createHost = (options: { onPlugin?: (config: unknown) => void } = {}) => {
         cb(fiberCtx);
       };
       (record.apply as (c: HostCtx, cfg: unknown) => void)(fiberCtx, resolved);
+      for (const listener of volatile) {
+        listener();
+      }
       // Awaitable via a real promise rather than a literal `then`: a cordis
       // fiber is thenable, and what the mount observes is only that awaiting it
       // settles.
@@ -858,5 +872,219 @@ describe("responses-provider: the credential is the user's, not ours", () => {
     for (const profile of Object.values(providers)) {
       expect(profile.apiKeyEnv).toBe("MY_ZEN_KEY");
     }
+  });
+});
+
+describe("responses-provider: the loader contract", () => {
+  const PI_AI_NAME = "@deepseek-ai/dsh-llm-pi-ai";
+  const plugin = { apply: () => undefined, name: PI_AI_NAME };
+
+  it("reads entries from a generator, which is what the loader yields", () => {
+    // `entries()` is a generator, not an array; a stand-in that returned an
+    // array would never exercise this path.
+    function* entries() {
+      yield { options: { name: "other" }, moduleNamespace: {} };
+      yield { options: { name: PI_AI_NAME }, moduleNamespace: plugin };
+    }
+    expect(loadPiAi({ loader: { entries } })).toBe(plugin);
+  });
+
+  it("reaches the loader through the service registry when it is not a property", () => {
+    const ctx = {
+      get: (name: string) =>
+        name === "loader"
+          ? {
+              entries: () => [
+                { options: { name: PI_AI_NAME }, moduleNamespace: plugin },
+              ],
+            }
+          : undefined,
+    };
+    expect(loadPiAi(ctx)).toBe(plugin);
+  });
+
+  it("accepts the raw namespace when the loader does not normalize exports", () => {
+    const ctx = {
+      loader: {
+        entries: () => [
+          { options: { name: PI_AI_NAME }, moduleNamespace: plugin },
+        ],
+      },
+    };
+    expect(loadPiAi(ctx)).toBe(plugin);
+  });
+
+  it("reports a namespace that carries no apply as absent", () => {
+    const ctx = {
+      loader: {
+        entries: () => [
+          {
+            options: { name: PI_AI_NAME },
+            moduleNamespace: { name: PI_AI_NAME },
+          },
+        ],
+      },
+    };
+    expect(loadPiAi(ctx)).toBeUndefined();
+  });
+
+  it("survives a loader whose entries() throws", () => {
+    const ctx = {
+      loader: {
+        entries: () => {
+          throw new Error("loader unavailable");
+        },
+      },
+    };
+    expect(loadPiAi(ctx)).toBeUndefined();
+    expect(inheritedCredentialRef(ctx)).toBe("OPENCODE_API_KEY");
+  });
+
+  it("ignores entries that carry no options, no config, or no source route", () => {
+    const ctx = {
+      loader: {
+        entries: () => [
+          null,
+          { options: null },
+          { options: { config: null } },
+          { options: { config: { providers: null } } },
+          { options: { config: { providers: { opencode: null } } } },
+          {
+            options: { config: { providers: { opencode: { apiKeyEnv: "" } } } },
+          },
+          {
+            options: {
+              config: { providers: { opencode: { apiKeyEnv: "REAL_KEY" } } },
+            },
+          },
+        ],
+      },
+    };
+    expect(inheritedCredentialRef(ctx)).toBe("REAL_KEY");
+  });
+
+  it("lists each model once when both planes carry it", () => {
+    const shared = {
+      context_window: 1,
+      id: "shared-model",
+      input_modalities: ["text"],
+      max_output_tokens: 1,
+      name: "Shared",
+      provider_npm: "@ai-sdk/openai",
+    };
+    const catalog = [
+      shared,
+      { ...shared },
+      { ...shared, id: "other", provider_npm: undefined },
+    ];
+    const models = modelsForSdk("@ai-sdk/openai", catalog);
+    expect(models.map((m) => m.id)).toEqual(["shared-model"]);
+  });
+});
+
+describe("responses-provider: the loader contract", () => {
+  const PI_AI_NAME = "@deepseek-ai/dsh-llm-pi-ai";
+  const plugin = { apply: () => undefined, name: PI_AI_NAME };
+
+  it("reads entries from a generator, which is what the loader yields", () => {
+    // `entries()` is a generator, not an array; a stand-in that returned an
+    // array would never exercise this path.
+    function* entries() {
+      yield { options: { name: "other" }, moduleNamespace: {} };
+      yield { options: { name: PI_AI_NAME }, moduleNamespace: plugin };
+    }
+    expect(loadPiAi({ loader: { entries } })).toBe(plugin);
+  });
+
+  it("reaches the loader through the service registry when it is not a property", () => {
+    const ctx = {
+      get: (name: string) =>
+        name === "loader"
+          ? {
+              entries: () => [
+                { options: { name: PI_AI_NAME }, moduleNamespace: plugin },
+              ],
+            }
+          : undefined,
+    };
+    expect(loadPiAi(ctx)).toBe(plugin);
+  });
+
+  it("accepts the raw namespace when the loader does not normalize exports", () => {
+    const ctx = {
+      loader: {
+        entries: () => [
+          { options: { name: PI_AI_NAME }, moduleNamespace: plugin },
+        ],
+      },
+    };
+    expect(loadPiAi(ctx)).toBe(plugin);
+  });
+
+  it("reports a namespace that carries no apply as absent", () => {
+    const ctx = {
+      loader: {
+        entries: () => [
+          {
+            options: { name: PI_AI_NAME },
+            moduleNamespace: { name: PI_AI_NAME },
+          },
+        ],
+      },
+    };
+    expect(loadPiAi(ctx)).toBeUndefined();
+  });
+
+  it("survives a loader whose entries() throws", () => {
+    const ctx = {
+      loader: {
+        entries: () => {
+          throw new Error("loader unavailable");
+        },
+      },
+    };
+    expect(loadPiAi(ctx)).toBeUndefined();
+    expect(inheritedCredentialRef(ctx)).toBe("OPENCODE_API_KEY");
+  });
+
+  it("ignores entries that carry no options, no config, or no source route", () => {
+    const ctx = {
+      loader: {
+        entries: () => [
+          null,
+          { options: null },
+          { options: { config: null } },
+          { options: { config: { providers: null } } },
+          { options: { config: { providers: { opencode: null } } } },
+          {
+            options: { config: { providers: { opencode: { apiKeyEnv: "" } } } },
+          },
+          {
+            options: {
+              config: { providers: { opencode: { apiKeyEnv: "REAL_KEY" } } },
+            },
+          },
+        ],
+      },
+    };
+    expect(inheritedCredentialRef(ctx)).toBe("REAL_KEY");
+  });
+
+  it("lists each model once when both planes carry it", () => {
+    const shared = {
+      context_window: 1,
+      id: "shared-model",
+      input_modalities: ["text"],
+      max_output_tokens: 1,
+      name: "Shared",
+      provider_npm: "@ai-sdk/openai",
+    };
+    const catalog = [
+      shared,
+      { ...shared },
+      { ...shared, id: "other", provider_npm: undefined },
+    ];
+    const models = modelsForSdk("@ai-sdk/openai", catalog);
+    expect(models.map((m) => m.id)).toEqual(["shared-model"]);
   });
 });
