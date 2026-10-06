@@ -10,9 +10,13 @@ import { describe, expect, it } from "vitest";
 import {
   ANTHROPIC_ROUTE,
   ANTHROPIC_SDK,
+  catalogPlaneForRoute,
   findModelSpec,
+  findModelSpecOn,
   internalRouteFor,
   isServableSdk,
+  OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
   parseModelsDevCatalog,
   RESPONSES_ROUTE,
   RESPONSES_SDK,
@@ -112,5 +116,89 @@ describe("responses-routes: the catalog seam", () => {
       "utf8"
     );
     expect(layer).toContain(`- ${RESPONSES_ROUTE}`);
+  });
+});
+
+describe("responses-routes: the SDK is read from the plane the request is on", () => {
+  /**
+   * The two planes declare DIFFERENT SDKs for the same model id, and reading the
+   * wrong one is a mis-route rather than a detail.
+   *
+   * models.dev's `opencode-go` names `@ai-sdk/anthropic` for `qwen3.8-max`,
+   * `minimax-m2.7` and `minimax-m3`; its `opencode` names nothing, i.e. the
+   * completions default. A Go-first lookup answered a ZEN question with GO data
+   * and sent all three to `/messages`. Measured 2026-10-06 against the live Zen
+   * gateway: `qwen3.8-max` and `minimax-m3` answer `200` on
+   * `/chat/completions` and `400 ModelProtocolUnsupported` on `/messages`.
+   *
+   * Nothing else in the suite could see this: every other routing case reads the
+   * same table the code reads, so a wrong PLANE looks exactly like a right one.
+   */
+  const DIVERGENT = ["qwen3.8-max", "minimax-m2.7", "minimax-m3"];
+
+  it("has models whose SDK genuinely differs between the planes", () => {
+    // If this ever stops being true the cases below stop proving anything, and
+    // a silent skip would be worse than a failure.
+    const go = new Map(OPENCODE_GO_CATALOG.map((s) => [s.id, s.provider_npm]));
+    const zen = new Map(
+      OPENCODE_ZEN_CATALOG.map((s) => [s.id, s.provider_npm])
+    );
+    for (const id of DIVERGENT) {
+      expect(go.get(id), `${id} is no longer on the Go plane`).toBe(
+        ANTHROPIC_SDK
+      );
+      expect(zen.get(id), `${id} gained a Zen SDK`).toBeUndefined();
+    }
+  });
+
+  it("routes each divergent model by the ZEN plane, not the Go one", () => {
+    for (const id of DIVERGENT) {
+      // The Go-first lookup — the bug — would have said "anthropic".
+      expect(findModelSpec(id)?.provider_npm, "Go plane").toBe(ANTHROPIC_SDK);
+      expect(
+        findModelSpecOn("zen", id)?.provider_npm,
+        "Zen plane"
+      ).toBeUndefined();
+      // And the routing decision follows the plane, so a Zen request stays on
+      // the completions route where the gateway actually serves it.
+      expect(
+        internalRouteFor(
+          "opencode",
+          id,
+          findModelSpecOn(catalogPlaneForRoute("opencode"), id)?.provider_npm
+        )
+      ).toBeUndefined();
+    }
+  });
+
+  it("leaves a model the Zen plane really does split alone", () => {
+    // The fix must not flatten the split it exists to respect: these name their
+    // SDK on BOTH planes, and must still be redirected.
+    for (const [id, route] of [
+      ["grok-4.7", RESPONSES_ROUTE],
+      ["claude-sonnet-4-5", ANTHROPIC_ROUTE],
+    ] as const) {
+      expect(findModelSpecOn("zen", id)?.provider_npm).toBeDefined();
+      expect(
+        internalRouteFor(
+          "opencode",
+          id,
+          findModelSpecOn(catalogPlaneForRoute("opencode"), id)?.provider_npm
+        )
+      ).toBe(route);
+    }
+  });
+
+  it("names the plane of each route the plugin knows", () => {
+    expect(catalogPlaneForRoute("opencode-go")).toBe("go");
+    expect(catalogPlaneForRoute("opencode")).toBe("zen");
+    // The internal routes are derived from the Zen one, so they are Zen too.
+    expect(catalogPlaneForRoute(RESPONSES_ROUTE)).toBe("zen");
+    expect(catalogPlaneForRoute(ANTHROPIC_ROUTE)).toBe("zen");
+    // An unknown route — and the absent case — is not silently treated as Go:
+    // Go is the exception, so it has to be named to be meant.
+    const absent: unknown = undefined;
+    expect(catalogPlaneForRoute("my-relay")).toBe("zen");
+    expect(catalogPlaneForRoute(absent)).toBe("zen");
   });
 });

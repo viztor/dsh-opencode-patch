@@ -161,5 +161,48 @@ export default defineConfig({
       ),
     },
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    /**
+     * Coverage over `src/` only.
+     *
+     * `test/` and `scripts/` appear in the raw report because they are
+     * executed, and measuring the tests by the tests is noise. `index.ts` is
+     * excluded because it is a pure re-export barrel: the coverage tools
+     * attribute an untaken re-export line to whichever file re-exports it, so
+     * leaving it in reports a hole nobody can fill and hides real ones.
+     */
+    coverage: {
+      include: ["src/**/*.ts", "src/**/*.tsx"],
+      exclude: ["src/index.ts", "src/**/*.d.ts"],
+      provider: "v8",
+      reporter: ["text-summary", "json-summary", "html"],
+      // The ratchet, measured 2026-10-06 at 95.5 / 90.9 / 94.1 / 95.5. Not a
+      // target to hit from below and not aspirational: it is where the suite
+      // actually is, so it fails only when coverage DROPS — which is the
+      // regression worth catching, and a threshold set above today's number would
+      // just block every PR. Raise it whenever the suite genuinely grows.
+      thresholds: {
+        statements: 95,
+        branches: 90,
+        functions: 94,
+        lines: 95,
+        // Floors on the load-bearing modules only, so a well-covered average
+        // cannot hide one that stopped being exercised: the protocol mount is
+        // the piece with four host contracts to survive, and it must stay
+        // covered. Not `perFile: true` — that would hold every file to the
+        // aggregate number, which is a different (and much noisier) promise.
+        "src/responses-provider.ts": {
+          statements: 87,
+          branches: 72,
+          functions: 100,
+          lines: 87,
+        },
+        "src/responses-routes.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+      },
+    },
   },
 });

@@ -21,7 +21,11 @@ import type { KeySourcePolicy } from "./config-values.ts";
 import { DEFAULT_USAGE_BASE_URL, DEFAULT_USAGE_KEY_ENV } from "./config.ts";
 import { isLoaderHost, readCredentialsResolver } from "./cordis-context.ts";
 import { isRecord } from "./guards.ts";
-import { extractApiKeyFromHeaders, getCapturedApiKey } from "./key-capture.ts";
+import {
+  extractApiKeyFromHeaders,
+  getCapturedApiKey,
+  isPlaceholderApiKey,
+} from "./key-capture.ts";
 
 /** Gateway settings found in other entries, if any. */
 export interface DiscoveredGoConfig {
@@ -29,6 +33,29 @@ export interface DiscoveredGoConfig {
   keyEnv?: string;
   literalKey?: string;
 }
+
+/**
+ * A configured string that is worth treating as a credential.
+ *
+ * Two rejections, and both are load-bearing rather than tidiness:
+ *
+ * - **Whitespace.** `apiKey: "   "` is what a YAML file produces when someone
+ *   indents a secret they then blank out. It passes a bare `length > 0`, and
+ *   since `literal` is the FIRST step of both `auto` and `configured`, it would
+ *   outrank a working stored credential. `config-values.ts:readString` already
+ *   trims, so this is also where the two halves of the repo used to disagree.
+ * - **Placeholders.** `Bearer unused` is not a typo — it is what this plugin's
+ *   own keyless routes carry, and what the README tells users to write. It is a
+ *   deliberate stand-in for "this route needs a key injected later", so it must
+ *   never be mistaken for the key itself. `recordCapturedApiKey` already refuses
+ *   one; a discovered literal has to refuse it too, or the meter's first step
+ *   hands the gateway a placeholder and the poll fails with a 401 that reads
+ *   like a missing subscription.
+ */
+const usableCredential = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  !isPlaceholderApiKey(value.trim());
 
 const readProviderRow = (
   row: Record<string, unknown>,
@@ -38,9 +65,8 @@ const readProviderRow = (
   if (typeof keyEnv === "string" && keyEnv.length > 0) {
     into.keyEnv = keyEnv;
   }
-  const literalKey: unknown = row.apiKey;
-  if (typeof literalKey === "string" && literalKey.length > 0) {
-    into.literalKey = literalKey;
+  if (into.literalKey === undefined && usableCredential(row.apiKey)) {
+    into.literalKey = row.apiKey.trim();
   }
   const baseURL: unknown = row.baseURL;
   if (typeof baseURL === "string" && baseURL.length > 0) {
@@ -49,18 +75,17 @@ const readProviderRow = (
 
   if (into.literalKey === undefined) {
     const fromHeaders = extractApiKeyFromHeaders(row.headers);
-    if (fromHeaders !== undefined) {
-      into.literalKey = fromHeaders;
+    if (usableCredential(fromHeaders)) {
+      into.literalKey = fromHeaders.trim();
     }
   }
   if (into.literalKey === undefined && isRecord(row.options)) {
-    const optKey: unknown = row.options.apiKey;
-    if (typeof optKey === "string" && optKey.length > 0) {
-      into.literalKey = optKey;
+    if (usableCredential(row.options.apiKey)) {
+      into.literalKey = row.options.apiKey.trim();
     } else {
       const fromOptHeaders = extractApiKeyFromHeaders(row.options.headers);
-      if (fromOptHeaders !== undefined) {
-        into.literalKey = fromOptHeaders;
+      if (usableCredential(fromOptHeaders)) {
+        into.literalKey = fromOptHeaders.trim();
       }
     }
   }
@@ -324,8 +349,13 @@ export const resolveGoKeyForRef = async (
   ctx: unknown,
   ref: string
 ): Promise<string | undefined> => {
+  // Deduplicated rather than merely conditional: when the declared reference IS
+  // the built-in default — which is exactly the common case, since
+  // `effectiveGoKeyRef` falls back to it — `[ref, DEFAULT]` asks the credentials
+  // service the same question twice on every meter poll. Order is preserved,
+  // because order is the policy.
   const candidates =
-    ref === "OPENCODE_API_KEY"
+    ref === "OPENCODE_API_KEY" || ref === DEFAULT_USAGE_KEY_ENV
       ? [DEFAULT_USAGE_KEY_ENV]
       : [ref, DEFAULT_USAGE_KEY_ENV];
 
@@ -433,8 +463,11 @@ export const resolveRoutedKey = async (
     tier = "zen";
   }
 
+  // The floor matches the slice, so an 8- or 9-character key is not reported
+  // whole: a "prefix" that happens to be the entire secret leaks more than the
+  // eight characters it was supposed to.
   const keyPrefix =
-    key !== undefined && key.length >= 8 ? key.slice(0, 10) : undefined;
+    key !== undefined && key.length >= 10 ? key.slice(0, 10) : undefined;
 
   return {
     key,

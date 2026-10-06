@@ -20,12 +20,16 @@ import {
   isGoModelsListingUrl,
   isModelsListingUrl,
   isRetiredModel,
+  modelsForSdk,
   parseModelsDevCatalog,
   patchFetch,
+  PROTOCOL_FOR_SDK,
   refreshCatalog,
   resolveConfig,
   resolveRoutedKey,
+  ROUTE_FOR_PROTOCOL,
   sanitizeModalities,
+  isServableSdk,
   RETIRED_ZEN_MODEL_IDS,
   SESSION_HEADER,
   type ActiveTurnState,
@@ -115,7 +119,11 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("ships active Zen free tiers and flagships in the bundled shim", () => {
-    expect(OPENCODE_ZEN_CATALOG.length).toBe(22);
+    // The shim answers before the first live refresh, and a refresh merges by
+    // replacing the whole set — so these counts are the cold-start picker, and a
+    // silent drop here is a model nobody can pick. Regenerate with
+    // `scripts/regenerate-catalog-shim.ts` rather than editing by hand.
+    expect(OPENCODE_ZEN_CATALOG.length).toBe(80);
     const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
     // Only the free tiers the gateway still serves.
     expect(freeModels.length).toBe(10);
@@ -130,6 +138,83 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(ids.has("qwen3.6-plus-free")).toBe(false);
     expect(ids.has("minimax-m3-free")).toBe(false);
     expect(ids.has("kimi-k2.5-free")).toBe(false);
+  });
+
+  /**
+   * The shim's curation rule, asserted rather than described.
+   *
+   * A model missing from the shim is merely ABSENT — it appears after the first
+   * refresh. A model present but missing its `provider_npm` is WRONG: the hook
+   * would dispatch it to a route that does not speak its format, and it would
+   * fail with a gateway error that reads like a model problem. So the rule is
+   * that every model the shim carries, and every model naming an SDK we have a
+   * route for, is carried WITH that field.
+   */
+  it("carries the SDK on every Zen shim entry that names one", () => {
+    const buckets = new Map<string, string[]>();
+    for (const spec of OPENCODE_ZEN_CATALOG) {
+      const npm = spec.provider_npm;
+      if (npm === undefined) {
+        continue;
+      }
+      buckets.set(npm, [...(buckets.get(npm) ?? []), spec.id]);
+    }
+
+    // Every plane we declare a route for is present in the cold-start shim, so
+    // the mount has models to serve before the first refresh ever runs.
+    expect(buckets.get("@ai-sdk/openai")?.length).toBe(30);
+    expect(buckets.get("@ai-sdk/anthropic")?.length).toBe(17);
+
+    // And each of those SDKs maps to a protocol this plugin actually serves, so
+    // no carried model names a format with nowhere to go.
+    for (const [npm, ids] of buckets) {
+      const protocol = PROTOCOL_FOR_SDK[npm];
+      if (protocol === undefined) {
+        // `@ai-sdk/google` is the deliberate exception: `isServableSdk` keeps it
+        // out of every picker, so it is carried only to be excluded on purpose
+        // rather than being absent by accident.
+        expect(isServableSdk(npm)).toBe(false);
+        expect(ids.length).toBeGreaterThan(0);
+        continue;
+      }
+      expect(ROUTE_FOR_PROTOCOL[protocol]).toBeDefined();
+      expect(isServableSdk(npm)).toBe(true);
+    }
+  });
+
+  it("serves every SDK-routed model from the route its SDK names", () => {
+    // The end-to-end shape of the split, on cold-start data: each plane's model
+    // count is exactly the shim's, and the two planes do not overlap.
+    const responses = modelsForSdk("@ai-sdk/openai").map((m) => m.id);
+    const anthropic = modelsForSdk("@ai-sdk/anthropic").map((m) => m.id);
+    expect(responses.length).toBe(32);
+    expect(anthropic.length).toBe(21);
+    expect(responses.filter((id) => anthropic.includes(id))).toEqual([]);
+    // The flagship of each plane is on the shim, so a cold start can serve it.
+    expect(responses).toContain("muse-spark-1.3-contributor-free");
+    expect(anthropic).toContain("claude-sonnet-4-5");
+  });
+
+  it("keeps the Go plane's models off the Zen-based internal routes", () => {
+    // `modelsForSdk` unions both planes by default, which is right for "what
+    // does this gateway serve". It is wrong for the routes this plugin mounts:
+    // they are Zen-based, and the Go plane names six models the Zen endpoint does
+    // not serve — `qwen3.8-max`, `minimax-m2.7`, `minimax-m3` and
+    // `qwen3.7-plus` among them, none of which carries an SDK override on Zen.
+    // Offering one resolves to "model not found" against the route's own base URL.
+    const zen = OPENCODE_ZEN_CATALOG;
+    for (const sdk of ["@ai-sdk/openai", "@ai-sdk/anthropic"]) {
+      expect(modelsForSdk(sdk, zen).length).toBeLessThan(
+        modelsForSdk(sdk).length
+      );
+    }
+    expect(modelsForSdk("@ai-sdk/openai", zen).length).toBe(30);
+    expect(modelsForSdk("@ai-sdk/anthropic", zen).length).toBe(17);
+    // And the ones that would have leaked are genuinely Go-only.
+    const goOnly = ["muse-spark-1.3-contributor", "qwen3.7-plus"];
+    for (const id of goOnly) {
+      expect(zen.some((s) => s.id === id)).toBe(false);
+    }
   });
 
   it("enriches a truncated gateway models response with full catalog metadata", async () => {

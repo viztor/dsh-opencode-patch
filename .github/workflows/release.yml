@@ -7,9 +7,21 @@ on:
 permissions:
   contents: read
 
+# Keyed on the tag, never cancelled. Two runs of the SAME tag race — the second
+# would hit a half-published registry — and they are both wanted here: a re-run
+# after a transient npm fault is exactly how a release recovers, and the publish
+# steps skip versions already on the registry. Cancelling one would leave the
+# release in the state where neither run finished, which is the outcome that
+# already cost v0.7.0.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   verify:
+    name: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       # No `version:` input: pnpm/action-setup refuses to run when it is given
@@ -30,8 +42,12 @@ jobs:
       - run: node --experimental-strip-types scripts/check.ts
 
   publish:
+    name: publish
     needs: verify
     runs-on: ubuntu-latest
+    # The verification step below polls npm for up to ten minutes by design, so
+    # this is the floor: a genuine stall should fail rather than hang.
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -53,6 +69,35 @@ jobs:
           test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}" \
             || { echo "tag ${GITHUB_REF_NAME} != package.json version"; exit 1; }
       - run: pnpm run build
+      # What actually ships, pinned by hash and kept as an artifact. npm's own
+      # provenance attestation covers WHERE it was built and by whom; it does not
+      # let a consumer confirm they received those exact bytes. This does, and
+      # it is the same tarball every registry below receives.
+      - name: pack the release tarball and record its digest
+        id: pack
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          mkdir -p dist
+          # The `files` allowlist, so the tarball cannot silently gain or lose a
+          # file relative to what `npm publish` would send.
+          npm pack --ignore-scripts --pack-destination dist >/dev/null
+          TARBALL="dist/dsh-opencode-patch-${VER}.tgz"
+          test -f "$TARBALL" || { echo "::error::expected $TARBALL"; exit 1; }
+          shasum -a 256 "$TARBALL" | tee dist/SHA256SUMS
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          # A release that ships a tarball nobody can unpack is worse than one
+          # that fails here, and the failure is visible in the logs.
+          mkdir -p /tmp/verify && tar -tzf "$TARBALL" > /tmp/verify/entries.txt
+          grep -qx 'package/lib/index.mjs' /tmp/verify/entries.txt \
+            || { echo "::error::tarball is missing lib/index.mjs"; exit 1; }
+          grep -qx 'package/lib/client.js' /tmp/verify/entries.txt \
+            || { echo "::error::tarball is missing lib/client.js"; exit 1; }
+      - name: upload the release tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tarball
+          path: dist
+          retention-days: 90
       # OIDC trusted publishing: no token needed. Requires the
       # viztor/dsh-opencode-patch + release.yml publisher registered on npmjs.com
       # with `npm publish` allowed. Provenance is automatic.
