@@ -98,9 +98,9 @@ describe("settings-page: apply & slots", () => {
           if (entry.name === "plugins.bundle.config") {
             bundleRegistrations.push({ entry, component });
           } else if (entry.name === "conversation.input.right") {
-            dockRegistrations.push({ entry, component });
-          } else if (entry.name === "conversation.input.right") {
             inputRegistrations.push({ entry, component });
+          } else if (entry.name === "conversation.composer.dock") {
+            dockRegistrations.push({ entry, component });
           }
         },
       },
@@ -114,14 +114,14 @@ describe("settings-page: apply & slots", () => {
     expect(keys).toContain(LEGACY_PKG);
     expect(keys).toContain(LEGACY_NS);
 
-    expect(dockRegistrations).toHaveLength(1);
-    expect(dockRegistrations[0]?.entry.order).toBe(50);
-    expect(dockRegistrations[0]?.entry.id).toBe("dsh-opencode-patch-usage");
+    expect(inputRegistrations).toHaveLength(1);
+    expect(inputRegistrations[0]?.entry.order).toBe(50);
+    expect(inputRegistrations[0]?.entry.id).toBe("dsh-opencode-patch-usage");
 
-    // The meter registers in exactly ONE slot. It used to also register in
-    // `conversation.input.right`, and because both slots render, the composer
-    // drew two identical meters side by side.
-    expect(inputRegistrations).toHaveLength(0);
+    // The meter registers in exactly ONE slot — `conversation.input.right`, the
+    // seat beside the model selector. It must not also take the dock: both slots
+    // render, so a second registration draws two identical meters.
+    expect(dockRegistrations).toHaveLength(0);
   });
 
   it("handles usage injector logic and remote reading", async () => {
@@ -157,7 +157,9 @@ describe("settings-page: apply & slots", () => {
     expect(dockInjector).toBeDefined();
 
     // Invalid session ID returns null
-    expect(dockInjector?.("invalid")).toEqual({});
+    expect(dockInjector?.("invalid")).toMatchObject({
+      reason: expect.any(String),
+    });
 
     // Valid session ID returns injected props
     const injected = dockInjector?.("valid") as {
@@ -248,6 +250,8 @@ describe("settings-page: apply & slots", () => {
 
     apply(ctx as never);
     expect(dockInjector).toBeDefined();
+    // No usage service is a legitimate "no meter", not a diagnostic: the entry
+    // still mounts and contributes no props.
     expect(dockInjector?.("session")).toEqual({});
   });
 
@@ -281,7 +285,9 @@ describe("settings-page: apply & slots", () => {
 
     expect(() => apply(ctx as never)).not.toThrow();
     expect(dockInjector).toBeDefined();
-    expect(dockInjector?.("session")).toEqual({});
+    expect(dockInjector?.("session")).toMatchObject({
+      reason: expect.any(String),
+    });
   });
 
   it("resolves the model directory from the injected scope, not the root context", () => {
