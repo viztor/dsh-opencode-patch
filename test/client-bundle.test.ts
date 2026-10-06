@@ -208,6 +208,9 @@ describe("client-bundle: artifact & VM loader boundary", () => {
       "configForms",
       "modelDirectories",
       "remote",
+      // Its own key, not a property of `remote`: cordis matches service names
+      // exactly, and `directoryFor` reads this one internally.
+      "remote.session",
     ]);
     expect(typeof exports.apply).toBe("function");
   });

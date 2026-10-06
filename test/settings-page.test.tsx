@@ -250,9 +250,10 @@ describe("settings-page: apply & slots", () => {
 
     apply(ctx as never);
     expect(dockInjector).toBeDefined();
-    // No usage service is a legitimate "no meter", not a diagnostic: the entry
-    // still mounts and contributes no props.
-    expect(dockInjector?.("session")).toEqual({});
+    // The entry still mounts; it contributes a diagnostic reason and no meter.
+    expect(dockInjector?.("session")).toMatchObject({
+      reason: expect.stringContaining("no usage service"),
+    });
   });
 
   it("degrades to no meter when the model-directory service throws", () => {
