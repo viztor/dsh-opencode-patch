@@ -206,6 +206,15 @@ export const apply = (ctx: ClientContext): void => {
       // composer dock with it. Absence has to be expressed as "no props", which
       // the pill already renders as nothing.
       const directory: unknown = modelDirectoryStore(meterScope, sessionId);
+      // TEMPORARY diagnostic: "the meter shows nothing" has two very different
+      // causes — the Host handed us no directory for this session, or the entry
+      // never mounted at all — and they are indistinguishable from the outside.
+      // Remove once the meter renders.
+      // oxlint-disable-next-line no-console
+      console.info("[dsh-opencode-patch] meter inject", {
+        hasDirectory: directory !== undefined && directory !== null,
+        sessionId: typeof sessionId === "string" ? sessionId : typeof sessionId,
+      });
       if (directory === undefined || directory === null) {
         return {};
       }
