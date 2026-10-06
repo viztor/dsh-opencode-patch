@@ -668,10 +668,8 @@ describe("registerUsageRemotes", () => {
     const registered: Record<string, unknown>[] = [];
     const injected: string[][] = [];
     let pending: (() => void) | undefined;
+    // `effect` lives on the PLUGIN context, not on the injected scope.
     const scope = {
-      effect: (fn: () => void): void => {
-        pending = fn;
-      },
       typert: {
         register: (contribution: Record<string, unknown>): void => {
           registered.push(contribution);
@@ -680,6 +678,9 @@ describe("registerUsageRemotes", () => {
     };
 
     registerUsageRemotes({
+      effect: (fn: () => void): void => {
+        pending = fn;
+      },
       inject: (deps: string[], cb: (scoped: unknown) => void): void => {
         injected.push(deps);
         cb(scope);
@@ -738,10 +739,6 @@ describe("registerUsageRemotes", () => {
     let effects = 0;
     let registered = 0;
     const scope = {
-      effect: (fn: () => void): void => {
-        effects += 1;
-        fn();
-      },
       typert: {
         register: (): void => {
           registered += 1;
@@ -749,8 +746,14 @@ describe("registerUsageRemotes", () => {
       },
     };
 
+    const effect = (fn: () => void): void => {
+      effects += 1;
+      fn();
+    };
+
     for (const typert of [null, {}, { register: "not-callable" }]) {
       registerUsageRemotes({
+        effect,
         inject: (_deps: string[], cb: (scoped: unknown) => void): void => {
           cb({ ...scope, typert });
         },
