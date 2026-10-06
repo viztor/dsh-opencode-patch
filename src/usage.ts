@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { appendFileSync } from "node:fs";
 
 import {
   RemoteError,
@@ -269,11 +270,17 @@ export const registerUsageRemotes = (ctx: unknown): void => {
   // meter renders nothing" has been unanswerable from the browser. Remove once
   // the meter renders.
   const say = (reason: string): void => {
+    const line = `[dsh-opencode-patch] usage remote: ${reason}\n`;
     const logger: unknown = isRecord(ctx) ? ctx.logger : undefined;
     if (isRecord(logger) && typeof logger.info === "function") {
-      Reflect.apply(logger.info, logger, [
-        `[dsh-opencode-patch] usage remote: ${reason}`,
-      ]);
+      Reflect.apply(logger.info, logger, [line.trimEnd()]);
+    }
+    // Also to a FILE: the host terminal has shown none of this plugin's log
+    // output, so a file is the one channel that can be read back. TEMPORARY.
+    try {
+      appendFileSync("/tmp/dsh-opencode-patch.log", line);
+    } catch {
+      // A missing /tmp write must not break registration.
     }
   };
   if (!hasInject(ctx)) {
