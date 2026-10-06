@@ -326,3 +326,25 @@ describe("models-discovery: hiding the internal Responses route", () => {
     expect(hideResponsesRoute(ctx)).toBeUndefined();
   });
 });
+
+describe("models-discovery: the unfiltered registry keeps its receiver", () => {
+  it("asks the Host's listing with the service as `this`", () => {
+    // The real `listProviders` reads its own state through `this`, so a method
+    // read off the service and called detached runs with `this === undefined`
+    // and surfaces as "Cannot read properties of undefined (reading 'adapters')"
+    // — naming the registry's internals rather than the call that broke the
+    // receiver. Every other test here uses an arrow, which cannot catch it.
+    const registry = {
+      adapters: new Map([["opencode", { id: "opencode" }]]),
+      listProviders(this: { adapters: Map<string, unknown> }): unknown {
+        return [...this.adapters.values()];
+      },
+    };
+    const ctx = { llm: registry } as unknown as CordisContext;
+    const stop = hideResponsesRoute(ctx);
+    expect(stop).toBeTypeOf("function");
+    expect(isRouteRegistered("opencode")).toBe(true);
+    expect(isRouteRegistered("opencode-responses")).toBe(false);
+    stop?.();
+  });
+});
