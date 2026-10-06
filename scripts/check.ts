@@ -779,6 +779,59 @@ if (existsSync(dependabotPath)) {
   );
 }
 
+/* ------------------------------------------------------- build is current */
+
+/**
+ * `vp pack` CLEANS `lib/` and emits `lib/client.cjs`; the served `lib/client.js`
+ * comes from `scripts/name-client-bundle.ts`. A build that failed, or one whose
+ * rename step was skipped, therefore leaves a `lib/` missing a file the host
+ * loads, or older than the source it should have been built from —
+ * indistinguishable from success to everything downstream, and the settings card
+ * and the meter load exactly the missing file.
+ *
+ * Not hypothetical: a `vp pack` whose output was discarded shipped a `lib/` with
+ * no `client.js`, and nothing here or in the suite noticed.
+ */
+const LIB = join(ROOT, "lib");
+const REQUIRED_ARTIFACTS = ["index.mjs", "client.js"];
+
+const newestSource = (dir: string): number => {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    newest = Math.max(
+      newest,
+      entry.isDirectory() ? newestSource(full) : statSync(full).mtimeMs
+    );
+  }
+  return newest;
+};
+
+const missingArtifacts = REQUIRED_ARTIFACTS.filter(
+  (name) => !existsSync(join(LIB, name))
+);
+if (missingArtifacts.length > 0) {
+  const hint = existsSync(join(LIB, "client.cjs"))
+    ? " (lib/client.cjs exists — run scripts/name-client-bundle.ts)"
+    : "";
+  fail(
+    `lib/ is missing ${missingArtifacts.join(", ")}${hint}; the host loads these ` +
+      "files, so a build that failed looks exactly like one that succeeded"
+  );
+} else {
+  const builtAt = Math.min(
+    ...REQUIRED_ARTIFACTS.map((name) => statSync(join(LIB, name)).mtimeMs)
+  );
+  if (builtAt < newestSource(join(ROOT, "src"))) {
+    fail(
+      "lib/ is OLDER than src/ — the artifacts were not rebuilt from the current " +
+        "source, which ships a plugin whose behaviour does not match its code"
+    );
+  } else {
+    ok("lib/ carries the current build, including the served client bundle");
+  }
+}
+
 /* ------------------------------------------------------------------- report */
 
 for (const note of notes) console.log(`  ok   ${note}`);
