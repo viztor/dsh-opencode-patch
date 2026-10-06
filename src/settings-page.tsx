@@ -250,7 +250,9 @@ export const apply = (ctx: ClientContext): void => {
       // on, and an unavailable state the user cannot act on is worse than
       // absence.
       if (typeof meterScope.remote?.opencodeGoUsage?.read !== "function") {
-        return {};
+        return {
+          reason: "no usage service: remote.opencodeGoUsage.read is missing",
+        };
       }
       const markers = usageMarkers();
       // The id the Host must price; the pill also names the active provider,
