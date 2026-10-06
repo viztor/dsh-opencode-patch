@@ -58,8 +58,18 @@ export interface ModelDirectoryState {
  * the Host reads `hooks` off whatever it returns — so the pill has to render
  * from nothing rather than the entry throwing inside the renderer.
  */
+/**
+ * A STABLE snapshot, not a fresh object per call.
+ *
+ * `useSyncExternalStore` compares by identity, so a getter that builds a new
+ * object every time reports a change on every read and React re-renders forever
+ * — "Maximum update depth exceeded" (React error #185), which is how the first
+ * version of this fallback failed.
+ */
+const NO_DIRECTORY_STATE: ModelDirectoryState = {};
+
 const NO_DIRECTORY: SnapshotStore<ModelDirectoryState> = {
-  getSnapshot: () => ({}),
+  getSnapshot: () => NO_DIRECTORY_STATE,
   subscribe: () => () => {
     // Nothing to unsubscribe from.
   },
