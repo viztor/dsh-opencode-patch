@@ -1,36 +1,52 @@
 /**
  * `responses-provider.ts` — the plugin registering the gateway's non-default
  * planes itself, so the user keeps their existing provider and key.
- */
+ *
+ * The mount is exercised against a **faithful stand-in for the host**, not a
+ * spy. A spy can only prove that this plugin called something; it cannot prove
+ * the mount survives the composition it is actually mounted into. So the stand-in
+ * below reproduces the four host behaviours the mount has to survive, each of
+ * which threw at mount time before this was fixed and none of which pointed at
+ * its cause:
+ *
+ * | host behaviour | reproduced by | what used to happen |
+ * | --- | --- | --- |
+ * | the registry keys its runtime by `apply` identity, so the FIRST instance's schema validates the SECOND mount | `plugin()` re-running the recorded `Config` | `providers.get expected object` |
+ * | `apply` declares the WHOLE installed catalog, so a second instance collides on every catalog provider | `registerConfigurableProviders` rejecting a provider another registration holds | `DUPLICATE_DIRECTORY` |
+ * | model discovery is keyed by settings namespace, and a child plugin INHERITS its parent entry's id | `registerModelDiscovery` rejecting a namespace it already holds | `DUPLICATE_DISCOVERY` |
+ * | `registerPiAiFlows` registers one flow per installed catalog provider | `inject(['authorization'])` | `DUPLICATE_FLOW` |
 
-import { createRequire } from "node:module";
+ * Each case below asserts the composition SURVIVES, and one case asserts the
+ * shape that used to be passed is the shape the stand-in refuses — so a
+ * regression reintroduces a failure the test can name.
+ */
 
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  inheritedCredentialRef,
+  loadPiAi,
   modelsForSdk,
+  PROTOCOL_FOR_SDK,
   registerResponsesProvider,
   RESPONSES_SDK,
+  ROUTE_FOR_PROTOCOL,
 } from "../src/index.ts";
 import type { CordisContext } from "../src/index.ts";
 
 const MUSE = "muse-spark-1.3-contributor-free";
 
+/** The package name the loader entry is matched on. */
+const PI_AI = "@deepseek-ai/dsh-llm-pi-ai";
+
 /**
- * Whether the host plugin this module mounts is reachable from here.
+ * A stand-in for the installed pi-ai catalog.
  *
- * Resolved rather than imported: the package is deliberately not a dependency
- * (see the module header), so a static import would be a type error and a
- * build-time requirement the plugin must not have.
+ * `apply` declares ALL of it as configurable providers regardless of what its own
+ * config names, which is precisely why a second instance cannot declare its own
+ * directory. One entry is enough to reproduce the collision.
  */
-const hostPluginReachable = ((): boolean => {
-  try {
-    createRequire(import.meta.url).resolve("@deepseek-ai/dsh-llm-pi-ai");
-    return true;
-  } catch {
-    return false;
-  }
-})();
+const CATALOG = ["openai", "anthropic"] as const;
 
 describe("responses-provider: the model list", () => {
   it("comes from the catalog, not from a hand-written list", () => {
@@ -55,7 +71,419 @@ describe("responses-provider: the model list", () => {
   it("serves nothing for a protocol no model names", () => {
     expect(modelsForSdk("@ai-sdk/does-not-exist")).toEqual([]);
   });
+
+  it("names the SDK it dispatches on", () => {
+    // The constant the whole split hangs off; a typo here would silently stop
+    // redirecting every Responses model.
+    expect(RESPONSES_SDK).toBe("@ai-sdk/openai");
+  });
 });
+
+/**
+ * A minimal but faithful cordis: service isolation, context extension, `inject`,
+ * and a registry that keys runtime records by `apply` identity.
+ *
+ * Only what the mount actually exercises is modelled, and each piece exists
+ * because omitting it would make the test pass against a host the real one is
+ * not. Returned object also carries the observables a case asserts on.
+ */
+const createHost = (options: { onPlugin?: (config: unknown) => void } = {}) => {
+  const ISOLATE = Symbol("isolate");
+  const ROOT = Symbol("root");
+  /** Service instances per isolation label. */
+  const realms = new Map<symbol, Map<string, unknown>>([
+    [ROOT, new Map<string, unknown>()],
+  ]);
+  /** Runtime records keyed by `apply` identity — the registry's own cache. */
+  const runtimes = new Map<
+    () => unknown,
+    { Config?: (raw: unknown) => unknown }
+  >();
+  const observables = {
+    /** Every `registerFlow` call that actually reached the service. */
+    authFlows: [] as string[],
+    /** Providers the mounted instances declared in the directory. */
+    directory: [] as string[],
+    discoveries: [] as string[],
+    adapters: [] as string[],
+    isolated: [] as string[],
+    extended: [] as string[],
+    /** What the plugin reported at INFO, so a mount failure names its cause. */
+    infos: [] as string[],
+  };
+
+  /** The fiber `plugin` starts, reduced to what the mount observes. */
+  interface FakeFiber {
+    dispose: () => unknown;
+  }
+  /** The stand-in `llm-pi-ai` module, as the loader hands it over. */
+  interface FakePiAi {
+    Config: (raw: unknown) => unknown;
+    apply: (ctx: HostCtx, config: unknown) => void;
+    inject?: unknown;
+    name: string;
+  }
+  /**
+   * A cordis context, reduced to what the mount touches.
+   *
+   * Typed rather than `Record<string, unknown>` so the stand-in itself is
+   * checked: an `apply` that reads a method this shape does not have would
+   * otherwise be a silent `undefined` at mount time.
+   */
+  type HostCtx = Record<string | symbol, unknown> & {
+    effect: (fn: () => unknown) => unknown;
+    extend: (meta?: Record<string, unknown>) => HostCtx;
+    fiber: { entry: { options: { id: string } } };
+    get: (name: string) => unknown;
+    inject: (deps: string[], cb: (scope: HostCtx) => void) => void;
+    isolate: (name: string) => HostCtx;
+    logger: {
+      error: (...args: unknown[]) => void;
+      info: (msg: string, ...args: unknown[]) => void;
+      warn: (...args: unknown[]) => void;
+    };
+    on: (event?: string, callback?: unknown) => void;
+    plugin: (plugin: unknown, config?: unknown) => FakeFiber;
+  };
+
+  const ENTRY_ID = "dsh-opencode-patch";
+
+  /** Resolve a service the way cordis does: nearest isolation label, else root. */
+  const resolveService = (
+    chain: Map<string, symbol>,
+    name: string
+  ): unknown => {
+    const label = chain.get(name);
+    // An isolated name resolves in its OWN scope and nowhere else — that is what
+    // makes hiding a service possible. Falling back to the parent here would let
+    // the very inject this module isolates reach the host's service, which is the
+    // DUPLICATE_FLOW a stub that leaked could never have shown.
+    if (label !== undefined) {
+      return realms.get(label)?.get(name);
+    }
+    return realms.get(ROOT)?.get(name);
+  };
+
+  const makeCtx = (
+    parent: HostCtx | null,
+    isolateChain: Map<string, symbol>,
+    entryId: string
+  ): HostCtx => {
+    const ctx: HostCtx = Object.create(parent ?? { ctx: true });
+
+    // cordis: reads and writes of an isolated service resolve in a new scope.
+    // One fresh label per call; the NAME is what the isolation is keyed on.
+    ctx[ISOLATE] = isolateChain;
+    // Regular functions bound to `this`, not arrows over the closure: cordis's
+    // context methods are receiver-bound, so a shadowed child (the `llm` facade)
+    // must be the receiver of anything called on it. An arrow keeps building
+    // children off the LEXICAL context instead, which makes a real fix look like
+    // a no-op — the facade would never be reached.
+    ctx.isolate = function isolate(this: HostCtx, name: string) {
+      observables.isolated.push(name);
+      return makeCtx(
+        this,
+        new Map(isolateChain).set(name, Symbol(name)),
+        entryId
+      );
+    };
+    ctx.extend = function extend(
+      this: HostCtx,
+      meta: Record<string, unknown> = {}
+    ) {
+      observables.extended.push(...Object.keys(meta));
+      // `defineProperty`, not `Object.assign`: a service on the parent is an
+      // inherited GETTER, and shadowing it is the whole reason `extend` exists.
+      const child = Object.create(this);
+      for (const prop of Reflect.ownKeys(meta)) {
+        Object.defineProperty(
+          child,
+          prop,
+          Object.getOwnPropertyDescriptor(meta, prop) ?? {}
+        );
+      }
+      return child;
+    };
+    ctx.get = function get(this: HostCtx, name: string) {
+      return resolveService(this[ISOLATE] as Map<string, symbol>, name);
+    };
+    // A Service is a getter defined ONCE on the root context and resolved per
+    // read through `this`, so a child sees its OWN isolation and a shadowed
+    // service (the `llm` facade) is inherited by everything below it. Defining
+    // one per context would break both.
+    if (parent === null) {
+      for (const name of ["llm", "authorization", "settings"] as const) {
+        Object.defineProperty(ctx, name, {
+          configurable: true,
+          get(this: HostCtx) {
+            return resolveService(this[ISOLATE] as Map<string, symbol>, name);
+          },
+        });
+      }
+    }
+    ctx.plugin = function plugin(
+      this: HostCtx,
+      subject: unknown,
+      config?: unknown
+    ) {
+      options.onPlugin?.(config);
+      const record = subject as Partial<FakePiAi>;
+      const callback = record.apply as () => unknown;
+      // The registry's own rule: the FIRST instance's schema is the one on
+      // record, and it validates whatever every later mount is handed.
+      let runtime = runtimes.get(callback);
+      if (runtime === undefined) {
+        runtime = { Config: record.Config };
+        runtimes.set(callback, runtime);
+      }
+      const resolved =
+        runtime.Config === undefined ? config : runtime.Config(config);
+      // A child plugin INHERITS its parent entry, which is why the mounted
+      // instance reads the namespace off the plugin's own entry id.
+      const fiberCtx = makeCtx(this, new Map(isolateChain), entryId);
+      fiberCtx.fiber = { entry: { options: { id: entryId } } };
+      fiberCtx.effect = (fn: () => unknown) => fn();
+      fiberCtx.on = () => {};
+      fiberCtx.logger = { error: () => {}, info: () => {}, warn: () => {} };
+      fiberCtx.inject = (deps: string[], cb: (scope: HostCtx) => void) => {
+        // An unresolved dependency simply never fires — that is what isolating
+        // a service is FOR.
+        for (const dep of deps) {
+          if (fiberCtx.get(dep) === undefined) {
+            return;
+          }
+        }
+        cb(fiberCtx);
+      };
+      (record.apply as (c: HostCtx, cfg: unknown) => void)(fiberCtx, resolved);
+      // Awaitable via a real promise rather than a literal `then`: a cordis
+      // fiber is thenable, and what the mount observes is only that awaiting it
+      // settles.
+      return Object.assign(Promise.resolve({}), {
+        dispose: () => {
+          // The stand-in owns nothing that outlives the call.
+        },
+      });
+    };
+    return ctx;
+  };
+
+  // Our own entry: a SIBLING of the host's `llm-pi-ai` entry, with its own id.
+  // That id is what a child mount inherits, and it is the namespace this plugin
+  // has already registered model discovery under.
+  const root = makeCtx(null, new Map(), ENTRY_ID);
+  root.logger = {
+    info: (msg: string, ...args: unknown[]) => {
+      observables.infos.push([msg, ...args].join(" "));
+    },
+    error: () => {},
+    warn: () => {},
+  };
+  // The host's own entry, mounted on its own context under its own id.
+  const hostCtx = makeCtx(null, new Map(), "llm-pi-ai");
+
+  const registerService = (name: string, service: unknown) => {
+    realms.set(ROOT, new Map([...(realms.get(ROOT) ?? []), [name, service]]));
+  };
+
+  /** The LLM registry, with the host's own duplicate checks intact. */
+  const adapters = new Map<string, unknown>();
+  const directory = new Map<string, unknown>();
+  const discoveries = new Map<string, unknown>();
+  const registerAdapter = (providers: readonly string[], adapter: unknown) => {
+    for (const route of providers) {
+      if (adapters.has(route)) {
+        throw new Error(
+          `an adapter for provider "${route}" is already registered`
+        );
+      }
+      const info = (
+        adapter as { providerInfo: (p: string) => { id: string; name: string } }
+      ).providerInfo(route);
+      adapters.set(route, info);
+      observables.adapters.push(route);
+    }
+    const dispose = () => {
+      for (const route of providers) {
+        adapters.delete(route);
+      }
+    };
+    dispose.replace = (next: readonly string[]) => {
+      dispose();
+      return registerAdapter(next, adapter);
+    };
+    return dispose;
+  };
+  const registerConfigurableProviders = (entries: readonly unknown[]) => {
+    for (const entry of entries) {
+      const row = entry as { provider: string };
+      if (directory.has(row.provider)) {
+        throw new Error(
+          `configurable provider "${row.provider}" is already declared`
+        );
+      }
+    }
+    for (const entry of entries) {
+      const row = entry as { provider: string };
+      directory.set(row.provider, entry);
+      observables.directory.push(row.provider);
+    }
+    const dispose = () => {
+      for (const entry of entries) {
+        directory.delete((entry as { provider: string }).provider);
+      }
+    };
+    dispose.replace = () => {};
+    return dispose;
+  };
+  const registerModelDiscovery = (ns: string, discover: unknown) => {
+    if (discoveries.has(ns)) {
+      throw new Error(`model discovery for "${ns}" is already registered`);
+    }
+    discoveries.set(ns, discover);
+    observables.discoveries.push(ns);
+    return () => discoveries.delete(ns);
+  };
+
+  registerService("llm", {
+    listConfigurableProviders: () => [...directory.values()],
+    listProviders: () => [...adapters.values()],
+    registerAdapter,
+    registerConfigurableProviders,
+    registerModelDiscovery,
+  });
+  registerService("authorization", {
+    registerFlow: (key: string) => {
+      if (observables.authFlows.includes(key)) {
+        throw new Error(
+          `an authorization flow for "${key}" is already registered`
+        );
+      }
+      observables.authFlows.push(key);
+    },
+  });
+  registerService("settings", {
+    configure: () => {},
+  });
+
+  /**
+   * A stand-in for `llm-pi-ai`'s `apply`.
+   *
+   * Faithful to the parts that collide: the WHOLE catalog reaches the directory,
+   * the settings namespace is the inherited entry id, the flows are registered
+   * through the `authorization` inject, and the adapter is registered last.
+   */
+  const apply = (ctx: HostCtx, config: unknown) => {
+    const declared = (config as { providers: unknown }).providers;
+    const providers = (
+      declared instanceof ValidatedProviders ? declared.get() : declared
+    ) as Record<string, unknown>;
+    ctx.inject(["authorization"], (scope: Record<string, unknown>) => {
+      for (const provider of CATALOG) {
+        (
+          scope.authorization as { registerFlow: (k: string) => void }
+        ).registerFlow(`${provider}-login`);
+      }
+    });
+    const settingsNs = (ctx.fiber as { entry: { options: { id: string } } })
+      .entry.options.id;
+    const llm = ctx.llm as {
+      registerAdapter: typeof registerAdapter;
+      registerConfigurableProviders: typeof registerConfigurableProviders;
+      registerModelDiscovery: typeof registerModelDiscovery;
+    };
+    llm.registerConfigurableProviders(
+      [...CATALOG, ...Object.keys(providers)].map((provider) => ({
+        provider,
+        displayName: provider,
+        settingsNs,
+      }))
+    );
+    llm.registerModelDiscovery(settingsNs, async () => []);
+    const routes = Object.keys(providers);
+    if (routes.length > 0) {
+      llm.registerAdapter(routes, {
+        providerInfo: (route: string) => ({ id: route, name: route }),
+      });
+    }
+  };
+
+  /**
+   * The stand-in's `Config`.
+   *
+   * It returns what schemastery returns: an object whose `providers` is a Dict
+   * INSTANCE, not a plain record. That is the whole reason the mount must be
+   * handed raw config — the registry keys its runtime by `apply` identity, so the
+   * second mount is validated by the first instance's schema, and a
+   * pre-validated object is not a shape that schema accepts.
+   */
+  class ValidatedProviders {
+    private readonly entries: Record<string, unknown>;
+    constructor(entries: Record<string, unknown>) {
+      this.entries = entries;
+    }
+    get(): Record<string, unknown> {
+      return this.entries;
+    }
+  }
+  const isPlainRecord = (value: unknown): boolean =>
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype;
+  const Config = (raw: unknown) => {
+    if (
+      !isPlainRecord(raw) ||
+      !isPlainRecord((raw as { providers: unknown }).providers)
+    ) {
+      // The host's own complaint, verbatim: a validated `Config` is a Dict
+      // instance, so its `providers` reads as a `.get` call, not a record.
+      throw new Error("llm-pi-ai: providers.get expected object");
+    }
+    const { providers } = raw as { providers: Record<string, unknown> };
+    return { providers: new ValidatedProviders(providers) };
+  };
+
+  const piAi = { Config, apply, inject: undefined, name: PI_AI };
+
+  /** The host's OWN instance: occupies the catalog, its namespace and the flows. */
+  const mountHostInstance = (config: unknown) =>
+    (hostCtx.plugin as (p: unknown, c?: unknown) => unknown)(piAi, config);
+
+  /**
+   * Mount `apply` below ONE isolated seam and nothing else — the shape the
+   * earlier implementation used, which each case pairs with the seam that lets
+   * its collision be the one under test.
+   */
+  const mountIsolated = (seam: string, config: unknown) => {
+    const scope = root.isolate(seam);
+    return (scope.plugin as (p: unknown, c?: unknown) => unknown)(piAi, config);
+  };
+
+  const loaderEntry = { options: { name: PI_AI }, moduleNamespace: piAi };
+  const ctx = Object.assign(root, {
+    loader: {
+      entries: () => [loaderEntry],
+      // The loader's own normalization, so the shape a test asserts on is the
+      // shape the host produces rather than one this file invented.
+      unwrapExports: (value: unknown) => {
+        const candidate = value as {
+          default?: unknown;
+          __esModule?: boolean;
+        } | null;
+        if (candidate === null || candidate === undefined) {
+          return candidate;
+        }
+        const unwrapped = candidate.default ?? candidate;
+        return (unwrapped as { __esModule?: boolean }).__esModule === true
+          ? ((unwrapped as { default?: unknown }).default ?? unwrapped)
+          : unwrapped;
+      },
+    },
+  }) as unknown as CordisContext;
+
+  return { ctx, mountHostInstance, mountIsolated, observables, piAi };
+};
 
 describe("responses-provider: registration is best-effort", () => {
   it("stands down when the Host has no adapter registry", async () => {
@@ -63,21 +491,22 @@ describe("responses-provider: registration is best-effort", () => {
     await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
   });
 
-  it("does not throw when the host plugin cannot be reached", async () => {
-    // `llm-pi-ai` is a profile bundle, so it is not always resolvable from a
-    // plugin's own location. A deployment where it is not must degrade to "the
-    // route you declared still works", not fail the boot — and must say so at
-    // INFO, because that is an expected state rather than a fault.
+  it("does not throw when the host loaded no copy of the plugin", async () => {
+    // `llm-pi-ai` is a profile bundle, so a host need not have it loaded at all.
+    // A deployment that does not must degrade to "the route you declared still
+    // works", not fail the boot — and must say so at INFO, because that is an
+    // expected state rather than a fault.
     const info = vi.fn();
     const ctx = {
       llm: { listProviders: () => [], registerAdapter: vi.fn() },
+      loader: { entries: () => [] },
       logger: { info },
     } as unknown as CordisContext;
     await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
     expect(ctx.llm?.registerAdapter).not.toHaveBeenCalled();
-    if (!hostPluginReachable) {
-      expect(info).toHaveBeenCalled();
-    }
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("no loaded llm-pi-ai")
+    );
   });
 
   it("defers to routes the profile already declares", async () => {
@@ -98,45 +527,336 @@ describe("responses-provider: registration is best-effort", () => {
     expect(plugin).not.toHaveBeenCalled();
   });
 
-  it("names the SDK it dispatches on", () => {
-    // The constant the whole split hangs off; a typo here would silently stop
-    // redirecting every Responses model.
-    expect(RESPONSES_SDK).toBe("@ai-sdk/openai");
+  it("stands down when the host offers no scope to mount into", async () => {
+    const info = vi.fn();
+    const ctx = {
+      llm: { listProviders: () => [], registerAdapter: vi.fn() },
+      logger: { info },
+      loader: {
+        entries: () => [
+          {
+            options: { name: PI_AI },
+            moduleNamespace: { apply: () => {}, name: PI_AI },
+          },
+        ],
+        unwrapExports: (value: unknown) => value,
+      },
+    } as unknown as CordisContext;
+    await expect(registerResponsesProvider(ctx)).resolves.toBeUndefined();
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("no isolate/plugin scope")
+    );
   });
 });
 
-// The mount itself is only meaningful where the host plugin is reachable, which
-// is not the case in this repository: it is a profile bundle, and declaring it
-// here drags in ~1000 lockfile lines and a pnpm install failure over ignored
-// build scripts. Verified by hand against a real cordis app; see AGENTS.md.
-describe.skipIf(!hostPluginReachable)("responses-provider: the mount", () => {
-  it("mounts below an isolated authorization scope", async () => {
-    // The whole reason this works: `llm-pi-ai` registers an authorization flow
-    // per installed catalog provider, and `authorization.registerFlow` throws
-    // DUPLICATE_FLOW on a second instance. Its own comment says a composition
-    // without that seam "still works" — and cordis's `isolate` creates exactly
-    // such a scope, so the inject never resolves.
-    const isolated: string[] = [];
-    const mounted: unknown[] = [];
-    const ctx = {
-      isolate: (name: string) => {
-        isolated.push(name);
-        return {
-          plugin: (plugin: unknown, config: unknown) => {
-            mounted.push({ plugin, config });
-            return { dispose: () => {} };
-          },
-        };
-      },
-      llm: { listProviders: () => [], registerAdapter: vi.fn() },
-      logger: {},
-    } as unknown as CordisContext;
+describe("responses-provider: finding the host's plugin", () => {
+  it("reads the module off the loader entry, not a guessed path", () => {
+    // `moduleNamespace` is the host's own import result, so nothing here knows
+    // or cares where the package was installed.
+    const { ctx, piAi } = createHost();
+    expect(loadPiAi(ctx)).toBe(piAi);
+  });
 
-    const stop = await registerResponsesProvider(ctx);
+  it("normalizes the export shape the way the loader does", () => {
+    const { ctx, piAi } = createHost();
+    // CJS interop: the namespace carries the plugin under `default`, which is
+    // exactly the shape the loader's own normalization exists for.
+    const wrapped = { default: piAi };
+    (ctx.loader as { entries: () => unknown[] }).entries = () => [
+      { options: { name: PI_AI }, moduleNamespace: wrapped },
+    ];
+    expect(loadPiAi(ctx)).toBe(piAi);
+  });
 
-    expect(isolated).toEqual(["authorization"]);
-    expect(mounted.length).toBeGreaterThan(0);
+  it("reports an entry that never finished loading as absent", () => {
+    const { ctx, piAi } = createHost();
+    (ctx.loader as { entries: () => unknown[] }).entries = () => [
+      { options: { name: PI_AI } },
+    ];
+    expect(loadPiAi(ctx)).toBeUndefined();
+    expect(piAi).toBeDefined();
+  });
+
+  it("ignores an entry belonging to a different package", () => {
+    const { ctx, piAi } = createHost();
+    (ctx.loader as { entries: () => unknown[] }).entries = () => [
+      { options: { name: "some-other-plugin" }, moduleNamespace: piAi },
+    ];
+    expect(loadPiAi(ctx)).toBeUndefined();
+  });
+
+  it("stands down when the host exposes no loader at all", () => {
+    expect(loadPiAi({})).toBeUndefined();
+    expect(loadPiAi({ loader: { entries: 1 } })).toBeUndefined();
+    expect(loadPiAi(null)).toBeUndefined();
+  });
+});
+
+describe("responses-provider: the mount survives the host's own instance", () => {
+  it("registers the internal routes without colliding with anything", async () => {
+    const host = createHost();
+    // The host's own `llm-pi-ai` instance: it owns the catalog directory, its
+    // own discovery namespace, and one auth flow per catalog provider. Our
+    // plugin also registers discovery under its own entry id, which is exactly
+    // the id a child mount INHERITS.
+    host.mountHostInstance({
+      providers: { opencode: { api: "openai-completions" } },
+    });
+    host.ctx.llm?.registerModelDiscovery?.(
+      "dsh-opencode-patch",
+      async () => []
+    );
+
+    const flowCountBefore = host.observables.authFlows.length;
+    const adaptersBefore = [...host.observables.adapters];
+
+    const stop = await registerResponsesProvider(host.ctx);
+
+    // Registered: the routes this plugin owns, on the REAL service.
     expect(typeof stop).toBe("function");
+    expect(host.observables.adapters).toContain("opencode-responses");
+
+    // Untouched: the host's own catalog directory keeps exactly what it had.
+    // A second declaration would have thrown DUPLICATE_DIRECTORY.
+    expect(host.observables.directory).toEqual([...CATALOG, "opencode"]);
+
+    // Untouched: one discovery per namespace and no more. The host's instance owns
+    // its own entry's namespace, this plugin owns its own, and the mount added
+    // neither — a second registration under the INHERITED `dsh-opencode-patch`
+    // is what would have thrown DUPLICATE_DISCOVERY.
+    expect(host.observables.discoveries).toEqual([
+      "llm-pi-ai",
+      "dsh-opencode-patch",
+    ]);
+
+    // Untouched: no new authorization flow, which would have thrown
+    // DUPLICATE_FLOW on the host's own `registerFlow`.
+    expect(host.observables.authFlows).toHaveLength(flowCountBefore);
+
+    // The host's own routes still serve.
+    for (const route of adaptersBefore) {
+      expect(host.ctx.llm?.listProviders?.()).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: route })])
+      );
+    }
+  });
+
+  it("isolates both the authorization and the settings seam", async () => {
+    const host = createHost();
+    await registerResponsesProvider(host.ctx);
+    // `settings` is the second one, and it is the one a test that only checked
+    // `authorization` would miss: without it the mounted instance's directory
+    // is driven by a section nobody asked to write.
+    expect(host.observables.isolated).toEqual(["authorization", "settings"]);
+  });
+
+  it("shadows the llm service for the mount only", async () => {
+    const host = createHost();
+    await registerResponsesProvider(host.ctx);
+    // One `extend`, carrying exactly the service it needs to shadow.
+    expect(host.observables.extended).toEqual(["llm"]);
+    // The parent's own service is untouched by the shadow.
+    expect(typeof host.ctx.llm?.registerConfigurableProviders).toBe("function");
+  });
+
+  it("passes RAW config, which is the only shape the recorded schema accepts", async () => {
+    const host = createHost();
+    // A pre-validated `Config` is a Dict instance: the registry re-validates the
+    // second mount against the first instance's schema, and that object reads as
+    // `providers.get` rather than as a record.
+    expect(() => host.piAi.Config(host.piAi.Config({ providers: {} }))).toThrow(
+      /providers\.get expected object/
+    );
+    // So the mount has to hand over a plain object, and it does — reaching here
+    // at all means the schema accepted it.
+    await expect(registerResponsesProvider(host.ctx)).resolves.toBeTypeOf(
+      "function"
+    );
+  });
+
+  it("carries every internal route in ONE config", async () => {
+    const spy = vi.fn();
+    const host = createHost({
+      onPlugin: (config) => {
+        spy(config);
+      },
+    });
+
+    await registerResponsesProvider(host.ctx);
+
+    // Each `apply` declares the whole catalog, so a per-route mount is a
+    // collision no matter how few routes it carries. One call, every route.
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [config] = spy.mock.calls[0] ?? [];
+    const { providers } = (config ?? {}) as {
+      providers: Record<string, { models: unknown[] }>;
+    };
+    // Derived, not hard-coded: a route with no catalog model is skipped rather
+    // than mounted empty, and the shim's coverage changes as it is refreshed.
+    const expected = Object.values(ROUTE_FOR_PROTOCOL).filter((route) => {
+      const sdk = Object.keys(PROTOCOL_FOR_SDK).find((key) => {
+        const protocol = PROTOCOL_FOR_SDK[key];
+        return protocol !== undefined && ROUTE_FOR_PROTOCOL[protocol] === route;
+      });
+      return sdk !== undefined && modelsForSdk(sdk).length > 0;
+    });
+    expect(Object.keys(providers)).toEqual(expected);
+    expect(Object.keys(providers)).toContain("opencode-responses");
+    for (const profile of Object.values(providers)) {
+      expect(profile.models.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("releases the mount on dispose", async () => {
+    const host = createHost();
+    const stop = await registerResponsesProvider(host.ctx);
+    expect(host.ctx.llm?.listProviders?.()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "opencode-responses" }),
+      ])
+    );
     stop?.();
+    // The route must NOT outlive the mount: a leftover registration would make
+    // the next mount fail DUPLICATE_ADAPTER, which is a reload loop that never
+    // recovers. The mount's own fiber would normally own this registration —
+    // releasing it here regardless is what makes withdrawal deterministic.
+    expect(host.ctx.llm?.listProviders?.()).toEqual([]);
+  });
+});
+
+/**
+ * The stand-in is only worth anything if it REFUSES what used to be passed.
+ *
+ * Each case below mounts `apply` the way the earlier shape did and asserts the
+ * stand-in rejects it with the host's own error. Without these, the passing
+ * mount above could be passing because the stand-in models nothing.
+ */
+describe("responses-provider: the stand-in refuses the shapes that used to be passed", () => {
+  const rawConfig = () => ({
+    providers: {
+      "opencode-responses": {
+        api: "openai-responses",
+        models: [
+          {
+            id: "m",
+            name: "m",
+            contextWindow: 1,
+            maxTokens: 1,
+            input: ["text"],
+          },
+        ],
+      },
+    },
+  });
+
+  it("refuses a pre-validated Config handed to a second mount", () => {
+    const host = createHost();
+    host.mountHostInstance({ providers: {} });
+    // The registry reuses the first instance's schema, so the second mount is
+    // validated by it — and a validated Config is a Dict instance, not a record.
+    expect(() =>
+      (host.ctx.plugin as (p: unknown, c?: unknown) => unknown)(
+        host.piAi,
+        host.piAi.Config(rawConfig())
+      )
+    ).toThrow(/providers\.get expected object/);
+  });
+
+  it("refuses a second instance's catalog declaration", () => {
+    const host = createHost();
+    host.mountHostInstance({ providers: {} });
+    // Isolating `authorization` alone does not help: `apply` declares the whole
+    // catalog regardless of what its own config names.
+    expect(() => host.mountIsolated("authorization", rawConfig())).toThrow(
+      /configurable provider "openai" is already declared/
+    );
+  });
+
+  it("refuses a second instance's discovery under the inherited namespace", () => {
+    const host = createHost();
+    // Our plugin already registers discovery under its own entry id, and a child
+    // plugin inherits that entry — so the mount lands on the same key.
+    host.ctx.llm?.registerModelDiscovery?.(
+      "dsh-opencode-patch",
+      async () => []
+    );
+    // With the directory already colliding first, isolate only `settings` so this
+    // case fails on the discovery key and not on the one before it.
+    expect(() => host.mountIsolated("settings", rawConfig())).toThrow(
+      /model discovery for "dsh-opencode-patch" is already registered/
+    );
+  });
+
+  it("refuses a second instance's authorization flows", () => {
+    const host = createHost();
+    host.mountHostInstance({ providers: {} });
+    const flowsBefore = host.observables.authFlows.length;
+    expect(flowsBefore).toBeGreaterThan(0);
+    // With the seams that collide BEFORE the flows already dealt with, this one
+    // isolates `llm` only, so the inject still reaches the real authorization.
+    expect(() => host.mountIsolated("unused-seam", rawConfig())).toThrow(
+      /authorization flow .* is already registered/
+    );
+  });
+});
+
+describe("responses-provider: the credential is the user's, not ours", () => {
+  it("inherits the reference the opencode route already declares", () => {
+    // A deployment that named its own env var must not be asked to state it
+    // again here: pi-ai resolves the reference through the credentials service,
+    // so the same ref is the same stored record.
+    const ctx = {
+      loader: {
+        entries: () => [
+          {
+            options: {
+              id: "llm-pi-ai",
+              config: { providers: { opencode: { apiKeyEnv: "MY_ZEN_KEY" } } },
+            },
+          },
+        ],
+      },
+    };
+    expect(inheritedCredentialRef(ctx)).toBe("MY_ZEN_KEY");
+  });
+
+  it("falls back to the documented default when the composition names none", () => {
+    expect(inheritedCredentialRef({})).toBe("OPENCODE_API_KEY");
+    expect(
+      inheritedCredentialRef({
+        loader: { entries: () => [{ options: { config: {} } }] },
+      })
+    ).toBe("OPENCODE_API_KEY");
+  });
+
+  it("puts the inherited reference on every route it mounts", async () => {
+    const spy = vi.fn();
+    const host = createHost({
+      onPlugin: (config) => {
+        spy(config);
+      },
+    });
+    // The composition's own `llm-pi-ai` row, alongside the entry this plugin
+    // reads its module from.
+    (host.ctx.loader as { entries: () => unknown[] }).entries = () => [
+      {
+        options: {
+          id: "llm-pi-ai",
+          config: { providers: { opencode: { apiKeyEnv: "MY_ZEN_KEY" } } },
+        },
+      },
+      { options: { name: PI_AI }, moduleNamespace: host.piAi },
+    ];
+
+    await registerResponsesProvider(host.ctx);
+
+    const [config] = spy.mock.calls[0] ?? [];
+    const { providers } = (config ?? {}) as {
+      providers: Record<string, { apiKeyEnv?: string }>;
+    };
+    expect(Object.keys(providers).length).toBeGreaterThan(0);
+    for (const profile of Object.values(providers)) {
+      expect(profile.apiKeyEnv).toBe("MY_ZEN_KEY");
+    }
   });
 });

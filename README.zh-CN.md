@@ -133,12 +133,12 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 | 服务自 |
 | :-- | --: | :-- | :-- |
-| _（缺失）_ | 53 | OpenAI Chat Completions | 你配置的路由 |
-| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 23 | Anthropic Messages | `opencode-anthropic` |
-| `@ai-sdk/google` | 8 | _（DSH 无此协议）_ | **不提供** |
+| _（缺失）_ | 26 | OpenAI Chat Completions | 你配置的路由 |
+| `@ai-sdk/openai` | 30 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 7 | _（DSH 无此协议）_ | **不提供** |
 
-数量为 `models.dev` 中 `opencode` 的 116 个模型，统计于 2026-10-05。
+数量为 `models.dev` 中 `opencode` 的 80 个**在用**模型，统计于 2026-10-05 —— 列出的 116 个里其余 36 个已废弃或下架，补丁只内置网关仍在服务的部分。同样这 80 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
@@ -146,7 +146,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 - **永远不会提供跑不通的模型。** 那 8 个 `@ai-sdk/google` 模型会从"获取可用模型"**和** `opencode` 路由自己的报告中**双双剔除** —— DSH 没有对应协议，选了只会失败，而且行里没有任何东西能告诉你原因。
 - **一份凭据。** 所有路由模型共用你已配置的 `opencode` key，经凭据服务解析，**不会重新问你要**。
 
-**仍然需要你自己声明的：路由本身。** `opencode-responses`（以及你用上 Anthropic 平面模型后的 `opencode-anthropic`）必须存在于 profile 的 `llm-pi-ai` `providers` 块里，并列出它服务的模型：
+**如果你更想自己声明路由**：`opencode-responses`（以及你用上 Anthropic 平面模型后的 `opencode-anthropic`）可以写进 profile 的 `llm-pi-ai` `providers` 块里，并列出它服务的模型。声明是一个选择，不是要求：
 
 ```yaml
 opencode-responses:
@@ -162,7 +162,11 @@ opencode-responses:
       input: [text, image]
 ```
 
-**插件自己拥有路由**（即你完全不必声明）是目标形态，机制已实现并**通过端到端验证**：`responses-provider.ts` 在 `isolate("authorization")` 之下挂载宿主自己的 `llm-pi-ai`，因此它注册路由时**一个 authorization flow 都不注册**，不会与宿主的实例冲突。**尚未解决的是运行时如何找到那个包**：它是 profile bundle，从插件、从 profile、从 CLI 入口都解析不到；而把它声明成依赖会拖进近千行锁文件、并因忽略构建脚本让 `pnpm install` 直接失败。在解析路径落地之前，插件不会注册任何东西，只会在日志里说明原因。**暂时不要从 profile 里删掉那条路由** —— 删了模型就没有地方被服务了。
+**这条路由由插件替你注册**，所以上面那段配置是可选的。`responses-provider.ts` 会在进程内挂载宿主自己的 `llm-pi-ai`：隔离 authorization 与 settings 两个接缝，并在一层只转发 adapter 注册的 `llm` 门面之后挂载——因此它既不会重复登记整个 catalog 目录、settings 命名空间，也不会多注册任何一条 sign-in flow。这一版是对着真实 harness 验证的，不是桩：路由注册成功，宿主自己的 41 条 catalog 与 41 条 sign-in flow 原封不动，卸载时该路由被撤回。
+
+这些路由继承**你的**凭据：每一条都沿用你 `opencode` 路由已经声明的同一个 `apiKeyEnv`，所以自定义的 key 引用不需要你再说一遍。你在 profile 里已经声明过的路由会被尊重——插件不会覆盖你的模型列表。
+
+若宿主没有已加载的 `llm-pi-ai` 条目，插件不会注册任何东西，只会在日志里说明；此时请在 profile 里显式声明该路由。
 
 ### 4. 覆盖的执行模式
 

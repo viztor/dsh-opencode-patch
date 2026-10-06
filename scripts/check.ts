@@ -534,6 +534,251 @@ if (/pnpm run test:e2e/u.test(ci)) {
   );
 }
 
+/* --------------------------------- 14. the automation itself cannot rot quietly */
+
+/**
+ * The generated catalog.
+ *
+ * `src/catalog-data.ts` is written from models.dev, and the one field that went
+ * stale before — `provider_npm` — put nine models on an endpoint that cannot
+ * serve them. That is a WRONG answer rather than a missing one, so no unit test
+ * can catch it: only regenerating and diffing can. Hence a script, and hence a
+ * job that runs it.
+ */
+const shimScript: unknown = pkg.scripts?.["catalog:shim"];
+const shimPath = join(ROOT, "scripts/regenerate-catalog-shim.ts");
+/**
+ * Whether a workflow RUNS a command, as opposed to merely mentioning it.
+ *
+ * Matching the whole file is not good enough: a step that fails prints the very
+ * command it ran, so `pnpm run catalog:shim` appears in ci.yml whether or not
+ * anything invokes it. So each line is reduced past its `run:` scaffolding —
+ * `- run: cmd`, `run: cmd`, `run: |` plus the block body — comments dropped — and
+ * the command has to be the first thing on a line. An `echo "… run 'pnpm run X'"`
+ * line no longer qualifies, which is exactly the false positive this exists to
+ * remove.
+ */
+const runs = (source: string, command: string): boolean =>
+  source
+    .split("\n")
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^(?:- )?run:(?:\s*\|\s*)?/, "")
+        .trim()
+    )
+    // A comment-only line is documentation, not an invocation.
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+    .some((line) => line.startsWith(command));
+
+const shimScripted =
+  typeof shimScript === "string" &&
+  shimScript.includes("scripts/regenerate-catalog-shim.ts");
+const shimRunsInCi = runs(ci, String.raw`pnpm run catalog:shim`);
+
+if (existsSync(shimPath) && shimScripted && shimRunsInCi) {
+  ok("the bundled catalog is generated, scripted, and checked on a schedule");
+} else {
+  // Plain unnested `if`s, not a chain: the first test has to be the POSITIVE
+  // one, and a chain of `else if (!…)` also hides that exactly one of several
+  // independent things broke. Most specific reason first.
+  if (!existsSync(shimPath)) {
+    fail(
+      "scripts/regenerate-catalog-shim.ts is missing; the catalog is unmaintainable"
+    );
+  }
+  if (!shimScripted) {
+    fail(
+      "no catalog:shim script; regenerating the bundled catalog means knowing a " +
+        "path, and nothing runs it on a schedule"
+    );
+  }
+  if (!shimRunsInCi) {
+    fail(
+      "no ci.yml step RUNS `pnpm run catalog:shim`; a stale bundled catalog " +
+        "goes unnoticed until a model is dispatched to the wrong endpoint"
+    );
+  }
+}
+
+/**
+ * The coverage ratchet.
+ *
+ * A threshold set above today's number would block every PR, and one set below
+ * it would never fire. The value of a ratchet is that it fails when coverage
+ * DROPS, so what has to be asserted here is that one exists at all — and that
+ * it actually runs, or it is decoration.
+ */
+const viteConfig = readFileSync(join(ROOT, "vite.config.ts"), "utf8");
+const coverageProvider: unknown = pkg.devDependencies?.["@vitest/coverage-v8"];
+const hasCoverageScript = typeof pkg.scripts?.["test:coverage"] === "string";
+// Anchored: an unanchored /thresholds:/ also matches `_thresholds:`, so a
+// rename would still read as present.
+const hasCoverageThresholds = /^\s*thresholds\s*:/mu.test(viteConfig);
+const coverageRunsInCi = runs(ci, String.raw`pnpm run test:coverage`);
+
+if (
+  hasCoverageScript &&
+  typeof coverageProvider === "string" &&
+  hasCoverageThresholds &&
+  coverageRunsInCi
+) {
+  ok(
+    `coverage is ratcheted and runs in CI (@vitest/coverage-v8 ${coverageProvider})`
+  );
+} else {
+  if (!hasCoverageScript) {
+    fail(
+      "no test:coverage script; a coverage threshold that never runs is decoration"
+    );
+  }
+  if (typeof coverageProvider !== "string") {
+    fail(
+      "@vitest/coverage-v8 is not a devDependency; `vp test --coverage` fails " +
+        "at startup without it"
+    );
+  }
+  if (!hasCoverageThresholds) {
+    fail(
+      "vite.config.ts sets no coverage thresholds; coverage is reported but never " +
+        "gated, so a regression in the load-bearing modules goes unnoticed"
+    );
+  }
+  if (!coverageRunsInCi) {
+    fail(
+      "no ci.yml step RUNS `pnpm run test:coverage`; the ratchet cannot fail a " +
+        "build from the unit run alone"
+    );
+  }
+}
+
+/**
+ * The `jobs:` block of a workflow, split into one string per job.
+ *
+ * Deliberately a scan rather than a YAML parse: the gate has no YAML dependency,
+ * and "a dependency to validate two files" is a worse trade than four lines of
+ * indentation-aware splitting. A job key is a bare `name:` at exactly two spaces,
+ * which is what `jobs:` children always look like — `steps:`/`with:`/`run:` are
+ * deeper, and top-level keys sit at column zero.
+ */
+const jobsIn = (source: string): string[] => {
+  const heading = /^jobs:\s*$/mu.exec(source);
+  if (heading === null) {
+    return [];
+  }
+  const body = source.slice(heading.index + heading[0].length);
+  // Everything before the next top-level key is the jobs block.
+  const nextTopLevel = /^\S/mu.exec(body);
+  const block =
+    nextTopLevel === null ? body : body.slice(0, nextTopLevel.index);
+  return block
+    .split(/^ {2}(?=[\w-]+:[ \t]*$)/mu)
+    .map((job) => job.trim())
+    .filter((job) => job.length > 0);
+};
+
+/**
+ * Every job is bounded.
+ *
+ * GitHub's default is six hours. A hung test in a fast suite should fail in
+ * minutes, and a release whose polling loop has wedged should fail rather than
+ * hold a concurrency group open indefinitely.
+ */
+let unboundedTotal = 0;
+for (const [label, source] of [
+  ["ci.yml", ci],
+  ["release.yml", releaseYml],
+] as const) {
+  const jobs = jobsIn(source);
+  if (jobs.length === 0) {
+    fail(`${label} has no readable jobs block; this check cannot see its jobs`);
+    continue;
+  }
+  const unbounded = jobs.filter((job) => !/^\s*timeout-minutes:/mu.test(job));
+  if (unbounded.length > 0) {
+    unboundedTotal += unbounded.length;
+    fail(
+      `${label} has ${unbounded.length} of ${jobs.length} job(s) without ` +
+        "timeout-minutes; a hang would burn GitHub's six-hour default first"
+    );
+  }
+}
+if (unboundedTotal === 0) {
+  ok(
+    `every job in ci.yml and release.yml is bounded (${jobsIn(ci).length + jobsIn(releaseYml).length} jobs)`
+  );
+}
+
+/**
+ * Release concurrency must queue, never cancel.
+ *
+ * Cancelling a re-run of the same tag is precisely the failure that lost
+ * v0.7.0: the first run holds a half-published registry and the second — the
+ * recovery — is killed before it can finish it.
+ */
+const releaseQueues =
+  /concurrency:/u.test(releaseYml) &&
+  !/cancel-in-progress:\s*true/u.test(releaseYml);
+
+if (releaseQueues) {
+  ok("release runs queue per tag instead of cancelling each other");
+} else {
+  if (!/concurrency:/u.test(releaseYml)) {
+    fail(
+      "release.yml sets no concurrency group; two runs of one tag race on the " +
+        "registry"
+    );
+  }
+  if (/cancel-in-progress:\s*true/u.test(releaseYml)) {
+    fail(
+      "release.yml cancels an in-progress run of the same tag; a re-run meant " +
+        "to recover a transient npm fault would instead be killed"
+    );
+  }
+}
+
+/** The tarball a release publishes is recorded, not assumed. */
+const packsTarball = /npm pack/u.test(releaseYml);
+const hashesTarball = /shasum -a 256/u.test(releaseYml);
+
+if (packsTarball && hashesTarball) {
+  ok("the published tarball is packed, hashed and kept as an artifact");
+} else {
+  if (!packsTarball) {
+    fail(
+      "release.yml never packs the tarball it publishes, so the bytes that reach " +
+        "the registry cannot be compared with the bytes that were built"
+    );
+  }
+  if (!hashesTarball) {
+    fail(
+      "release.yml packs without recording a digest; there is nothing to verify"
+    );
+  }
+}
+
+/** Dependabot, because the release path is actions and cannot be exercised. */
+const dependabotPath = join(ROOT, ".github/dependabot.yml");
+if (existsSync(dependabotPath)) {
+  const dependabot = readFileSync(dependabotPath, "utf8");
+  const missing = ["github-actions", "npm"].filter(
+    (ecosystem) => !dependabot.includes(`package-ecosystem: ${ecosystem}`)
+  );
+  if (missing.length > 0) {
+    fail(
+      `dependabot.yml does not cover ${missing.join(", ")}; the toolchain that ` +
+        "runs the release is the thing most likely to rot"
+    );
+  } else {
+    ok("dependabot covers the release actions and the dependency tree");
+  }
+} else {
+  fail(
+    ".github/dependabot.yml is missing; a stale release action is how a tag " +
+      "stops producing a publish while the workflow stays green"
+  );
+}
+
 /* ------------------------------------------------------------------- report */
 
 for (const note of notes) console.log(`  ok   ${note}`);

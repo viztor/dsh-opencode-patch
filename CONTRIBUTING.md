@@ -13,8 +13,10 @@ All tasks go through `pnpm` (which delegates to the Vite+ toolchain):
 pnpm install     # install dependencies
 pnpm run check   # format + lint + types; must be zero *errors* (warnings are reported, not gating)
 pnpm run test    # Vitest suite, must be fully green and deterministic
+pnpm run test:coverage   # the same run, with the coverage ratchet enforced
 pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, lib/client.js
 pnpm run test:e2e   # opt-in end-to-end suite; talks to the real OpenCode gateway
+pnpm run catalog:shim   # regenerate src/catalog-data.ts from models.dev
 ```
 
 > Note: in some shells `pnpm exec` stalls; invoke the binary directly if so: `node node_modules/.pnpm/vite-plus@*/node_modules/vite-plus/bin/vp <cmd>`.
@@ -28,7 +30,8 @@ OPENCODE_E2E=1 OPENCODE_API_KEY=… OPENCODE_GO_API_KEY=… pnpm run test:e2e
 ```
 
 - `OPENCODE_E2E=1` is required; without it every case skips, so a bare `pnpm run test:e2e` is a safe no-op.
-- `OPENCODE_API_KEY` (Zen) arms the live `/models` enrichment case; `OPENCODE_GO_API_KEY` (Go plan) arms the live `/usage` case. Each block skips when its key is absent, which is why the CI `e2e` job stays green on fork PRs (secrets are not exposed to them) while still checking the endpoints answer.
+- `OPENCODE_API_KEY` (Zen) arms the live `/models` enrichment case and the **paid** protocol-routing cases; `OPENCODE_GO_API_KEY` (Go plan) arms the live `/usage` case. Each block skips when its key is absent, which is why the CI `e2e` job stays green on fork PRs (secrets are not exposed to them) while still checking the endpoints answer.
+- The **free-tier and unmetered** routing cases run keyless on purpose: measured 2026-10-06, a paid model answers `401 AuthError` on every endpoint without a credential, so keyless probing cannot tell them apart at all. Keyless discrimination is real only for the free classes.
 - `OPENCODE_ZEN_BASE_URL` / `OPENCODE_GO_BASE_URL` retarget the suite at a mirror.
 
 Two files, two jobs:
@@ -57,6 +60,16 @@ The web profile wires this checkout with `link:`, so builds are picked up like t
 - **No secret fixtures.** Session IDs are derived at runtime (`openCodeSessionIdFor`) or read from `OPENCODE_SESSION_ID`; never hardcode `ses_…` or API keys. `lib/` and `*.log` stay gitignored.
 - **Restore globals.** Tests that touch `globalThis.fetch` or `process.env` must restore them in `afterEach` (`vi.unstubAllGlobals()`, `delete process.env.…`).
 - **Meaningful coverage.** Every config field in the `SPECS` register (`src/settings-fields.ts`) needs both the on and off path where it has one; every passthrough claim needs a non-OpenCode URL test proving headers are untouched; helper functions exported from `usage-ui.ts` are asserted directly, not re-derived in the test.
+- **A component with hooks needs a real mount.** Calling `Component(props)` returns an element and runs none of its state, so a hook-bearing component can have twenty passing cases and still be untested — `usage-pill.tsx` sat at 9% exactly that way, with the poll loop, retry and dismissal all uncovered. `test/usage-pill-mount.test.tsx` is the answer: a `// @vitest-environment jsdom` pragma scoped to that one file, so the rest of the suite keeps the fast node environment and the zero-dependency element-tree style.
+
+### The coverage ratchet
+
+`pnpm run test:coverage` runs the same suite with thresholds from `vite.config.ts`. They are a **ratchet, not a target**: they sit at the level the suite actually reaches, so they fail when coverage DROPS and nothing else. Two rules follow.
+
+- **Raise them when you genuinely add coverage** — a PR that lifts statements by a few points should lift the threshold with it, or the next contributor inherits a gate nobody re-measured.
+- **Never set one above the current measurement.** That does not make the suite better; it makes every subsequent PR fail until someone deletes tests.
+
+`src/index.ts` is excluded from the report — it is a pure re-export barrel, and the coverage tools attribute an untaken re-export line to whichever file re-exports it, so leaving it in reports a hole nobody can fill while hiding real ones. `responses-provider.ts` and `responses-routes.ts` carry their own per-file floors: the mount has four host contracts to survive, and a well-covered average must not be able to hide it.
 
 ## Release process (maintainers)
 

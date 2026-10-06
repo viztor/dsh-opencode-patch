@@ -161,12 +161,33 @@ export const extractApiKeyFromHeaders = (
  * (`capturedKeysByTier`); the tier map is what makes a lookup survive a renamed
  * route. `latestCapturedKey` is the last resort, and is why the tier argument
  * matters: without it, "most recently seen" can hand the Go endpoint a Zen key.
+ *
+ * The route-scoped map carries the tier ALONGSIDE the key rather than only the
+ * key. It used to hold `string`, which made the route lookup the one path that
+ * ignored a requested tier: a Zen key seen while the Go route was in play came
+ * back verbatim, so it outranked every correctly-filtered source — and it is the
+ * FIRST captured step of both `auto` and `request`. Holding the tier is what lets
+ * the route lookup apply the same rule the other two already did.
  */
-const capturedKeysByProvider = new Map<string, string>();
+const capturedKeysByProvider = new Map<
+  string,
+  { key: string; tier: KeyTier }
+>();
 const capturedKeysByTier = new Map<"go" | "zen", string>();
 let latestCapturedKey:
   | { key: string; provider?: string; tier: KeyTier }
   | undefined;
+
+/**
+ * Whether a key classified as `tier` may answer a lookup for `wanted`.
+ *
+ * `unknown` is deliberately permissive, and identically so in all three lookup
+ * paths: an unclassifiable key is one we never identified, not one we proved to
+ * be the other tier. Filtering on "not the opposite" instead would make the
+ * guess fail closed and hide working keys.
+ */
+const tierSatisfies = (tier: KeyTier, wanted: "go" | "zen"): boolean =>
+  tier === wanted || tier === "unknown";
 
 /**
  * Record an API key captured from live HTTP request headers or provider configurations.
@@ -188,7 +209,7 @@ export const recordCapturedApiKey = (
   const tier = tierForRequest(url, provider, key);
 
   if (typeof provider === "string" && provider.length > 0) {
-    capturedKeysByProvider.set(provider, key);
+    capturedKeysByProvider.set(provider, { key, tier });
   }
   if (tier !== "unknown") {
     capturedKeysByTier.set(tier, key);
@@ -202,7 +223,8 @@ export const recordCapturedApiKey = (
  * @param provider - route id to try first, when the caller has one.
  * @param tier - the tier the key must belong to. Pass it whenever the request
  * already identifies one: omitting it lets the most recently seen key win,
- * which may be for the other tier.
+ * which may be for the other tier. A route-scoped hit is filtered by it too —
+ * naming a route is a preference, not a licence to ignore the tier.
  */
 export const getCapturedApiKey = (
   provider?: string,
@@ -210,8 +232,12 @@ export const getCapturedApiKey = (
 ): string | undefined => {
   if (typeof provider === "string" && provider.length > 0) {
     const direct = capturedKeysByProvider.get(provider);
-    if (direct !== undefined && direct.length > 0) {
-      return direct;
+    if (
+      direct !== undefined &&
+      direct.key.length > 0 &&
+      (tier === undefined || tierSatisfies(direct.tier, tier))
+    ) {
+      return direct.key;
     }
   }
   if (tier !== undefined) {
@@ -223,9 +249,7 @@ export const getCapturedApiKey = (
   if (
     latestCapturedKey !== undefined &&
     latestCapturedKey.key.length > 0 &&
-    (tier === undefined ||
-      latestCapturedKey.tier === tier ||
-      latestCapturedKey.tier === "unknown")
+    (tier === undefined || tierSatisfies(latestCapturedKey.tier, tier))
   ) {
     return latestCapturedKey.key;
   }

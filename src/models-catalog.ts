@@ -184,7 +184,48 @@ const extractSpecs = (
   return results;
 };
 
-/** Look up model specifications and pricing rates by model ID. */
+/** Which of the two catalogs a model id should be read from. */
+export type CatalogPlane = "go" | "zen";
+
+/**
+ * The plane a route's models come from.
+ *
+ * `opencode-go` is the subscription plane; everything else this plugin knows
+ * about (`opencode`, and the internal routes derived from it) is Zen.
+ */
+export const catalogPlaneForRoute = (route: unknown): CatalogPlane =>
+  route === "opencode-go" ? "go" : "zen";
+
+/**
+ * The spec a given PLANE declares for a model.
+ *
+ * **The two planes declare different SDKs for the same model id**, which is why
+ * this exists at all. models.dev's `opencode-go` names `@ai-sdk/anthropic` for
+ * `qwen3.8-max`, `minimax-m2.7` and `minimax-m3`, while its `opencode` names
+ * nothing — the default, i.e. completions. A single Go-first lookup therefore
+ * answers a ZEN question with GO data, and for those three models that is a
+ * mis-route rather than a detail.
+ *
+ * Measured 2026-10-06 against the live Zen gateway: `qwen3.8-max` and
+ * `minimax-m3` answer `200` on `/chat/completions` and
+ * `400 ModelProtocolUnsupported` on `/messages` — and `/messages` is exactly
+ * where the Go-first read sent them. Both were reachable and failing.
+ */
+export const findModelSpecOn = (
+  plane: CatalogPlane,
+  modelId: string
+): CatalogModelSpec | undefined =>
+  plane === "go" ? activeGoCatalog.get(modelId) : activeZenCatalog.get(modelId);
+
+/**
+ * Look up model specifications and pricing rates by model ID, preferring the Go
+ * plane.
+ *
+ * Correct for "does either plane know this model" — pricing and limits, which
+ * agree across the planes for every shared id. **Not** correct for routing: see
+ * {@link findModelSpecOn}. Anywhere the answer decides which ENDPOINT serves a
+ * model, the plane has to come from the route in play.
+ */
 export const findModelSpec = (modelId: string): CatalogModelSpec | undefined =>
   activeGoCatalog.get(modelId) ?? activeZenCatalog.get(modelId);
 

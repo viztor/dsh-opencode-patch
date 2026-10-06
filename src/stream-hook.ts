@@ -17,7 +17,11 @@ import { readSessionMetaResolver } from "./cordis-context.ts";
 import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
 import { isAsyncIterableLike, isRecord } from "./guards.ts";
-import { findModelSpec } from "./models-catalog.ts";
+import {
+  catalogPlaneForRoute,
+  findModelSpec,
+  findModelSpecOn,
+} from "./models-catalog.ts";
 import { isRouteRegistered } from "./models-discovery.ts";
 import { internalRouteFor } from "./responses-routes.ts";
 import { recordTurnUsage } from "./session-cost.ts";
@@ -94,8 +98,19 @@ export const createStreamHook = (
       // The vendor's own statement of the split: a model naming a different SDK
       // than the route's is served on a different API. Read from the catalog
       // rather than from a list we would have to notice changing.
+      //
+      // Read from the plane the REQUEST is on, not from a Go-first lookup. The
+      // two planes declare different SDKs for the same id — models.dev's
+      // `opencode-go` names `@ai-sdk/anthropic` for `qwen3.8-max`,
+      // `minimax-m2.7` and `minimax-m3` while its `opencode` names the default —
+      // so a single lookup answered a Zen question with Go data and sent those
+      // three to `/messages`. Measured: the Zen gateway serves `qwen3.8-max` and
+      // `minimax-m3` on `/chat/completions` and answers
+      // `400 ModelProtocolUnsupported` on `/messages`. The route decides the
+      // plane, because the route is what the user configured.
       typeof options.model === "string"
-        ? findModelSpec(options.model)?.provider_npm
+        ? findModelSpecOn(catalogPlaneForRoute(providerKey), options.model)
+            ?.provider_npm
         : undefined
     );
     // Take the call over only when the target route is really registered.
