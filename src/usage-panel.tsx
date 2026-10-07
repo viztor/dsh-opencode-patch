@@ -27,6 +27,7 @@ export interface UsageTriggerProps {
   isZen: boolean;
   onClick: () => void;
   open: boolean;
+  /** Stroke colour for the ring, from `getWindowColor`. */
   ringColor: string;
   showUsagePrice: boolean;
   /** Pre-computed ring dash array from `ringGeometry()`. */
@@ -95,7 +96,6 @@ export const UsageTrigger = ({
 /** The hover/click panel: quota breakdown, spend, Zen overflow and actions. */
 export interface UsagePanelProps {
   badgeText: string;
-  clampedPercent: number;
   failure: UsageFailure | null;
   headline: string;
   isLimited: boolean;
@@ -105,7 +105,6 @@ export interface UsagePanelProps {
   onMouseLeave: () => void;
   refreshing: boolean;
   retry: () => void;
-  ringColor: string;
   showUsagePrice: boolean;
   t: (key: string) => string;
   /** Epoch ms of the last successful read, or `null` while loading. */
@@ -117,7 +116,6 @@ export interface UsagePanelProps {
 
 export const UsagePanel = ({
   badgeText,
-  clampedPercent,
   failure,
   headline,
   isLimited,
@@ -127,7 +125,6 @@ export const UsagePanel = ({
   onMouseLeave,
   refreshing,
   retry,
-  ringColor,
   showUsagePrice,
   t,
   updatedAt,
@@ -160,17 +157,6 @@ export const UsagePanel = ({
 
     {!isZen && (
       <>
-        {/* Primary Accent Progress Bar */}
-        <div className="dsh-oc-usage-bar-track">
-          <div
-            className="dsh-oc-usage-bar-fill"
-            style={{
-              backgroundColor: ringColor,
-              width: `${clampedPercent}%`,
-            }}
-          />
-        </div>
-
         {/* Breakdown Section */}
         {usage !== undefined && (
           <div className="dsh-oc-usage-breakdown">
@@ -217,38 +203,6 @@ export const UsagePanel = ({
 
         {/* Divider */}
         <div className="dsh-oc-usage-divider" />
-
-        {/* Balance Cards (Image 2 pattern) */}
-        {usage !== undefined && (
-          <>
-            <div className="dsh-oc-usage-section-title">Quota Overview</div>
-            <div className="dsh-oc-usage-cards">
-              {BREAKDOWN_WINDOWS.map((entry) => {
-                const window: UsageWindow = usage[entry.key];
-                const limited = window.status === "rate-limited";
-                return (
-                  <div
-                    className={`dsh-oc-usage-card${limited ? " dsh-oc-card-limited" : ""}`}
-                    key={entry.key}
-                  >
-                    <span className="dsh-oc-usage-card-name">
-                      {entry.cardName}
-                    </span>
-                    <span
-                      className="dsh-oc-usage-card-percent"
-                      style={{ color: getWindowColor(window) }}
-                    >
-                      {window.percent}%
-                    </span>
-                    <span className="dsh-oc-usage-card-reset">
-                      {formatRelativeReset(window.resetsAt, locale)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
       </>
     )}
 
