@@ -373,6 +373,25 @@ describe("usage-pill: derived copy & failure parsing", () => {
     );
   });
 
+  it("says the Go plan is what ran out when Zen overflow is live", () => {
+    // The one case where "how much is left" has a real answer on a Zen route:
+    // the remaining is zero, and the reason the trigger shows spend instead of a
+    // percentage is that billing moved. Without the overflow flag there is
+    // nothing to report — which is the other line.
+    const usage = createMockUsage({
+      monthly: {
+        percent: 100,
+        resetsAt: isoAt(1000),
+        status: "rate-limited",
+      },
+      session: session("$0.42"),
+      zenOverflow: true,
+    });
+    const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
+    expect(copy.tooltip).toBe("t:zenOverflowLive · t:sessionSpend $0.42");
+    expect(copy.tooltip).not.toContain("t:zenNoQuotaWindow");
+  });
+
   it("reports Zen overflow as Ready until the plan is actually limited", () => {
     // The card renders only once overflow is on, so `Ready` is what a healthy
     // Go plan with a Zen key shows, and `Active` what a limited one shows.

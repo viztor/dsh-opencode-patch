@@ -519,11 +519,16 @@ export const describeUsage = (
     : t("zenOverflowActive");
   const zenCardCredit = isLimited ? "Active" : "Ready";
 
-  // Go: the ring's own figure, spelled out. Zen: there is no quota to burn
-  // through, so the tooltip says that instead — and names what the pill's
-  // number is, since `$0.00` on its own says nothing.
+  // Go: the ring's own figure, spelled out.
+  //
+  // Zen: the pill shows session spend, so the tooltip answers the question that
+  // number raises — consumed yes, but what is LEFT? Two answers, both real:
+  // overflow live means the Go plan is what ran out, so the remaining is zero
+  // and billing moved here; otherwise Zen itself has no window at all, because
+  // OpenCode exposes no balance or remaining-quota figure to report.
+  const spent = usage?.session?.costFormatted ?? "$0.00";
   const tooltip = isZen
-    ? `${t("zenNoQuotaWindow")} · ${t("sessionSpend")} ${usage?.session?.costFormatted ?? "$0.00"}`
+    ? `${usage?.zenOverflow === true ? t("zenOverflowLive") : t("zenNoQuotaWindow")} · ${t("sessionSpend")} ${spent}`
     : headline;
 
   return { badgeText, headline, tooltip, zenCardCredit, zenCardDesc };
