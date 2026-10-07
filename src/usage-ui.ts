@@ -414,33 +414,50 @@ export const STYLES = `
   margin-top: 4px;
 }
 
-.dsh-oc-zen-card {
-  padding: 9px 11px;
-  border-radius: var(--dsw-radius-sm, 8px);
-  background: var(--dsw-alias-bg-layer-3, color-mix(in srgb, currentColor 6%, transparent));
+/*
+ * A detail row — label, sub-label, value. NOT a card: the panel is already a
+ * floating surface, and a second background inside it draws two nested frames
+ * around one line of text. The row reads as one of the breakdown's own rows,
+ * which is what it is.
+ */
+.dsh-oc-usage-detail {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 8px;
 }
 
-.dsh-oc-zen-card-left {
+/* The first detail is spaced by whatever precedes it — the header's own margin
+   on Zen, the divider on Go — so only a STACKED one needs a gap of its own. */
+.dsh-oc-usage-detail + .dsh-oc-usage-detail {
+  margin-top: 10px;
+}
+
+.dsh-oc-usage-detail-left {
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
 }
 
-.dsh-oc-zen-card-title {
+.dsh-oc-usage-detail-title {
   font-size: 11px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary, currentColor);
 }
 
-.dsh-oc-zen-card-desc {
+.dsh-oc-usage-detail-desc {
   font-size: 10px;
   color: var(--dsw-alias-label-tertiary, currentColor);
+}
+
+/* Same metrics as a breakdown row's value, so the rows line up as one list. */
+.dsh-oc-usage-detail-value {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary, currentColor);
+  white-space: nowrap;
 }
 `;
 
