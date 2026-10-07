@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   calculateTurnCost,
   clearSessionUsageStore,
+  describeModel,
   formatModelRate,
   formatUsd,
   getSessionUsage,
@@ -141,10 +142,10 @@ describe("recordTurnUsage", () => {
     );
     expect(snap.activeModel).toBe("deepseek-v4.1-flash");
     expect(snap.activeRateFormatted).toBe("$0.15 / $0.6 per 1M");
-    expect(snap.includedInPlan).toBeUndefined();
+    expect(snap.freeModel).toBeUndefined();
   });
 
-  it("marks a free model as plan-included and prices it at zero", () => {
+  it("marks a free model as free — not as plan-included — and prices it at zero", () => {
     const snap = recordTurnUsage(
       "s1",
       {
@@ -156,10 +157,33 @@ describe("recordTurnUsage", () => {
       "muse-spark-1.3-contributor-free",
       true
     );
-    expect(snap.includedInPlan).toBe(true);
+    expect(snap.freeModel).toBe(true);
     expect(snap.costUsd).toBe(0);
     expect(snap.activeRateFormatted).toBe("Free Tier ($0.00)");
     expect(snap.modelsUsed).toContain("muse-spark-1.3-contributor-free");
+  });
+
+  it("re-describes the snapshot for the model the picker is on", () => {
+    // The spend is history: it was priced at the model that ran. The rate is
+    // prospective, so switching models in the picker must change the model and
+    // its rate WITHOUT touching the total.
+    const snap = recordTurnUsage(
+      "s1",
+      { inputTokens: 1_000, outputTokens: 1_000, totalTokens: 2_000 },
+      GO_FLASH,
+      "deepseek-v4.1-flash"
+    );
+    const moved = describeModel(snap, "mimo-v2.6-flash-free", undefined, true);
+    expect(moved.activeModel).toBe("mimo-v2.6-flash-free");
+    expect(moved.activeRateFormatted).toBe("Free Tier ($0.00)");
+    expect(moved.freeModel).toBe(true);
+    expect(moved.costUsd).toBe(snap.costUsd);
+
+    // And back the other way: a free model does not leave its flag behind when
+    // the selection moves to a paid one.
+    const back = describeModel(moved, "deepseek-v4.1-flash", GO_FLASH, false);
+    expect(back.freeModel).toBeUndefined();
+    expect(back.activeRateFormatted).toBe("$0.15 / $0.6 per 1M");
   });
 
   it("reprices the active model on a mid-session switch but keeps the spend", () => {

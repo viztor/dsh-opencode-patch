@@ -39,8 +39,37 @@ export const ringGeometry = (
  * `AGENTS.md` → "OpenCode endpoints" records the probed surface behind that.
  */
 export const GO_PLAN_URL = "https://opencode.ai/go";
-export const GO_CONSOLE_URL = "https://opencode.ai/console";
 export const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go/";
+/**
+ * The console, which is also where a pay-as-you-go account is topped up.
+ *
+ * One URL for both, and deliberately so: it is the only destination verified to
+ * exist. Every path under `/console/` answers 200 because the console is a
+ * single-page app, so a probe cannot distinguish a real `/billing` route from a
+ * catch-all — and a top-up link that 404s in front of a user is worse than one
+ * that opens the page where top-up lives.
+ */
+export const CONSOLE_URL = "https://opencode.ai/console";
+
+/** One action the panel can offer, as data so the two popovers share a body. */
+export interface PanelAction {
+  href: string;
+  labelKey: string;
+}
+
+/**
+ * The actions BELOW the console link, which the footer carries for both
+ * providers. Go's answer to "my quota ran out" is a bigger plan and its limits
+ * doc; Zen has nothing to add — its single action is the console on the row
+ * above, labelled 充值 because that is what a pay-as-you-go user wants from it.
+ */
+export const panelActions = (isZen: boolean): readonly PanelAction[] =>
+  isZen
+    ? []
+    : [
+        { href: GO_PLAN_URL, labelKey: "usageUpgradePlan" },
+        { href: GO_LIMITS_DOC_URL, labelKey: "usageLimitsDoc" },
+      ];
 
 /**
  * Whether a provider route or model id contains any configured marker,
@@ -309,6 +338,70 @@ export const STYLES = `
   outline: none;
   border-radius: var(--dsw-radius-xs, 4px);
   box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.dsh-oc-usage-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dsh-oc-usage-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-xs, 4px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, currentColor);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.dsh-oc-usage-refresh:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 10%, transparent));
+  color: var(--dsw-alias-label-primary, currentColor);
+}
+
+.dsh-oc-usage-refresh:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+/* The control is busy mid-read; the glyph turns rather than disappearing. */
+.dsh-oc-usage-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.dsh-oc-usage-refresh:disabled .dsh-oc-usage-refresh-icon {
+  animation: dsh-oc-spin 0.9s linear infinite;
+}
+
+@keyframes dsh-oc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dsh-oc-usage-console {
+  color: var(--dsw-alias-link, currentColor);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.dsh-oc-usage-console:hover,
+.dsh-oc-usage-console:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 
 .dsh-oc-usage-zen-notice {

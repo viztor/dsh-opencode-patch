@@ -271,12 +271,13 @@ export const apply = (ctx: ClientContext): void => {
       return {
         directory,
         ...markers,
-        readUsage: async (provider?: string) => {
+        readUsage: async (provider?: string, model?: string) => {
           const res: unknown = await meterScope.remote?.opencodeGoUsage?.read?.(
             {
               ...(provider === undefined || provider.length === 0
                 ? {}
                 : { provider }),
+              ...(model === undefined || model.length === 0 ? {} : { model }),
               ...(meterSessionId.length === 0
                 ? {}
                 : { sessionId: meterSessionId }),
