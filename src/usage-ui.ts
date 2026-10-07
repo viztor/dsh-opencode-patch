@@ -253,6 +253,23 @@ export const STYLES = `
   color: var(--dsw-alias-label-primary, currentColor);
 }
 
+/* The bar is the shape the number takes: one track per window, the fill the
+   window's own colour. Two pixels — a progress bar that is also a ruler. */
+.dsh-oc-usage-bar {
+  height: 2px;
+  margin-top: 4px;
+  margin-left: 13px;
+  border-radius: var(--dsw-radius-full, 999px);
+  background: var(--dsw-alias-border-l4, currentColor);
+  overflow: hidden;
+}
+
+.dsh-oc-usage-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.3s ease;
+}
+
 .dsh-oc-usage-subrow {
   display: flex;
   align-items: baseline;
@@ -467,6 +484,17 @@ export const STYLES = `
 // tree (see `ActiveUsage`) instead of being appended to `document.head`: writing
 // DOM outside the component leaks a permanent `<style>` node on unmount and is
 // disallowed for DSH client plugins.
+
+/**
+ * The ring colour before a window exists.
+ *
+ * Split from {@link getWindowColor} so the "no data yet" case is a named idea
+ * instead of a nested ternary at the call site.
+ */
+export const getWindowColorFor = (affecting?: AffectingWindowResult): string =>
+  affecting === undefined
+    ? "var(--dsw-alias-state-success-primary)"
+    : getWindowColor(affecting.window);
 
 export const getWindowColor = (window: UsageWindow): string => {
   if (window.status === "rate-limited" || window.percent >= 100) {

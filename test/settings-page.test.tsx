@@ -223,6 +223,13 @@ describe("settings-page: apply & slots", () => {
           read: remoteUsage,
         },
       },
+      // The active locale is read PER CALL, so the meter can follow a switch:
+      // hand out zh here and the next render is Chinese, with no reload.
+      locale: {
+        bind: () => (key: string) => key,
+        register: () => () => {},
+        getLocale: () => ({ active: "zh", revision: 1 }),
+      },
       inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
         callback(ctx),
       slots: {
@@ -262,9 +269,14 @@ describe("settings-page: apply & slots", () => {
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });
-    // No `locale` service in this context: the meter's translator echoes the key
-    // rather than being undefined, which would render every label blank.
-    expect(injected.t("usageTitle")).toBe("usageTitle");
+    // No `locale` service in this context: the meter's translator falls back to
+    // the English dictionary rather than echoing a key — the bundle ships its
+    // own dictionaries, so a missing locale service costs the language, not the
+    // copy. A key nobody wrote would still echo, as the last resort.
+    // zh is active, so the lookup reads the bundle's own zh dictionary — not a
+    // shared namespace a stale bundle could hold.
+    expect(injected.t("usageTitle")).toBe("OpenCode Go 用量");
+    expect(injected.t("keyNoOneWrote")).toBe("keyNoOneWrote");
   });
 
   it("boots with no services at all, and tears down cleanly", () => {
@@ -439,6 +451,50 @@ describe("settings-page: apply & slots", () => {
 
     expect(dockInjector).toBeDefined();
     expect(dockInjector?.("valid")).not.toBeNull();
+  });
+
+  it("unwraps the remote envelope, throwing the error a failed read carries", async () => {
+    // The Host wraps every read in {ok, value | error}; the meter's readUsage
+    // is the unwrap. Each shape below is a branch a client can hit.
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+    const responses: unknown[] = [
+      { ok: false, error: new Error("the gateway said no") },
+      { ok: false },
+      { notAnEnvelope: true },
+    ];
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: { directoryFor: () => ({ store: {} }) },
+      remote: {
+        opencodeGoUsage: {
+          read: async () => responses.shift(),
+        },
+      },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.input.right") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+    apply(ctx as never);
+    const injected = dockInjector?.("valid") as {
+      readUsage: () => Promise<unknown>;
+    };
+    expect(injected).toBeDefined();
+
+    // A typed failure propagates as the throw the pill parses.
+    await expect(injected.readUsage()).rejects.toThrow("the gateway said no");
+    // An error-less failure throws undefined — which parseFailure renders as the
+    // generic unavailable message rather than crash.
+    await expect(injected.readUsage()).rejects.toBeUndefined();
+    // A non-envelope answer passes through untouched: the pill's parseFailure
+    // decides what it means.
+    await expect(injected.readUsage()).resolves.toEqual({
+      notAnEnvelope: true,
+    });
   });
 
   it("passes the claimed provider routes from the scope to the injector", () => {

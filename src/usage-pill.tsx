@@ -18,9 +18,10 @@ import { DEFAULT_PROVIDERS } from "./config-values.ts";
 import type { GoUsage } from "./usage-contract.ts";
 import { UsagePanel, UsageTrigger } from "./usage-panel.tsx";
 import {
+  CIRCUMFERENCE,
   describeUsage,
   getAffectingWindow,
-  getWindowColor,
+  getWindowColorFor,
   isZenProvider,
   matchesAny,
   parseFailure,
@@ -263,12 +264,22 @@ const ActiveUsage = ({
   const affecting = usage === undefined ? undefined : getAffectingWindow(usage);
   const isLimited = affecting?.window.status === "rate-limited";
   const displayPercent = affecting?.window.percent ?? 0;
-  const ringColor =
-    affecting === undefined
-      ? "var(--dsw-alias-state-success-primary)"
-      : getWindowColor(affecting.window);
+  // A free model has no allowance to run out of: the plan's limit says nothing
+  // about what the user is actually spending, which is zero. Red would read as
+  // "you are out of money" against a bill that cannot be charged, so the ring
+  // goes hollow instead — the track colour, the empty state.
+  const isFree =
+    usage?.session?.freeModel === true ||
+    (isZen && usage?.allowance === undefined);
+  // `undefined` affecting means the first read is still in flight; success is
+  // the neutral assumption, and the ring refills the moment data lands.
+  const ringColor = isFree
+    ? "var(--dsw-alias-label-tertiary)"
+    : getWindowColorFor(affecting);
 
-  const { strokeDasharray } = ringGeometry(displayPercent);
+  const strokeDasharray = isFree
+    ? `0 ${CIRCUMFERENCE}`
+    : ringGeometry(displayPercent).strokeDasharray;
 
   let triggerLabel = "…";
   if (usage !== undefined) {

@@ -219,10 +219,10 @@ describe("UsagePanel", () => {
     expect(collectText(tree)).not.toContain("42% of Weekly used");
     expect(collectText(tree)).toContain("Go Plan");
 
-    // Three rows carry the whole breakdown. A progress bar and a QUOTA OVERVIEW
-    // strip of three cards used to repeat exactly this data, so both were removed.
+    // Three rows carry the whole breakdown, each with its own bar. The QUOTA
+    // OVERVIEW strip of three cards stays dead — those were a second frame.
     expect(byClass(tree, "dsh-oc-usage-row")).toHaveLength(3);
-    expect(byClass(tree, "dsh-oc-usage-bar-fill")).toHaveLength(0);
+    expect(byClass(tree, "dsh-oc-usage-bar")).toHaveLength(3);
     expect(byClass(tree, "dsh-oc-usage-card")).toHaveLength(0);
     // The console sits on the update row; the Go layer's own action row carries
     // the plan link, and it renders INSIDE that layer — above the shared spend
@@ -281,6 +281,15 @@ describe("UsagePanel", () => {
     ]);
     expect(collectText(go)).toContain("t:usageConsole");
     expect(collectText(go)).toContain("t:usageUpgradePlan");
+  });
+
+  it("styles the window bars with host tokens", () => {
+    // The bar fell back to nothing for one round (the rule was deleted with the
+    // cards it used to live beside), so pin both the rule and its palette.
+    const track = /\.dsh-oc-usage-bar \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(track).toContain("--dsw-alias-border-l4");
+    const fill = /\.dsh-oc-usage-bar-fill \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(fill).toContain("transition:");
   });
 
   it("spaces the actions apart and styles them as host links", () => {
