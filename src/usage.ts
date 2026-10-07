@@ -25,6 +25,7 @@ import {
   resolveZenCreditInfo,
   toGoBaseURL,
 } from "./go-discovery.ts";
+import { GO_MODEL_LIMITS } from "./go-limits-data.ts";
 import { isRecord } from "./guards.ts";
 import { catalogPlaneForRoute, findModelSpecOn } from "./models-catalog.ts";
 import {
@@ -35,6 +36,7 @@ import {
 import {
   parseGoUsage,
   type GoUsage,
+  type ModelAllowanceSnapshot,
   type UsageQuery,
   type UsageWindow,
 } from "./usage-contract.ts";
@@ -119,6 +121,33 @@ const attachSession = (
     selected
   );
   return describeModel(session, selected, spec?.cost, spec?.is_free === true);
+};
+
+/**
+ * Attach the selected model's monthly allowance, from the generated limits table.
+ *
+ * Resolved on the Host for the same reason the rate is: the table is generated
+ * from the vendor's docs and belongs beside the catalog it is joined against, so
+ * the client ships neither. Unknown models get nothing — the row then simply is
+ * not rendered, which is the honest outcome for a model the plan does not list
+ * (an unlimited one, or one newer than the table).
+ *
+ * Both tiers travel together. The plan is not discoverable — `/limits`, `/plan`,
+ * `/subscription`, `/account` all 404 — so choosing one here would mean
+ * guessing, and a wrong tier misstates the money by 2-3x.
+ */
+const attachAllowance = (
+  query: UsageQuery | undefined
+): ModelAllowanceSnapshot | undefined => {
+  const model = query?.model?.trim() ?? "";
+  if (model.length === 0) {
+    return undefined;
+  }
+  const row = GO_MODEL_LIMITS[model] ?? GO_MODEL_LIMITS[model.toLowerCase()];
+  if (row === undefined) {
+    return undefined;
+  }
+  return { go: row.go, goPlus: row.goPlus, model };
 };
 
 /** Normalize a base URL to the Go `/usage` endpoint, without a trailing slash. */
@@ -272,8 +301,10 @@ export class GoUsageService extends TypertRemoteService {
       const usage = parseGoUsage(parsed);
       const zenInfo = await resolveZenCreditInfo(this.ctx);
       const session = attachSession(sessionId, query);
+      const allowance = attachAllowance(query);
       return {
         ...usage,
+        ...(allowance === undefined ? {} : { allowance }),
         ...(session === undefined ? {} : { session }),
         source,
         zenOverflow: zenInfo.isConfigured,

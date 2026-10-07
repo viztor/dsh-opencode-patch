@@ -611,6 +611,48 @@ if (existsSync(shimPath) && shimScripted && shimRunsInCi) {
 }
 
 /**
+ * The same arrangement for the Go plan's per-model dollar allowance.
+ *
+ * `src/go-limits-data.ts` is written from OpenCode's own Go documentation, and it
+ * is what lets the meter put a dollar amount on a percentage. A stale table is a
+ * WRONG dollar figure wearing the costume of a right one — the vendor says limits
+ * "may change", so this moves without a commit. No unit test can catch it: the
+ * tests read the very table they are meant to verify. So the same three things
+ * are asserted: the script exists, package.json points at it, and a workflow step
+ * actually RUNS it (matched as a command, for the reason `runs` documents).
+ */
+const limitsScript: unknown = pkg.scripts?.["limits:shim"];
+const limitsPath = join(ROOT, "scripts/generate-go-limits.ts");
+const limitsScripted =
+  typeof limitsScript === "string" &&
+  limitsScript.includes("scripts/generate-go-limits.ts");
+const limitsRunsInCi = runs(ci, String.raw`pnpm run limits:shim`);
+
+if (existsSync(limitsPath) && limitsScripted && limitsRunsInCi) {
+  ok(
+    "the Go plan allowance table is generated, scripted, and checked on a schedule"
+  );
+} else {
+  if (!existsSync(limitsPath)) {
+    fail(
+      "scripts/generate-go-limits.ts is missing; the allowance table is unmaintainable"
+    );
+  }
+  if (!limitsScripted) {
+    fail(
+      "no limits:shim script; regenerating the Go allowance means knowing a " +
+        "path, and nothing runs it on a schedule"
+    );
+  }
+  if (!limitsRunsInCi) {
+    fail(
+      "no ci.yml step RUNS `pnpm run limits:shim`; a stale allowance table " +
+        "shows a wrong dollar figure that looks authoritative"
+    );
+  }
+}
+
+/**
  * The coverage ratchet.
  *
  * A threshold set above today's number would block every PR, and one set below

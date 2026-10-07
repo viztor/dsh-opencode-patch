@@ -482,6 +482,31 @@ describe("GoUsageService readings", () => {
     expect(usage.monthly.percent).toBe(100);
   });
 
+  it("attaches the selected model's monthly allowance, both tiers, and only for a listed model", async () => {
+    // The one thing the live payload cannot supply: what the percentages are a
+    // percentage OF. Resolved on the Host from the generated table, and carrying
+    // both tiers because the plan is not discoverable — guessing one would
+    // misstate the money by 2-3x.
+    stubFetch(() => new Response(okBody()));
+    const service = serviceWithKey("sk-live-key");
+
+    const listed = await service.read({ model: "mimo-v2.6-flash" });
+    expect(listed.allowance).toEqual({
+      go: 60,
+      goPlus: 120,
+      model: "mimo-v2.6-flash",
+    });
+
+    // A model the plan does not publish an allowance for gets nothing at all,
+    // rather than a zero that would read as "you get nothing".
+    const unlisted = await service.read({ model: "longcat-2.5-preview-free" });
+    expect(Object.hasOwn(unlisted, "allowance")).toBe(false);
+
+    // No selection, no figure to attribute it to.
+    const unselected = await service.read();
+    expect(Object.hasOwn(unselected, "allowance")).toBe(false);
+  });
+
   it("marks a Go reading overflow-eligible exactly when Zen credit exists", async () => {
     // `zenOverflow` on a real reading is what tells the client the Go meters
     // may be backed by pay-as-you-go credit, so it must track Zen state and not

@@ -229,6 +229,9 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  • Monthly                               65% │
 │    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
+│  Monthly allowance                           │
+│  mimo-v2.6-flash              Go $60 · Plus $120│
+├──────────────────────────────────────────────┤
 │  Upgrade plan                                │
 ├──────────────────────────────────────────────┤
 │  Session Spend                               │
@@ -256,6 +259,12 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  ⟳ Updated 08:30                    Top up ›   │
 └───────────────────────────────────────────────┘
 ```
+
+**The monthly allowance, and why it is a total and not a balance.** The three windows are shares of a per-model monthly **dollar** allowance — the vendor's own words: _"Usage limits are defined as monthly dollar amounts… 5-hour — 20% of the monthly limit; weekly — 50%; and monthly — 100%."_ So the meter prints that allowance under the windows: for `mimo-v2.6-flash`, `Go $60 · Plus $120`. It is generated from the vendor's Go documentation (`pnpm run limits:shim`, checked on a schedule in CI) because the page states outright that _"usage limits may change"_ — a hand-typed table would be wrong within a release, and a stale dollar figure looks authoritative.
+
+It shows **both tiers** rather than one, because the plan is not discoverable: `/limits`, `/plan`, `/subscription`, `/account` and `/credits` all return 404, and `/models` carries no limit. Guessing a tier would misstate the money by 2–3x.
+
+It is deliberately **not** a remaining balance. `GET /zen/go/v1/usage` takes no model parameter, so its percentages describe the account rather than the model you are reading — multiplying an account-level percentage by a per-model allowance yields a number with no referent. The remaining balance is in the console, where it is exact.
 
 **Zen balance & overflow.** If an `OPENCODE_API_KEY` (or `oc_sk_...`) is configured, Zen pay-as-you-go is detected automatically. The Zen panel carries **no balance row**: OpenCode exposes that balance only through console server actions that need a browser session, so the panel links straight to the [OpenCode Console](https://opencode.ai/console) rather than freeze a number it cannot keep current. The balance row lives on the **Go** panel instead, where it answers a question the panel can answer — whether an over-limit Go request will really be billed to that balance.
 
