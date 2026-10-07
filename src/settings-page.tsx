@@ -61,12 +61,11 @@ export const inject = [
   "modelDirectories",
   "remote",
   "remote.session",
-  // Our own remote. This was added once and reverted because the plugin then
-  // waited for it forever — but that was a symptom, not a verdict: the host was
-  // never registering it (the `ctx.effect` bug). The file log now shows
-  // "remote face registered" on every run, so the key resolves and the meter can
-  // read `remote.opencodeGoUsage.read`.
-  "remote.opencodeGoUsage",
+  // `remote.opencodeGoUsage` is deliberately NOT declared: as an inject key it is
+  // a HARD dependency, and declaring it makes the whole plugin wait forever —
+  // "web boot: 1 entry did not activate". The host registers the remote face, but
+  // that does not put the name in this client's service registry. The meter
+  // reads it through `ctx.remote` instead, which needs no declaration.
 ];
 
 export interface ClientContext {
