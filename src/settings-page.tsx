@@ -329,8 +329,20 @@ export const apply = (ctx: ClientContext): void => {
   // caller declared the service — so the call threw
   // `cannot get property "remote.session" without inject`, which the try/catch
   // turned into "no directory" and the meter silently rendered nothing.
+  // `remote.opencodeGoUsage` belongs HERE and not in the top-level `inject`
+  // export. The two are not interchangeable: a name in `inject` is a hard gate
+  // that stops the whole plugin activating until it exists ("web boot: 1 entry
+  // did not activate: pending (waiting for service: ...)"), whereas this call is
+  // a scoped wait that simply runs its callback once the service appears. The
+  // mount above is an effect — registered synchronously, completed
+  // asynchronously — so this waits for it rather than deadlocking on it. Without
+  // the name here, cordis refuses the read outright:
+  // `cannot get property "remote.opencodeGoUsage" without inject`.
   if (typeof ctx.inject === "function") {
-    ctx.inject(["modelDirectories", "remote", "slots"], registerMeter);
+    ctx.inject(
+      ["modelDirectories", "remote", "slots", "remote.opencodeGoUsage"],
+      registerMeter
+    );
   } else {
     registerMeter(ctx);
   }
