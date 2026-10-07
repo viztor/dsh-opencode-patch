@@ -149,6 +149,68 @@ describe("usage-pill: the poll loop", () => {
     expect(readUsage).toHaveBeenCalledTimes(3);
   });
 
+  it("re-reads the moment the picker switches models, not on the next tick", async () => {
+    // The rate and the monthly allowance are priced for the model the query
+    // names. Without this, a switch left the panel describing the PREVIOUS
+    // model for up to a minute — the meter looked live and was not.
+    const readUsage = vi.fn().mockResolvedValue(USAGE);
+    const view = await renderPill(readUsage);
+    expect(readUsage).toHaveBeenCalledTimes(1);
+
+    const rerender = (model: string): void => {
+      view.rerender(
+        <UsagePill
+          directory={storeFor({ current: { provider: "opencode-go", model } })}
+          readUsage={readUsage}
+          t={t}
+        />
+      );
+    };
+
+    await act(async () => {
+      rerender("kimi-k3");
+    });
+    await waitFor(() => {
+      expect(readUsage).toHaveBeenCalledTimes(2);
+    });
+    // The new selection is what the Host was asked to price.
+    expect(readUsage).toHaveBeenLastCalledWith("opencode-go", "kimi-k3");
+
+    // Switching BACK does not assume anything: the same read fires again,
+    // because the snapshot for the first model is stale the moment the picker
+    // left it.
+    await act(async () => {
+      rerender("grok-4.7");
+    });
+    await waitFor(() => {
+      expect(readUsage).toHaveBeenCalledTimes(3);
+    });
+    expect(readUsage).toHaveBeenLastCalledWith("opencode-go", "grok-4.7");
+  });
+
+  it("re-reads when the provider route changes, as when Go hands off to Zen", async () => {
+    // A provider switch is an account switch: the /usage endpoint rejects the
+    // other plane's key outright, so carrying the old reading over would show
+    // one account's quota beside the other account's model.
+    const readUsage = vi.fn().mockResolvedValue(USAGE);
+    const view = await renderPill(readUsage, "opencode-go");
+    expect(readUsage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.rerender(
+        <UsagePill
+          directory={storeFor({ current: { provider: "opencode" } })}
+          readUsage={readUsage}
+          t={t}
+        />
+      );
+    });
+    await waitFor(() => {
+      expect(readUsage).toHaveBeenCalledTimes(2);
+    });
+    expect(readUsage).toHaveBeenLastCalledWith("opencode", undefined);
+  });
+
   it("does not poll while the document is hidden, and catches up when it returns", async () => {
     const readUsage = vi.fn().mockResolvedValue(USAGE);
     await renderPill(readUsage);

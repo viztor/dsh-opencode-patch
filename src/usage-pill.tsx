@@ -198,7 +198,7 @@ const ActiveUsage = ({
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [readUsage]);
+  }, [readUsage, provider, model]);
 
   useEffect(() => {
     if (!open) {
