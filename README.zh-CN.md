@@ -209,7 +209,7 @@ opencode-responses:
 │ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
 └─────────────────────────────────────────────────────────────────┘
    [ ⭕ 73% Context ]   [ ⭕ 42% Go Quota ]   ← when OpenCode Go is active
-   [ ⭕ 73% Context ]   [ 🪙 OpenCode Zen ]   ← when OpenCode Zen is active
+   [ ⭕ 73% Context ]   [ 🪙 $0.00 ]            ← 使用 OpenCode Zen 时
 ```
 
 #### 模式 A — OpenCode Go (`opencode-go`)
@@ -251,7 +251,7 @@ opencode-responses:
 
 #### 模式 B — OpenCode Zen (`opencode`)
 
-- **Zen 胶囊**：一枚紧凑的硬币徽标（`🪙 OpenCode Zen`），首轮计价完成后会切换为本会话累计金额。
+- **Zen 胶囊**：一枚紧凑的硬币徽标，显示本会话累计花费（未计价时为 `🪙 $0.00`，计价后如 `🪙 $0.42`）。这是唯一能拿到的真实数字——OpenCode 的 Zen 余额只能通过 console 的 server action 读取，需要浏览器会话，API key 读不到。
 - **按量计费面板**：带 `Pay-as-you-go` 徽标的头部、按 Token 计费的说明、会话消耗卡片（价格开关开启时），以及指向 [OpenCode 控制台](https://opencode.ai/console)与[定价](https://opencode.ai/pricing)的直达链接。
 
 ```

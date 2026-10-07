@@ -209,7 +209,7 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
 └─────────────────────────────────────────────────────────────────┘
    [ ⭕ 73% Context ]   [ ⭕ 42% Go Quota ]   ← when OpenCode Go is active
-   [ ⭕ 73% Context ]   [ 🪙 OpenCode Zen ]   ← when OpenCode Zen is active
+   [ ⭕ 73% Context ]   [ 🪙 $0.00 ]            ← when OpenCode Zen is active
 ```
 
 #### Mode A — OpenCode Go (`opencode-go`)
@@ -251,7 +251,7 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 
 #### Mode B — OpenCode Zen (`opencode`)
 
-- **Zen pill**: a compact coin badge (`🪙 OpenCode Zen`) that switches to the session's accumulated dollar figure once the first turn has been priced.
+- **Zen pill**: a compact coin badge carrying the session's accumulated spend (`🪙 $0.00` before anything has been priced, `🪙 $0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
 - **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, an explanation of per-token billing, the session-spend card (when the price switch is on), and direct links to the [OpenCode Console](https://opencode.ai/console) and [Pricing](https://opencode.ai/pricing).
 
 ```
