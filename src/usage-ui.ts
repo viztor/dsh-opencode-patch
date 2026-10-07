@@ -216,23 +216,6 @@ export const STYLES = `
   letter-spacing: -0.01em;
 }
 
-.dsh-oc-usage-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 10%, transparent));
-  color: var(--dsw-alias-label-secondary, currentColor);
-}
-
-.dsh-oc-usage-badge.dsh-oc-badge-limited {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 15%, transparent);
-  color: var(--dsw-alias-state-error-primary);
-}
-
 .dsh-oc-usage-breakdown {
   display: flex;
   flex-direction: column;
@@ -292,28 +275,6 @@ export const STYLES = `
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary, currentColor);
   padding-top: 4px;
-}
-
-.dsh-oc-usage-retry {
-  border: 0.5px solid var(--dsw-alias-border-l2, color-mix(in srgb, currentColor 20%, transparent));
-  border-radius: var(--dsw-radius-xs, 4px);
-  padding: 3px 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, inherit);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.dsh-oc-usage-retry:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 10%, transparent));
-  color: var(--dsw-alias-label-primary, inherit);
-}
-
-.dsh-oc-usage-retry:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 /* Actions: three targets, so they must read as three links. Unstyled, they ran
