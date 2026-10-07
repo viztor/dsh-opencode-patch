@@ -217,12 +217,7 @@ export const UsagePanel = ({
                       {formatRelativeReset(window.resetsAt, locale)}
                     </span>
                     {window.status === "rate-limited" && (
-                      <span
-                        style={{
-                          color: "var(--dsw-alias-state-error-primary)",
-                          fontWeight: 600,
-                        }}
-                      >
+                      <span className="dsh-oc-usage-limited">
                         {t("usageLimited")}
                       </span>
                     )}

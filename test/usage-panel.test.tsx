@@ -354,6 +354,25 @@ describe("UsagePanel", () => {
     expect(collectText(tree)).not.toContain("t:zenCredit");
   });
 
+  it("renders the limited label through the sheet, not an inline style", () => {
+    // The subrow used to carry its colour in an ad-hoc `style` prop — the only
+    // one surviving in the panel — so a second limited-state tone could only
+    // duplicate it or diverge from it.
+    const limited = usage({
+      rolling: {
+        percent: 100,
+        resetsAt: "2026-11-01T00:00:00Z",
+        status: "rate-limited",
+      },
+    });
+    expect(
+      byClass(
+        UsagePanel(panelProps({ usage: limited })),
+        "dsh-oc-usage-limited"
+      )
+    ).toHaveLength(1);
+  });
+
   it("warns about Zen fallback only when limited without overflow", () => {
     expect(
       byClass(

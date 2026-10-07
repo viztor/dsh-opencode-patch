@@ -281,7 +281,7 @@ const ActiveUsage = ({
 
   // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
   const { badgeText, headline, tooltip, zenCardCredit, zenCardDesc } =
-    describeUsage(usage, affecting, isZen, t);
+    describeUsage(usage, affecting, isZen, getLocale?.(), t);
 
   return (
     <span

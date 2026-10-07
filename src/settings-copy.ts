@@ -7,7 +7,6 @@
  */
 
 export const en = {
-  activeModelRate: "Model Rate",
   description:
     "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
   enrichModels: "Enrich Models from Models.dev (default on)",
@@ -29,7 +28,6 @@ export const en = {
   groupQuota: "Quota Meter",
   groupRequests: "Gateway Requests",
   freeModel: "Free model — no extra charge",
-  invalidBoolean: "Enter true or false, or leave blank for default.",
   invalidText: "This value was not accepted; leave blank for default.",
   keySource: "Credential Source",
   keySourceAuto: "Automatic",
@@ -51,10 +49,8 @@ export const en = {
   usageEnabled: "Enable Go Quota Monitor (default on)",
   usageEnabledHint:
     "Displays live OpenCode Go quota ring in the composer dock beside context usage. Empty inherits default.",
-  usageHint: "Account usage · used percentage · refreshes every minute",
   usageLastUpdated: "Last updated",
   usageLimited: "Limit reached",
-  usageLimitedShort: "limited",
   usageLimitsDoc: "Usage limits",
   usageLoading: "Loading usage…",
   showUsagePrice: "Show Session Spend & Model Rate (default on)",
@@ -64,14 +60,9 @@ export const en = {
   usageRefreshing: "Refreshing…",
   usageResets: "Resets",
   usageRetry: "Retry now",
-  usageRollingShort: "5h",
-  usageStaleHint:
-    "Showing the last successful usage reading. Current usage may have changed.",
-  usageStaleShort: "Last data",
   usageTitle: "OpenCode Go usage",
   usageUnavailable: "Unavailable",
   usageUpgradePlan: "Upgrade plan",
-  usageWeekShort: "week",
   usageZenFallbackNotice:
     "When Go plan limits are reached, requests automatically fall back to Zen balance only if 'Use balance' is enabled on this Go subscription's account in the OpenCode Console. Separate Zen accounts cannot be debited for Go plan overflow.",
   usage_monthly: "Monthly",
@@ -88,7 +79,6 @@ export const en = {
 
 /** `zh` mirrors `en` key-for-key; the type makes a missing key a compile error. */
 export const zh: Record<keyof typeof en, string> = {
-  activeModelRate: "当前模型费率",
   description:
     "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
   enrichModels: "使用 models.dev 补全模型列表（默认开启）",
@@ -110,7 +100,6 @@ export const zh: Record<keyof typeof en, string> = {
   groupQuota: "配额计量",
   groupRequests: "网关请求",
   freeModel: "免费模型，不额外计费",
-  invalidBoolean: "请输入 true 或 false，留空使用默认值。",
   invalidText: "该值未被接受，留空使用默认值。",
   keySource: "凭据来源",
   keySourceAuto: "自动",
@@ -132,10 +121,8 @@ export const zh: Record<keyof typeof en, string> = {
   usageEnabled: "开启 OpenCode Go 额度监控（默认开启）",
   usageEnabledHint:
     "在输入框底部停靠栏（与上下文用量并列）显示实时额度环。留空沿用默认值。",
-  usageHint: "账号额度 · 已用百分比 · 每分钟刷新",
   usageLastUpdated: "更新于",
   usageLimited: "已达限额",
-  usageLimitedShort: "受限",
   usageLimitsDoc: "额度说明",
   usageLoading: "正在读取用量…",
   showUsagePrice: "显示会话消耗与模型费率（默认开启）",
@@ -145,13 +132,9 @@ export const zh: Record<keyof typeof en, string> = {
   usageRefreshing: "正在刷新…",
   usageResets: "重置于",
   usageRetry: "立即重试",
-  usageRollingShort: "5小时",
-  usageStaleHint: "当前显示上次成功读取的用量，实际用量可能已变化。",
-  usageStaleShort: "上次数据",
   usageTitle: "OpenCode Go 用量",
   usageUnavailable: "暂不可用",
   usageUpgradePlan: "升级套餐",
-  usageWeekShort: "周",
   usageZenFallbackNotice:
     "当 Go 套餐额度用尽时，仅在当前 Go 订阅账号的控制台中开启了「使用余额 (Use balance)」时才会自动回退；独立账号的 Zen 余额无法跨账号自动承接。",
   usage_monthly: "每月",
