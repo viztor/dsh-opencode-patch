@@ -11,7 +11,6 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-import type { SessionUsageSnapshot } from "../src/session-cost.ts";
 import type { GoUsage } from "../src/usage-contract.ts";
 import {
   type ModelDirectoryState,
@@ -51,18 +50,6 @@ const createMockUsage = (overrides?: Partial<GoUsage>): GoUsage => ({
 /** ISO timestamp `offsetMs` from now — negative is in the past. */
 const isoAt = (offsetMs: number): string =>
   new Date(Date.now() + offsetMs).toISOString();
-
-/** A priced session, as the Host reports it back to the meter. */
-const session = (costFormatted: string): SessionUsageSnapshot => ({
-  cacheReadTokens: 0,
-  costFormatted,
-  costUsd: 0.42,
-  inputTokens: 10,
-  modelsUsed: ["mimo-v2.6-flash"],
-  outputTokens: 20,
-  totalTokens: 30,
-  turns: 1,
-});
 
 describe("usage-pill: helper functions & calculations", () => {
   it("formats relative countdown timers accurately", () => {
@@ -323,29 +310,42 @@ describe("usage-pill: derived copy & failure parsing", () => {
     const usage = createMockUsage({
       weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
     });
-    const copy = describeUsage(
-      usage,
-      getAffectingWindow(usage),
-      false,
-      undefined,
-      t
-    );
+    const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
     expect(copy.headline).toBe("80% of Weekly used");
     expect(copy.badgeText).toBe("Go Plan");
     expect(copy.zenCardDesc).toBe("t:zenOverflowActive");
+  });
+
+  it("names the account in the header, so the title never moves", () => {
+    // The header said the ring's figure, which changed on every poll. Both
+    // readings now belong to the rows and the badge; the title is the account.
+    const healthy = createMockUsage({
+      weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
+    });
+    const limited = createMockUsage({
+      monthly: { percent: 100, resetsAt: isoAt(1000), status: "rate-limited" },
+    });
+    expect(
+      describeUsage(healthy, getAffectingWindow(healthy), false, t).title
+    ).toBe("t:goPlanTitle");
+    expect(
+      describeUsage(limited, getAffectingWindow(limited), false, t).title
+    ).toBe("t:goPlanTitle");
+    expect(
+      describeUsage(healthy, getAffectingWindow(healthy), true, t).title
+    ).toBe("t:zenPaygTitle");
+
+    // The ring's explanation did not die with the header: it is the hover label.
+    expect(
+      describeUsage(healthy, getAffectingWindow(healthy), false, t).headline
+    ).toBe("80% of Weekly used");
   });
 
   it("flags a rate-limited window in the headline and badge", () => {
     const usage = createMockUsage({
       monthly: { percent: 100, resetsAt: isoAt(1000), status: "rate-limited" },
     });
-    const copy = describeUsage(
-      usage,
-      getAffectingWindow(usage),
-      false,
-      undefined,
-      t
-    );
+    const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
     expect(copy.headline).toBe("Monthly quota limited");
     expect(copy.badgeText).toBe("t:usageLimited");
     expect(copy.zenCardDesc).toBe("t:zenFallbackNotice");
@@ -356,73 +356,9 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // to repeat it in a subtitle and again in a balance row that had no balance
     // behind it (OpenCode exposes no such endpoint).
     const usage = createMockUsage({ zenOverflow: true });
-    const copy = describeUsage(
-      usage,
-      getAffectingWindow(usage),
-      true,
-      undefined,
-      t
-    );
+    const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
     expect(copy.headline).toBe("t:zenPaygTitle");
     expect(copy.badgeText).toBe("t:zenPaygBadge");
-  });
-
-  it("gives the Zen trigger a tooltip worth reading, not the plan's name", () => {
-    // The pill shows session spend, so the plan name says nothing the trigger
-    // does not already imply — and there is no balance or remaining-quota
-    // figure to offer, because OpenCode exposes neither. So the tooltip says
-    // there is no quota window and names what the number on screen is.
-    const usage = createMockUsage({ session: session("$0.42") });
-    const copy = describeUsage(
-      usage,
-      getAffectingWindow(usage),
-      true,
-      undefined,
-      t
-    );
-    expect(copy.tooltip).toBe("t:zenNoQuotaWindow · t:sessionSpend $0.42");
-
-    // Before the first priced turn the spend is absent, not undefined text.
-    const fresh = createMockUsage();
-    expect(
-      describeUsage(fresh, getAffectingWindow(fresh), true, undefined, t)
-        .tooltip
-    ).toBe("t:zenNoQuotaWindow · t:sessionSpend $0.00");
-
-    // Go keeps the ring's own figure, plus the one thing the pill cannot say in
-    // two digits — when the window burns off. The trigger shows the USED
-    // share; the tooltip says how long you are stuck with it.
-    const go = createMockUsage({
-      weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
-    });
-    expect(
-      describeUsage(go, getAffectingWindow(go), false, undefined, t).tooltip
-    ).toBe("80% of Weekly used · t:usageResets 1h");
-  });
-
-  it("says the Go plan is what ran out when Zen overflow is live", () => {
-    // The one case where "how much is left" has a real answer on a Zen route:
-    // the remaining is zero, and the reason the trigger shows spend instead of a
-    // percentage is that billing moved. Without the overflow flag there is
-    // nothing to report — which is the other line.
-    const usage = createMockUsage({
-      monthly: {
-        percent: 100,
-        resetsAt: isoAt(1000),
-        status: "rate-limited",
-      },
-      session: session("$0.42"),
-      zenOverflow: true,
-    });
-    const copy = describeUsage(
-      usage,
-      getAffectingWindow(usage),
-      true,
-      undefined,
-      t
-    );
-    expect(copy.tooltip).toBe("t:zenOverflowLive · t:sessionSpend $0.42");
-    expect(copy.tooltip).not.toContain("t:zenNoQuotaWindow");
   });
 
   it("reports Zen overflow as Ready until the plan is actually limited", () => {
@@ -430,8 +366,7 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // Go plan with a Zen key shows, and `Active` what a limited one shows.
     const usage = createMockUsage({ zenOverflow: true });
     expect(
-      describeUsage(usage, getAffectingWindow(usage), false, undefined, t)
-        .zenCardCredit
+      describeUsage(usage, getAffectingWindow(usage), false, t).zenCardCredit
     ).toBe("Ready");
 
     const limited = createMockUsage({
@@ -439,7 +374,7 @@ describe("usage-pill: derived copy & failure parsing", () => {
       zenOverflow: true,
     });
     expect(
-      describeUsage(limited, getAffectingWindow(limited), false, undefined, t)
+      describeUsage(limited, getAffectingWindow(limited), false, t)
         .zenCardCredit
     ).toBe("Active");
   });
