@@ -292,6 +292,31 @@ describe("UsagePanel", () => {
     expect(fill).toContain("transition:");
   });
 
+  it("paints the panel with the host's TRANSLUCENT menu material", () => {
+    // The panel was solid white while every other popover in the composer was
+    // translucent — the one surface in the dock that did not look like part of
+    // the harness. Both tokens in the old chain were REAL and correctly named;
+    // what made it white was their product: --dsw-specific-menu is #f8f9faf0
+    // (94% opaque) and --dsw-alias-bg-layer-2 resolves to #fff. So this pins the
+    // surface fill, not merely "some --dsw token is mentioned" — a chain of
+    // individually valid names is exactly how it went wrong.
+    // Comments are stripped first: they explain the old tokens by name, and a
+    // rule that merely TALKS about a value is not a rule that sets it.
+    const panel = /\.dsh-oc-usage-panel \{[^}]*\}/
+      .exec(STYLES)?.[0]
+      ?.replaceAll(/\/\*[\s\S]*?\*\//g, "");
+    expect(panel).toContain("var(--dsw-menu-surface-fill");
+    expect(panel).toContain("var(--dsw-menu-backdrop-filter");
+    // Neither of the opaque layers, nor a bare `Canvas` fill behind them.
+    expect(panel).not.toContain("--dsw-specific-menu");
+    expect(panel).not.toContain("--dsw-alias-bg-layer-2");
+    expect(panel).not.toMatch(/background-color:\s*Canvas/);
+    // The host scopes this stroke to its menu material; we are the material.
+    expect(panel).toContain(
+      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
+    );
+  });
+
   it("spaces the actions apart and styles them as host links", () => {
     // The row had no stylesheet rule at all, so the anchors fell back to the UA
     // default — purple, solid underline, no gap — and the three labels ran

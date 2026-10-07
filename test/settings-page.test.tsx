@@ -8,7 +8,7 @@ import { CARD_FIELDS, CONFIG_ONLY_FIELDS } from "../src/settings-fields.ts";
 import {
   apply,
   LEGACY_NS,
-  LEGACY_PKG,
+  SCOPED_PKG,
   NS,
   PKG,
   SPECS,
@@ -111,7 +111,10 @@ describe("settings-page: apply & slots", () => {
     expect(bundleRegistrations).toHaveLength(3);
     const keys = bundleRegistrations.map((r) => r.entry.key);
     expect(keys).toContain(PKG);
-    expect(keys).toContain(LEGACY_PKG);
+    expect(keys).toContain(SCOPED_PKG);
+    // The deprecated wrapper is a package, not a page key this bundle answers
+    // to — registering it meant the CURRENT scoped name had no card at all.
+    expect(keys).not.toContain("@viztor/dsh-opencode");
     expect(keys).toContain(LEGACY_NS);
 
     expect(inputRegistrations).toHaveLength(1);
@@ -202,7 +205,7 @@ describe("settings-page: apply & slots", () => {
 
     teardown?.();
 
-    expect(disposed).toEqual([PKG, LEGACY_PKG, LEGACY_NS]);
+    expect(disposed).toEqual([PKG, SCOPED_PKG, LEGACY_NS]);
     expect(stopped).toEqual(["plugins.bundle.config"]);
   });
 

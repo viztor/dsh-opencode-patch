@@ -142,8 +142,10 @@ export default defineConfig({
       footer: [
         "    return module.exports;",
         "  };",
+        // The two names this bundle is published as, plus the pre-rename
+        // component id an old cordis row resolves through. Not the deprecated
+        // `@viztor/dsh-opencode` wrapper — it ships no client half (AGENTS.md).
         '  window.__ModuleLoader__.load({ id: "dsh-opencode-patch", factory: factory });',
-        '  try { window.__ModuleLoader__.load({ id: "@viztor/dsh-opencode", factory: factory }); } catch (e) {}',
         '  try { window.__ModuleLoader__.load({ id: "@viztor/dsh-opencode-patch", factory: factory }); } catch (e) {}',
         '  try { window.__ModuleLoader__.load({ id: "dsh-opencode", factory: factory }); } catch (e) {}',
         "})();",

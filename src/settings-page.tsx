@@ -41,7 +41,15 @@ export const LEGACY_NS = "dsh-opencode";
  * half must not depend on the host half, hence the duplication.
  */
 export const PKG = "dsh-opencode-patch";
-export const LEGACY_PKG = "@viztor/dsh-opencode";
+
+/**
+ * The scoped npm name — published from this same tree, and the one a new
+ * install gets. It must answer to the SAME pages as `PKG` or the settings card
+ * never appears for whoever installed the name we tell them to. The retired
+ * `@viztor/dsh-opencode` is deliberately absent: it is a deprecated wrapper
+ * with no client half (see AGENTS.md, "Package vs component").
+ */
+export const SCOPED_PKG = "@viztor/dsh-opencode-patch";
 
 /**
  * The services this bundle reaches. Cordis refuses access to one the caller has
@@ -416,11 +424,12 @@ export const apply = (ctx: ClientContext): void => {
           cards.push(dispose);
         }
       };
-      // One registration per package alias — the current npm name and the two
-      // legacy ones — each keyed and locale-bound as its page lookup expects.
+      // One registration per name the page may look the card up by: both names
+      // this bundle is PUBLISHED as, plus the pre-rename cordis row id, which is
+      // a namespace rather than a package and must keep working for old rows.
       const aliases: { key: string; locale: string }[] = [
         { key: PKG, locale: NS },
-        { key: LEGACY_PKG, locale: LEGACY_NS },
+        { key: SCOPED_PKG, locale: NS },
         { key: LEGACY_NS, locale: LEGACY_NS },
       ];
       for (const alias of aliases) {

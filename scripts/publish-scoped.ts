@@ -5,8 +5,15 @@
  * the name the docs use, the name release-please versions.
  *
  * It also publishes under:
- * - `@viztor/dsh-opencode-patch` (modern scoped alias)
- * - `@viztor/dsh-opencode` (legacy scoped alias, so existing users upgrade seamlessly)
+ * - `@viztor/dsh-opencode-patch` — the CANONICAL scoped name. Same tree, same
+ *   bundle, same version as the unscoped one; this is the name new installs
+ *   should use, and the one the client bundle registers its card under
+ *   (`SCOPED_PKG`).
+ * - `@viztor/dsh-opencode` — RETIRED. A deprecated thin wrapper that ships no
+ *   `lib/client.js` and forwards its row to `dsh-opencode-patch`. It is kept
+ *   publishing only so an existing install keeps resolving; nothing in the
+ *   source tree registers or advertises it any more, which is what stops one
+ *   package answering to two spellings.
  *
  * Usage: node --experimental-strip-types scripts/publish-scoped.ts
  *        PUBLISH_DRY_RUN=1 node --experimental-strip-types scripts/publish-scoped.ts
@@ -113,8 +120,11 @@ for (const target of SCOPED_TARGETS) {
         )
       );
     } else if (target === "@viztor/dsh-opencode") {
+      // Point at the CANONICAL name, not the other alias: the message a user
+      // reads on the registry is the one place that should not offer a choice
+      // between two spellings of the same package.
       manifest.deprecated =
-        "Package renamed to dsh-opencode-patch. Please install dsh-opencode-patch instead: https://www.npmjs.com/package/dsh-opencode-patch";
+        "Renamed to @viztor/dsh-opencode-patch. Please install that instead: https://www.npmjs.com/package/@viztor/dsh-opencode-patch";
       const existingDeps =
         (manifest.dependencies as Record<string, string> | undefined) ?? {};
       manifest.dependencies = {
@@ -168,10 +178,10 @@ for (const target of SCOPED_TARGETS) {
         "### How to migrate:",
         "",
         "```sh",
-        '# Via DSH Web UI (Recommended): Settings → Plugins → Install Plugin → "dsh-opencode-patch"',
+        '# Via DSH Web UI (Recommended): Settings → Plugins → Install Plugin → "@viztor/dsh-opencode-patch"',
         "",
         "# Or via terminal in your profile directory:",
-        "npm install dsh-opencode-patch",
+        "npm install @viztor/dsh-opencode-patch",
         "```",
       ].join("\n");
       writeFileSync(path.join(scratch, "README.md"), redirectReadme);
