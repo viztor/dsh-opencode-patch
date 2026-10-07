@@ -482,6 +482,41 @@ describe("GoUsageService readings", () => {
     expect(usage.monthly.percent).toBe(100);
   });
 
+  it("fills in the catalog's display name for the model a turn recorded", async () => {
+    // A turn records the id — that is what the gateway speaks — so without this
+    // the meter's row showed `muse-spark-1.3-contributor-free` where a user
+    // expects `Muse Spark 1.3 Contributor Free`.
+    recordTurnUsage(
+      "s-name",
+      { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+      { input: 0, output: 0 },
+      "muse-spark-1.3-contributor-free",
+      true
+    );
+    stubFetch(() => new Response(okBody()));
+    const usage = await serviceWithKey("sk-live-key").read({
+      sessionId: "s-name",
+    });
+    expect(usage.session?.activeModel).toBe("muse-spark-1.3-contributor-free");
+    expect(usage.session?.activeModelName).toBe("Muse Spark 1.3 Free");
+    expect(usage.session?.freeModel).toBe(true);
+  });
+
+  it("leaves the name absent for a model the catalog does not carry", async () => {
+    recordTurnUsage(
+      "s-unknown",
+      { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+      { input: 1, output: 2 },
+      "some-model-nobody-lists",
+      false
+    );
+    stubFetch(() => new Response(okBody()));
+    const usage = await serviceWithKey("sk-live-key").read({
+      sessionId: "s-unknown",
+    });
+    expect(usage.session?.activeModelName).toBeUndefined();
+  });
+
   it("attaches the selected model's monthly allowance, both tiers, and only for a listed model", async () => {
     // The one thing the live payload cannot supply: what the percentages are a
     // percentage OF. Resolved on the Host from the generated table, and carrying

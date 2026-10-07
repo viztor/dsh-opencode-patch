@@ -33,6 +33,8 @@ export interface SessionUsageSnapshot {
    * midway, so this is the *current* one, not the only one used.
    */
   activeModel?: string;
+  /** The catalog's display name for {@link activeModel}, when it has one. */
+  activeModelName?: string;
   /** Human-readable rate for {@link activeModel}, e.g. `$2.5 / $15 per 1M`. */
   activeRateFormatted?: string;
   cacheReadTokens: number;
@@ -54,6 +56,7 @@ export interface SessionUsageSnapshot {
 
 interface MutableSessionUsage {
   activeIsFree?: boolean;
+  activeModelName?: string;
   activeModel?: string;
   activeRate?: ModelCostRate;
   cacheReadTokens: number;
@@ -88,7 +91,10 @@ export const formatModelRate = (
   isFree = false
 ): string => {
   if (isFree || cost === undefined || (cost.input === 0 && cost.output === 0)) {
-    return "Free Tier ($0.00)";
+    // "Free Tier ($0.00)" repeated the row's own value in a field that otherwise
+    // holds a PER-MILLION price, so the line read "$0.00" twice and the rate was
+    // not a rate. The row says free in its own words; this field just says it.
+    return "Free";
   }
   return `$${cost.input} / $${cost.output} per 1M`;
 };
@@ -245,13 +251,18 @@ export const describeModel = (
   snapshot: SessionUsageSnapshot,
   model: string,
   rate: ModelCostRate | undefined,
-  isFree: boolean
+  isFree: boolean,
+  displayName?: string
 ): SessionUsageSnapshot => {
   // Dropped first: a paid model after a free one must not inherit `freeModel`.
-  const { freeModel: _wasFree, ...rest } = snapshot;
+  const { activeModelName: _wasNamed, freeModel: _wasFree, ...rest } = snapshot;
   return {
     ...rest,
     activeModel: model,
+    // The id is what the gateway speaks; the name is what the catalog calls it.
+    // `muse-spark-1.3-contributor-free` in a row that also says "free" says it
+    // twice and reads like a debug value.
+    ...(displayName === undefined ? {} : { activeModelName: displayName }),
     activeRateFormatted: formatModelRate(rate, isFree),
     ...(isFree ? { freeModel: true } : {}),
   };

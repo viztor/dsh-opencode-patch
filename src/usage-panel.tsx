@@ -291,10 +291,19 @@ export const UsagePanel = ({
       <div className="dsh-oc-usage-detail">
         <div className="dsh-oc-usage-detail-left">
           <span className="dsh-oc-usage-detail-title">{t("sessionSpend")}</span>
+          {/*
+            The SAME shape either way: which model, then what it costs. The free
+            case used to drop the model entirely and print a bare sentence, so the
+            one row that said "$0.00" was also the one row that could not say what
+            you are paying for — and the id it fell back to
+            (`muse-spark-1.3-contributor-free`) said "free" a third time.
+          */}
           <span className="dsh-oc-usage-detail-desc">
-            {usage.session.freeModel === true
-              ? t("freeModel")
-              : `${usage.session.activeModel ?? ""} · ${usage.session.activeRateFormatted ?? ""}`}
+            {`${usage.session.activeModelName ?? usage.session.activeModel ?? ""} · ${
+              usage.session.freeModel === true
+                ? t("freeModel")
+                : (usage.session.activeRateFormatted ?? "")
+            }`}
           </span>
         </div>
         <span className="dsh-oc-usage-detail-value">

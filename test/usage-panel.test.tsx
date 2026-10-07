@@ -315,13 +315,44 @@ describe("UsagePanel", () => {
     expect(collectText(hidden)).not.toContain("t:sessionSpend");
   });
 
-  it("labels plan-included spend instead of a model rate", () => {
-    const included = usage({
-      session: session({ freeModel: true }),
+  it("names the model even when it costs nothing, and says free once", () => {
+    // The free case used to render a bare sentence with no model in it, so the
+    // one row whose value is always $0.00 was also the only row that could not
+    // say what you are paying for. It now has the SAME shape as a paid one:
+    // which model, then what it costs.
+    const free = usage({
+      session: session({
+        activeModel: "muse-spark-1.3-contributor-free",
+        freeModel: true,
+      }),
     });
-    expect(collectText(UsagePanel(panelProps({ usage: included })))).toContain(
-      "t:freeModel"
-    );
+    const line = collectText(UsagePanel(panelProps({ usage: free }))).join("");
+    expect(line).toContain("muse-spark-1.3-contributor-free");
+    expect(line).toContain("t:freeModel");
+
+    // A paid model still reads model · rate.
+    const paid = usage({
+      session: session({ activeRateFormatted: "$0.3 / $1.2 per 1M" }),
+    });
+    expect(
+      collectText(UsagePanel(panelProps({ usage: paid }))).join("")
+    ).toContain("$0.3 / $1.2 per 1M");
+  });
+
+  it("prefers the catalog's display name over the raw model id", () => {
+    // A turn records the id, because that is what the gateway speaks; the name
+    // is what the catalog calls it. Showing the id in a meter's own row reads
+    // like a debug value.
+    const named = usage({
+      session: session({
+        activeModel: "muse-spark-1.3-contributor-free",
+        activeModelName: "Muse Spark 1.3 Free",
+        freeModel: true,
+      }),
+    });
+    const line = collectText(UsagePanel(panelProps({ usage: named }))).join("");
+    expect(line).toContain("Muse Spark 1.3 Free");
+    expect(line).not.toContain("muse-spark-1.3-contributor-free");
   });
 
   it("hides the Go breakdown on a Zen route", () => {
