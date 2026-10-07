@@ -126,6 +126,10 @@ export const parseGoUsage = (value: unknown): GoUsage => {
       sessionRaw.activeModel.length > 0
         ? { activeModel: sessionRaw.activeModel }
         : {}),
+      ...(typeof sessionRaw.activeModelName === "string" &&
+      sessionRaw.activeModelName.length > 0
+        ? { activeModelName: sessionRaw.activeModelName }
+        : {}),
       ...(typeof sessionRaw.activeRateFormatted === "string"
         ? { activeRateFormatted: sessionRaw.activeRateFormatted }
         : {}),

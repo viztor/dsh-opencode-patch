@@ -54,10 +54,10 @@ describe("formatModelRate", () => {
     expect(formatModelRate(GO_FLASH)).toBe("$0.15 / $0.6 per 1M");
   });
 
-  it("says Free Tier for a free model, a zero rate, or no rate at all", () => {
-    expect(formatModelRate(GO_FLASH, true)).toBe("Free Tier ($0.00)");
-    expect(formatModelRate({ input: 0, output: 0 })).toBe("Free Tier ($0.00)");
-    expect(formatModelRate()).toBe("Free Tier ($0.00)");
+  it("says Free for a free model, a zero rate, or no rate at all", () => {
+    expect(formatModelRate(GO_FLASH, true)).toBe("Free");
+    expect(formatModelRate({ input: 0, output: 0 })).toBe("Free");
+    expect(formatModelRate()).toBe("Free");
   });
 });
 
@@ -159,7 +159,7 @@ describe("recordTurnUsage", () => {
     );
     expect(snap.freeModel).toBe(true);
     expect(snap.costUsd).toBe(0);
-    expect(snap.activeRateFormatted).toBe("Free Tier ($0.00)");
+    expect(snap.activeRateFormatted).toBe("Free");
     expect(snap.modelsUsed).toContain("muse-spark-1.3-contributor-free");
   });
 
@@ -175,7 +175,7 @@ describe("recordTurnUsage", () => {
     );
     const moved = describeModel(snap, "mimo-v2.6-flash-free", undefined, true);
     expect(moved.activeModel).toBe("mimo-v2.6-flash-free");
-    expect(moved.activeRateFormatted).toBe("Free Tier ($0.00)");
+    expect(moved.activeRateFormatted).toBe("Free");
     expect(moved.freeModel).toBe(true);
     expect(moved.costUsd).toBe(snap.costUsd);
 

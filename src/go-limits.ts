@@ -156,17 +156,21 @@ export const parseGoLimitsDoc = (
       if (cells.length < 6) {
         continue;
       }
-      const label = cells[0] ?? "";
-      const dollars = /^\**\$(\d[\d,]*)\**$/u.exec(cells.at(-1) ?? "");
-      if (dollars === null) {
-        // `Unlimited limited time` and the header/separator rows land here. A
-        // model with no allowance is not an error; a NAMED row we failed to read
-        // is, and it is reported rather than skipped.
-        if (label.length > 0 && !/^-+$/u.test(label)) {
-          const last = (cells.at(-1) ?? "").toLowerCase();
-          if (!last.includes("unlimited") && !last.includes("monthly limit")) {
-            unmapped.push(`${tier}: ${label} → ${cells.at(-1) ?? ""}`);
-          }
+      const label = cells.at(0) ?? "";
+      const last = cells.at(-1) ?? "";
+      // The amount is what the row's last cell says once its emphasis is off:
+      // `**$60**` in the source. Reading the cell beats a column-counting regex,
+      // which cannot tell a variant row from a header.
+      if (!last.replaceAll("*", "").startsWith("$")) {
+        // `Unlimited limited time`, and the header and separator rows, land here.
+        // A model with no allowance is not an error; a NAMED row we failed to
+        // read is, and it is reported rather than skipped.
+        const ignored =
+          /^-+$/u.test(label) ||
+          /unlimited|monthly limit/iu.test(last) ||
+          label.length === 0;
+        if (!ignored) {
+          unmapped.push(`${tier}: ${label} → ${last}`);
         }
         continue;
       }
@@ -175,18 +179,14 @@ export const parseGoLimitsDoc = (
         unmapped.push(`${tier}: ${label}`);
         continue;
       }
-      const amount = Number((dollars[1] ?? "0").replaceAll(",", ""));
-      const entry = limits.get(id);
-      if (entry === undefined) {
-        limits.set(id, { go: 0, goPlus: 0, name: label });
-      } else {
-        // Variant rows (peak/off-peak, >N tokens) share the base model's name.
-        const held = limits.get(id) as ModelAllowance;
-        if (held.name === id) {
-          held.name = label;
-        }
-      }
-      (limits.get(id) as ModelAllowance)[tier] = amount;
+      const amount = Number(
+        last.replaceAll("*", "").replace("$", "").replaceAll(",", "")
+      );
+      // A variant row (peak/off-peak, `> N tokens`) states the same allowance
+      // again: the first row's label is the one kept.
+      const entry = limits.get(id) ?? { go: 0, goPlus: 0, name: label };
+      entry[tier] = amount;
+      limits.set(id, entry);
       matched += 1;
     }
     if (matched === 0) {

@@ -27,7 +27,12 @@ import {
 } from "./go-discovery.ts";
 import { GO_MODEL_LIMITS } from "./go-limits-data.ts";
 import { isRecord } from "./guards.ts";
-import { catalogPlaneForRoute, findModelSpecOn } from "./models-catalog.ts";
+import {
+  type CatalogModelSpec,
+  type CatalogPlane,
+  catalogPlaneForRoute,
+  findModelSpecOn,
+} from "./models-catalog.ts";
 import {
   describeModel,
   getSessionUsage,
@@ -107,20 +112,64 @@ const attachSession = (
   query: UsageQuery | undefined
 ): SessionUsageSnapshot | undefined => {
   const session = getSessionUsage(sessionId);
-  const selected = query?.model;
-  if (
-    session === undefined ||
-    selected === undefined ||
-    selected.length === 0 ||
-    selected === session.activeModel
-  ) {
-    return session;
+  if (session === undefined) {
+    return undefined;
   }
-  const spec = findModelSpecOn(
-    catalogPlaneForRoute(query?.provider ?? ""),
-    selected
-  );
-  return describeModel(session, selected, spec?.cost, spec?.is_free === true);
+  const plane = catalogPlaneForRoute(query?.provider ?? "");
+  const selected = query?.model;
+  const isProspective =
+    selected !== undefined &&
+    selected.length > 0 &&
+    selected !== session.activeModel;
+
+  // The picker names a model the last turn did not run, so describe the snapshot
+  // as THAT model — except for `costUsd`, which is history.
+  const spec = isProspective ? catalogFor(plane, selected) : undefined;
+  const described =
+    spec === undefined || !isProspective
+      ? session
+      : describeModel(
+          session,
+          selected,
+          spec.cost,
+          spec.is_free === true,
+          spec.name
+        );
+
+  return nameModel(described, plane);
+};
+
+/** The catalog spec for a model, or `undefined` when the catalog has none. */
+const catalogFor = (
+  plane: CatalogPlane,
+  model: string
+): CatalogModelSpec | undefined => findModelSpecOn(plane, model);
+
+/**
+ * Fill in the display name, which a recorded turn never carries.
+ *
+ * A turn records the model ID — that is what the gateway speaks — so the first
+ * reading of a session has no name, and the meter's row falls back to
+ * `muse-spark-1.3-contributor-free`: a debug value, in a row that also says the
+ * model is free. The catalog is the only thing that knows the other half, and
+ * this is the one place that can reach it for the model being described.
+ */
+const nameModel = (
+  snapshot: SessionUsageSnapshot,
+  plane: CatalogPlane
+): SessionUsageSnapshot => {
+  const model = snapshot.activeModel;
+  if (
+    snapshot.activeModelName !== undefined ||
+    model === undefined ||
+    model.length === 0
+  ) {
+    return snapshot;
+  }
+  const spec = catalogFor(plane, model);
+  return spec === undefined
+    ? snapshot
+    : { ...snapshot, activeModelName: spec.name };
 };
 
 /**
