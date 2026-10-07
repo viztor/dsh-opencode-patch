@@ -65,29 +65,29 @@ const DEFAULT_SKEW_MS = 24 * 60 * 60 * 1000;
 /** The ref this script exists for; `--ref` may name others. */
 const DEFAULT_REF = "OPENCODE_GO_API_KEY";
 
-type Options = {
+interface Options {
   readonly force: boolean;
   readonly dryRun: boolean;
   readonly refs: readonly string[];
   readonly skewMs: number;
   readonly dbPath: string;
   readonly credentialsPath: string;
-};
+}
 
-type AccountRow = {
+interface AccountRow {
   readonly id: string;
   readonly url: string;
   readonly accessToken: string;
   readonly refreshToken: string;
   readonly tokenExpiry: number | null;
   readonly orgId: string | null;
-};
+}
 
-type Tokens = {
+interface Tokens {
   readonly accessToken: string;
   readonly refreshToken: string;
   readonly expiresInSeconds: number;
-};
+}
 
 /**
  * Describe a secret without disclosing it.
@@ -109,7 +109,7 @@ const fingerprint = (value: string): string =>
  */
 const parseArgs = (argv: readonly string[]): Options => {
   const dataDir =
-    process.env["OPENCODE_DATA_DIR"] ??
+    process.env.OPENCODE_DATA_DIR ??
     join(homedir(), ".local", "share", "opencode");
   const options = {
     force: false,
@@ -118,7 +118,7 @@ const parseArgs = (argv: readonly string[]): Options => {
     skewMs: DEFAULT_SKEW_MS,
     dbPath: join(dataDir, "opencode.db"),
     credentialsPath:
-      process.env["OPENCODE_CREDENTIALS_FILE"] ??
+      process.env.OPENCODE_CREDENTIALS_FILE ??
       join(homedir(), ".dsh", ".credentials.yaml"),
   };
 
@@ -157,6 +157,22 @@ const parseArgs = (argv: readonly string[]): Options => {
 };
 
 /**
+ * Read a TEXT column as a string, or `undefined` when it is not one.
+ *
+ * `String(value)` on an `unknown` would turn an unexpected object into
+ * `"[object Object]"` and carry on, so the type is narrowed instead: a column
+ * that stops being text is a schema change worth failing on, not to absorb.
+ *
+ * @param value - the raw column value.
+ * @returns the string, or `undefined` when the value is not textual.
+ */
+const asText = (value: unknown): string | undefined => {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
+};
+
+/**
  * Read the active console account out of the CLI's database.
  *
  * Read-only: the row is needed even when nothing is refreshed, and opening a
@@ -176,15 +192,27 @@ const readAccount = (dbPath: string): AccountRow | undefined => {
       )
       .get() as Record<string, unknown> | undefined;
     if (row === undefined) return undefined;
+
+    const id = asText(row.id);
+    const url = asText(row.url);
+    const accessToken = asText(row.access_token);
+    const refreshToken = asText(row.refresh_token);
+    if (
+      id === undefined ||
+      url === undefined ||
+      accessToken === undefined ||
+      refreshToken === undefined
+    ) {
+      throw new TypeError("console account row is missing a required column");
+    }
+
     return {
-      id: String(row["id"]),
-      url: String(row["url"]),
-      accessToken: String(row["access_token"]),
-      refreshToken: String(row["refresh_token"]),
-      tokenExpiry:
-        row["token_expiry"] === null ? null : Number(row["token_expiry"]),
-      orgId:
-        row["active_org_id"] === null ? null : String(row["active_org_id"]),
+      id,
+      url,
+      accessToken,
+      refreshToken,
+      tokenExpiry: row.token_expiry === null ? null : Number(row.token_expiry),
+      orgId: asText(row.active_org_id) ?? null,
     };
   } finally {
     db.close();
@@ -230,7 +258,7 @@ const refreshTokens = async (
     }
   );
 
-  const body: unknown = await response.json().catch(() => undefined);
+  const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const detail =
       typeof body === "object" && body !== null
@@ -239,14 +267,14 @@ const refreshTokens = async (
     throw new Error(`refresh failed: HTTP ${response.status} ${detail}`);
   }
   if (typeof body !== "object" || body === null)
-    throw new Error("refresh failed: unreadable body");
+    throw new TypeError("refresh failed: unreadable body");
 
   const record = body as Record<string, unknown>;
-  const accessToken = record["access_token"];
-  const nextRefresh = record["refresh_token"];
-  const expiresIn = record["expires_in"];
+  const accessToken = record.access_token;
+  const nextRefresh = record.refresh_token;
+  const expiresIn = record.expires_in;
   if (typeof accessToken !== "string" || typeof nextRefresh !== "string") {
-    throw new Error("refresh failed: response carried no token pair");
+    throw new TypeError("refresh failed: response carried no token pair");
   }
 
   return {
@@ -398,7 +426,7 @@ const main = async (): Promise<void> => {
   writeCredentials(
     options.credentialsPath,
     updated,
-    new Date(now).toISOString().replace(/[:.]/gu, "-")
+    new Date(now).toISOString().replaceAll(/[:.]/gu, "-")
   );
   process.stdout.write(`wrote     ${options.credentialsPath} (backup kept)\n`);
 };
