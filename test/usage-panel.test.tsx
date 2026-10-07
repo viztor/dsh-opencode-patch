@@ -82,7 +82,6 @@ const panelProps = (
   overrides: Partial<UsagePanelProps> = {}
 ): UsagePanelProps => ({
   badgeText: "Go Plan",
-  clampedPercent: 42,
   failure: null,
   headline: "42% of Weekly used",
   isLimited: false,
@@ -92,7 +91,6 @@ const panelProps = (
   onMouseLeave: () => {},
   refreshing: false,
   retry: () => {},
-  ringColor: "var(--ring)",
   showUsagePrice: true,
   t,
   updatedAt: 1_700_000_000_000,
@@ -155,20 +153,16 @@ describe("UsageTrigger", () => {
 });
 
 describe("UsagePanel", () => {
-  it("renders the full Go breakdown: bar, windows, cards and links", () => {
+  it("renders the Go breakdown: three window rows and the links", () => {
     const tree = UsagePanel(panelProps({ usage: usage() }));
     expect(collectText(tree)).toContain("42% of Weekly used");
     expect(collectText(tree)).toContain("Go Plan");
 
-    const [bar] = byClass(tree, "dsh-oc-usage-bar-fill");
-    assert.ok(bar, "expected a progress bar");
-    expect(bar.props.style).toEqual({
-      backgroundColor: "var(--ring)",
-      width: "42%",
-    });
-
+    // Three rows carry the whole breakdown. A progress bar and a QUOTA OVERVIEW
+    // strip of three cards used to repeat exactly this data, so both were removed.
     expect(byClass(tree, "dsh-oc-usage-row")).toHaveLength(3);
-    expect(byClass(tree, "dsh-oc-usage-card")).toHaveLength(3);
+    expect(byClass(tree, "dsh-oc-usage-bar-fill")).toHaveLength(0);
+    expect(byClass(tree, "dsh-oc-usage-card")).toHaveLength(0);
     expect(findAll(tree, "a").map((a) => a.props.href)).toEqual([
       GO_PLAN_URL,
       GO_CONSOLE_URL,
