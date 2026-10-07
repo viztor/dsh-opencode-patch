@@ -39,7 +39,6 @@ export const ringGeometry = (
  * `AGENTS.md` → "OpenCode endpoints" records the probed surface behind that.
  */
 export const GO_PLAN_URL = "https://opencode.ai/go";
-export const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go/";
 /**
  * The console, which is also where a pay-as-you-go account is topped up.
  *
@@ -58,18 +57,20 @@ export interface PanelAction {
 }
 
 /**
- * The actions BELOW the console link, which the footer carries for both
- * providers. Go's answer to "my quota ran out" is a bigger plan and its limits
- * doc; Zen has nothing to add — its single action is the console on the row
- * above, labelled 充值 because that is what a pay-as-you-go user wants from it.
+ * What to DO about the quota, rendered inside the GO layer — next to the windows
+ * it acts on, not parked under the shared footer.
+ *
+ * One link, not two. The limits doc went: the panel already names every window
+ * with its share and its reset time, so the document explained a list the user
+ * is looking at. A link that restates what is on screen is the same redundancy
+ * as a card that restates the badge — the doc is one click from the console for
+ * anyone who wants the policy.
+ *
+ * Zen has nothing to add: its single action IS the console on the footer row,
+ * labelled 充值 because that is what a pay-as-you-go user wants from it.
  */
 export const panelActions = (isZen: boolean): readonly PanelAction[] =>
-  isZen
-    ? []
-    : [
-        { href: GO_PLAN_URL, labelKey: "usageUpgradePlan" },
-        { href: GO_LIMITS_DOC_URL, labelKey: "usageLimitsDoc" },
-      ];
+  isZen ? [] : [{ href: GO_PLAN_URL, labelKey: "usageUpgradePlan" }];
 
 /**
  * Whether a provider route or model id contains any configured marker,
