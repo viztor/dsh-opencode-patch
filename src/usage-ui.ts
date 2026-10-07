@@ -262,6 +262,14 @@ export const STYLES = `
   padding-left: 13px;
 }
 
+/* Styling lives in the sheet, not inline: an ad-hoc style prop here would be
+   the only one surviving in the panel, and a second limited-state tone tomorrow
+   would either duplicate it or diverge from it. */
+.dsh-oc-usage-limited {
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 600;
+}
+
 .dsh-oc-usage-divider {
   height: 0.5px;
   background: var(--dsw-alias-border-l3, color-mix(in srgb, currentColor 10%, transparent));
@@ -589,6 +597,7 @@ export const describeUsage = (
   usage: GoUsage | undefined,
   affecting: AffectingWindowResult | undefined,
   isZen: boolean,
+  locale: string | undefined,
   t: (key: string) => string
 ): UsageCopy => {
   const isLimited = affecting?.window.status === "rate-limited";
@@ -622,17 +631,13 @@ export const describeUsage = (
     : t("zenOverflowActive");
   const zenCardCredit = isLimited ? "Active" : "Ready";
 
-  // Go: the ring's own figure, spelled out.
-  //
-  // Zen: the pill shows session spend, so the tooltip answers the question that
-  // number raises — consumed yes, but what is LEFT? Two answers, both real:
-  // overflow live means the Go plan is what ran out, so the remaining is zero
-  // and billing moved here; otherwise Zen itself has no window at all, because
-  // OpenCode exposes no balance or remaining-quota figure to report.
+  // Go: the ring's own figure, spelled out, plus the one thing the pill cannot
+  // say in two digits — when the window burns off. The trigger shows the USED
+  // share; the tooltip answers how long you are stuck with it.
   const spent = usage?.session?.costFormatted ?? "$0.00";
   const tooltip = isZen
     ? `${usage?.zenOverflow === true ? t("zenOverflowLive") : t("zenNoQuotaWindow")} · ${t("sessionSpend")} ${spent}`
-    : headline;
+    : `${headline} · ${t("usageResets")} ${formatRelativeReset(affecting?.window.resetsAt ?? "", locale)}`;
 
   return { badgeText, headline, tooltip, zenCardCredit, zenCardDesc };
 };
