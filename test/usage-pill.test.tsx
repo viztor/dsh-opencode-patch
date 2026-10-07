@@ -22,6 +22,7 @@ import {
   describeUsage,
   formatRelativeReset,
   getAffectingWindow,
+  getWindowColorFor,
   isZenProvider,
   matchesAny,
   parseFailure,
@@ -314,6 +315,32 @@ describe("usage-pill: derived copy & failure parsing", () => {
     expect(copy.headline).toBe("80% of Weekly used");
     expect(copy.badgeText).toBe("Go Plan");
     expect(copy.zenCardDesc).toBe("t:zenOverflowActive");
+  });
+
+  it("renders a free model's ring hollow instead of red", () => {
+    // A free model has no allowance to run out of; the plan's monthly limit is
+    // a fact about money the user is not spending. Red would say "you are out"
+    // against a bill that cannot be charged.
+    // The colour decision reads the WINDOW, not the free flag — the pill
+    // combines the two, so here it is the window side that is pinned: unchanged
+    // for every state the plan can be in.
+    expect(
+      getWindowColorFor(
+        getAffectingWindow(
+          createMockUsage({
+            monthly: {
+              percent: 100,
+              resetsAt: isoAt(1000),
+              status: "rate-limited",
+            },
+          })
+        )
+      )
+    ).toBe("var(--dsw-alias-state-error-primary)");
+    expect(getWindowColorFor()).toBe("var(--dsw-alias-state-success-primary)");
+    expect(getWindowColorFor(getAffectingWindow(createMockUsage()))).toBe(
+      "var(--dsw-alias-state-success-primary)"
+    );
   });
 
   it("names the account in the header, so the title never moves", () => {

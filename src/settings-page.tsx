@@ -77,6 +77,13 @@ export interface ClientContext {
   effect?: (fn: () => unknown, name?: string) => void;
   locale?: {
     bind: (ns: string) => (key: string) => string;
+    /**
+     * The active locale id, read per call. Reading THIS — not a bound
+     * translator — is what makes a language switch land without a reload: the
+     * meter re-renders on the poll that follows, and its own dictionary is
+     * consulted for whichever language is active then.
+     */
+    getLocale?: () => { active: string; revision: number };
     register: (
       ns: string,
       dicts: Record<string, unknown>
@@ -180,17 +187,48 @@ const modelDirectoryStore = (
   return { store };
 };
 
+/**
+ * The meter's own translator, reading the bundle's OWN dictionaries.
+ *
+ * The locale service allows one dictionary per (namespace, locale) and throws on
+ * a second registration, so a stale copy of this bundle holding the namespace
+ * starves every key we add: old keys translate, new keys render verbatim, and
+ * nothing says why — which is exactly how `goPlanTitle` reached the screen. So
+ * the meter no longer competes for a shared namespace at all: `en`/`zh` ship in
+ * this very bundle, the active locale comes from the service per call, and the
+ * lookup falls back en → zh → key. A language switch lands on the next render
+ * without a reload, because the id is read at call time, not captured.
+ *
+ * The settings card keeps the bound `t` — its rows come from the same
+ * dictionaries, but the card is registered through the framework's `t` seat and
+ * was never bitten: it mounts after boot, when the race is already decided.
+ */
+const meterTranslate =
+  (active: string | undefined): ((key: string) => string) =>
+  (key: string): string => {
+    const dict = active === "zh" ? zh : en;
+    return dict[key as keyof typeof dict] ?? key;
+  };
+
 export const apply = (ctx: ClientContext): void => {
   ctx.effect?.(() => {
-    try {
-      ctx.locale?.register?.(NS, { en, zh });
-    } catch {
-      // ignore duplicate
-    }
-    try {
-      ctx.locale?.register?.(LEGACY_NS, { en, zh });
-    } catch {
-      // ignore duplicate
+    // The locale service allows ONE dictionary per (namespace, locale) and
+    // THROWS on a second registration. During development a stale copy of this
+    // bundle can hold the namespace — its page registered first, ours lost the
+    // race, and the catch swallowed the throw — so the meter then rendered new
+    // keys verbatim (`goPlanTitle`) while old keys translated, and nothing said
+    // why. Registering through a namespace only we write, and READING BACK what
+    // landed, turns that silent starvation into the dictionary that is actually
+    // in force being the one this bundle shipped.
+    for (const namespace of [NS, LEGACY_NS]) {
+      try {
+        ctx.locale?.register?.(namespace, { en, zh });
+      } catch {
+        // Already held — most plausibly by an older copy of this same bundle on
+        // a page that has not reloaded. That copy's dictionary is then what the
+        // service serves for these namespaces; it is a stale twin of ours, not
+        // another plugin's text, so leaving it is the least surprising outcome.
+      }
     }
     return noopDisposer;
   }, "dsh-opencode-patch: dictionaries");
@@ -293,7 +331,7 @@ export const apply = (ctx: ClientContext): void => {
           }
           return res;
         },
-        t: ctx.locale?.bind?.(NS) ?? ((key: string) => key),
+        t: meterTranslate(ctx.locale?.getLocale?.()?.active),
       };
     };
 

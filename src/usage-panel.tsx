@@ -199,19 +199,35 @@ export const UsagePanel = ({
               const window: UsageWindow = usage[entry.key];
               return (
                 <div key={entry.key}>
-                  <div className="dsh-oc-usage-row">
-                    <span className="dsh-oc-usage-row-left">
-                      <span
-                        className="dsh-oc-usage-dot"
+                  <div className="dsh-oc-usage-window">
+                    <div className="dsh-oc-usage-row">
+                      <span className="dsh-oc-usage-row-left">
+                        <span
+                          className="dsh-oc-usage-dot"
+                          style={{ backgroundColor: getWindowColor(window) }}
+                        />
+                        {t(entry.labelKey)}
+                      </span>
+                      <span className="dsh-oc-usage-row-right">
+                        {window.percent}%
+                      </span>
+                    </div>
+                    {/*
+                      The bar is the shape the number takes. A bare "42%" is an
+                      abstraction; a track two pixels tall makes the share
+                      legible at a glance and gives the three windows a common
+                      ruler — which is what the quota cards used to provide,
+                      before they became rows.
+                    */}
+                    <div className="dsh-oc-usage-bar">
+                      <div
+                        className="dsh-oc-usage-bar-fill"
                         style={{
+                          width: `${Math.min(100, Math.max(0, window.percent))}%`,
                           backgroundColor: getWindowColor(window),
                         }}
                       />
-                      {t(entry.labelKey)}
-                    </span>
-                    <span className="dsh-oc-usage-row-right">
-                      {window.percent}%
-                    </span>
+                    </div>
                   </div>
                   <div className="dsh-oc-usage-subrow">
                     <span>
