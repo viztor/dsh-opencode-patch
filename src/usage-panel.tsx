@@ -12,14 +12,43 @@ import React from "react";
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import {
   BREAKDOWN_WINDOWS,
+  CONSOLE_URL,
   formatRelativeReset,
-  GO_CONSOLE_URL,
-  GO_LIMITS_DOC_URL,
-  GO_PLAN_URL,
   getWindowColor,
+  panelActions,
   RADIUS,
   type UsageFailure,
 } from "./usage-ui.ts";
+
+/**
+ * The refresh glyph, drawn here rather than imported: the host kit ships no icon
+ * set, and a hand-rolled 12px arrow is smaller than any dependency that would
+ * carry one. `currentColor` so it rides the muted label colour beside it.
+ */
+const RefreshIcon = (): React.ReactElement => (
+  <svg
+    aria-hidden="true"
+    className="dsh-oc-usage-refresh-icon"
+    fill="none"
+    height="12"
+    viewBox="0 0 16 16"
+    width="12"
+  >
+    <path
+      d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M13.2 1.8v3h-3"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+    />
+  </svg>
+);
 
 /** The ring / Zen pill that opens the panel. */
 export interface UsageTriggerProps {
@@ -215,8 +244,8 @@ export const UsagePanel = ({
         <div className="dsh-oc-zen-card-left">
           <span className="dsh-oc-zen-card-title">{t("sessionSpend")}</span>
           <span className="dsh-oc-zen-card-desc">
-            {usage.session.includedInPlan === true
-              ? t("includedInPlan")
+            {usage.session.freeModel === true
+              ? t("freeModel")
               : `${usage.session.activeModel ?? ""} · ${usage.session.activeRateFormatted ?? ""}`}
           </span>
         </div>
@@ -256,37 +285,55 @@ export const UsagePanel = ({
       </div>
     )}
 
-    {/* Footer with updated timestamp & retry */}
+    {/*
+      One row, three jobs: WHEN this reading was taken, a control to take a new
+      one, and the console. The refresh is an icon rather than a labelled button
+      because "更新于 06:46 PM" beside it already says what it does — a second
+      label spelling that out was noise on a row this short.
+    */}
     <div className="dsh-oc-usage-footer">
-      <span>
+      <span className="dsh-oc-usage-updated">
+        <button
+          aria-label={refreshing ? t("usageRefreshing") : t("usageRetry")}
+          className="dsh-oc-usage-refresh"
+          disabled={refreshing}
+          onClick={retry}
+          type="button"
+        >
+          <RefreshIcon />
+        </button>
         {updatedAt === null
           ? t("usageLoading")
           : `${t("usageLastUpdated")} ${new Date(updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
       </span>
-      <button
-        className="dsh-oc-usage-retry"
-        disabled={refreshing}
-        onClick={retry}
-        type="button"
+      <a
+        className="dsh-oc-usage-console"
+        href={CONSOLE_URL}
+        rel="noreferrer noopener"
+        target="_blank"
       >
-        {refreshing ? t("usageRefreshing") : t("usageRetry")}
-      </button>
+        {t(isZen ? "usageTopUp" : "usageConsole")}
+      </a>
     </div>
     {/*
-      The meter says a limit was hit; these say what to do about it.
-      Both open in a new tab so the console is not lost, and both carry
-      rel="noreferrer noopener" because the target is a third party.
+      What to DO about it, per provider. The console is on the row above for
+      both, so it is not repeated here: Go adds the plan and the limits doc,
+      Zen adds nothing (its one action IS that link, labelled 充值). Data, not
+      branches — `panelActions` is the whole difference between the popovers.
     */}
-    <div className="dsh-oc-usage-links">
-      <a href={GO_PLAN_URL} rel="noreferrer noopener" target="_blank">
-        {t("usageUpgradePlan")}
-      </a>
-      <a href={GO_CONSOLE_URL} rel="noreferrer noopener" target="_blank">
-        {t("usageConsole")}
-      </a>
-      <a href={GO_LIMITS_DOC_URL} rel="noreferrer noopener" target="_blank">
-        {t("usageLimitsDoc")}
-      </a>
-    </div>
+    {panelActions(isZen).length > 0 && (
+      <div className="dsh-oc-usage-links">
+        {panelActions(isZen).map((action) => (
+          <a
+            href={action.href}
+            key={action.href}
+            rel="noreferrer noopener"
+            target="_blank"
+          >
+            {t(action.labelKey)}
+          </a>
+        ))}
+      </div>
+    )}
   </div>
 );

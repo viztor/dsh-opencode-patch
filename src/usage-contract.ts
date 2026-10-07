@@ -117,7 +117,7 @@ export const parseGoUsage = (value: unknown): GoUsage => {
           : 0,
       costFormatted: sessionRaw.costFormatted,
       costUsd: typeof sessionRaw.costUsd === "number" ? sessionRaw.costUsd : 0,
-      ...(sessionRaw.includedInPlan === true ? { includedInPlan: true } : {}),
+      ...(sessionRaw.freeModel === true ? { freeModel: true } : {}),
       inputTokens:
         typeof sessionRaw.inputTokens === "number" ? sessionRaw.inputTokens : 0,
       modelsUsed: Array.isArray(sessionRaw.modelsUsed)
@@ -173,11 +173,17 @@ const usageCodec = {
 };
 
 /**
- * What the caller may tell the Host about the meter it is rendering. Both fields
- * disambiguate: `provider` picks the route (hence the account) being metered, and
- * `sessionId` scopes the spend figure to the conversation on screen.
+ * What the caller may tell the Host about the meter it is rendering.
+ *
+ * `provider` picks the route (hence the account) being metered, `sessionId`
+ * scopes the spend figure to the conversation on screen, and `model` names the
+ * model the picker is ON — which is not the model that priced the spend so far.
+ * The Host owns the catalog, so it is the only side that can answer "what does
+ * the next turn on this model cost"; without the field the rate beside the figure
+ * describes the last completed turn and goes stale the moment you switch.
  */
 export interface UsageQuery {
+  model?: string;
   provider?: string;
   sessionId?: string;
 }
@@ -193,8 +199,9 @@ export const parseUsageQuery = (value?: unknown): UsageQuery => {
   if (!isRecord(value)) {
     throw new TypeError("Invalid OpenCode usage query: expected an object");
   }
-  const { provider, sessionId } = value;
+  const { model, provider, sessionId } = value;
   return {
+    ...(typeof model === "string" && model.length > 0 ? { model } : {}),
     ...(typeof provider === "string" && provider.length > 0
       ? { provider }
       : {}),

@@ -89,7 +89,12 @@ export interface UsagePillProps {
    * traffic for. Defaults to the stock routes when absent or empty.
    */
   meterProviders?: readonly string[];
-  readUsage: (provider?: string) => Promise<GoUsage>;
+  /**
+   * Read the quota, and optionally name the model the picker is on so the Host
+   * can price the rate for THAT model — the snapshot alone describes the model
+   * that ran the last turn.
+   */
+  readUsage: (provider?: string, model?: string) => Promise<GoUsage>;
   /** Whether to show accumulated session spend and the active model's rate. */
   showUsagePrice?: boolean;
   t: (key: string) => string;
@@ -100,11 +105,14 @@ const noop = (): void => {
 };
 
 interface ActiveUsageProps extends Omit<UsagePillProps, "directory"> {
+  /** The model the picker is on, or `undefined` before a selection is saved. */
+  model?: string;
   provider?: string;
 }
 
 const ActiveUsage = ({
   getLocale,
+  model,
   provider,
   readUsage,
   showUsagePrice = true,
@@ -140,7 +148,7 @@ const ActiveUsage = ({
       busy = true;
       setRefreshing(true);
       try {
-        const value = await readUsage(provider);
+        const value = await readUsage(provider, model);
         if (alive) {
           setSnapshot({
             reader: readUsage,
@@ -355,6 +363,10 @@ export const UsagePill = ({
   }
 
   const provider = state?.current?.provider ?? state?.pending?.provider ?? "";
+  // The selection, so the Host can price the rate for what the NEXT turn runs
+  // rather than for whatever ran last. A pending pick wins over the saved one —
+  // it is the model the user is looking at.
+  const model = state?.pending?.model ?? state?.current?.model ?? undefined;
   // The settings scope passes the claimed routes at inject time; an absent or
   // empty list falls back to the stock ones, so direct callers (and older
   // injected props) keep the default gate.
@@ -371,5 +383,5 @@ export const UsagePill = ({
     return null;
   }
 
-  return <ActiveUsage {...props} provider={provider} />;
+  return <ActiveUsage {...props} model={model} provider={provider} />;
 };

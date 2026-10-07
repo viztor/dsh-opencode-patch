@@ -269,7 +269,7 @@ describe("usage-pill: failure handling", () => {
     });
 
     await act(async () => {
-      fireEvent.click(element(".dsh-oc-usage-retry"));
+      fireEvent.click(element(".dsh-oc-usage-refresh"));
     });
 
     await waitFor(() => {

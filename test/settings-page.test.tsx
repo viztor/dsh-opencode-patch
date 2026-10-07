@@ -316,21 +316,24 @@ describe("settings-page: apply & slots", () => {
 
     apply(ctx as never);
     const injected = dockInjector?.("session-xyz") as {
-      readUsage: (provider?: string) => Promise<unknown>;
+      readUsage: (provider?: string, model?: string) => Promise<unknown>;
     };
 
-    // Both halves matter: the provider picks the route/account, and the
-    // session id stops two open conversations from reading one total.
-    await injected.readUsage("opencode-go");
+    // All three matter: the provider picks the route/account, the session id
+    // stops two open conversations from reading one total, and the model lets
+    // the Host price the rate for what the picker is ON — the snapshot alone
+    // describes the model that ran the last turn.
+    await injected.readUsage("opencode-go", "mimo-v2.6-flash-free");
     expect(remoteUsage).toHaveBeenLastCalledWith({
+      model: "mimo-v2.6-flash-free",
       provider: "opencode-go",
       sessionId: "session-xyz",
     });
 
-    // An unnamed provider omits the key entirely rather than sending "".
+    // An unnamed provider or model omits the key rather than sending "".
     await injected.readUsage();
     expect(remoteUsage).toHaveBeenLastCalledWith({ sessionId: "session-xyz" });
-    await injected.readUsage("");
+    await injected.readUsage("", "");
     expect(remoteUsage).toHaveBeenLastCalledWith({ sessionId: "session-xyz" });
   });
 

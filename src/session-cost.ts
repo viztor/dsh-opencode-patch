@@ -38,8 +38,13 @@ export interface SessionUsageSnapshot {
   cacheReadTokens: number;
   costFormatted: string;
   costUsd: number;
-  /** True when the active model bills nothing (free tier or plan-included). */
-  includedInPlan?: boolean;
+  /**
+   * True when the ACTIVE model is free — the catalog's free-tier flag, not a
+   * plan entitlement. The name this carried (`includedInPlan`) said the Go plan
+   * covered the cost, which is a different and often false claim: a free model
+   * bills nothing at all, on any plan.
+   */
+  freeModel?: boolean;
   inputTokens: number;
   modelsUsed: string[];
   outputTokens: number;
@@ -124,7 +129,7 @@ const toSnapshot = (val: MutableSessionUsage): SessionUsageSnapshot => {
     cacheReadTokens: val.cacheReadTokens,
     costFormatted: formatUsd(val.costUsd),
     costUsd: val.costUsd,
-    ...(val.activeIsFree === true ? { includedInPlan: true } : {}),
+    ...(val.activeIsFree === true ? { freeModel: true } : {}),
     inputTokens: val.inputTokens,
     modelsUsed: [...val.modelsUsed],
     outputTokens: val.outputTokens,
@@ -225,6 +230,31 @@ export const getSessionUsage = (
   }
   const latest = [...sessionStore.values()].at(-1);
   return latest === undefined ? undefined : toSnapshot(latest);
+};
+
+/**
+ * Re-describe a snapshot for a DIFFERENT model, without touching the spend.
+ *
+ * The accumulator prices each turn at the model that ran it, so its `active*`
+ * fields name the last one. The panel's rate is prospective — what the next turn
+ * costs — so when the caller knows which model is selected now and it differs,
+ * this swaps the identity and re-derives the rate from the catalog entry the Host
+ * holds. The spend total is deliberately untouched: it is history.
+ */
+export const describeModel = (
+  snapshot: SessionUsageSnapshot,
+  model: string,
+  rate: ModelCostRate | undefined,
+  isFree: boolean
+): SessionUsageSnapshot => {
+  // Dropped first: a paid model after a free one must not inherit `freeModel`.
+  const { freeModel: _wasFree, ...rest } = snapshot;
+  return {
+    ...rest,
+    activeModel: model,
+    activeRateFormatted: formatModelRate(rate, isFree),
+    ...(isFree ? { freeModel: true } : {}),
+  };
 };
 
 /** Clear session usage (primarily for tests). */

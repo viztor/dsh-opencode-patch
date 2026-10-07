@@ -20,7 +20,7 @@ import {
   type UsageTriggerProps,
 } from "../src/usage-panel.tsx";
 import {
-  GO_CONSOLE_URL,
+  CONSOLE_URL,
   GO_LIMITS_DOC_URL,
   GO_PLAN_URL,
   STYLES,
@@ -183,14 +183,58 @@ describe("UsagePanel", () => {
     expect(byClass(tree, "dsh-oc-usage-row")).toHaveLength(3);
     expect(byClass(tree, "dsh-oc-usage-bar-fill")).toHaveLength(0);
     expect(byClass(tree, "dsh-oc-usage-card")).toHaveLength(0);
+    // The console sits on the update row, so the action row carries only what
+    // is left: Go's plan and its limits doc.
     expect(findAll(tree, "a").map((a) => a.props.href)).toEqual([
+      CONSOLE_URL,
       GO_PLAN_URL,
-      GO_CONSOLE_URL,
       GO_LIMITS_DOC_URL,
     ]);
+    expect(byClass(tree, "dsh-oc-usage-console")[0]?.props.href).toBe(
+      CONSOLE_URL
+    );
   });
 
-  it("spaces the three actions apart and styles them as host links", () => {
+  it("refreshes by icon beside the timestamp, not by a second label", () => {
+    // "更新于 06:46 PM" already says what the control does; a button repeating it
+    // as text made the row two sentences long for no gain. The label moves to
+    // aria-label, so it is still announced.
+    const tree = UsagePanel(panelProps({ usage: usage() }));
+    const [refresh] = byClass(tree, "dsh-oc-usage-refresh");
+    expect(refresh?.props["aria-label"]).toBe("t:usageRetry");
+    expect(refresh?.props.type).toBe("button");
+    // The glyph is a component, not a raw <svg>: the panel is invoked as a
+    // plain function in these tests, so nothing renders it out.
+    expect(findAllOf(tree, new Set(["RefreshIcon"]))).toHaveLength(1);
+
+    // While a read is in flight the control says so and stops accepting clicks.
+    const busy = UsagePanel(panelProps({ refreshing: true, usage: usage() }));
+    expect(byClass(busy, "dsh-oc-usage-refresh")[0]?.props["aria-label"]).toBe(
+      "t:usageRefreshing"
+    );
+    expect(byClass(busy, "dsh-oc-usage-refresh")[0]?.props.disabled).toBe(true);
+  });
+
+  it("gives Zen one link — top-up — and Go the console plus two actions", () => {
+    // Same component, different content. Zen's single action IS the console on
+    // the update row (labelled 充值, which is what a pay-as-you-go user wants
+    // from it), so repeating it below would be two links to one page.
+    const zen = UsagePanel(panelProps({ isZen: true, usage: usage() }));
+    expect(findAll(zen, "a").map((a) => a.props.href)).toEqual([CONSOLE_URL]);
+    expect(collectText(zen)).toContain("t:usageTopUp");
+    expect(byClass(zen, "dsh-oc-usage-links")).toHaveLength(0);
+
+    const go = UsagePanel(panelProps({ usage: usage() }));
+    expect(findAll(go, "a").map((a) => a.props.href)).toEqual([
+      CONSOLE_URL,
+      GO_PLAN_URL,
+      GO_LIMITS_DOC_URL,
+    ]);
+    expect(collectText(go)).toContain("t:usageConsole");
+    expect(collectText(go)).toContain("t:usageUpgradePlan");
+  });
+
+  it("spaces the actions apart and styles them as host links", () => {
     // The row had no stylesheet rule at all, so the anchors fell back to the UA
     // default — purple, solid underline, no gap — and the three labels ran
     // together into one sentence across the panel: "升级套餐控制台与余额额度说明".
@@ -224,10 +268,10 @@ describe("UsagePanel", () => {
 
   it("labels plan-included spend instead of a model rate", () => {
     const included = usage({
-      session: session({ includedInPlan: true }),
+      session: session({ freeModel: true }),
     });
     expect(collectText(UsagePanel(panelProps({ usage: included })))).toContain(
-      "t:includedInPlan"
+      "t:freeModel"
     );
   });
 
@@ -314,15 +358,18 @@ describe("UsagePanel", () => {
     expect(
       collectText(ready).some((text) => text.startsWith("t:usageLastUpdated"))
     ).toBe(true);
-    const [retryButton] = byClass(ready, "dsh-oc-usage-retry");
-    assert.ok(retryButton, "expected a retry control");
+    const [retryButton] = byClass(ready, "dsh-oc-usage-refresh");
+    assert.ok(retryButton, "expected a refresh control");
     expect(retryButton.props.disabled).toBe(false);
     (retryButton.props.onClick as () => void)();
     expect(retry).toHaveBeenCalledOnce();
 
+    // The busy state is announced, not drawn: an icon has no text to swap.
     const busy = UsagePanel(panelProps({ refreshing: true }));
-    expect(collectText(busy)).toContain("t:usageRefreshing");
-    expect(byClass(busy, "dsh-oc-usage-retry")[0]?.props.disabled).toBe(true);
+    expect(byClass(busy, "dsh-oc-usage-refresh")[0]?.props["aria-label"]).toBe(
+      "t:usageRefreshing"
+    );
+    expect(byClass(busy, "dsh-oc-usage-refresh")[0]?.props.disabled).toBe(true);
   });
 
   it("surfaces a refresh failure, with a fallback message", () => {

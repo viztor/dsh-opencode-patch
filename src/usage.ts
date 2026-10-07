@@ -26,7 +26,12 @@ import {
   toGoBaseURL,
 } from "./go-discovery.ts";
 import { isRecord } from "./guards.ts";
-import { getSessionUsage } from "./session-cost.ts";
+import { catalogPlaneForRoute, findModelSpecOn } from "./models-catalog.ts";
+import {
+  describeModel,
+  getSessionUsage,
+  type SessionUsageSnapshot,
+} from "./session-cost.ts";
 import {
   parseGoUsage,
   type GoUsage,
@@ -68,10 +73,14 @@ const isMissingCredential = (error: unknown): boolean => {
  * @param source - opaque host identity for the endpoint/account.
  * @param sessionId - conversation whose spend to attach, when known.
  */
-const zenOverflowUsage = (source: string, sessionId?: string): GoUsage => {
+const zenOverflowUsage = (
+  source: string,
+  sessionId?: string,
+  query?: UsageQuery
+): GoUsage => {
   const resetsAt = new Date().toISOString();
   const window = (): UsageWindow => ({ percent: 0, resetsAt, status: "ok" });
-  const session = getSessionUsage(sessionId);
+  const session = attachSession(sessionId, query);
   return {
     monthly: window(),
     rolling: window(),
@@ -80,6 +89,36 @@ const zenOverflowUsage = (source: string, sessionId?: string): GoUsage => {
     weekly: window(),
     zenOverflow: true,
   };
+};
+
+/**
+ * Attach session spend, re-described for the model the picker is on.
+ *
+ * The accumulator's own `active*` fields name the model that ran the LAST turn.
+ * The rate shown beside the figure is prospective, so when the caller says which
+ * model is selected and it differs, that identity and the catalog rate for it
+ * win. The Host owns the catalog — the client ships no rates — so this is the
+ * only side that can answer "what does the next turn cost".
+ */
+const attachSession = (
+  sessionId: string | undefined,
+  query: UsageQuery | undefined
+): SessionUsageSnapshot | undefined => {
+  const session = getSessionUsage(sessionId);
+  const selected = query?.model;
+  if (
+    session === undefined ||
+    selected === undefined ||
+    selected.length === 0 ||
+    selected === session.activeModel
+  ) {
+    return session;
+  }
+  const spec = findModelSpecOn(
+    catalogPlaneForRoute(query?.provider ?? ""),
+    selected
+  );
+  return describeModel(session, selected, spec?.cost, spec?.is_free === true);
 };
 
 /** Normalize a base URL to the Go `/usage` endpoint, without a trailing slash. */
@@ -143,7 +182,7 @@ export class GoUsageService extends TypertRemoteService {
     if (key === undefined || key.length === 0) {
       const zenInfo = await resolveZenCreditInfo(this.ctx);
       if (zenInfo.isConfigured || targetProvider === "opencode") {
-        return zenOverflowUsage(randomUUID(), sessionId);
+        return zenOverflowUsage(randomUUID(), sessionId, query);
       }
       this.identity = undefined;
       throw new RemoteError(
@@ -198,7 +237,7 @@ export class GoUsageService extends TypertRemoteService {
       if (response.status === 403 && text.includes("EntitlementError")) {
         const zenInfo = await resolveZenCreditInfo(this.ctx);
         if (zenInfo.isConfigured) {
-          return zenOverflowUsage(source, sessionId);
+          return zenOverflowUsage(source, sessionId, query);
         }
         throw new RemoteError(
           USAGE_UNAVAILABLE,
@@ -232,7 +271,7 @@ export class GoUsageService extends TypertRemoteService {
     try {
       const usage = parseGoUsage(parsed);
       const zenInfo = await resolveZenCreditInfo(this.ctx);
-      const session = getSessionUsage(sessionId);
+      const session = attachSession(sessionId, query);
       return {
         ...usage,
         ...(session === undefined ? {} : { session }),
