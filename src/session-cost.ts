@@ -90,7 +90,19 @@ export const formatModelRate = (
   cost?: ModelCostRate,
   isFree = false
 ): string => {
-  if (isFree || cost === undefined || (cost.input === 0 && cost.output === 0)) {
+  if (cost === undefined) {
+    // `isFree` is the one case where an absent rate is still a known answer:
+    // the catalog said the model is free, so no price is the price.
+    if (isFree) {
+      return "Free";
+    }
+    // No rate data at all is NOT the same as free, and saying "Free" for a model
+    // the catalog has never heard of is a claim nobody can make — it is how the
+    // panel told the user a price it did not have. The catalog is refreshed on a
+    // schedule, so a model newer than it reads "unknown" until the next sync.
+    return "—";
+  }
+  if (isFree || (cost !== undefined && cost.input === 0 && cost.output === 0)) {
     // "Free Tier ($0.00)" repeated the row's own value in a field that otherwise
     // holds a PER-MILLION price, so the line read "$0.00" twice and the rate was
     // not a rate. The row says free in its own words; this field just says it.

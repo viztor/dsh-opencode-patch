@@ -124,19 +124,28 @@ const attachSession = (
 
   // The picker names a model the last turn did not run, so describe the snapshot
   // as THAT model — except for `costUsd`, which is history.
-  const spec = isProspective ? catalogFor(plane, selected) : undefined;
-  const described =
-    spec === undefined || !isProspective
-      ? session
-      : describeModel(
-          session,
-          selected,
-          spec.cost,
-          spec.is_free === true,
-          spec.name
-        );
-
-  return nameModel(described, plane);
+  //
+  // A catalog MISS must still swap the identity. The two answers are independent:
+  // "which model is this?" comes from the picker, "what does it cost?" from the
+  // catalog. Gating the whole re-description on a spec — as this did — meant a
+  // model the catalog has not caught up with kept the PREVIOUS model's name in
+  // the panel while the picker showed the new one, and the two disagreed in the
+  // user's face. An unknown price is its own answer (`formatModelRate(undefined)`),
+  // not a reason to display the wrong model.
+  if (!isProspective) {
+    return nameModel(session, plane);
+  }
+  const spec = catalogFor(plane, selected);
+  return nameModel(
+    describeModel(
+      session,
+      selected,
+      spec?.cost,
+      spec?.is_free === true,
+      spec?.name
+    ),
+    plane
+  );
 };
 
 /** The catalog spec for a model, or `undefined` when the catalog has none. */
