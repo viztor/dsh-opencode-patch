@@ -210,6 +210,21 @@ Rules that keep the two from fighting:
 - The Go `/usage` endpoint **rejects Zen keys** (`oc_sk_…`), which is why the tier filter exists at all: never hand the Go endpoint whatever key happens to be newest.
 - **Which source wins is the user's choice** (`keySource`), because there is no single correct answer: `auto` (composition → captured → credentials → any captured) suits most setups and is byte-for-byte the original precedence; `request` promotes both captured steps, for setups that rotate keys; `configured` demotes them, for pinned/CI setups. `KEY_SOURCE_ORDER` is the whole policy — a `Record<KeySourcePolicy, readonly KeySourceStep[]>`, so a new policy is one line and a new step is a type error. The policy reaches **both** consumers: `patchFetch`'s Authorization fallback and the meter's `resolveGoApiKey` (via `UsageOptions.keySource`).
 
+### How the "console key" actually works — the CLI's own auth module (2026-10-08)
+
+The account switch that broke the meter was a credential-class switch, and the mechanism is now read from `sst/opencode`'s `packages/opencode/src/auth/index.ts`. `auth.json` holds exactly three shapes, discriminated on `type`:
+
+- **`oauth`** — `{type, refresh, access, expires, accountId?}`. This is what `/connect` writes for the `opencode` provider: the **console identity**. `access` is a short-lived bearer the CLI spends as `Authorization` against the console plane, and it EXPIRES — the SPA's own client posts `/auth/refresh` and treats any non-200 as "not logged in" silently. A meter reading this credential class sees `401`s that arrive in bursts when the access token lapses and a refresh lands.
+- **`api`** — `{type, key, metadata?}`. The classic API key (`sk-…` Go / `oc_sk_…` Zen). What our tier classification (`tierForRequest`) is built on.
+- **`wellknown`** — `{type, key, token}`. Third-party gateway credentials.
+
+Two consequences, both verified against the live plane:
+
+- The console plane's auth failure signature is **`{"error":{"type":"server_error","message":"Invalid credential"}}`** — `server_error`, not `AuthError`, for ANY bearer (real-shaped `oc_sk_…`/`sk-…` dummies included). Its only live route found so far is `/inference/v1/models` (200-with-JSON-when-authed); `/inference/{v1/}chat/completions|responses` 404. So a console-credential meter poll would fail with `server_error`, which `parseFailure` currently reports as a generic failure — correct, but a dedicated signature would let the panel say "re-run /connect".
+- The CLI's autoload gate prunes **paid** models when no credential exists and keeps **free** ones (`cost.input === 0` survives), passing `apiKey: "public"`. Which means a no-credential DSH session sees a Zen-flavoured free list through the CLI's own loader too — our enrichment appending canonical rows agrees with that shape rather than fighting it.
+
+The meter's existing rule stands, now with the mechanism spelled out: the console credential is a BROWSER session (cookie or its OAuth bearer), the API planes speak API keys, and `/zen/go/v1/usage` — the meter's endpoint — rejects the former. What an account switch breaks is the credential class, not the key's validity.
+
 ### The balance question, settled by reading the vendor's own code (2026-10-08)
 
 The meter cannot show a balance, and this is now verified at the SOURCE level, not just by probing:
