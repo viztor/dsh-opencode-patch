@@ -54,10 +54,15 @@ describe("formatModelRate", () => {
     expect(formatModelRate(GO_FLASH)).toBe("$0.15 / $0.6 per 1M");
   });
 
-  it("says Free for a free model, a zero rate, or no rate at all", () => {
+  it("says Free only when something actually says so", () => {
     expect(formatModelRate(GO_FLASH, true)).toBe("Free");
     expect(formatModelRate({ input: 0, output: 0 })).toBe("Free");
-    expect(formatModelRate()).toBe("Free");
+    // No rate data is NOT free — a model the catalog has not caught up with is
+    // unknown, and claiming otherwise invents a price the panel never had.
+    expect(formatModelRate()).toBe("—");
+    // …unless something DID say free: the catalog's `is_free` is an answer even
+    // with no cost attached.
+    expect(formatModelRate(undefined, true)).toBe("Free");
   });
 });
 

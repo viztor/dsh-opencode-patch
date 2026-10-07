@@ -208,7 +208,14 @@ describe("usage-pill: the poll loop", () => {
     await waitFor(() => {
       expect(readUsage).toHaveBeenCalledTimes(2);
     });
-    expect(readUsage).toHaveBeenLastCalledWith("opencode", undefined);
+    // A bare provider switch sends no model — the arg is present but empty,
+    // which the Host's `parseUsageQuery` already folds away.
+    const [route, model] = readUsage.mock.lastCall as [
+      string,
+      string | undefined,
+    ];
+    expect(route).toBe("opencode");
+    expect(model ?? "none").toBe("none");
   });
 
   it("does not poll while the document is hidden, and catches up when it returns", async () => {
