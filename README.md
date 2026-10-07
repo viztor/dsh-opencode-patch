@@ -229,6 +229,8 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  • Monthly                               65% │
 │    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
+│  Upgrade plan                                │
+├──────────────────────────────────────────────┤
 │  Session Spend                               │
 │  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
 │                                        $0.42 │
@@ -236,20 +238,19 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  Ready for overflow                   Ready  │
 ├──────────────────────────────────────────────┤
 │  ⟳ Updated 08:30                    Console › │
-│  Upgrade plan · Usage limits                 │
 └──────────────────────────────────────────────┘
 ```
 
 #### Mode B — OpenCode Zen (`opencode`)
 
 - **Zen trigger**: the same ring, carrying the session's accumulated spend as its label (`$0.00` before anything has been priced, `$0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
-- **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, the session-spend card (when the price switch is on), and direct links to the [OpenCode Console](https://opencode.ai/console) and [Pricing](https://opencode.ai/pricing).
+- **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, the session-spend row (when the price switch is on), and one link — [OpenCode Console](https://opencode.ai/console), labelled **Top up**, because top-up is what a pay-as-you-go user wants from that page and it has no URL of its own.
 
 ```
 ┌───────────────────────────────────────────────┐
 │  OpenCode Zen                [Pay-as-you-go]  │
 ├───────────────────────────────────────────────┤
-│  SESSION SPEND                                │
+│  Session Spend                                │
 │  Space Bunny Free · no extra charge     $0.00│
 ├───────────────────────────────────────────────┤
 │  ⟳ Updated 08:30                    Top up ›   │

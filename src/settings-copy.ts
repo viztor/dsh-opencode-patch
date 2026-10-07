@@ -51,7 +51,6 @@ export const en = {
     "Displays live OpenCode Go quota ring in the composer dock beside context usage. Empty inherits default.",
   usageLastUpdated: "Last updated",
   usageLimited: "Limit reached",
-  usageLimitsDoc: "Usage limits",
   usageLoading: "Loading usage…",
   showUsagePrice: "Show Session Spend & Model Rate (default on)",
   showUsagePriceHint:
@@ -122,7 +121,6 @@ export const zh: Record<keyof typeof en, string> = {
     "在输入框底部停靠栏（与上下文用量并列）显示实时额度环。留空沿用默认值。",
   usageLastUpdated: "更新于",
   usageLimited: "已达限额",
-  usageLimitsDoc: "额度说明",
   usageLoading: "正在读取用量…",
   showUsagePrice: "显示会话消耗与模型费率（默认开启）",
   showUsagePriceHint:
