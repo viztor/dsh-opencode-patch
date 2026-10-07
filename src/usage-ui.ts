@@ -565,23 +565,36 @@ export const isZenProvider = (provider?: string): boolean => {
   return lower.includes("opencode") && !lower.includes("go");
 };
 
-/** The localized copy the meter's header, badge, tooltip and Zen card render. */
+/**
+ * The localized copy the meter's header, badge and Zen card render.
+ *
+ * No tooltip line lives here: the trigger's hover explanation used to be a
+ * second composition off the same inputs, and that seam was the wrong place to
+ * hang two new keys an older dictionary had never heard of — they rendered raw
+ * the first boot a user took the new bundle with an old locale registration.
+ * The tooltip is `headline` until that API earns its own contract.
+ */
 export interface UsageCopy {
   badgeText: string;
-  headline: string;
   /**
-   * What hovering the trigger says.
+   * What the panel header names: the ACCOUNT, not its state.
    *
-   * Deliberately NOT `headline`: on Go the ring needs an explanation
-   * ("90% of 5 hours used"), but on Zen the trigger shows session spend and the
-   * headline is just the plan's name — which names nothing the pill does not
-   * already imply. There is no balance or remaining-quota figure to show either:
-   * OpenCode exposes neither (every `balance`/`credits`/`account` path 404s, and
-   * the balance lives in console server actions a browser must fetch). So it
-   * answers the question those numbers would have answered — there is no quota
-   * window, you are metered per token — and says what the figure on screen is.
+   * `OpenCode Go` beside `Go Plan` / the limit badge, exactly as `OpenCode Zen`
+   * sits beside `Pay-as-you-go`. The header used to carry `headline` — the
+   * ring's own figure — which made the one line that identifies the surface
+   * change every poll: it read `42% of Weekly used`, then `Monthly quota
+   * limited`. Both facts are already on screen (the badge, and each window's
+   * own row), so the line that should be stable was the one that moved.
    */
-  tooltip: string;
+  title: string;
+  /**
+   * The ring explained in words — the trigger's hover label.
+   *
+   * On Go it names the bottleneck window ("90% of Weekly used"); on Zen the
+   * trigger shows session spend instead of a ring, so this is the account name
+   * and nothing more.
+   */
+  headline: string;
   zenCardCredit: string;
   zenCardDesc: string;
 }
@@ -594,18 +607,19 @@ export interface UsageCopy {
  * first read is in flight).
  */
 export const describeUsage = (
-  usage: GoUsage | undefined,
+  _usage: GoUsage | undefined,
   affecting: AffectingWindowResult | undefined,
   isZen: boolean,
-  locale: string | undefined,
   t: (key: string) => string
 ): UsageCopy => {
   const isLimited = affecting?.window.status === "rate-limited";
   const percent = affecting?.window.percent ?? 0;
 
+  const title = isZen ? t("zenPaygTitle") : t("goPlanTitle");
+
   let headline: string;
   if (isZen) {
-    headline = t("zenPaygTitle");
+    headline = title;
   } else if (isLimited) {
     headline = `${affecting?.label} quota limited`;
   } else {
@@ -631,15 +645,7 @@ export const describeUsage = (
     : t("zenOverflowActive");
   const zenCardCredit = isLimited ? "Active" : "Ready";
 
-  // Go: the ring's own figure, spelled out, plus the one thing the pill cannot
-  // say in two digits — when the window burns off. The trigger shows the USED
-  // share; the tooltip answers how long you are stuck with it.
-  const spent = usage?.session?.costFormatted ?? "$0.00";
-  const tooltip = isZen
-    ? `${usage?.zenOverflow === true ? t("zenOverflowLive") : t("zenNoQuotaWindow")} · ${t("sessionSpend")} ${spent}`
-    : `${headline} · ${t("usageResets")} ${formatRelativeReset(affecting?.window.resetsAt ?? "", locale)}`;
-
-  return { badgeText, headline, tooltip, zenCardCredit, zenCardDesc };
+  return { badgeText, headline, title, zenCardCredit, zenCardDesc };
 };
 
 /**
