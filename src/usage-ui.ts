@@ -429,22 +429,22 @@ export const formatRelativeReset = (
   }
   const diffMs = target - Date.now();
   if (diffMs <= 0) {
-    return "soon";
+    // Language-neutral, like the durations below: the caller prefixes this with a
+    // localised label, so returning an English word here would half-translate it.
+    return "<1m";
   }
   const diffMinutes = Math.round(diffMs / 60_000);
   if (diffMinutes < 60) {
-    return `in ${diffMinutes}m`;
+    return `${diffMinutes}m`;
   }
   const diffHours = Math.floor(diffMinutes / 60);
   const remMinutes = diffMinutes % 60;
   if (diffHours < 24) {
-    return remMinutes > 0
-      ? `in ${diffHours}h ${remMinutes}m`
-      : `in ${diffHours}h`;
+    return remMinutes > 0 ? `${diffHours}h ${remMinutes}m` : `${diffHours}h`;
   }
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) {
-    return `in ${diffDays}d ${diffHours % 24}h`;
+    return `${diffDays}d ${diffHours % 24}h`;
   }
   return new Date(target).toLocaleDateString(locale, {
     day: "numeric",
