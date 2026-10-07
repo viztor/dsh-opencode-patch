@@ -144,6 +144,17 @@ describe("UsageTrigger", () => {
     );
   });
 
+  it("is ghost at rest and tinted only on hover", () => {
+    // The composer's own controls carry no fill, and a tinted pill beside the
+    // model selector reads as a chip with a frame of its own. The tint is the
+    // affordance, so it has to be the HOVER state that draws it.
+    const base = /\.dsh-oc-usage-trigger \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(base).toContain("background: transparent");
+
+    const hover = /\.dsh-oc-usage-trigger:hover,[^}]*\}/.exec(STYLES)?.[0];
+    expect(hover).toContain("--dsw-alias-interactive-bg-hover");
+  });
+
   it("falls back to the Zen title when spend is hidden or absent", () => {
     const withSpend = usage({ session: session() });
     expect(
