@@ -210,6 +210,16 @@ Rules that keep the two from fighting:
 - The Go `/usage` endpoint **rejects Zen keys** (`oc_sk_…`), which is why the tier filter exists at all: never hand the Go endpoint whatever key happens to be newest.
 - **Which source wins is the user's choice** (`keySource`), because there is no single correct answer: `auto` (composition → captured → credentials → any captured) suits most setups and is byte-for-byte the original precedence; `request` promotes both captured steps, for setups that rotate keys; `configured` demotes them, for pinned/CI setups. `KEY_SOURCE_ORDER` is the whole policy — a `Record<KeySourcePolicy, readonly KeySourceStep[]>`, so a new policy is one line and a new step is a type error. The policy reaches **both** consumers: `patchFetch`'s Authorization fallback and the meter's `resolveGoApiKey` (via `UsageOptions.keySource`).
 
+### The balance question, settled by reading the vendor's own code (2026-10-08)
+
+The meter cannot show a balance, and this is now verified at the SOURCE level, not just by probing:
+
+- The console's balance is `BillingTable.balance` (micro-cents), read by `Billing.get` in `sst/opencode`'s `packages/console/core/src/billing.ts`. That module's exports are `fn()` server functions — a zod-validated in-process pattern — not HTTP routes. The SPA's generated SDK carries prefixes `/api/billing` / `/api/usage`, but those are served through the web server's SSR `RequestContext` (session cookie injected server-side; `SessionMiddleware` accepts `console_session` cookie OR Bearer). They are not reachable with an API key: `/api/billing/account` on opencode.ai answers **404 text/html**, not 401 JSON, while the genuinely-real `/zen/go/v1/usage` answers **401 application/json**. A real-but-unauthorized route and a nonexistent one are distinguishable by content type.
+- Probe re-measurement, both planes: zen `/v1/{usage,billing,balance,me,account,key,keys,info,workspace}` all 404; go `/v1/{usage,billing,balance,limits,plan,subscription,account,quota,credits,key/info}` — only `/usage` exists. Every balance-ish path is absent, and the vendor's own client never calls one.
+- **Second SPA trap, on a second host**: `api.opencode.ai` answers **200 for every path** with a 9-byte `Not Found` body — including `/totally-bogus-path-xyz`. The "SPA answers 200 for everything" hazard in the next section applies to `api.opencode.ai` too, and a status code alone cannot distinguish a real route there. Control comparison (real route → 401 JSON; fake route → 200 `Not Found`) is the only reliable probe on both hosts.
+
+Consequence for the meter: the honest signals remain exactly two — the live window percentages (Go), and the failure path when the gateway actually refuses a request. The monthly allowance table (`go-limits-data.ts`) is the only dollar figure the API surface can support, and it is a published total, not a balance.
+
 ## OpenCode endpoints (probed, not guessed)
 
 **Zen serves four classes of model, and they fail differently.** Probe any model with a keyless POST — the response identifies its class:
