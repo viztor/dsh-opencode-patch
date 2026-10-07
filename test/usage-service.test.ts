@@ -639,7 +639,6 @@ describe("GoUsageService gateway failures", () => {
       [500, true],
       [503, true],
       [400, false],
-      [401, false],
       [404, false],
     ];
     for (const [status, transient] of cases) {
@@ -651,7 +650,25 @@ describe("GoUsageService gateway failures", () => {
       expect(failure.details.retryable).toBe(transient);
       expect(failure.details.retainPrevious).toBe(transient);
       expect(typeof failure.details.source).toBe("string");
+      // Only a rejected credential is worth naming; an outage is not.
+      expect(failure.details.reason).toBeUndefined();
     }
+  });
+
+  it("names a rejected credential instead of calling it an outage", async () => {
+    // A 401 is what an ACCOUNT SWITCH looks like: the console identity is an
+    // OAuth browser session, not an sk-... Go key, and /usage refuses it. Folded
+    // into the generic status message it read as "unavailable" with nothing to
+    // act on, so it now carries its own reason all the way to the panel.
+    stubFetch(() => new Response('{"type":"error"}', { status: 401 }));
+    const failure = await failureOf(serviceWithKey("sk-live-key").read());
+    expect(failure.message).toBe(
+      "OpenCode Go rejected the API key for this account"
+    );
+    expect(failure.details.reason).toBe("auth");
+    // Retrying a rejected credential cannot help, exactly as before.
+    expect(failure.details.retryable).toBe(false);
+    expect(failure.details.retainPrevious).toBe(false);
   });
 
   it("rejects an oversized body before parsing it", async () => {
