@@ -209,34 +209,26 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
 └─────────────────────────────────────────────────────────────────┘
    [ ⭕ 73% Context ]   [ ⭕ 42% Go Quota ]   ← when OpenCode Go is active
-   [ ⭕ 73% Context ]   [ 🪙 $0.00 ]            ← when OpenCode Zen is active
+   [ ⭕ 73% Context ]   [ ⭕ $0.00 ]            ← when OpenCode Zen is active
 ```
 
 #### Mode A — OpenCode Go (`opencode-go`)
 
 - **Adaptive bottleneck ring**: a real-time SVG ring showing the currently _limiting_ window (`42%`, `80%`, or `100%` when rate-limited).
 - **Semantic colors**: green below 80% (`--dsw-alias-state-success-primary`), amber at ≥80% (`--dsw-alias-state-warn-primary`), red at the cap (`--dsw-alias-state-error-primary`).
-- **Hover panel**: three window rows with live reset countdowns, three overview cards, a session-spend card, a Zen-overflow card, a rate-limited alert, and act-on-it links.
+- **Click panel**: three window rows with live reset countdowns, a session-spend row, a Zen-overflow row, a rate-limited alert, and act-on-it links. Hovering the trigger shows a `Tooltip` with the headline instead of opening the panel.
 
 ```
 ┌──────────────────────────────────────────────┐
 │  42% of 5-Hour quota used           [Go Plan]│
-│  ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 ├──────────────────────────────────────────────┤
 │  • 5 hours                               42% │
-│    Resets in 3h 12m                          │
+│    Resets 3h 12m                             │
 │  • Weekly                                18% │
-│    Resets in 5d 8h                           │
+│    Resets 5d 8h                              │
 │  • Monthly                               65% │
-│    Resets in 22d 4h                          │
+│    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
-│  QUOTA OVERVIEW                              │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐      │
-│  │ 5-Hour   │ │ Weekly   │ │ Monthly  │      │
-│  │ 42%      │ │ 18%      │ │ 65%      │      │
-│  │ in 3h 12m│ │ in 5d 8h │ │ in 22d 4h│      │
-│  └──────────┘ └──────────┘ └──────────┘      │
-│                                              │
 │  SESSION SPEND                               │
 │  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
 │                                        $0.42 │
@@ -251,7 +243,7 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 
 #### Mode B — OpenCode Zen (`opencode`)
 
-- **Zen pill**: a compact coin badge carrying the session's accumulated spend (`🪙 $0.00` before anything has been priced, `🪙 $0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
+- **Zen trigger**: the same ring, carrying the session's accumulated spend as its label (`$0.00` before anything has been priced, `$0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
 - **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, an explanation of per-token billing, the session-spend card (when the price switch is on), and direct links to the [OpenCode Console](https://opencode.ai/console) and [Pricing](https://opencode.ai/pricing).
 
 ```
