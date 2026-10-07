@@ -370,6 +370,33 @@ export const STYLES = `
   text-underline-offset: 3px;
 }
 
+/*
+ * A failure is the one thing here the user can act on, so unlike every other row
+ * it IS a callout — same shape as the overflow notice above, in the error tone.
+ * This class rendered with no rule at all until now: a bare <div> with a <p>,
+ * which meant UA margins, no colour and no emphasis on the one message that
+ * needed it.
+ */
+.dsh-oc-usage-warning {
+  padding: 7px 9px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 1.45;
+  margin-top: 8px;
+}
+
+.dsh-oc-usage-warning strong {
+  font-weight: 600;
+}
+
+/* The detail line is a <p>, whose UA margins would double the padding. */
+.dsh-oc-usage-warning p {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
 .dsh-oc-usage-zen-notice {
   font-size: 11px;
   line-height: 1.45;
