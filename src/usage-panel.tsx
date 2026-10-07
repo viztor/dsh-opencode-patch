@@ -240,16 +240,16 @@ export const UsagePanel = ({
     {/* Session spend & active-model rate. Priced on the Host from
         models.dev rates, so the client never ships the catalog. */}
     {showUsagePrice && usage?.session !== undefined && (
-      <div className="dsh-oc-zen-card">
-        <div className="dsh-oc-zen-card-left">
-          <span className="dsh-oc-zen-card-title">{t("sessionSpend")}</span>
-          <span className="dsh-oc-zen-card-desc">
+      <div className="dsh-oc-usage-detail">
+        <div className="dsh-oc-usage-detail-left">
+          <span className="dsh-oc-usage-detail-title">{t("sessionSpend")}</span>
+          <span className="dsh-oc-usage-detail-desc">
             {usage.session.freeModel === true
               ? t("freeModel")
               : `${usage.session.activeModel ?? ""} · ${usage.session.activeRateFormatted ?? ""}`}
           </span>
         </div>
-        <span className="dsh-oc-zen-card-credit">
+        <span className="dsh-oc-usage-detail-value">
           {usage.session.costFormatted}
         </span>
       </div>
@@ -262,12 +262,12 @@ export const UsagePanel = ({
       balance endpoint at all, so the row could only restate the badge.
     */}
     {!isZen && usage?.zenOverflow === true && (
-      <div className="dsh-oc-zen-card">
-        <div className="dsh-oc-zen-card-left">
-          <span className="dsh-oc-zen-card-title">{t("zenCredit")}</span>
-          <span className="dsh-oc-zen-card-desc">{zenCardDesc}</span>
+      <div className="dsh-oc-usage-detail">
+        <div className="dsh-oc-usage-detail-left">
+          <span className="dsh-oc-usage-detail-title">{t("zenCredit")}</span>
+          <span className="dsh-oc-usage-detail-desc">{zenCardDesc}</span>
         </div>
-        <span className="dsh-oc-zen-card-credit">{zenCardCredit}</span>
+        <span className="dsh-oc-usage-detail-value">{zenCardCredit}</span>
       </div>
     )}
 
