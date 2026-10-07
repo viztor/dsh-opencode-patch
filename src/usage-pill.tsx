@@ -261,7 +261,7 @@ const ActiveUsage = ({
       ? "var(--dsw-alias-state-success-primary)"
       : getWindowColor(affecting.window);
 
-  const { clampedPercent, strokeDasharray } = ringGeometry(displayPercent);
+  const { strokeDasharray } = ringGeometry(displayPercent);
 
   let triggerLabel = "…";
   if (usage !== undefined) {
@@ -313,7 +313,6 @@ const ActiveUsage = ({
       {open && (
         <UsagePanel
           badgeText={badgeText}
-          clampedPercent={clampedPercent}
           failure={failure}
           headline={headline}
           isLimited={isLimited}
@@ -325,7 +324,6 @@ const ActiveUsage = ({
           retry={() => {
             retry.current();
           }}
-          ringColor={ringColor}
           showUsagePrice={showUsagePrice}
           t={t}
           updatedAt={current === null ? null : current.updatedAt}
