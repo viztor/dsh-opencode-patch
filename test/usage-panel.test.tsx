@@ -396,6 +396,17 @@ describe("UsagePanel", () => {
     expect(byClass(busy, "dsh-oc-usage-refresh")[0]?.props.disabled).toBe(true);
   });
 
+  it("styles the failure callout it renders", () => {
+    // The class shipped with NO rule at all, so a failure fell back to a bare
+    // div: UA margins on its <p>, no error colour, no emphasis on the one
+    // message in the panel the user can act on.
+    const callout = /\.dsh-oc-usage-warning \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(callout).toContain("--dsw-alias-state-error-primary");
+
+    const detail = /\.dsh-oc-usage-warning p \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(detail).toContain("margin:");
+  });
+
   it("surfaces a refresh failure, with a fallback message", () => {
     const withMessage = UsagePanel(
       panelProps({ failure: { message: "boom", retainPrevious: false } })

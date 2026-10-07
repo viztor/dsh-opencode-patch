@@ -229,15 +229,14 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  • Monthly                               65% │
 │    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
-│  SESSION SPEND                               │
+│  Session Spend                               │
 │  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
 │                                        $0.42 │
-│                                              │
-│  ZEN BALANCE FALLBACK                        │
-│  Zen balance ready for overflow        Ready │
+│  Available Zen Balance                       │
+│  Ready for overflow                   Ready  │
 ├──────────────────────────────────────────────┤
-│  Last updated 08:30              [ Retry ]   │
-│  Upgrade plan · Console & balance · Doc      │
+│  ⟳ Updated 08:30                    Console › │
+│  Upgrade plan · Usage limits                 │
 └──────────────────────────────────────────────┘
 ```
 
