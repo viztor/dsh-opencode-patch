@@ -143,14 +143,12 @@ export const UsagePanel = ({
     onMouseLeave={onMouseLeave}
     role="dialog"
   >
-    {/* Header */}
+    {/*
+      Header. The badge carries the billing model — `Pay-as-you-go` on Zen,
+      `Go Plan` / the limit notice on Go — so no second line repeats it.
+    */}
     <div className="dsh-oc-usage-header">
-      <div>
-        <div className="dsh-oc-usage-headline">{headline}</div>
-        {isZen && (
-          <div className="dsh-oc-zen-card-desc">{t("zenPaygDesc")}</div>
-        )}
-      </div>
+      <div className="dsh-oc-usage-headline">{headline}</div>
       <span
         className={`dsh-oc-usage-badge${isLimited && !isZen ? " dsh-oc-badge-limited" : ""}`}
       >
@@ -228,8 +226,13 @@ export const UsagePanel = ({
       </div>
     )}
 
-    {/* Attached Zen Overflow Card */}
-    {(isZen || usage?.zenOverflow === true) && (
+    {/*
+      The Zen card answers "where does an over-limit Go request get billed?"
+      — so it belongs on the GO panel only. On a Zen route you are already
+      paying per token, and there is no balance to report: OpenCode exposes no
+      balance endpoint at all, so the row could only restate the badge.
+    */}
+    {!isZen && usage?.zenOverflow === true && (
       <div className="dsh-oc-zen-card">
         <div className="dsh-oc-zen-card-left">
           <span className="dsh-oc-zen-card-title">{t("zenCredit")}</span>

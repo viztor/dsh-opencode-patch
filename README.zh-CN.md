@@ -245,22 +245,21 @@ opencode-responses:
 #### 模式 B — OpenCode Zen (`opencode`)
 
 - **Zen 触发器**：同一个环，标签是本会话累计花费（未计价时为 `$0.00`，计价后如 `$0.42`）。这是唯一能拿到的真实数字——OpenCode 的 Zen 余额只能通过 console 的 server action 读取，需要浏览器会话，API key 读不到。
-- **按量计费面板**：带 `Pay-as-you-go` 徽标的头部、按 Token 计费的说明、会话消耗卡片（价格开关开启时），以及指向 [OpenCode 控制台](https://opencode.ai/console)与[定价](https://opencode.ai/pricing)的直达链接。
+- **按量计费面板**：带 `Pay-as-you-go` 徽标的头部、会话消耗卡片（价格开关开启时），以及指向 [OpenCode 控制台](https://opencode.ai/console)与[定价](https://opencode.ai/pricing)的直达链接。
 
 ```
-┌──────────────────────────────────────────────┐
-│  OpenCode Zen                [Pay-as-you-go] │
-│  Per-token pay-as-you-go inference           │
-├──────────────────────────────────────────────┤
-│  AVAILABLE ZEN BALANCE                       │
-│  Per-token pay-as-you-go inference    Active │
-├──────────────────────────────────────────────┤
-│  Last updated 08:30              [ Retry ]   │
-│  Upgrade plan · Console & balance · Doc      │
-└──────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│  OpenCode Zen                [Pay-as-you-go]  │
+├───────────────────────────────────────────────┤
+│  SESSION SPEND                                │
+│  mimo-v2.6-flash · $0.14 / $0.28 per 1M  $0.14│
+├───────────────────────────────────────────────┤
+│  Last updated 08:30              [ Retry ]    │
+│  Upgrade plan · Console & balance · Doc       │
+└───────────────────────────────────────────────┘
 ```
 
-**Zen 余额与溢出。** 若配置了 `OPENCODE_API_KEY`（或 `oc_sk_…`），Zen 按量计费会被自动检测，溢出状态标记为**就绪**。余额随每个生成的 Token 变化，因此弹出面板直接链接到 [OpenCode 控制台](https://opencode.ai/console)，而不是在 UI 里冻结一个过期数字。
+**Zen 余额与溢出。** 若配置了 `OPENCODE_API_KEY`（或 `oc_sk_…`），Zen 按量计费会被自动检测。Zen 面板**不显示余额行**：该余额只能通过 console 的 server action 读取，需要浏览器会话，因此面板直接链接到 [OpenCode 控制台](https://opencode.ai/console)，而不是冻结一个无法保持最新的数字。余额行放在 **Go** 面板上——那里它回答的是一个面板真能回答的问题：超出配额的 Go 请求是否真的会从该余额扣费。
 
 ---
 

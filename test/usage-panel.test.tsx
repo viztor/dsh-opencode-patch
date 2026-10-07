@@ -246,7 +246,10 @@ describe("UsagePanel", () => {
     expect(collectText(tree)).toContain("t:zenPaygTitle");
   });
 
-  it("attaches the Zen card for Zen routes and for Go overflow", () => {
+  it("attaches the Zen card to Go overflow only, never to a Zen route", () => {
+    // The card answers "where does an over-limit Go request get billed?". On a
+    // Zen route you are already paying per token, and OpenCode has no balance
+    // endpoint at all — so there the row could only restate the badge.
     expect(
       byClass(UsagePanel(panelProps({ usage: usage() })), "dsh-oc-zen-card")
     ).toHaveLength(0);
@@ -257,8 +260,30 @@ describe("UsagePanel", () => {
       )
     ).toHaveLength(1);
     expect(
-      byClass(UsagePanel(panelProps({ isZen: true })), "dsh-oc-zen-card")
-    ).toHaveLength(1);
+      byClass(
+        UsagePanel(
+          panelProps({ isZen: true, usage: usage({ zenOverflow: true }) })
+        ),
+        "dsh-oc-zen-card"
+      )
+    ).toHaveLength(0);
+  });
+
+  it("says the billing model once: the badge carries it", () => {
+    // `Pay-as-you-go` used to appear three times on a Zen panel — badge,
+    // subtitle, and the balance row's own value — with a per-token explanation
+    // under the header AND under that row. The badge is where the Go panel puts
+    // its billing model too, so one line is enough.
+    const tree = UsagePanel(
+      panelProps({
+        badgeText: "t:zenPaygBadge",
+        headline: "t:zenPaygTitle",
+        isZen: true,
+        usage: usage(),
+      })
+    );
+    expect(collectText(tree)).toContain("t:zenPaygBadge");
+    expect(collectText(tree)).not.toContain("t:zenCredit");
   });
 
   it("warns about Zen fallback only when limited without overflow", () => {

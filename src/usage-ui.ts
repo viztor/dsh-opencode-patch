@@ -470,7 +470,7 @@ export interface UsageCopy {
  * first read is in flight).
  */
 export const describeUsage = (
-  usage: GoUsage | undefined,
+  _usage: GoUsage | undefined,
   affecting: AffectingWindowResult | undefined,
   isZen: boolean,
   t: (key: string) => string
@@ -496,23 +496,15 @@ export const describeUsage = (
     badgeText = "Go Plan";
   }
 
-  let zenCardDesc: string;
-  if (isZen) {
-    zenCardDesc = t("zenPaygDesc");
-  } else if (isLimited) {
-    zenCardDesc = t("zenFallbackNotice");
-  } else {
-    zenCardDesc = t("zenOverflowActive");
-  }
-
-  let zenCardCredit: string;
-  if (isZen) {
-    zenCardCredit = t("zenPaygBadge");
-  } else if (usage?.zenOverflow === true) {
-    zenCardCredit = isLimited ? "Active" : "Ready";
-  } else {
-    zenCardCredit = t("zenPaygBadge");
-  }
+  // The Zen card renders on a GO route with overflow only (`usage-panel.tsx`),
+  // so these two have exactly the two states that card can be in: the plan is
+  // limited and the overflow is live, or the plan is fine and the balance is
+  // standing by. A Zen route never reaches them — there the badge already says
+  // pay-as-you-go, and OpenCode has no balance endpoint to report.
+  const zenCardDesc = isLimited
+    ? t("zenFallbackNotice")
+    : t("zenOverflowActive");
+  const zenCardCredit = isLimited ? "Active" : "Ready";
 
   return { badgeText, headline, zenCardCredit, zenCardDesc };
 };
