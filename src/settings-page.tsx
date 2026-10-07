@@ -99,14 +99,6 @@ export interface ClientContext {
     directoryFor: (sessionId: unknown) => { store: unknown };
   };
   remote?: {
-    /**
-     * Mount a contribution so the namespace it declares exists client-side.
-     * Source-mode discovery on the Host only makes the endpoint callable; it does
-     * not install `ctx.remote.<namespace>` here, and nothing else does either —
-     * every official plugin mounts its own generated contribution in its client
-     * `apply()`. Without this the meter reads an absent namespace and falls back
-     * to its diagnostic marker.
-     */
     $mount?: (contribution: unknown) => Promise<() => void>;
     // Structural view of the Host remote; `query` scopes the reading.
     opencodeGoUsage?: {
@@ -208,15 +200,11 @@ export const apply = (ctx: ClientContext): void => {
 
   ctx.effect?.(() => {
     let dispose: (() => void) | undefined;
-    // Mounting is asynchronous, but `effect` wants its disposer synchronously, so
-    // the call is kicked off and the disposer is filled in when it lands. A Host
-    // without the remote service leaves the meter unrendered — the same outcome as
-    // before — so neither failure path is worth failing the plugin over.
     const mount = async (): Promise<void> => {
       try {
         dispose = await ctx.remote?.$mount?.(usageRemote);
       } catch {
-        // See above.
+        // Unrendered meter, as before.
       }
     };
     void mount();
