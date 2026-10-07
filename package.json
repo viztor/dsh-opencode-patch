@@ -62,6 +62,7 @@
   "scripts": {
     "build": "vp pack && node --experimental-strip-types scripts/name-client-bundle.ts",
     "catalog:shim": "node --experimental-strip-types scripts/regenerate-catalog-shim.ts",
+    "limits:shim": "node --experimental-strip-types scripts/generate-go-limits.ts",
     "check": "vp check",
     "clean": "rm -rf lib",
     "format": "vp fmt --check",

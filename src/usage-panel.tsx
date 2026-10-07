@@ -9,6 +9,7 @@
 import { Tag, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
+import { formatUsd } from "./go-limits.ts";
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import {
   BREAKDOWN_WINDOWS,
@@ -226,6 +227,34 @@ export const UsagePanel = ({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/*
+        What the percentage is a percentage OF. The three windows are shares of a
+        per-model monthly dollar allowance, and that allowance is the one figure the
+        live payload cannot supply — `/usage` takes no model parameter, so its
+        percentages are the ACCOUNT's and multiplying them by this would be a number
+        with no referent. So this row states the TOTAL, for both tiers: the plan is
+        not discoverable (`/limits`, `/plan`, `/subscription` all 404), and a panel
+        that guessed one would misstate the money by 2-3x.
+      */}
+        {usage?.allowance !== undefined && (
+          <div className="dsh-oc-usage-detail">
+            <div className="dsh-oc-usage-detail-left">
+              <span className="dsh-oc-usage-detail-title">
+                {t("monthlyAllowance")}
+              </span>
+              {/* WHICH model — the allowance is per model, so the figure is
+                meaningless without it. */}
+              <span className="dsh-oc-usage-detail-desc">
+                {usage.allowance.model}
+              </span>
+            </div>
+            <span className="dsh-oc-usage-detail-value">
+              {t("goTier")} {formatUsd(usage.allowance.go)} · {t("goPlusTier")}{" "}
+              {formatUsd(usage.allowance.goPlus)}
+            </span>
           </div>
         )}
 

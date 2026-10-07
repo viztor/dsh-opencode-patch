@@ -13,6 +13,16 @@ import type {
 import { isRecord } from "./guards.ts";
 import type { SessionUsageSnapshot } from "./session-cost.ts";
 
+/** The active model's published monthly allowance, resolved on the Host. */
+export interface ModelAllowanceSnapshot {
+  /** Go, the $10/month plan. */
+  go: number;
+  /** Go Plus, the $40/month plan. */
+  goPlus: number;
+  /** The model this allowance is for, as the picker spells it. */
+  model: string;
+}
+
 export interface UsageWindow {
   percent: number;
   resetsAt: string;
@@ -20,6 +30,14 @@ export interface UsageWindow {
 }
 
 export interface GoUsage {
+  /**
+   * The selected model's monthly allowance, in whole US dollars per plan tier.
+   *
+   * A **total**, never a balance: `GET /zen/go/v1/usage` takes no model
+   * parameter, so its percentages describe the ACCOUNT and cannot be turned into
+   * a per-model remainder. See `src/go-limits.ts`.
+   */
+  allowance?: ModelAllowanceSnapshot;
   monthly: UsageWindow;
   rolling: UsageWindow;
   /** Accumulated token and dollar usage for the current session. */

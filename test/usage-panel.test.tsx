@@ -398,6 +398,56 @@ describe("UsagePanel", () => {
     ).toHaveLength(1);
   });
 
+  it("states the active model's monthly allowance, for both tiers", () => {
+    // The percentage needs a denominator. It is stated as a TOTAL — never as a
+    // remainder: `/usage` takes no model parameter, so its percentages are the
+    // account's and the product of the two would be a number with no referent.
+    const go = UsagePanel(
+      panelProps({
+        usage: usage({
+          allowance: { go: 60, goPlus: 120, model: "mimo-v2.6-flash" },
+        }),
+      })
+    );
+    const text = collectText(go);
+    expect(text).toContain("t:monthlyAllowance");
+    expect(text).toContain("mimo-v2.6-flash");
+    // The label and both tiers are separate nodes, so they are asserted apart.
+    expect(text).toContain("t:goTier");
+    expect(text).toContain("t:goPlusTier");
+    expect(text).toContain("$60");
+    expect(text).toContain("$120");
+
+    // The row is a PLAN fact, so it renders inside the Go layer — after the
+    // windows it explains and before the plan link, not below the session rows.
+    const order = classOrder(go);
+    expect(order.indexOf("dsh-oc-usage-detail")).toBeGreaterThan(
+      order.indexOf("dsh-oc-usage-breakdown")
+    );
+    expect(order.indexOf("dsh-oc-usage-detail")).toBeLessThan(
+      order.indexOf("dsh-oc-usage-links")
+    );
+
+    // No allowance, no row — and never on a Zen route, where the Go plan is not
+    // what the user is on.
+    expect(
+      byClass(UsagePanel(panelProps({ usage: usage() })), "dsh-oc-usage-detail")
+    ).toHaveLength(0);
+    expect(
+      byClass(
+        UsagePanel(
+          panelProps({
+            isZen: true,
+            usage: usage({
+              allowance: { go: 60, goPlus: 120, model: "mimo-v2.6-flash" },
+            }),
+          })
+        ),
+        "dsh-oc-usage-detail"
+      )
+    ).toHaveLength(0);
+  });
+
   it("warns about Zen fallback only when limited without overflow", () => {
     expect(
       byClass(
