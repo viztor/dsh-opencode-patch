@@ -218,6 +218,14 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       const right = await probe(expected ?? "", model);
       // 403 FreeTierError: the gateway parsed the model and then applied the
       // free-tier entitlement rule. It got far enough to identify it.
+      //
+      // The gate is `stream:true` AND `read`+`bash` in `tools` — conjunctive, and
+      // identical on both planes. This probe sends NEITHER, so the 403 it asserts
+      // is the gate refusing us, not evidence about the model. It still pins the
+      // route (the wrong-endpoint cells assert 500 below, which only happens when
+      // the gateway parsed the model), but a test that could tell those apart
+      // would send `stream: true` plus the two schemas and assert a completion.
+      // Measured 2026-10-07; see the gate section in AGENTS.md.
       expect(right.status, `${model} on ${expected}: ${right.summary}`).toBe(
         403
       );
