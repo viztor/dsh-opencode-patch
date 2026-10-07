@@ -216,7 +216,8 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 
 - **Adaptive bottleneck ring**: a real-time SVG ring showing the currently _limiting_ window (`42%`, `80%`, or `100%` when rate-limited). On a **free model** the ring renders hollow in the muted track colour — the plan's limit says nothing about a bill that cannot be charged, and red against `$0.00` would read as "you are out of money".
 - **Semantic colors**: green below 80% (`--dsw-alias-state-success-primary`), amber at ≥80% (`--dsw-alias-state-warn-primary`), red at the cap (`--dsw-alias-state-error-primary`).
-- **Click panel**: three window rows with live reset countdowns, a session-spend row, a Zen-overflow row, a rate-limited alert, and act-on-it links. Hovering the trigger shows a `Tooltip` with the headline instead of opening the panel.
+- **Click panel**: three window rows with live reset countdowns and a bar per window, a session-spend row naming the **currently selected** model, a Zen-overflow row, a rate-limited alert, and act-on-it links. Hovering the trigger shows a `Tooltip` with the headline instead of opening the panel.
+- **A model the catalog has no price for reads `—`, not `Free`.** The panel names whatever the picker has selected, even when models.dev has no entry for it yet (it syncs on a schedule), because showing the previous model's name is worse than showing no price.
 
 ```
 ┌──────────────────────────────────────────────┐

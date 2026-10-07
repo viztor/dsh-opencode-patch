@@ -482,6 +482,34 @@ describe("GoUsageService readings", () => {
     expect(usage.monthly.percent).toBe(100);
   });
 
+  it("names the PICKED model even when the catalog has no price for it", async () => {
+    // The bug this pins: the panel named the PREVIOUS model while the picker
+    // showed the new one, because the re-description was gated on a catalog hit.
+    // A missing price is its own answer; it is never a reason to display the
+    // wrong model. `space-bunny` is the live case — the limits table lists it,
+    // models.dev's catalog does not.
+    recordTurnUsage(
+      "s-miss",
+      { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+      { input: 0.15, output: 0.5 },
+      "mimo-v2.6-flash-free",
+      true
+    );
+    stubFetch(() => new Response(okBody()));
+    const usage = await serviceWithKey("sk-live-key").read({
+      model: "space-bunny",
+      provider: "opencode-go",
+      sessionId: "s-miss",
+    });
+    expect(usage.session?.activeModel).toBe("space-bunny");
+    // No name and no price, but NOT the old model and NOT a leftover `freeModel`
+    // from the free model the session actually last ran.
+    expect(usage.session?.activeModelName).toBeUndefined();
+    expect(usage.session?.freeModel).toBeUndefined();
+    // The spend total is history and must survive the swap.
+    expect(usage.session?.turns).toBe(1);
+  });
+
   it("fills in the catalog's display name for the model a turn recorded", async () => {
     // A turn records the id — that is what the gateway speaks — so without this
     // the meter's row showed `muse-spark-1.3-contributor-free` where a user
