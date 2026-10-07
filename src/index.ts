@@ -108,14 +108,13 @@ export {
   toGoBaseURL,
   type RoutedKeyDetails,
 } from "./go-discovery.ts";
-export { GoUsageService, registerUsageRemotes } from "./usage.ts";
+export { GoUsageService } from "./usage.ts";
 export {
   parseGoUsage,
   parseUsageQuery,
   type GoUsage,
   type UsageQuery,
   type UsageWindow,
-  usageRemote,
 } from "./usage-contract.ts";
 export {
   calculateTurnCost,
