@@ -306,7 +306,12 @@ export const registerUsageRemotes = (ctx: unknown): void => {
     }
     say("typert resolved; registering the remote face");
     const registerDescriptor = (): void => {
-      const typert: unknown = scope.typert;
+      // From the PLUGIN context, like `effect` above — the injected scope is not
+      // guaranteed to carry the service, and the file log showed exactly that:
+      // "typert.register is unavailable".
+      const typert: unknown = isRecord(ctx)
+        ? Reflect.get(ctx, "typert")
+        : undefined;
       if (!isRecord(typert) || !isFunctionLike(typert.register)) {
         say("typert.register is unavailable; no remote face registered");
         return;
