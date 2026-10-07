@@ -10,7 +10,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync } from "node:fs";
 
 import {
   RemoteError,
@@ -26,14 +25,13 @@ import {
   resolveZenCreditInfo,
   toGoBaseURL,
 } from "./go-discovery.ts";
-import { isFunctionLike, isRecord } from "./guards.ts";
+import { isRecord } from "./guards.ts";
 import { getSessionUsage } from "./session-cost.ts";
 import {
   parseGoUsage,
   type GoUsage,
   type UsageQuery,
   type UsageWindow,
-  usageRemote,
 } from "./usage-contract.ts";
 
 const USAGE_MAX_BYTES = 1024 * 1024;
@@ -252,97 +250,30 @@ export class GoUsageService extends TypertRemoteService {
   }
 }
 
-/** Structural claim: a context exposing `inject`. */
-const hasInject = (
-  ctx: unknown
-): ctx is { inject: (deps: string[], cb: (scope: unknown) => void) => void } =>
-  isRecord(ctx) && isFunctionLike(ctx.inject);
+/**
+ * Prototype key `remoteMethods()` reads Remote markers from. A plain string
+ * constant in the protocol package (index.ts:140); not re-exported.
+ */
+const REMOTE_METHOD_DESCRIPTOR_KEY =
+  "@deepseek-ai/dsh-typert-protocol/remote-methods";
 
 /**
- * Register the typert remote descriptor with the host registry if available.
+ * Declare `read` as a Remote method — exactly what `@Remote()` does.
  *
- * Degrades silently when the composition serves no Typert scope: the plugin
- * still works headless, just without a remote face for the quota meter.
+ * The decorator cannot be used: this build transform is oxc/rolldown based and
+ * rejects TC39 decorator syntax outright ("SyntaxError: Invalid or unexpected
+ * token"), and `esbuild: { target: "esnext" }` is ignored by it. The decorator has
+ * no magic — it registers an instance initializer calling
+ * `mark(prototype, method, invocation)`, and `mark` only writes this one property.
+ * `remoteMethods()` reads it straight off the prototype, so writing it directly
+ * is equivalent. Swap for the decorator once the transform accepts one.
  */
-export const registerUsageRemotes = (ctx: unknown): void => {
-  // TEMPORARY diagnostics on every silent exit. Each one leaves the client with
-  // no remote face for the meter and says nothing about it, which is why "the
-  // meter renders nothing" has been unanswerable from the browser. Remove once
-  // the meter renders.
-  const effect: unknown = isRecord(ctx)
-    ? Reflect.get(ctx, "effect")
-    : undefined;
-  const say = (reason: string): void => {
-    const line = `[dsh-opencode-patch] usage remote: ${reason}\n`;
-    const logger: unknown = isRecord(ctx) ? ctx.logger : undefined;
-    if (isRecord(logger) && typeof logger.info === "function") {
-      Reflect.apply(logger.info, logger, [line.trimEnd()]);
-    }
-    // Also to a FILE: the host terminal has shown none of this plugin's log
-    // output, so a file is the one channel that can be read back. TEMPORARY.
-    try {
-      appendFileSync("/tmp/dsh-opencode-patch.log", line);
-    } catch {
-      // A missing /tmp write must not break registration.
-    }
-  };
-  if (!hasInject(ctx)) {
-    say("ctx.inject is unavailable; no remote face registered");
-    return;
-  }
-  say("waiting for the typert service to register the remote face");
-  ctx.inject(["typert"], (scope: unknown) => {
-    if (!isRecord(scope)) {
-      say("typert scope is not an object; no remote face registered");
-      return;
-    }
-    // `effect` comes from the PLUGIN context, not the injected scope. The scope
-    // handed to an inject callback is not guaranteed to carry it, and when it did
-    // not the registration was skipped — which the file log showed as
-    // "typert scope has no effect()" on every run after a successful one.
-    if (!isFunctionLike(effect)) {
-      say("ctx.effect is unavailable; no remote face registered");
-      return;
-    }
-    say("typert resolved; registering the remote face");
-    const registerDescriptor = (): void => {
-      // From the PLUGIN context, like `effect` above — the injected scope is not
-      // guaranteed to carry the service, and the file log showed exactly that:
-      // "typert.register is unavailable".
-      const typert: unknown = isRecord(ctx)
-        ? Reflect.get(ctx, "typert")
-        : undefined;
-      if (!isRecord(typert) || !isFunctionLike(typert.register)) {
-        say("typert.register is unavailable; no remote face registered");
-        return;
-      }
-      const { register } = typert;
-      try {
-        Reflect.apply(register, typert, [
-          {
-            face: "host",
-            invocations: usageRemote.descriptors,
-            model: { events: [], objects: [], services: [] },
-            package: usageRemote.package,
-            schemas: [],
-          },
-        ]);
-        say("remote face registered");
-      } catch (error) {
-        // TEMPORARY: `register` validates the package, the schemas and every
-        // invocation, so a rejection here is the likeliest reason the client
-        // never sees the namespace — and it would otherwise be silent.
-        say(
-          `typert.register rejected: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    };
-    try {
-      Reflect.apply(effect, ctx, [registerDescriptor]);
-    } catch (error) {
-      say(
-        `effect threw: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  });
-};
+Object.defineProperty(GoUsageService.prototype, REMOTE_METHOD_DESCRIPTOR_KEY, {
+  configurable: true,
+  value: Object.freeze({
+    version: 1,
+    methods: Object.freeze([
+      { method: "read", invocation: { kind: "direct" } },
+    ]),
+  }),
+});
