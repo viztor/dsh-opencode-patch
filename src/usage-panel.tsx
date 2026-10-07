@@ -67,9 +67,16 @@ export const UsageTrigger = ({
           🪙
         </span>
         <span>
-          {showUsagePrice &&
-          usage?.session !== undefined &&
-          usage.session.costUsd > 0
+          {/*
+            Session spend, shown even when it is zero. The previous condition
+            required `costUsd > 0`, so a fresh session fell through to
+            `zenPaygTitle` and the trigger read "OpenCode Zen" — a label, where
+            the user wanted a number. Zero is the honest number for a session that
+            has not spent anything, and it is the only real figure available: Zen
+            balance has no endpoint (`ZenCreditInfo` is `{ isConfigured: boolean }`,
+            which is why the panel row says "Active" rather than an amount).
+          */}
+          {showUsagePrice && usage?.session !== undefined
             ? usage.session.costFormatted
             : t("zenPaygTitle")}
         </span>
