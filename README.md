@@ -214,7 +214,7 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 
 #### Mode A — OpenCode Go (`opencode-go`)
 
-- **Adaptive bottleneck ring**: a real-time SVG ring showing the currently _limiting_ window (`42%`, `80%`, or `100%` when rate-limited).
+- **Adaptive bottleneck ring**: a real-time SVG ring showing the currently _limiting_ window (`42%`, `80%`, or `100%` when rate-limited). On a **free model** the ring renders hollow in the muted track colour — the plan's limit says nothing about a bill that cannot be charged, and red against `$0.00` would read as "you are out of money".
 - **Semantic colors**: green below 80% (`--dsw-alias-state-success-primary`), amber at ≥80% (`--dsw-alias-state-warn-primary`), red at the cap (`--dsw-alias-state-error-primary`).
 - **Click panel**: three window rows with live reset countdowns, a session-spend row, a Zen-overflow row, a rate-limited alert, and act-on-it links. Hovering the trigger shows a `Tooltip` with the headline instead of opening the panel.
 
@@ -222,11 +222,11 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 ┌──────────────────────────────────────────────┐
 │  OpenCode Go                          [Go Plan]│
 ├──────────────────────────────────────────────┤
-│  • 5 hours                               42% │
+│  • 5 hours        ███████░░░░░░░░░    42% │
 │    Resets 3h 12m                             │
-│  • Weekly                                18% │
+│  • Weekly         ███░░░░░░░░░░░░░    18% │
 │    Resets 5d 8h                              │
-│  • Monthly                               65% │
+│  • Monthly        █████████████░░░    65% │
 │    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
 │  Monthly allowance                           │
