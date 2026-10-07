@@ -353,7 +353,14 @@ export const UsagePanel = ({
     {/* Failure Alert */}
     {failure !== null && (
       <div className="dsh-oc-usage-warning" role="alert">
-        <strong>{t("usageRefreshFailed")}</strong>
+        {/* A rejected credential is not a failed refresh, so it does not borrow
+            the refresh copy: the heading tells the user WHICH state they are in
+            and what to do, and the raw HTTP message stays as the detail. */}
+        <strong>
+          {failure.reason === "auth"
+            ? t("usageAuthRejected")
+            : t("usageRefreshFailed")}
+        </strong>
         <p>{failure.message ?? t("usageUnavailable")}</p>
       </div>
     )}

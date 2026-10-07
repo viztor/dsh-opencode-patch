@@ -317,6 +317,27 @@ describe("UsagePanel", () => {
     );
   });
 
+  it("gives a rejected credential its own heading, not the refresh one", () => {
+    // "Refresh failed" and "this key is not accepted" are different facts, and
+    // only the second one tells the user what to do about it.
+    const auth = UsagePanel(
+      panelProps({
+        usage: usage(),
+        failure: { reason: "auth", message: "rejected", retainPrevious: false },
+      })
+    );
+    expect(collectText(auth)).toContain("t:usageAuthRejected");
+    expect(collectText(auth)).not.toContain("t:usageRefreshFailed");
+
+    const outage = UsagePanel(
+      panelProps({
+        usage: usage(),
+        failure: { message: "boom", retainPrevious: false },
+      })
+    );
+    expect(collectText(outage)).toContain("t:usageRefreshFailed");
+  });
+
   it("spaces the actions apart and styles them as host links", () => {
     // The row had no stylesheet rule at all, so the anchors fell back to the UA
     // default — purple, solid underline, no gap — and the three labels ran

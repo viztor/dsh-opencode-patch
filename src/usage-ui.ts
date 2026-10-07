@@ -689,6 +689,8 @@ export interface UsageFailure {
   configured?: boolean;
   message?: string;
   retainPrevious: boolean;
+  /** Why the read failed; `auth` is a rejected credential, not an outage. */
+  reason?: string;
   source?: string;
 }
 
@@ -708,6 +710,7 @@ export const parseFailure = (error: unknown): UsageFailure => {
         "message" in error && typeof error.message === "string"
           ? error.message
           : undefined,
+      reason: typeof details.reason === "string" ? details.reason : undefined,
       retainPrevious:
         details.retryable === true && details.retainPrevious === true,
       source: typeof details.source === "string" ? details.source : undefined,

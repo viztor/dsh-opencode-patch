@@ -425,6 +425,22 @@ describe("usage-pill: derived copy & failure parsing", () => {
     });
   });
 
+  it("carries a rejected-credential reason through to the panel", () => {
+    // Without `reason` the panel renders this as a failed REFRESH, which is a
+    // different fact from "this credential is not one the endpoint accepts".
+    expect(
+      parseFailure({
+        code: "opencode-go/usage-unavailable",
+        details: { reason: "auth", retainPrevious: false, retryable: false },
+        message: "rejected",
+      })
+    ).toEqual({
+      message: "rejected",
+      reason: "auth",
+      retainPrevious: false,
+    });
+  });
+
   it("falls back to a plain message for an untyped error", () => {
     expect(parseFailure(new Error("boom"))).toEqual({
       message: "boom",
