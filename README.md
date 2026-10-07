@@ -244,22 +244,21 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 #### Mode B — OpenCode Zen (`opencode`)
 
 - **Zen trigger**: the same ring, carrying the session's accumulated spend as its label (`$0.00` before anything has been priced, `$0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
-- **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, an explanation of per-token billing, the session-spend card (when the price switch is on), and direct links to the [OpenCode Console](https://opencode.ai/console) and [Pricing](https://opencode.ai/pricing).
+- **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, the session-spend card (when the price switch is on), and direct links to the [OpenCode Console](https://opencode.ai/console) and [Pricing](https://opencode.ai/pricing).
 
 ```
-┌──────────────────────────────────────────────┐
-│  OpenCode Zen                [Pay-as-you-go] │
-│  Per-token pay-as-you-go inference           │
-├──────────────────────────────────────────────┤
-│  AVAILABLE ZEN BALANCE                       │
-│  Per-token pay-as-you-go inference    Active │
-├──────────────────────────────────────────────┤
-│  Last updated 08:30              [ Retry ]   │
-│  Upgrade plan · Console & balance · Doc      │
-└──────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│  OpenCode Zen                [Pay-as-you-go]  │
+├───────────────────────────────────────────────┤
+│  SESSION SPEND                                │
+│  mimo-v2.6-flash · $0.14 / $0.28 per 1M  $0.14│
+├───────────────────────────────────────────────┤
+│  Last updated 08:30              [ Retry ]    │
+│  Upgrade plan · Console & balance · Doc       │
+└───────────────────────────────────────────────┘
 ```
 
-**Zen balance & overflow.** If an `OPENCODE_API_KEY` (or `oc_sk_…`) is configured, Zen pay-as-you-go is detected automatically and overflow is marked **Ready**. Balances change with every generated token, so the popover links straight to the [OpenCode Console](https://opencode.ai/console) instead of freezing a stale number in the UI.
+**Zen balance & overflow.** If an `OPENCODE_API_KEY` (or `oc_sk_...`) is configured, Zen pay-as-you-go is detected automatically. The Zen panel carries **no balance row**: OpenCode exposes that balance only through console server actions that need a browser session, so the panel links straight to the [OpenCode Console](https://opencode.ai/console) rather than freeze a number it cannot keep current. The balance row lives on the **Go** panel instead, where it answers a question the panel can answer — whether an over-limit Go request will really be billed to that balance.
 
 ---
 

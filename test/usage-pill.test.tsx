@@ -314,7 +314,6 @@ describe("usage-pill: derived copy & failure parsing", () => {
     expect(copy.headline).toBe("80% of Weekly used");
     expect(copy.badgeText).toBe("Go Plan");
     expect(copy.zenCardDesc).toBe("t:zenOverflowActive");
-    expect(copy.zenCardCredit).toBe("t:zenPaygBadge");
   });
 
   it("flags a rate-limited window in the headline and badge", () => {
@@ -328,15 +327,18 @@ describe("usage-pill: derived copy & failure parsing", () => {
   });
 
   it("switches the copy to pay-as-you-go on a Zen route", () => {
+    // The badge is the ONLY place the billing model is said: the Zen panel used
+    // to repeat it in a subtitle and again in a balance row that had no balance
+    // behind it (OpenCode exposes no such endpoint).
     const usage = createMockUsage({ zenOverflow: true });
     const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
     expect(copy.headline).toBe("t:zenPaygTitle");
     expect(copy.badgeText).toBe("t:zenPaygBadge");
-    expect(copy.zenCardDesc).toBe("t:zenPaygDesc");
-    expect(copy.zenCardCredit).toBe("t:zenPaygBadge");
   });
 
   it("reports Zen overflow as Ready until the plan is actually limited", () => {
+    // The card renders only once overflow is on, so `Ready` is what a healthy
+    // Go plan with a Zen key shows, and `Active` what a limited one shows.
     const usage = createMockUsage({ zenOverflow: true });
     expect(
       describeUsage(usage, getAffectingWindow(usage), false, t).zenCardCredit
