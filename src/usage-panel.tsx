@@ -61,52 +61,34 @@ export const UsageTrigger = ({
     onClick={onClick}
     type="button"
   >
-    {isZen ? (
-      <span className="dsh-oc-zen-pill">
-        <span aria-hidden="true" style={{ fontSize: "11px" }}>
-          🪙
-        </span>
-        <span>
-          {/*
-            Session spend, shown even when it is zero. The previous condition
-            required `costUsd > 0`, so a fresh session fell through to
-            `zenPaygTitle` and the trigger read "OpenCode Zen" — a label, where
-            the user wanted a number. Zero is the honest number for a session that
-            has not spent anything, and it is the only real figure available: Zen
-            balance has no endpoint (`ZenCreditInfo` is `{ isConfigured: boolean }`,
-            which is why the panel row says "Active" rather than an amount).
-          */}
-          {showUsagePrice && usage?.session !== undefined
-            ? usage.session.costFormatted
-            : t("zenPaygTitle")}
-        </span>
-      </span>
-    ) : (
-      <>
-        <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
-          <circle
-            className="dsh-oc-usage-ring-track"
-            cx="7"
-            cy="7"
-            r={RADIUS}
-          />
-          {/*
-            Quota colors are CSS custom properties, which do not resolve in SVG
-            presentation attributes — apply the token through `style` instead.
-          */}
-          <circle
-            className="dsh-oc-usage-ring-fill"
-            cx="7"
-            cy="7"
-            r={RADIUS}
-            strokeDasharray={strokeDasharray}
-            style={{ stroke: ringColor }}
-            transform="rotate(-90 7 7)"
-          />
-        </svg>
-        <span>{triggerLabel}</span>
-      </>
-    )}
+    {/*
+      The ring is the trigger, for both providers. Zen used to render a coin emoji
+      here instead, which the user asked to be removed — and which renders as a
+      moon in some font stacks, so it did not even read as a coin. Zen has no quota
+      windows of its own, so its ring tracks whatever the API reports and the label
+      carries the session spend.
+    */}
+    <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+      <circle className="dsh-oc-usage-ring-track" cx="7" cy="7" r={RADIUS} />
+      {/*
+        Quota colors are CSS custom properties, which do not resolve in SVG
+        presentation attributes — apply the token through `style` instead.
+      */}
+      <circle
+        className="dsh-oc-usage-ring-fill"
+        cx="7"
+        cy="7"
+        r={RADIUS}
+        strokeDasharray={strokeDasharray}
+        style={{ stroke: ringColor }}
+        transform="rotate(-90 7 7)"
+      />
+    </svg>
+    <span>
+      {isZen && showUsagePrice && usage?.session !== undefined
+        ? usage.session.costFormatted
+        : triggerLabel}
+    </span>
   </button>
 );
 

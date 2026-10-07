@@ -7,6 +7,7 @@
  * @module dsh-opencode-patch/usage-pill
  */
 
+import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import React, {
   useEffect,
   useRef,
@@ -217,13 +218,16 @@ const ActiveUsage = ({
     };
   }, [open]);
 
+  /**
+   * Hovering no longer opens the panel — it only cancels a pending close, so
+   * moving from the trigger onto the panel keeps it open. The panel is opened by
+   * a click, and hovering the trigger shows a `Tooltip` instead.
+   */
   const handleMouseEnter = (): void => {
     if (hoverTimer.current !== null) {
       clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
     }
-    hoverTimer.current = setTimeout(() => {
-      setOpen(true);
-    }, 120);
   };
 
   const handleMouseLeave = (): void => {
@@ -288,21 +292,24 @@ const ActiveUsage = ({
         the component unmounts; nothing is appended to `document.head`.
       */}
       <style>{STYLES}</style>
-      <UsageTrigger
-        displayPercent={displayPercent}
-        isLimited={isLimited}
-        isZen={isZen}
-        onClick={() => {
-          setOpen((prev) => !prev);
-        }}
-        open={open}
-        ringColor={ringColor}
-        showUsagePrice={showUsagePrice}
-        strokeDasharray={strokeDasharray}
-        t={t}
-        triggerLabel={triggerLabel}
-        usage={usage}
-      />
+      {/* Hover explains; the click opens the panel. */}
+      <Tooltip label={headline} side="top">
+        <UsageTrigger
+          displayPercent={displayPercent}
+          isLimited={isLimited}
+          isZen={isZen}
+          onClick={() => {
+            setOpen((prev) => !prev);
+          }}
+          open={open}
+          ringColor={ringColor}
+          showUsagePrice={showUsagePrice}
+          strokeDasharray={strokeDasharray}
+          t={t}
+          triggerLabel={triggerLabel}
+          usage={usage}
+        />
+      </Tooltip>
       {open && (
         <UsagePanel
           badgeText={badgeText}
