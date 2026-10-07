@@ -272,12 +272,8 @@ const ActiveUsage = ({
   const locale = getLocale?.();
 
   // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
-  const { badgeText, headline, zenCardCredit, zenCardDesc } = describeUsage(
-    usage,
-    affecting,
-    isZen,
-    t
-  );
+  const { badgeText, headline, tooltip, zenCardCredit, zenCardDesc } =
+    describeUsage(usage, affecting, isZen, t);
 
   return (
     <span
@@ -304,7 +300,7 @@ const ActiveUsage = ({
         showUsagePrice={showUsagePrice}
         strokeDasharray={strokeDasharray}
         t={t}
-        tooltipLabel={headline}
+        tooltipLabel={tooltip}
         triggerLabel={triggerLabel}
         usage={usage}
       />

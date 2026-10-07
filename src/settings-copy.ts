@@ -79,6 +79,7 @@ export const en = {
   zenCredit: "Available Zen Balance",
   zenFallbackNotice: "Requests will automatically consume Zen balance",
   zenOverflowActive: "Zen balance ready for overflow",
+  zenNoQuotaWindow: "Metered per token, no quota window",
   zenPaygBadge: "Pay-as-you-go",
   zenPaygTitle: "OpenCode Zen",
 };
@@ -156,6 +157,7 @@ export const zh: Record<keyof typeof en, string> = {
   zenCredit: "可用 Zen 余额",
   zenFallbackNotice: "请求将自动从 Zen 余额中扣除",
   zenOverflowActive: "Zen 余额已就绪，将在额度用尽时自动承接",
+  zenNoQuotaWindow: "按 Token 计量，无额度窗口",
   zenPaygBadge: "按量计费",
   zenPaygTitle: "OpenCode Zen",
 };

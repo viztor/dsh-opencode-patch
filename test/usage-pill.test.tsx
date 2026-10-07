@@ -11,6 +11,7 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
+import type { SessionUsageSnapshot } from "../src/session-cost.ts";
 import type { GoUsage } from "../src/usage-contract.ts";
 import {
   type ModelDirectoryState,
@@ -50,6 +51,18 @@ const createMockUsage = (overrides?: Partial<GoUsage>): GoUsage => ({
 /** ISO timestamp `offsetMs` from now — negative is in the past. */
 const isoAt = (offsetMs: number): string =>
   new Date(Date.now() + offsetMs).toISOString();
+
+/** A priced session, as the Host reports it back to the meter. */
+const session = (costFormatted: string): SessionUsageSnapshot => ({
+  cacheReadTokens: 0,
+  costFormatted,
+  costUsd: 0.42,
+  inputTokens: 10,
+  modelsUsed: ["mimo-v2.6-flash"],
+  outputTokens: 20,
+  totalTokens: 30,
+  turns: 1,
+});
 
 describe("usage-pill: helper functions & calculations", () => {
   it("formats relative countdown timers accurately", () => {
@@ -334,6 +347,30 @@ describe("usage-pill: derived copy & failure parsing", () => {
     const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
     expect(copy.headline).toBe("t:zenPaygTitle");
     expect(copy.badgeText).toBe("t:zenPaygBadge");
+  });
+
+  it("gives the Zen trigger a tooltip worth reading, not the plan's name", () => {
+    // The pill shows session spend, so the plan name says nothing the trigger
+    // does not already imply — and there is no balance or remaining-quota
+    // figure to offer, because OpenCode exposes neither. So the tooltip says
+    // there is no quota window and names what the number on screen is.
+    const usage = createMockUsage({ session: session("$0.42") });
+    const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
+    expect(copy.tooltip).toBe("t:zenNoQuotaWindow · t:sessionSpend $0.42");
+
+    // Before the first priced turn the spend is absent, not undefined text.
+    const fresh = createMockUsage();
+    expect(
+      describeUsage(fresh, getAffectingWindow(fresh), true, t).tooltip
+    ).toBe("t:zenNoQuotaWindow · t:sessionSpend $0.00");
+
+    // Go keeps the ring's own figure: the tooltip explains what the ring means.
+    const go = createMockUsage({
+      weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
+    });
+    expect(describeUsage(go, getAffectingWindow(go), false, t).tooltip).toBe(
+      "80% of Weekly used"
+    );
   });
 
   it("reports Zen overflow as Ready until the plan is actually limited", () => {
