@@ -144,6 +144,19 @@ describe("UsageTrigger", () => {
     );
   });
 
+  it("draws the badge with the host's Tag, not a hand-rolled span", () => {
+    // The hand-rolled version used the HOVER fill token as its resting
+    // background, so the chip sat permanently lit. `neutral` is the host's plain
+    // label and `danger` its limit tone.
+    const plain = UsagePanel(panelProps({ usage: usage() }));
+    const [tag] = findAllOf(plain, new Set(["Tag"]));
+    expect(tag?.props.tone).toBe("neutral");
+    expect(collectText(plain)).toContain("Go Plan");
+
+    const limited = UsagePanel(panelProps({ isLimited: true, usage: usage() }));
+    expect(findAllOf(limited, new Set(["Tag"]))[0]?.props.tone).toBe("danger");
+  });
+
   it("is ghost at rest and tinted only on hover", () => {
     // The composer's own controls carry no fill, and a tinted pill beside the
     // model selector reads as a chip with a frame of its own. The tint is the

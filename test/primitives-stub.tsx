@@ -201,8 +201,20 @@ export function Switch(props: KitProps) {
   return { props, type: "Switch" };
 }
 
-export function Tag(props: KitProps) {
-  return { props, type: "Tag" };
+/**
+ * Real elements, like `Tooltip` below: the settings tests only walk this tree,
+ * but the meter's mount test RENDERS its panel — and the panel draws the badge
+ * with `Tag`, so a `{props, type}` object here would fail as "Element type is
+ * invalid" exactly the way the missing `Tooltip` did.
+ *
+ * Mirrors the host: a span, a `data-tone`, the children through.
+ */
+export function Tag({ children, tone = "outline" }: KitProps) {
+  return (
+    <span className="dsh-stub-tag" data-tone={tone}>
+      {children}
+    </span>
+  );
 }
 
 export function SegmentedControl(props: KitProps) {

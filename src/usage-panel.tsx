@@ -6,7 +6,7 @@
  * @module dsh-opencode-patch/usage-panel
  */
 
-import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Tag, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
@@ -178,11 +178,12 @@ export const UsagePanel = ({
     */}
     <div className="dsh-oc-usage-header">
       <div className="dsh-oc-usage-headline">{headline}</div>
-      <span
-        className={`dsh-oc-usage-badge${isLimited && !isZen ? " dsh-oc-badge-limited" : ""}`}
-      >
-        {badgeText}
-      </span>
+      {/*
+        The host's own chip, not a look-alike: a hand-rolled span here used the
+        HOVER fill token as its resting background, so it sat permanently lit.
+        `danger` is the host's tone for a limit; `neutral` is a plain label.
+      */}
+      <Tag tone={isLimited && !isZen ? "danger" : "neutral"}>{badgeText}</Tag>
     </div>
 
     {!isZen && (
