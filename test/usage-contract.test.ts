@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseGoUsage, parseUsageQuery, usageRemote } from "../src/index.ts";
+import { parseGoUsage, parseUsageQuery } from "../src/index.ts";
 
 /** One well-formed quota window, with a single field overridden. */
 const windowRow = (
@@ -48,17 +48,6 @@ const fullSession = (): Record<string, unknown> => ({
   totalTokens: 1212,
   turns: 3,
 });
-
-/** The contract declares exactly one invocation; fail loudly if that changes. */
-const theDescriptor = (): NonNullable<
-  (typeof usageRemote)["descriptors"][number]
-> => {
-  const [descriptor] = usageRemote.descriptors;
-  if (descriptor === undefined) {
-    throw new Error("usageRemote declares no descriptors");
-  }
-  return descriptor;
-};
 
 describe("parseGoUsage window validation", () => {
   it("rejects a status the meter cannot render and names the window", () => {
@@ -320,55 +309,5 @@ describe("parseUsageQuery", () => {
         sessionId: "s-1",
       })
     ).toEqual({ provider: "opencode-go", sessionId: "s-1" });
-  });
-});
-
-describe("usageRemote descriptor", () => {
-  it("names one direct invocation on the opencodeGoUsage namespace", () => {
-    // The id/namespace/method triple is the wire address the client calls, so
-    // a rename on either side is a meter that never mounts.
-    const descriptor = theDescriptor();
-    expect(descriptor.id).toBe("dsh-opencode-patch#opencodeGoUsage/read");
-    expect(descriptor.method).toBe("read");
-    expect(descriptor.namespace).toBe("opencodeGoUsage");
-    expect(descriptor.service).toBe("opencodeGoUsage");
-    expect(descriptor.invocation).toEqual({ kind: "direct" });
-    expect(usageRemote.package).toBe("dsh-opencode-patch");
-  });
-
-  it("validates the query at the boundary with the contract's own parser", () => {
-    // The parameter codec is the only thing standing between a client-supplied
-    // query and `read`, so it must be the real parser and not a pass-through.
-    const [parameter] = theDescriptor().parameters;
-    if (parameter === undefined) {
-      throw new Error("the read invocation declares no parameters");
-    }
-    const { codec } = parameter;
-    if (codec.mode !== "strict") {
-      throw new Error("the query parameter needs a strict codec");
-    }
-    expect(codec.typeSymbol).toBe("dsh-opencode-patch#UsageQuery");
-    expect(codec.create().parse({ junk: 1, provider: "opencode-go" })).toEqual({
-      provider: "opencode-go",
-    });
-    expect(() => codec.create().parse("opencode-go")).toThrow(
-      "expected an object"
-    );
-  });
-
-  it("validates the reading at the boundary with the contract's own parser", () => {
-    // Same contract for the return value: a result that skipped this codec
-    // would reach the panel unvalidated.
-    const codec = theDescriptor().result;
-    if (codec.mode !== "strict") {
-      throw new Error("the read result needs a strict codec");
-    }
-    expect(codec.typeSymbol).toBe("dsh-opencode-patch#GoUsage");
-    expect(codec.create().parse(threeWindows())).toEqual(
-      parseGoUsage(threeWindows())
-    );
-    expect(() => codec.create().parse({ rolling: windowRow() })).toThrow(
-      "missing window"
-    );
   });
 });

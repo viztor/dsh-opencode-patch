@@ -44,7 +44,7 @@ import { registerResponsesProvider } from "./responses-provider.ts";
 import { isServableSdk } from "./responses-routes.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
-import { GoUsageService, registerUsageRemotes } from "./usage.ts";
+import { GoUsageService } from "./usage.ts";
 
 /**
  * One catalog row in the shape DSH's model-discovery surface expects.
@@ -101,7 +101,6 @@ const installUsageService = (
     baseURL: () => resolveGoBaseURL(ctx, config.usageBaseURL),
     keySource: config.keySource,
   });
-  registerUsageRemotes(ctx);
 };
 
 /**

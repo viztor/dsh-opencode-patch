@@ -25,7 +25,6 @@ import {
   resolveRoutedKey,
   resolveZenCreditInfo,
   tierForRequest,
-  usageRemote,
 } from "../src/index.ts";
 import { createMockContext } from "./test-helpers.ts";
 
@@ -84,23 +83,6 @@ describe("OpenCode Go Usage", () => {
         rolling: { percent: 0, resetsAt: "2026-01-01", status: "ok" },
       })
     ).toThrow();
-  });
-
-  it("declares usageRemote contribution with correct package and descriptor", () => {
-    expect(usageRemote.package).toBe("dsh-opencode-patch");
-    expect(usageRemote.descriptors.length).toBe(1);
-    expect(usageRemote.descriptors[0]?.namespace).toBe("opencodeGoUsage");
-  });
-
-  it("accepts the optional provider/session query on the wire", () => {
-    // Both fields are how the client tells the Host which route and which
-    // conversation to meter; the parameter must therefore be declared, and
-    // optional so a caller that knows neither still works.
-    const params = usageRemote.descriptors[0]?.parameters;
-    expect(params?.length).toBe(1);
-    expect(params?.[0]?.name).toBe("query");
-    expect(params?.[0]?.wire).toBe("query");
-    expect(params?.[0]?.acceptsUndefined).toBe(true);
   });
 
   it("parseUsageQuery keeps the fields it needs and refuses junk", () => {

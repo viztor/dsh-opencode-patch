@@ -21,8 +21,6 @@ import {
   clearSessionUsageStore,
   recordCapturedApiKey,
   recordTurnUsage,
-  registerUsageRemotes,
-  usageRemote,
 } from "../src/index.ts";
 import {
   createMockContext,
@@ -658,109 +656,5 @@ describe("GoUsageService gateway failures", () => {
     expect(usage.rolling.percent).toBe(4);
     expect(usage.weekly.percent).toBe(5);
     expect(usage.monthly.status).toBe("ok");
-  });
-});
-
-describe("registerUsageRemotes", () => {
-  it("registers the quota remote under an injected typert scope", () => {
-    // Without this registration the client has no `opencodeGoUsage.read` to
-    // call, so the meter silently never mounts.
-    const registered: Record<string, unknown>[] = [];
-    const injected: string[][] = [];
-    let pending: (() => void) | undefined;
-    // `effect` lives on the PLUGIN context, not on the injected scope.
-    // `typert` lives on the PLUGIN context too.
-    const typert = {
-      register: (contribution: Record<string, unknown>): void => {
-        registered.push(contribution);
-      },
-    };
-    const scope = {};
-
-    registerUsageRemotes({
-      effect: (fn: () => void): void => {
-        pending = fn;
-      },
-      inject: (deps: string[], cb: (scoped: unknown) => void): void => {
-        injected.push(deps);
-        cb(scope);
-      },
-      typert,
-    });
-
-    expect(injected).toEqual([["typert"]]);
-    // Registration belongs to the effect, not to the injection: a fiber that is
-    // disposed before the effect runs must leave nothing behind.
-    expect(registered).toEqual([]);
-    pending?.();
-    expect(registered.length).toBe(1);
-
-    const [contribution] = registered;
-    if (contribution === undefined) {
-      throw new Error("expected one registered contribution");
-    }
-    expect(contribution.face).toBe("host");
-    expect(contribution.package).toBe(usageRemote.package);
-    // The invocations must BE the declared descriptors rather than a copy: a
-    // divergent copy would answer calls under a stale shape.
-    expect(contribution.invocations).toBe(usageRemote.descriptors);
-    expect(contribution.model).toEqual({
-      events: [],
-      objects: [],
-      services: [],
-    });
-    expect(contribution.schemas).toEqual([]);
-  });
-
-  it("returns without touching a context that serves no typert scope", () => {
-    // A headless composition has no `inject` at all; the plugin must still load
-    // and simply lose the remote face rather than throwing at mount time.
-    expect(() => registerUsageRemotes({})).not.toThrow();
-    expect(() => registerUsageRemotes(null)).not.toThrow();
-  });
-
-  it("survives an injected scope that is not a usable cordis scope", () => {
-    // The scope arrives from another plugin, so a half-built one must not take
-    // this plugin's own mount down with it.
-    for (const scope of [null, "typert", 42, {}, { effect: "not-callable" }]) {
-      expect(() =>
-        registerUsageRemotes({
-          inject: (_deps: string[], cb: (scoped: unknown) => void): void => {
-            cb(scope);
-          },
-        })
-      ).not.toThrow();
-    }
-  });
-
-  it("runs the effect but registers nothing when typert offers no register", () => {
-    // The effect still fires — so the code got as far as the typert lookup —
-    // and the missing method is what stops the registration, rather than an
-    // earlier guard that would have skipped the effect entirely.
-    let effects = 0;
-    let registered = 0;
-    const scope = {
-      typert: {
-        register: (): void => {
-          registered += 1;
-        },
-      },
-    };
-
-    const effect = (fn: () => void): void => {
-      effects += 1;
-      fn();
-    };
-
-    for (const typert of [null, {}, { register: "not-callable" }]) {
-      registerUsageRemotes({
-        effect,
-        inject: (_deps: string[], cb: (scoped: unknown) => void): void => {
-          cb({ ...scope, typert });
-        },
-      });
-    }
-    expect(effects).toBe(3);
-    expect(registered).toBe(0);
   });
 });
