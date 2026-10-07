@@ -390,3 +390,24 @@ What does **not** exist: `balance`, `credits`, `billing`, `account`, `me`, `key`
 `GET {go}/usage` returns `{ usage: { rolling, weekly, monthly } }` (or unwrapped), each window exactly `{ status: "ok" | "rate-limited", percent: 0–100, resetsAt: ISO }` — percentages only, no currency, and **no hourly window**: `rolling` is the short one. Request headers: `Authorization: Bearer <go key>`, `Accept: application/json`, `User-Agent: opencode/1.18.33 dsh-opencode-patch`, `x-opencode-client: cli`, `x-opencode-project: global`, 10 s timeout, `redirect: error`, 1 MiB cap.
 
 Overage is **inferred, never queried**: a `403` carrying `EntitlementError` plus a configured Zen key yields `zenOverflowUsage()` (`zenOverflow: true`, all windows 0%). `resolveZenCreditInfo` therefore answers "can Go overflow into Zen credit?", not "how much is left" — it makes no HTTP call, because there is nothing to call. No balance number is possible either: the monthly cap is per _model_ ($15/$30/$60 Go, $60–$240 Go Plus) while usage accrues _across_ models, so a dollar figure cannot be derived from a percentage. The console is the only place it shows.
+
+## Publishing the quota remote: three pieces, none of which works alone
+
+The meter renders nothing unless all three are in place. Each was tried in isolation and each failed in a way that looked unrelated to the others, so this is written down rather than rediscovered.
+
+**1. The Host method needs a Remote marker.** The Gateway finds remotes by source-mode discovery: for every service in `ctx.reflect.props` it reads `original.typertRemote` and then `remoteMethods(original)`, which reads a descriptor off the prototype (`packages/api/gateway/src/index.ts`, `collectSrcClaims`). No marker means no claim, so `opencodeGoUsage/read` is not an endpoint at all.
+
+The sanctioned form is `@Remote()` on the method. It cannot be used here: the build transform is oxc/rolldown based and rejects TC39 decorator syntax outright (`SyntaxError: Invalid or unexpected token`), and `esbuild: { target: "esnext" }` is ignored by it — at the top level of `vite.config.ts` and inside the `test` block alike. The decorator has no magic: it registers an instance initializer that calls `mark(prototype, method, invocation)`, and `mark` only writes one property whose key is a plain string constant (`@deepseek-ai/dsh-typert-protocol/remote-methods`). So `src/usage.ts` writes that property directly. Swap it for the decorator the moment the transform accepts one.
+
+**2. The client mounts its own contribution.** Source-mode discovery only makes the endpoint callable on the Host; it does not install `ctx.remote.opencodeGoUsage` in the browser. Every official plugin mounts its own contribution in its client `apply()` — `ctx.remote.$mount(contribution)` (`api/remotes/src/client/index.ts`). The contribution object is `usageRemote` in `src/usage-contract.ts`.
+
+**3. The namespace is declared in `ctx.inject`, never in `inject`.** cordis refuses a service read the caller never declared (`cannot get property "remote.opencodeGoUsage" without inject`). Where that name goes is the whole question, and the two mechanisms are not interchangeable:
+
+| mechanism | behaviour |
+| --- | --- |
+| top-level `export const inject` | hard gate — a missing name stops the entire plugin activating (`web boot: 1 entry did not activate: pending (waiting for service: …)`) |
+| `ctx.inject(deps, cb)` | scoped wait — runs `cb` once the services appear, never gates activation |
+
+The namespace belongs in the scoped call, alongside `modelDirectories`, `remote` and `slots`. There is no deadlock from the mount being async: the mount is an effect, registered synchronously in `apply` and completed asynchronously, so the scoped wait resolves after it.
+
+**Comments ship in `lib/client.js`.** Rationale of this length belongs here, not beside the code — the client bundle has a 64 KiB budget that is a release gate in `scripts/check.ts`.
