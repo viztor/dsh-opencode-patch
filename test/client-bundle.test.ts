@@ -208,11 +208,11 @@ describe("client-bundle: artifact & VM loader boundary", () => {
       "configForms",
       "modelDirectories",
       "remote",
-      // Each is its own key, not a property of `remote`: cordis matches service
-      // names exactly. `directoryFor` reads remote.session internally, and the
-      // meter reads its own remote.
+      // Its own key, not a property of `remote`: cordis matches service names
+      // exactly, and `directoryFor` reads this one internally. Our own remote is
+      // NOT listed — as an inject key it is a hard dependency and the plugin would
+      // wait forever for a name this client's registry does not carry.
       "remote.session",
-      "remote.opencodeGoUsage",
     ]);
     expect(typeof exports.apply).toBe("function");
   });
