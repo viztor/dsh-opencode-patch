@@ -80,7 +80,6 @@ export const en = {
   zenFallbackNotice: "Requests will automatically consume Zen balance",
   zenOverflowActive: "Zen balance ready for overflow",
   zenPaygBadge: "Pay-as-you-go",
-  zenPaygDesc: "Per-token pay-as-you-go inference",
   zenPaygTitle: "OpenCode Zen",
 };
 
@@ -158,7 +157,6 @@ export const zh: Record<keyof typeof en, string> = {
   zenFallbackNotice: "请求将自动从 Zen 余额中扣除",
   zenOverflowActive: "Zen 余额已就绪，将在额度用尽时自动承接",
   zenPaygBadge: "按量计费",
-  zenPaygDesc: "按 Token 实际用量计费",
   zenPaygTitle: "OpenCode Zen",
 };
 

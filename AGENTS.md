@@ -67,6 +67,8 @@ The panel's action row had **no CSS rule at all**, so its three anchors fell bac
 
 General rule, and the second time this repo has paid for it: **a surface with no rule of its own inherits the browser's**, which ignores the theme entirely. An invented `--color-*` name does the same thing more quietly.
 
+**Then the copy: the Zen panel said `按量计费` three times.** The badge, a subtitle under the header, and the value of an "Available Zen Balance" row — with the per-token explanation printed under the header _and_ under that row. None of it was wrong; all of it repeated. The panel says the billing model once now, in the badge, which is where the Go panel puts its own (`Go Plan` / the limit notice), and **the Zen card moved to the Go panel alone**: it answers "where does an over-limit Go request get billed?", and on a Zen route you are already paying per token with no balance to report — OpenCode exposes none. That is the test for a row here: _what question does this row answer, and can the panel answer it?_ A row that restates the badge answers nothing. `describeUsage` followed — its Zen branches were computing copy nothing rendered any more.
+
 ## Repo map
 
 Host bundle (`lib/index.mjs`) — a thin `apply` barrel over small modules:
