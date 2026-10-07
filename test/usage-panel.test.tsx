@@ -23,10 +23,13 @@ import {
   GO_CONSOLE_URL,
   GO_LIMITS_DOC_URL,
   GO_PLAN_URL,
+  STYLES,
 } from "../src/usage-ui.ts";
 import {
+  childrenOf,
   collectText,
   findAll,
+  findAllOf,
   findAllWhere,
   firstOf,
   type TestElement,
@@ -73,6 +76,7 @@ const triggerProps = (
   showUsagePrice: true,
   strokeDasharray: "3 34",
   t,
+  tooltipLabel: "42% of Weekly used",
   triggerLabel: "42%",
   usage: undefined,
   ...overrides,
@@ -150,6 +154,22 @@ describe("UsageTrigger", () => {
       )
     ).not.toContain("t:zenPaygTitle");
   });
+
+  it("puts the button INSIDE the tooltip, because the tooltip clones it", () => {
+    // The host `Tooltip` clones its child and hands that clone the hover
+    // handlers and the anchor ref. Wrapping the component instead attached them
+    // to a component that ignores unknown props, and hovering the pill did
+    // nothing at all — the wiring looked right and no test could see it.
+    const tree = UsageTrigger(
+      triggerProps({ tooltipLabel: "90% of Weekly used" })
+    );
+
+    const [tooltip] = findAllOf(tree, new Set(["Tooltip"]));
+    expect(tooltip).toBeDefined();
+    expect(tooltip.props.label).toBe("90% of Weekly used");
+    // The clone's target: the button, not this component.
+    expect(childrenOf(tooltip)).toContain(firstOf(tree, "button"));
+  });
 });
 
 describe("UsagePanel", () => {
@@ -168,6 +188,24 @@ describe("UsagePanel", () => {
       GO_CONSOLE_URL,
       GO_LIMITS_DOC_URL,
     ]);
+  });
+
+  it("spaces the three actions apart and styles them as host links", () => {
+    // The row had no stylesheet rule at all, so the anchors fell back to the UA
+    // default — purple, solid underline, no gap — and the three labels ran
+    // together into one sentence across the panel: "升级套餐控制台与余额额度说明".
+    // Both halves regress independently, so pin the wiring and the sheet.
+    const tree = UsagePanel(panelProps({ usage: usage() }));
+    expect(byClass(tree, "dsh-oc-usage-links")).toHaveLength(1);
+
+    const row = /\.dsh-oc-usage-links \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(row).toContain("gap:");
+
+    const anchor = /\.dsh-oc-usage-links a \{[^}]*\}/.exec(STYLES)?.[0];
+    // Only `--dsw-*` resolves; an invented token falls back to its own literal
+    // colour and the link ignores the theme.
+    expect(anchor).toContain("--dsw-alias-link");
+    expect(anchor).not.toContain("--color-");
   });
 
   it("shows session spend only when enabled and present", () => {
