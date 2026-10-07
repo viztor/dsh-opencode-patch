@@ -151,7 +151,9 @@ describe("UsageTrigger", () => {
       )
     ).toContain("t:zenPaygTitle");
 
-    // A zero-cost session is not worth a price, so the title stands.
+    // A zero-cost session still shows its number: zero is the honest figure for a
+    // session that has spent nothing, and it is the only real one available (Zen
+    // balance has no endpoint). Only hiding the price falls back to the title.
     expect(
       collectText(
         UsageTrigger(
@@ -161,7 +163,7 @@ describe("UsageTrigger", () => {
           })
         )
       )
-    ).toContain("t:zenPaygTitle");
+    ).not.toContain("t:zenPaygTitle");
   });
 });
 
