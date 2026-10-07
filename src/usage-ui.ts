@@ -113,7 +113,12 @@ export const STYLES = `
  */
 .dsh-oc-usage-trigger {
   border: 0;
-  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 7%, transparent));
+  /*
+   * No fill at rest: the composer's own controls are ghost, and a tinted pill
+   * beside the model selector reads as a chip with a frame of its own. The hover
+   * tint is the affordance — it is what says the ring is a button.
+   */
+  background: transparent;
   color: var(--dsw-alias-label-secondary, currentColor);
   font: inherit;
   font-size: 12px;
@@ -131,7 +136,7 @@ export const STYLES = `
 
 .dsh-oc-usage-trigger:hover,
 .dsh-oc-usage-trigger:focus-visible {
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 7%, transparent));
   color: var(--dsw-alias-label-primary, currentColor);
 }
 
