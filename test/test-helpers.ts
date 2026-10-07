@@ -199,7 +199,7 @@ export const elementName = (type: unknown): string => {
 };
 
 /** An element's children as a flat list, however the runtime nested them. */
-const childrenOf = (node: TestElement): unknown[] => {
+export const childrenOf = (node: TestElement): unknown[] => {
   const flat: unknown[] = [];
   const walk = (value: unknown): void => {
     // React flattens nested child arrays and drops the values it renders as

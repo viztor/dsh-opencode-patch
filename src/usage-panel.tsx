@@ -6,6 +6,7 @@
  * @module dsh-opencode-patch/usage-panel
  */
 
+import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
@@ -33,6 +34,8 @@ export interface UsageTriggerProps {
   /** Pre-computed ring dash array from `ringGeometry()`. */
   strokeDasharray: string;
   t: (key: string) => string;
+  /** What hovering the trigger explains — the panel's own headline. */
+  tooltipLabel: string;
   triggerLabel: string;
   usage: GoUsage | undefined;
 }
@@ -47,50 +50,50 @@ export const UsageTrigger = ({
   showUsagePrice,
   strokeDasharray,
   t,
+  tooltipLabel,
   triggerLabel,
   usage,
 }: UsageTriggerProps): React.ReactElement => (
-  <button
-    aria-expanded={open}
-    aria-haspopup="dialog"
-    aria-label={
-      isZen
-        ? `${t("zenPaygTitle")} (${t("zenPaygBadge")})`
-        : `${t("usageTitle")}: ${displayPercent}%`
-    }
-    className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
-    onClick={onClick}
-    type="button"
-  >
-    {/*
-      The ring is the trigger, for both providers. Zen used to render a coin emoji
-      here instead, which the user asked to be removed — and which renders as a
-      moon in some font stacks, so it did not even read as a coin. Zen has no quota
-      windows of its own, so its ring tracks whatever the API reports and the label
-      carries the session spend.
-    */}
-    <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
-      <circle className="dsh-oc-usage-ring-track" cx="7" cy="7" r={RADIUS} />
-      {/*
-        Quota colors are CSS custom properties, which do not resolve in SVG
-        presentation attributes — apply the token through `style` instead.
-      */}
-      <circle
-        className="dsh-oc-usage-ring-fill"
-        cx="7"
-        cy="7"
-        r={RADIUS}
-        strokeDasharray={strokeDasharray}
-        style={{ stroke: ringColor }}
-        transform="rotate(-90 7 7)"
-      />
-    </svg>
-    <span>
-      {isZen && showUsagePrice && usage?.session !== undefined
-        ? usage.session.costFormatted
-        : triggerLabel}
-    </span>
-  </button>
+  // The `Tooltip` wraps the BUTTON, not this component: it clones its child and
+  // attaches the handlers there, and a component that ignores them never shows
+  // one. See AGENTS.md, "The meter's trigger".
+  <Tooltip label={tooltipLabel} side="top">
+    <button
+      aria-expanded={open}
+      aria-haspopup="dialog"
+      aria-label={
+        isZen
+          ? `${t("zenPaygTitle")} (${t("zenPaygBadge")})`
+          : `${t("usageTitle")}: ${displayPercent}%`
+      }
+      className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
+      onClick={onClick}
+      type="button"
+    >
+      {/* The ring is the trigger for both providers; Zen's label is the spend. */}
+      <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+        <circle className="dsh-oc-usage-ring-track" cx="7" cy="7" r={RADIUS} />
+        {/*
+          Quota colors are CSS custom properties, which do not resolve in SVG
+          presentation attributes — apply the token through `style` instead.
+        */}
+        <circle
+          className="dsh-oc-usage-ring-fill"
+          cx="7"
+          cy="7"
+          r={RADIUS}
+          strokeDasharray={strokeDasharray}
+          style={{ stroke: ringColor }}
+          transform="rotate(-90 7 7)"
+        />
+      </svg>
+      <span>
+        {isZen && showUsagePrice && usage?.session !== undefined
+          ? usage.session.costFormatted
+          : triggerLabel}
+      </span>
+    </button>
+  </Tooltip>
 );
 
 /** The hover/click panel: quota breakdown, spend, Zen overflow and actions. */
