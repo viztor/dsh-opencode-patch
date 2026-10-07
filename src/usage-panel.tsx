@@ -182,7 +182,8 @@ export const UsagePanel = ({
                   </div>
                   <div className="dsh-oc-usage-subrow">
                     <span>
-                      Resets {formatRelativeReset(window.resetsAt, locale)}
+                      {t("usageResets")}{" "}
+                      {formatRelativeReset(window.resetsAt, locale)}
                     </span>
                     {window.status === "rate-limited" && (
                       <span

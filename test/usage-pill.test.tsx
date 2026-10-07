@@ -53,17 +53,19 @@ const isoAt = (offsetMs: number): string =>
 
 describe("usage-pill: helper functions & calculations", () => {
   it("formats relative countdown timers accurately", () => {
-    expect(formatRelativeReset(isoAt(-5000))).toBe("soon");
-    expect(formatRelativeReset(isoAt(30 * 60 * 1000 + 500))).toBe("in 30m");
+    // Pure durations, with no English prefix: the panel supplies a localised label
+    // ("Resets" / "重置于"), so an "in …" here would half-translate the line.
+    expect(formatRelativeReset(isoAt(-5000))).toBe("<1m");
+    expect(formatRelativeReset(isoAt(30 * 60 * 1000 + 500))).toBe("30m");
     expect(formatRelativeReset(isoAt((3 * 3600 + 15 * 60) * 1000))).toBe(
-      "in 3h 15m"
+      "3h 15m"
     );
     expect(formatRelativeReset(isoAt((2 * 86400 + 4 * 3600) * 1000))).toBe(
-      "in 2d 4h"
+      "2d 4h"
     );
     // Beyond a week it renders a locale date, so just assert it left the
     // relative shape instead of pinning an exact localized string.
-    expect(formatRelativeReset(isoAt(9 * 86400 * 1000))).not.toMatch(/^in /);
+    expect(formatRelativeReset(isoAt(9 * 86400 * 1000))).not.toMatch(/^\d+d /);
     // Unparseable input is returned verbatim rather than throwing.
     expect(formatRelativeReset("not-a-date")).toBe("not-a-date");
   });
