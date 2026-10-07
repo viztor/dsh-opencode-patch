@@ -230,15 +230,14 @@ opencode-responses:
 │  • Monthly                               65% │
 │    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
-│  SESSION SPEND                               │
+│  当前会话消耗                                │
 │  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
 │                                        $0.42 │
-│                                              │
-│  ZEN BALANCE FALLBACK                        │
-│  Zen balance ready for overflow        Ready │
+│  可用 Zen 余额                               │
+│  请求将自动从 Zen 余额中扣除            就绪 │
 ├──────────────────────────────────────────────┤
-│  Last updated 08:30              [ Retry ]   │
-│  Upgrade plan · Console & balance · Doc      │
+│  ⟳ 更新于 08:30                      控制台 ›│
+│  升级套餐 · 额度说明                         │
 └──────────────────────────────────────────────┘
 ```
 
@@ -254,7 +253,7 @@ opencode-responses:
 │  SESSION SPEND                                │
 │  Space Bunny Free · 免费模型，不额外计费 $0.00│
 ├───────────────────────────────────────────────┤
-│  ⟳ 更新于 08:30                      充值 ›    │
+│  ⟳ 更新于 08:30                      控制台 ›│
 └───────────────────────────────────────────────┘
 ```
 
