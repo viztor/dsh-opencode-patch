@@ -117,6 +117,21 @@ Web client bundle (`lib/client.js`):
 - `src/usage-panel.tsx` — `UsageTrigger` (ring / Zen pill) and `UsagePanel` (breakdown, detail rows, actions): pure presentational components, no hooks, so tests invoke them directly and walk the element tree. **One frame only** — the panel is the surface, and every row inside it is plain text; a background on a row draws a box inside a box.
 - `src/usage-ui.ts` — dependency-free meter logic: geometry, action links, window/affinity helpers, `isZenProvider`, `describeUsage`, `parseFailure`, `ringGeometry`, and the stylesheet — exported so tests hit real logic.
 
+### A fallback chain can be correct in every token and still paint the wrong colour
+
+The panel rendered SOLID WHITE while every other popover in the composer was translucent — the one surface in the dock that did not look like part of the harness. Both tokens were real, correctly named, and correctly applied:
+
+| layer | token | resolved value | alpha |
+| --- | --- | --- | --- |
+| 1 | `--dsw-specific-menu` | `#f8f9faf0` | 94% opaque |
+| 2 | `--dsw-alias-bg-layer-2` → `--dsw-static-neutral-bluish-00` | `#fff` | fully opaque |
+
+Stacked, that is solid white. The right declaration is the host's actual menu material: `--dsw-menu-surface-fill` (`#f8f9fa94` light, `#43454a73` dark) behind `--dsw-menu-backdrop-filter` (`blur(40px) saturate(150%)`), with `--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)` — the stroke the theme scopes to `[data-menu-material]`.
+
+**The lesson is not "invented tokens fail" — that is already recorded above, and these were NOT invented.** It is that a chain of individually valid tokens can still be wrong, and reading a token's NAME says nothing about the product. `--dsw-specific-menu` is the *specific* (higher-emphasis) menu; a plain floating surface wants the *surface fill*. Grepping the checkout proves a token EXISTS, never that it is the right one — read its VALUE, in both themes. The test strips CSS comments before asserting, because a rule that merely TALKS about `--dsw-specific-menu` is not a rule that sets it, and otherwise the explanation of the fix fails the test for the fix.
+
+Token values live in `@deepseek-ai/dsh-client-ui-theme`'s `lib/client.js` (403 `--dsw-*` names). Search THAT file, not the checkout root: every package under the checkout is a symlink into the pnpm store, so `grep -r` from the root finds nothing — which is how this looked like an invented token for a minute.
+
 ### Why the card owns its boolean/list fields
 
 The host UI kit ships **no** boolean control and no boolean/list/enum spec, so the card composes its controls from the primitives it does ship. Re-verified against `@deepseek-ai/dsh-client-ui-primitives` (`0.2.1-alpha.1`, source at `packages/client/ui-primitives/src`):
@@ -234,6 +249,12 @@ The meter cannot show a balance, and this is now verified at the SOURCE level, n
 - **Second SPA trap, on a second host**: `api.opencode.ai` answers **200 for every path** with a 9-byte `Not Found` body — including `/totally-bogus-path-xyz`. The "SPA answers 200 for everything" hazard in the next section applies to `api.opencode.ai` too, and a status code alone cannot distinguish a real route there. Control comparison (real route → 401 JSON; fake route → 200 `Not Found`) is the only reliable probe on both hosts.
 
 Consequence for the meter: the honest signals remain exactly two — the live window percentages (Go), and the failure path when the gateway actually refuses a request. The monthly allowance table (`go-limits-data.ts`) is the only dollar figure the API surface can support, and it is a published total, not a balance.
+
+### Two names, one package — and the card was registered under the wrong one
+
+The bundle registered itself under FOUR module ids, one of which was `@viztor/dsh-opencode` — the RETIRED wrapper, which ships no `lib/client.js` at all and whose row forwards to `dsh-opencode-patch`, so its page is served by this very bundle under another id. Meanwhile **no card was registered under `@viztor/dsh-opencode-patch`**, the name new installs actually get. The aliases list was `{PKG, LEGACY_PKG, LEGACY_NS}` — the current scoped name simply was not in it.
+
+Now `{PKG, SCOPED_PKG, LEGACY_NS}`: both names the tree is published as, plus the pre-rename cordis **row id** (`dsh-opencode`), which is a namespace rather than a package and must keep working. The loader ids are the same three. `SCOPED_PKG` is the canonical scoped name; `publish-scoped.ts` publishes all three npm names but its deprecation notice and README now point at the canonical one, because the message a user reads on the registry is the one place that should not offer a choice between two spellings of the same package.
 
 ## OpenCode endpoints (probed, not guessed)
 
