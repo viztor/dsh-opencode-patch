@@ -60,6 +60,7 @@ export const en = {
   usageResets: "Resets",
   usageRetry: "Retry now",
   usageTitle: "OpenCode Go usage",
+  usageAuthRejected: "Go key rejected — check this account’s key",
   usageUnavailable: "Unavailable",
   usageUpgradePlan: "Upgrade plan",
   usageZenFallbackNotice:
@@ -133,6 +134,7 @@ export const zh: Record<keyof typeof en, string> = {
   usageResets: "重置于",
   usageRetry: "立即重试",
   usageTitle: "OpenCode Go 用量",
+  usageAuthRejected: "Go 密钥被拒 — 请检查该账号的 Go key",
   usageUnavailable: "暂不可用",
   usageUpgradePlan: "升级套餐",
   usageZenFallbackNotice:

@@ -336,10 +336,22 @@ export class GoUsageService extends TypertRemoteService {
         response.status === 408 ||
         response.status === 429 ||
         response.status >= 500;
+      // A 401 is not "unavailable" — it is the endpoint saying this credential is
+      // not one it accepts, and it is what an ACCOUNT SWITCH looks like: the
+      // console identity is an OAuth browser session, not an `sk-…` Go key, and
+      // /usage rejects it. Folding it into the generic status message left the
+      // panel saying "unavailable" with nothing to act on.
       throw new RemoteError(
         USAGE_UNAVAILABLE,
-        `OpenCode Go usage unavailable (HTTP ${response.status})`,
-        { retainPrevious: temporary, retryable: temporary, source }
+        response.status === 401
+          ? "OpenCode Go rejected the API key for this account"
+          : `OpenCode Go usage unavailable (HTTP ${response.status})`,
+        {
+          retainPrevious: temporary,
+          retryable: temporary,
+          source,
+          ...(response.status === 401 ? { reason: "auth" } : {}),
+        }
       );
     }
 
