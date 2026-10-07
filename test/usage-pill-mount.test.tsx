@@ -302,6 +302,11 @@ describe("usage-pill: hover, click and dismissal", () => {
       fireEvent.click(element(".dsh-oc-usage-trigger"));
     });
     expect(panelOpen()).toBe(true);
+    // The badge is the host's `Tag`, so the stub must RENDER it — a
+    // `{props, type}` object there is "Element type is invalid" at runtime, the
+    // same failure the missing `Tooltip` caused. This fixture's rolling window is
+    // rate-limited, so the badge carries the limit label.
+    expect(element(".dsh-stub-tag").textContent).toBe("usageLimited");
   });
 
   it("shows the headline as a tooltip when the trigger is hovered", async () => {
