@@ -119,6 +119,7 @@ export {
 export {
   calculateTurnCost,
   clearSessionUsageStore,
+  describeModel,
   formatModelRate,
   formatUsd,
   getSessionUsage,

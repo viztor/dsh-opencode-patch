@@ -41,7 +41,7 @@ const fullSession = (): Record<string, unknown> => ({
   cacheReadTokens: 12,
   costFormatted: "$1.25",
   costUsd: 1.25,
-  includedInPlan: true,
+  freeModel: true,
   inputTokens: 1000,
   modelsUsed: ["gpt-5", "claude-sonnet-4-5"],
   outputTokens: 200,
@@ -185,7 +185,7 @@ describe("parseGoUsage session spend", () => {
           session: {
             activeModel: "",
             costFormatted: "$1.00",
-            includedInPlan: false,
+            freeModel: false,
             modelsUsed: ["gpt-5", 7, null, "claude-sonnet-4-5"],
             totalTokens: 2,
           },

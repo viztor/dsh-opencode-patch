@@ -252,10 +252,9 @@ opencode-responses:
 │  OpenCode Zen                [Pay-as-you-go]  │
 ├───────────────────────────────────────────────┤
 │  SESSION SPEND                                │
-│  mimo-v2.6-flash · $0.14 / $0.28 per 1M  $0.14│
+│  Space Bunny Free · 免费模型，不额外计费 $0.00│
 ├───────────────────────────────────────────────┤
-│  Last updated 08:30              [ Retry ]    │
-│  Upgrade plan · Console & balance · Doc       │
+│  ⟳ 更新于 08:30                      充值 ›    │
 └───────────────────────────────────────────────┘
 ```
 

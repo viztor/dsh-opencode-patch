@@ -251,10 +251,9 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  OpenCode Zen                [Pay-as-you-go]  │
 ├───────────────────────────────────────────────┤
 │  SESSION SPEND                                │
-│  mimo-v2.6-flash · $0.14 / $0.28 per 1M  $0.14│
+│  Space Bunny Free · no extra charge     $0.00│
 ├───────────────────────────────────────────────┤
-│  Last updated 08:30              [ Retry ]    │
-│  Upgrade plan · Console & balance · Doc       │
+│  ⟳ Updated 08:30                    Top up ›   │
 └───────────────────────────────────────────────┘
 ```
 
