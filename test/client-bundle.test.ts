@@ -37,6 +37,7 @@ interface RegistrationSpec {
     LEGACY_NS?: string;
     PKG?: string;
     LEGACY_PKG?: string;
+    SCOPED_PKG?: string;
     inject: string[];
     apply: (ctx: unknown) => void;
   };
@@ -151,17 +152,21 @@ describe("client-bundle: artifact & VM loader boundary", () => {
     ).toBe(true);
   });
 
-  it("calls window.__ModuleLoader__.load for all 4 aliases", () => {
+  it("registers the two published names and the pre-rename component id", () => {
     const { registrations } = evaluateBundle();
     const registeredIds = registrations.map((r) => r.id);
 
-    expect(registeredIds).toContain("dsh-opencode-patch");
-    expect(registeredIds).toContain("@viztor/dsh-opencode");
-    expect(registeredIds).toContain("@viztor/dsh-opencode-patch");
-    expect(registeredIds).toContain("dsh-opencode");
+    expect(registeredIds).toEqual([
+      "dsh-opencode-patch",
+      "@viztor/dsh-opencode-patch",
+      "dsh-opencode",
+    ]);
+    // The DEPRECATED wrapper carries no client half, so nothing resolves this id
+    // to this bundle — registering it split one package across two spellings.
+    expect(registeredIds).not.toContain("@viztor/dsh-opencode");
   });
 
-  it("exports NS, LEGACY_NS, PKG, LEGACY_PKG, inject, and apply from factory", () => {
+  it("exports NS, LEGACY_NS, PKG, SCOPED_PKG, inject, and apply from factory", () => {
     const { registrations } = evaluateBundle();
     const primary = registrations.find((r) => r.id === "dsh-opencode-patch");
     assert.ok(primary, "primary registration found");
@@ -201,7 +206,7 @@ describe("client-bundle: artifact & VM loader boundary", () => {
     expect(exports.NS).toBe("dsh-opencode-patch");
     expect(exports.LEGACY_NS).toBe("dsh-opencode");
     expect(exports.PKG).toBe("dsh-opencode-patch");
-    expect(exports.LEGACY_PKG).toBe("@viztor/dsh-opencode");
+    expect(exports.SCOPED_PKG).toBe("@viztor/dsh-opencode-patch");
     expect(exports.inject).toEqual([
       "slots",
       "locale",

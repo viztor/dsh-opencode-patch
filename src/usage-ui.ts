@@ -177,12 +177,13 @@ export const STYLES = `
   padding: 14px 16px;
   border: 0;
   border-radius: var(--dsw-radius-lg, 16px);
-  background-color: Canvas;
-  background-image:
-    linear-gradient(var(--dsw-specific-menu, transparent), var(--dsw-specific-menu, transparent)),
-    linear-gradient(var(--dsw-alias-bg-layer-2, Canvas), var(--dsw-alias-bg-layer-2, Canvas));
-  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  /* The host's menu material. --dsw-menu-surface-fill is TRANSLUCENT, so the
+   * blur behind it shows through. This panel used to stack an opaque token over
+   * #fff and rendered solid white; the layers are named in AGENTS.md.
+   */
+  background: var(--dsw-menu-surface-fill, Canvas);
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   box-shadow: var(--dsw-elevation-prominent, 0 12px 36px rgba(0, 0, 0, 0.28));
   color: var(--dsw-alias-label-primary, CanvasText);
   font-size: 12px;
