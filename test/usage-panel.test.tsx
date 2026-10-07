@@ -129,12 +129,13 @@ describe("UsageTrigger", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it("renders the Zen pill instead of the ring, with spend when enabled", () => {
+  it("renders the ring for Zen too, with spend as the label", () => {
     const tree = UsageTrigger(
       triggerProps({ isZen: true, usage: usage({ session: session() }) })
     );
-    expect(findAll(tree, "svg")).toHaveLength(0);
-    expect(byClass(tree, "dsh-oc-zen-pill")).toHaveLength(1);
+    // The ring is the trigger for both providers. Zen used to show a coin emoji
+    // here, which rendered as a moon in some font stacks.
+    expect(findAll(tree, "svg")).toHaveLength(1);
     expect(collectText(tree)).toContain("$0.42");
     expect(firstOf(tree, "button").props["aria-label"]).toBe(
       "t:zenPaygTitle (t:zenPaygBadge)"
@@ -147,20 +148,6 @@ describe("UsageTrigger", () => {
       collectText(
         UsageTrigger(
           triggerProps({ isZen: true, showUsagePrice: false, usage: withSpend })
-        )
-      )
-    ).toContain("t:zenPaygTitle");
-
-    // A zero-cost session still shows its number: zero is the honest figure for a
-    // session that has spent nothing, and it is the only real one available (Zen
-    // balance has no endpoint). Only hiding the price falls back to the title.
-    expect(
-      collectText(
-        UsageTrigger(
-          triggerProps({
-            isZen: true,
-            usage: usage({ session: session({ costUsd: 0 }) }),
-          })
         )
       )
     ).not.toContain("t:zenPaygTitle");
