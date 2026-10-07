@@ -82,6 +82,16 @@ jobs:
             echo "::error::src/catalog-data.ts is out of date — run 'pnpm run catalog:shim -- --write' and commit the result."
             exit 1
           }
+      # The Go plan's per-model dollar allowance, from OpenCode's own docs. It
+      # moves when THEY move — the page says limits "may change as we learn from
+      # early usage and feedback" — and a stale table shows a wrong dollar figure
+      # that looks authoritative, which is worse than showing none.
+      - name: is src/go-limits-data.ts still current?
+        run: |
+          pnpm run limits:shim || {
+            echo "::error::src/go-limits-data.ts is out of date — run 'pnpm run limits:shim -- --write' and commit the result."
+            exit 1
+          }
 
   # The live gateway contract: the only job that talks to OpenCode itself, so a
   # vendor payload change fails here rather than in a user's meter.

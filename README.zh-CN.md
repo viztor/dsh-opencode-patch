@@ -229,6 +229,9 @@ opencode-responses:
 │  • Monthly                               65% │
 │    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
+│  月度额度                                    │
+│  mimo-v2.6-flash              Go $60 · Plus $120│
+├──────────────────────────────────────────────┤
 │  升级套餐                                    │
 ├──────────────────────────────────────────────┤
 │  当前会话消耗                                │
@@ -240,6 +243,12 @@ opencode-responses:
 │  ⟳ 更新于 08:30                      控制台 ›│
 └──────────────────────────────────────────────┘
 ```
+
+**月度额度，以及为什么它是总额而不是余额。** 三个窗口是某个模型月度**美元**额度的比例——官方原话：_"Usage limits are defined as monthly dollar amounts… 5-hour — 20% of the monthly limit; weekly — 50%; and monthly — 100%."_ 所以计量表把这笔额度打印在窗口下面：`mimo-v2.6-flash` 是 `Go $60 · Plus $120`。它由官方 Go 文档生成（`pnpm run limits:shim`，CI 定时校验），因为页面明说*"usage limits may change"*——手写表一个版本内就会过期，而过期的美元数字看起来很权威。
+
+它同时显示**两个档位**而不是只显示一个，因为档位查不到：`/limits`、`/plan`、`/subscription`、`/account`、`/credits` 全部 404，`/models` 也没有额度字段。猜一个档位，金额就会差 2–3 倍。
+
+它**刻意不是剩余额度**。`GET /zen/go/v1/usage` 不接受 model 参数，所以返回的百分比是账号级的，而额度是按模型的——两者相乘得到的数字没有指代对象。真实余额在控制台，那里是准确的。
 
 #### 模式 B — OpenCode Zen (`opencode`)
 

@@ -72,6 +72,9 @@ export const en = {
   zenOverflowActive: "Zen balance ready for overflow",
   zenPaygBadge: "Pay-as-you-go",
   goPlanTitle: "OpenCode Go",
+  goPlusTier: "Plus",
+  goTier: "Go",
+  monthlyAllowance: "Monthly allowance",
   zenPaygTitle: "OpenCode Zen",
 };
 
@@ -142,6 +145,9 @@ export const zh: Record<keyof typeof en, string> = {
   zenOverflowActive: "Zen 余额已就绪，将在额度用尽时自动承接",
   zenPaygBadge: "按量计费",
   goPlanTitle: "OpenCode Go",
+  goPlusTier: "Plus",
+  goTier: "Go",
+  monthlyAllowance: "月度额度",
   zenPaygTitle: "OpenCode Zen",
 };
 
