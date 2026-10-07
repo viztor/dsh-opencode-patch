@@ -256,30 +256,6 @@ export const apply = (ctx: ClientContext): void => {
       // the pill already renders as nothing.
       const probe = modelDirectoryStore(meterScope, sessionId);
       const directory: unknown = probe.store;
-      // TEMPORARY diagnostic: "the meter shows nothing" has two very different
-      // causes — the Host handed us no directory for this session, or the entry
-      // never mounted at all — and they are indistinguishable from the outside.
-      // Remove once the meter renders.
-      // What the Host's remote actually offers, so an absent usage service can be
-      // told from a misspelled one without reading the host terminal.
-      let remoteKeys: unknown = "unreadable";
-      try {
-        const remote: unknown = meterScope.remote;
-        remoteKeys =
-          remote === undefined || remote === null
-            ? String(remote)
-            : Object.keys(remote).slice(0, 40);
-      } catch (error) {
-        remoteKeys = error instanceof Error ? error.message : String(error);
-      }
-      // oxlint-disable-next-line no-console
-      console.info("[dsh-opencode-patch] meter inject", {
-        hasDirectory: directory !== undefined && directory !== null,
-        hasUsage:
-          typeof meterScope.remote?.opencodeGoUsage?.read === "function",
-        remoteKeys,
-        sessionId: typeof sessionId === "string" ? sessionId : typeof sessionId,
-      });
       if (directory === undefined || directory === null) {
         return { reason: probe.reason ?? "no directory" };
       }
