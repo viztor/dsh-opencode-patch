@@ -1,13 +1,10 @@
 /**
  * `dsh-opencode-patch` settings page — DSH Web client bundle entry.
  *
- * Contributes a settings card under DSH Settings → Plugins and a quota pill
- * in the composer dock (`conversation.composer.dock`) for OpenCode Go models.
- *
- * This module is wiring only. Locale copy lives in `settings-copy.ts`, the
- * field register in `settings-fields.ts`, and the card's presentation in
- * `settings-card.tsx` / `settings-boolean-field.tsx`; what remains here is
- * scope validation, the settings store, and `apply`.
+ * Contributes a settings card under DSH Settings → Plugins and a quota pill in
+ * the composer dock. Wiring only: copy lives in `settings-copy.ts`, the field
+ * register in `settings-fields.ts`, presentation in `settings-card.tsx`. See
+ * AGENTS.md for the module map.
  *
  * @module dsh-opencode-patch/settings-page
  */

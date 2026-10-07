@@ -263,10 +263,9 @@ describe("usage-pill: failure handling", () => {
       expect(element(".dsh-oc-usage-trigger").textContent).toContain("!");
     });
 
-    // Open the panel: hover, then let the 120ms delay elapse.
+    // Open the panel. A click, not a hover: hovering no longer opens it.
     await act(async () => {
-      fireEvent.mouseEnter(element(".dsh-oc-usage-root"));
-      await vi.advanceTimersByTimeAsync(150);
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
     });
 
     await act(async () => {
@@ -286,19 +285,38 @@ describe("usage-pill: failure handling", () => {
 });
 
 describe("usage-pill: hover, click and dismissal", () => {
-  it("does not open before the hover delay elapses", async () => {
+  it("does not open on hover; the click opens it", async () => {
+    // Hover is deliberately inert — it explains (the Tooltip), it does not open.
+    // The panel opened on hover until the popover was aligned with the host's own
+    // language, and a panel that appears under the pointer cannot be read.
     const readUsage = vi.fn().mockResolvedValue(USAGE);
     await renderPill(readUsage);
 
     await act(async () => {
       fireEvent.mouseEnter(element(".dsh-oc-usage-root"));
+      await vi.advanceTimersByTimeAsync(150);
     });
     expect(panelOpen()).toBe(false);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(150);
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
     });
     expect(panelOpen()).toBe(true);
+  });
+
+  it("shows the headline as a tooltip when the trigger is hovered", async () => {
+    // The affordance hover kept: the trigger is wrapped in the host's `Tooltip`,
+    // labelled with the same headline the panel opens under. Without it, hovering
+    // would do nothing at all and the ring would need a legend.
+    const readUsage = vi.fn().mockResolvedValue(USAGE);
+    await renderPill(readUsage);
+
+    await act(async () => {
+      fireEvent.mouseEnter(element(".dsh-oc-usage-trigger"));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(element('[role="tooltip"]').textContent).toContain("quota limited");
   });
 
   it("stays open while the pointer crosses onto the panel, and closes after it leaves", async () => {
@@ -306,8 +324,7 @@ describe("usage-pill: hover, click and dismissal", () => {
     await renderPill(readUsage);
 
     await act(async () => {
-      fireEvent.mouseEnter(element(".dsh-oc-usage-root"));
-      await vi.advanceTimersByTimeAsync(150);
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
     });
     expect(panelOpen()).toBe(true);
 

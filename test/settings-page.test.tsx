@@ -124,6 +124,88 @@ describe("settings-page: apply & slots", () => {
     expect(dockRegistrations).toHaveLength(0);
   });
 
+  it("unregisters every alias when the plugin unloads", () => {
+    // The registrations above are only half the contract: a reload (or a profile
+    // edit that restarts the entry) tears the bundle down, and the card must go
+    // with it. Nothing asserted the disposers, so a card that outlived its
+    // plugin — three registrations from one entry — was possible.
+    const disposed: string[] = [];
+    const stopped: string[] = [];
+    const entries: Record<string, unknown>[] = [];
+    let teardown: (() => void) | undefined;
+
+    const ctx = {
+      configForms: {
+        get: () => ({
+          getSnapshot: () => ({
+            base: {},
+            revision: 1,
+            status: "ready",
+            user: {},
+            value: {},
+            writable: true,
+          }),
+          mutate: async () => true,
+          subscribe: () => () => {},
+        }),
+        whileServed: (_namespaces: string[], fn: () => void) => fn(),
+      },
+      effect: (fn: () => unknown, name?: string) => {
+        const dispose = fn();
+        // Only the card's effect, not the form subscription's.
+        if (name === "dsh-opencode-patch: settings") {
+          teardown = dispose as () => void;
+        }
+        return dispose;
+      },
+      locale: {
+        bind: () => (k: string) => k,
+        register: () => () => {},
+      },
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(ctx),
+      slots: {
+        // Faithful to a host that owns the registration's lifetime: the stop it
+        // hands back also runs the disposer the registrar returned.
+        inject: (name: string, fn: () => unknown) => {
+          const disposeRegistration = fn();
+          return () => {
+            stopped.push(name);
+            if (typeof disposeRegistration === "function") {
+              (disposeRegistration as () => void)();
+            }
+          };
+        },
+        register: (entry: Record<string, unknown>) => {
+          entries.push(entry);
+          return () => {
+            disposed.push(String(entry.key));
+          };
+        },
+      },
+    };
+
+    apply(ctx as never);
+    expect(disposed).toHaveLength(0);
+
+    // What the card's registration hands the host when it mounts: the store hook
+    // plus the four form actions. Asserted here because nothing else calls it —
+    // the card renders in a browser, and the registration object does not.
+    const card = entries.find(
+      (entry) => entry.name === "plugins.bundle.config"
+    );
+    const mount = (card?.inject as () => Record<string, unknown>)?.();
+    expect(Object.keys(mount?.hooks as object)).toEqual(["opencodeCard"]);
+    for (const action of ["discard", "edit", "resetField", "save"]) {
+      expect(typeof mount?.[action]).toBe("function");
+    }
+
+    teardown?.();
+
+    expect(disposed).toEqual([PKG, LEGACY_PKG, LEGACY_NS]);
+    expect(stopped).toEqual(["plugins.bundle.config"]);
+  });
+
   it("handles usage injector logic and remote reading", async () => {
     let dockInjector: ((sessionId: unknown) => unknown) | undefined;
     const remoteUsage = vi
@@ -180,6 +262,34 @@ describe("settings-page: apply & slots", () => {
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });
+    // No `locale` service in this context: the meter's translator echoes the key
+    // rather than being undefined, which would render every label blank.
+    expect(injected.t("usageTitle")).toBe("usageTitle");
+  });
+
+  it("boots with no services at all, and tears down cleanly", () => {
+    // Every service is optional in the type, and the Host really does boot
+    // without some of them. Nothing asserted the empty case, so an
+    // over-eager `ctx.locale.register(...)` would throw during boot — before any
+    // of the tests that do supply a context could run.
+    const teardowns: (() => void)[] = [];
+    const ctx = {
+      effect: (fn: () => unknown) => {
+        const dispose = fn();
+        if (typeof dispose === "function") {
+          teardowns.push(dispose as () => void);
+        }
+        return dispose;
+      },
+    };
+
+    expect(() => apply(ctx as never)).not.toThrow();
+    // Every effect the entry registered handed back a disposer, and each one
+    // runs without throwing on a context that has nothing to dispose.
+    expect(teardowns.length).toBeGreaterThan(0);
+    for (const teardown of teardowns) {
+      expect(() => teardown()).not.toThrow();
+    }
   });
 
   it("sends the provider and conversation id with every usage read", async () => {
@@ -694,6 +804,44 @@ describe("settings-page: OpencodeCard rendering", () => {
     expect(headings.map((heading) => heading.props.first)).toEqual(
       groups.map((_, index) => index === 0)
     );
+  });
+
+  it("wires each control's edit and reset back to the form model", () => {
+    // The card hands the host an id, a label and two callbacks per control. The
+    // ids and labels were asserted; the callbacks were not, so a control could
+    // render perfectly and do nothing.
+    const edit = vi.fn();
+    const resetField = vi.fn();
+    const state = {
+      fields: {},
+      shell: {
+        available: true,
+        dirty: false,
+        failed: false,
+        invalid: false,
+        saving: false,
+        writable: true,
+      },
+    };
+    const Card = mountCard();
+    const tree = Card({
+      discard: () => {},
+      edit,
+      resetField,
+      save: () => {},
+      t: (k: string) => k,
+      useOpencodeCard: (selector: (s: typeof state) => unknown) =>
+        selector(state),
+      view: "page",
+    });
+
+    const [first] = controlsInOrder(tree);
+    const name = CARD_FIELDS[0]?.field ?? "";
+    assert.ok(first, "expected at least one control");
+    (first.props.onEdit as (text: string) => void)("draft");
+    (first.props.onReset as () => void)();
+    expect(edit).toHaveBeenCalledWith(name, "draft");
+    expect(resetField).toHaveBeenCalledWith(name);
   });
 });
 

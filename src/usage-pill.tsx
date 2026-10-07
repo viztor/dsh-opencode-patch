@@ -7,7 +7,6 @@
  * @module dsh-opencode-patch/usage-pill
  */
 
-import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import React, {
   useEffect,
   useRef,
@@ -52,14 +51,6 @@ export interface ModelDirectoryState {
 }
 
 /**
- * Stands in when the injector has no directory to hand over.
- *
- * Optional rather than required because absence is a real state: the injector
- * returns no props when the Host has no model directory or no usage service, and
- * the Host reads `hooks` off whatever it returns — so the pill has to render
- * from nothing rather than the entry throwing inside the renderer.
- */
-/**
  * A STABLE snapshot, not a fresh object per call.
  *
  * `useSyncExternalStore` compares by identity, so a getter that builds a new
@@ -77,6 +68,14 @@ const NO_DIRECTORY: SnapshotStore<ModelDirectoryState> = {
 };
 
 export interface UsagePillProps {
+  /**
+   * The session's model-directory store.
+   *
+   * Optional because absence is a real state: the injector hands over no props
+   * when the Host has no model directory or no usage service, and the Host reads
+   * `hooks` off whatever it returns — so the pill must render from nothing
+   * rather than the entry throwing inside the renderer.
+   */
   directory?: SnapshotStore<ModelDirectoryState>;
   getLocale?: () => string;
   /**
@@ -292,24 +291,23 @@ const ActiveUsage = ({
         the component unmounts; nothing is appended to `document.head`.
       */}
       <style>{STYLES}</style>
-      {/* Hover explains; the click opens the panel. */}
-      <Tooltip label={headline} side="top">
-        <UsageTrigger
-          displayPercent={displayPercent}
-          isLimited={isLimited}
-          isZen={isZen}
-          onClick={() => {
-            setOpen((prev) => !prev);
-          }}
-          open={open}
-          ringColor={ringColor}
-          showUsagePrice={showUsagePrice}
-          strokeDasharray={strokeDasharray}
-          t={t}
-          triggerLabel={triggerLabel}
-          usage={usage}
-        />
-      </Tooltip>
+      {/* Hover explains; the click opens. */}
+      <UsageTrigger
+        displayPercent={displayPercent}
+        isLimited={isLimited}
+        isZen={isZen}
+        onClick={() => {
+          setOpen((prev) => !prev);
+        }}
+        open={open}
+        ringColor={ringColor}
+        showUsagePrice={showUsagePrice}
+        strokeDasharray={strokeDasharray}
+        t={t}
+        tooltipLabel={headline}
+        triggerLabel={triggerLabel}
+        usage={usage}
+      />
       {open && (
         <UsagePanel
           badgeText={badgeText}

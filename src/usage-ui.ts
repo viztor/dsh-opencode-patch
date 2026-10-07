@@ -182,14 +182,6 @@ export const STYLES = `
   letter-spacing: -0.01em;
 }
 
-.dsh-oc-usage-figures {
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-primary, currentColor);
-  white-space: nowrap;
-}
-
 .dsh-oc-usage-badge {
   display: inline-flex;
   align-items: center;
@@ -207,21 +199,6 @@ export const STYLES = `
   color: var(--dsw-alias-state-error-primary);
 }
 
-.dsh-oc-usage-bar-track {
-  background: var(--dsw-alias-border-l3, color-mix(in srgb, currentColor 10%, transparent));
-  border-radius: 999px;
-  height: 4px;
-  overflow: hidden;
-  margin-bottom: 12px;
-}
-
-.dsh-oc-usage-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.3s ease, background-color 0.2s ease;
-}
-
-/* Rows are a definition list: muted label left, stronger value right. */
 .dsh-oc-usage-breakdown {
   display: flex;
   flex-direction: column;
@@ -274,58 +251,6 @@ export const STYLES = `
   margin: 14px 0 12px;
 }
 
-.dsh-oc-usage-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--dsw-alias-label-tertiary, currentColor);
-  margin-bottom: 8px;
-}
-
-.dsh-oc-usage-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.dsh-oc-usage-card {
-  padding: 8px 9px;
-  border-radius: var(--dsw-radius-sm, 8px);
-  background: var(--dsw-alias-bg-layer-3, color-mix(in srgb, currentColor 5%, transparent));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.dsh-oc-usage-card.dsh-oc-card-limited {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
-}
-
-.dsh-oc-usage-card-name {
-  font-size: 10px;
-  color: var(--dsw-alias-label-tertiary, currentColor);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dsh-oc-usage-card-percent {
-  font-size: 14px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-primary, currentColor);
-}
-
-.dsh-oc-usage-card-reset {
-  font-size: 10px;
-  color: var(--dsw-alias-label-tertiary, currentColor);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .dsh-oc-usage-footer {
   display: flex;
   align-items: center;
@@ -355,6 +280,35 @@ export const STYLES = `
 .dsh-oc-usage-retry:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Actions: three targets, so they must read as three links. Unstyled, they ran
+   together into one sentence; the host's link language is in its MarkdownText
+   stylesheet. See AGENTS.md, "The meter's panel". */
+.dsh-oc-usage-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+}
+
+.dsh-oc-usage-links a {
+  color: var(--dsw-alias-link, currentColor);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.dsh-oc-usage-links a:hover,
+.dsh-oc-usage-links a:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.dsh-oc-usage-links a:focus-visible {
+  outline: none;
+  border-radius: var(--dsw-radius-xs, 4px);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 .dsh-oc-usage-zen-notice {
@@ -394,13 +348,6 @@ export const STYLES = `
 .dsh-oc-zen-card-desc {
   font-size: 10px;
   color: var(--dsw-alias-label-tertiary, currentColor);
-}
-
-.dsh-oc-zen-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-variant-numeric: tabular-nums;
 }
 `;
 
