@@ -76,27 +76,33 @@ export const STYLES = `
   vertical-align: middle;
 }
 
+/*
+ * The trigger follows the host's own composer pills: a translucent fill rather
+ * than a bare glyph on the bar. DSH pairs its ContextMeter ring with a filled
+ * pill ("176M tok · 缓存命中 97%"), and an unfilled trigger reads as unfinished
+ * next to it.
+ */
 .dsh-oc-usage-trigger {
   border: 0;
-  background: transparent;
+  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 7%, transparent));
   color: var(--dsw-alias-label-secondary, currentColor);
   font: inherit;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  padding: 3px 6px;
-  border-radius: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   user-select: none;
 }
 
 .dsh-oc-usage-trigger:hover,
 .dsh-oc-usage-trigger:focus-visible {
-  background: color-mix(in srgb, currentColor 8%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
   color: var(--dsw-alias-label-primary, currentColor);
 }
 
@@ -118,25 +124,31 @@ export const STYLES = `
   transition: stroke-dasharray 0.3s ease, stroke 0.2s ease;
 }
 
+/*
+ * Host rules for a floating surface: no border AND an elevation shadow, never
+ * both a border and a shadow (docs/web-styling.md), radius from the panel token,
+ * background from the menu material so it matches every other popover.
+ */
 .dsh-oc-usage-panel {
   position: absolute;
   bottom: calc(100% + 8px);
   right: 0;
   z-index: 1100;
-  width: 310px;
+  width: 320px;
   max-width: calc(100vw - 24px);
   max-height: 80vh;
   overflow-y: auto;
   box-sizing: border-box;
-  padding: 14px;
-  border-radius: 14px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--dsw-radius-lg, 16px);
   background-color: Canvas;
   background-image:
     linear-gradient(var(--dsw-specific-menu, transparent), var(--dsw-specific-menu, transparent)),
     linear-gradient(var(--dsw-alias-bg-layer-2, Canvas), var(--dsw-alias-bg-layer-2, Canvas));
   backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
-  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent, 0 12px 36px rgba(0, 0, 0, 0.28));
   color: var(--dsw-alias-label-primary, CanvasText);
   font-size: 12px;
   line-height: 1.5;
@@ -155,11 +167,13 @@ export const STYLES = `
   }
 }
 
+/* Header: title left, the one big number right — the host's own popover shape. */
 .dsh-oc-usage-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .dsh-oc-usage-headline {
@@ -169,10 +183,11 @@ export const STYLES = `
 }
 
 .dsh-oc-usage-figures {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-secondary, currentColor);
+  color: var(--dsw-alias-label-primary, currentColor);
+  white-space: nowrap;
 }
 
 .dsh-oc-usage-badge {
@@ -181,9 +196,10 @@ export const STYLES = `
   gap: 3px;
   font-size: 11px;
   font-weight: 600;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 10%, transparent));
+  color: var(--dsw-alias-label-secondary, currentColor);
 }
 
 .dsh-oc-usage-badge.dsh-oc-badge-limited {
@@ -192,9 +208,9 @@ export const STYLES = `
 }
 
 .dsh-oc-usage-bar-track {
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  background: var(--dsw-alias-border-l3, color-mix(in srgb, currentColor 10%, transparent));
   border-radius: 999px;
-  height: 5px;
+  height: 4px;
   overflow: hidden;
   margin-bottom: 12px;
 }
@@ -205,29 +221,32 @@ export const STYLES = `
   transition: width 0.3s ease, background-color 0.2s ease;
 }
 
+/* Rows are a definition list: muted label left, stronger value right. */
 .dsh-oc-usage-breakdown {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
   margin-top: 6px;
 }
 
 .dsh-oc-usage-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 10px;
 }
 
 .dsh-oc-usage-row-left {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 12px;
+  color: var(--dsw-alias-label-secondary, currentColor);
 }
 
 .dsh-oc-usage-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -236,22 +255,23 @@ export const STYLES = `
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   font-size: 12px;
+  color: var(--dsw-alias-label-primary, currentColor);
 }
 
 .dsh-oc-usage-subrow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   font-size: 11px;
-  opacity: 0.65;
-  margin-top: 1px;
+  color: var(--dsw-alias-label-tertiary, currentColor);
+  margin-top: 2px;
   padding-left: 13px;
 }
 
 .dsh-oc-usage-divider {
-  height: 1px;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  margin: 12px 0 10px;
+  height: 0.5px;
+  background: var(--dsw-alias-border-l3, color-mix(in srgb, currentColor 10%, transparent));
+  margin: 14px 0 12px;
 }
 
 .dsh-oc-usage-section-title {
@@ -259,49 +279,48 @@ export const STYLES = `
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  opacity: 0.6;
+  color: var(--dsw-alias-label-tertiary, currentColor);
   margin-bottom: 8px;
 }
 
 .dsh-oc-usage-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
 .dsh-oc-usage-card {
-  padding: 8px 7px;
-  border-radius: 8px;
-  background: color-mix(in srgb, currentColor 5%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  padding: 8px 9px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--dsw-alias-bg-layer-3, color-mix(in srgb, currentColor 5%, transparent));
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .dsh-oc-usage-card.dsh-oc-card-limited {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
-  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 25%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
 }
 
 .dsh-oc-usage-card-name {
   font-size: 10px;
-  opacity: 0.7;
+  color: var(--dsw-alias-label-tertiary, currentColor);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .dsh-oc-usage-card-percent {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary, currentColor);
 }
 
 .dsh-oc-usage-card-reset {
   font-size: 10px;
-  opacity: 0.6;
+  color: var(--dsw-alias-label-tertiary, currentColor);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -312,16 +331,16 @@ export const STYLES = `
   align-items: center;
   justify-content: space-between;
   font-size: 11px;
-  opacity: 0.7;
+  color: var(--dsw-alias-label-tertiary, currentColor);
   padding-top: 4px;
 }
 
 .dsh-oc-usage-retry {
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 6px;
-  padding: 2px 7px;
+  border: 0.5px solid var(--dsw-alias-border-l2, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--dsw-radius-xs, 4px);
+  padding: 3px 8px;
   background: transparent;
-  color: inherit;
+  color: var(--dsw-alias-label-secondary, inherit);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
@@ -329,7 +348,8 @@ export const STYLES = `
 }
 
 .dsh-oc-usage-retry:hover:not(:disabled) {
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 10%, transparent));
+  color: var(--dsw-alias-label-primary, inherit);
 }
 
 .dsh-oc-usage-retry:disabled {
@@ -339,24 +359,22 @@ export const STYLES = `
 
 .dsh-oc-usage-zen-notice {
   font-size: 11px;
-  line-height: 1.4;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d97706) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d97706) 25%, transparent);
-  color: inherit;
-  opacity: 0.95;
+  line-height: 1.45;
+  padding: 7px 9px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
+  color: var(--dsw-alias-label-secondary, inherit);
   margin-top: 4px;
 }
 
 .dsh-oc-zen-card {
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, currentColor 6%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  padding: 9px 11px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--dsw-alias-bg-layer-3, color-mix(in srgb, currentColor 6%, transparent));
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-top: 8px;
 }
 
@@ -364,48 +382,25 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   gap: 1px;
+  min-width: 0;
 }
 
 .dsh-oc-zen-card-title {
   font-size: 11px;
   font-weight: 600;
-  opacity: 0.85;
+  color: var(--dsw-alias-label-primary, currentColor);
 }
 
 .dsh-oc-zen-card-desc {
   font-size: 10px;
-  opacity: 0.6;
-}
-
-.dsh-oc-zen-card-credit {
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-label-tertiary, currentColor);
 }
 
 .dsh-oc-zen-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-
-/* The "what do I do about this" row. Links, not buttons: both navigate away. */
-.dsh-oc-usage-links {
-  display: flex;
-  gap: 12px;
-  padding-top: 6px;
-  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 11px;
-}
-
-.dsh-oc-usage-links a {
-  color: var(--dsw-alias-link, currentColor);
-  text-decoration: none;
-}
-
-.dsh-oc-usage-links a:hover {
-  text-decoration: underline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
 }
 `;
 
