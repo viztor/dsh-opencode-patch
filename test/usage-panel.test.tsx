@@ -87,7 +87,7 @@ const panelProps = (
 ): UsagePanelProps => ({
   badgeText: "Go Plan",
   failure: null,
-  headline: "42% of Weekly used",
+  title: "t:goPlanTitle",
   isLimited: false,
   isZen: false,
   locale: undefined,
@@ -199,7 +199,13 @@ describe("UsageTrigger", () => {
 describe("UsagePanel", () => {
   it("renders the Go breakdown: three window rows and the links", () => {
     const tree = UsagePanel(panelProps({ usage: usage() }));
-    expect(collectText(tree)).toContain("42% of Weekly used");
+    // The header names the ACCOUNT, not its state: it used to carry the ring's
+    // own figure, so the one line identifying the surface changed on every poll
+    // ("42% of Weekly used" → "Monthly quota limited"). That figure is the
+    // trigger's hover label now, and both facts it stated are already here —
+    // the badge, and each window's own row.
+    expect(collectText(tree)).toContain("t:goPlanTitle");
+    expect(collectText(tree)).not.toContain("42% of Weekly used");
     expect(collectText(tree)).toContain("Go Plan");
 
     // Three rows carry the whole breakdown. A progress bar and a QUOTA OVERVIEW
@@ -303,7 +309,7 @@ describe("UsagePanel", () => {
     const tree = UsagePanel(
       panelProps({
         badgeText: "t:zenPaygBadge",
-        headline: "t:zenPaygTitle",
+        title: "t:zenPaygTitle",
         isZen: true,
         usage: usage(),
       })
@@ -345,7 +351,7 @@ describe("UsagePanel", () => {
     const tree = UsagePanel(
       panelProps({
         badgeText: "t:zenPaygBadge",
-        headline: "t:zenPaygTitle",
+        title: "t:zenPaygTitle",
         isZen: true,
         usage: usage(),
       })

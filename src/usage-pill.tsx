@@ -280,8 +280,10 @@ const ActiveUsage = ({
   const locale = getLocale?.();
 
   // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
-  const { badgeText, headline, tooltip, zenCardCredit, zenCardDesc } =
-    describeUsage(usage, affecting, isZen, getLocale?.(), t);
+  // The hover label is the SAME string the panel opens under: no second
+  // composition, no keys an older served dictionary has not heard of.
+  const { badgeText, headline, title, zenCardCredit, zenCardDesc } =
+    describeUsage(usage, affecting, isZen, t);
 
   return (
     <span
@@ -308,7 +310,7 @@ const ActiveUsage = ({
         showUsagePrice={showUsagePrice}
         strokeDasharray={strokeDasharray}
         t={t}
-        tooltipLabel={tooltip}
+        tooltipLabel={headline}
         triggerLabel={triggerLabel}
         usage={usage}
       />
@@ -316,7 +318,6 @@ const ActiveUsage = ({
         <UsagePanel
           badgeText={badgeText}
           failure={failure}
-          headline={headline}
           isLimited={isLimited}
           isZen={isZen}
           locale={locale}
@@ -328,6 +329,7 @@ const ActiveUsage = ({
           }}
           showUsagePrice={showUsagePrice}
           t={t}
+          title={title}
           updatedAt={current === null ? null : current.updatedAt}
           usage={usage}
           zenCardCredit={zenCardCredit}

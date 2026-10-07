@@ -129,7 +129,6 @@ export const UsageTrigger = ({
 export interface UsagePanelProps {
   badgeText: string;
   failure: UsageFailure | null;
-  headline: string;
   isLimited: boolean;
   isZen: boolean;
   locale?: string;
@@ -139,6 +138,8 @@ export interface UsagePanelProps {
   retry: () => void;
   showUsagePrice: boolean;
   t: (key: string) => string;
+  /** The account's name — `OpenCode Go` / `OpenCode Zen`, stable across polls. */
+  title: string;
   /** Epoch ms of the last successful read, or `null` while loading. */
   updatedAt: number | null;
   usage: GoUsage | undefined;
@@ -149,7 +150,6 @@ export interface UsagePanelProps {
 export const UsagePanel = ({
   badgeText,
   failure,
-  headline,
   isLimited,
   isZen,
   locale,
@@ -159,6 +159,7 @@ export const UsagePanel = ({
   retry,
   showUsagePrice,
   t,
+  title,
   updatedAt,
   usage,
   zenCardCredit,
@@ -177,7 +178,7 @@ export const UsagePanel = ({
       `Go Plan` / the limit notice on Go — so no second line repeats it.
     */}
     <div className="dsh-oc-usage-header">
-      <div className="dsh-oc-usage-headline">{headline}</div>
+      <div className="dsh-oc-usage-headline">{title}</div>
       {/*
         The host's own chip, not a look-alike: a hand-rolled span here used the
         HOVER fill token as its resting background, so it sat permanently lit.
