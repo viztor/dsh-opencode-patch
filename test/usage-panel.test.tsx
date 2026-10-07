@@ -19,12 +19,7 @@ import {
   UsageTrigger,
   type UsageTriggerProps,
 } from "../src/usage-panel.tsx";
-import {
-  CONSOLE_URL,
-  GO_LIMITS_DOC_URL,
-  GO_PLAN_URL,
-  STYLES,
-} from "../src/usage-ui.ts";
+import { CONSOLE_URL, GO_PLAN_URL, STYLES } from "../src/usage-ui.ts";
 import {
   childrenOf,
   collectText,
@@ -32,6 +27,7 @@ import {
   findAllOf,
   findAllWhere,
   firstOf,
+  isElement,
   type TestElement,
 } from "./test-helpers.ts";
 
@@ -63,6 +59,21 @@ const session = (
 
 const byClass = (tree: unknown, className: string): TestElement[] =>
   findAllWhere(tree, (element) => element.props.className === className);
+
+/** Every className in the tree, in render order — for asserting WHERE a row sits. */
+const classOrder = (node: unknown, acc: string[] = []): string[] => {
+  if (!isElement(node)) {
+    return acc;
+  }
+  const name = node.props.className;
+  if (typeof name === "string") {
+    acc.push(name);
+  }
+  for (const child of childrenOf(node)) {
+    classOrder(child, acc);
+  }
+  return acc;
+};
 
 const triggerProps = (
   overrides: Partial<UsageTriggerProps> = {}
@@ -213,13 +224,22 @@ describe("UsagePanel", () => {
     expect(byClass(tree, "dsh-oc-usage-row")).toHaveLength(3);
     expect(byClass(tree, "dsh-oc-usage-bar-fill")).toHaveLength(0);
     expect(byClass(tree, "dsh-oc-usage-card")).toHaveLength(0);
-    // The console sits on the update row, so the action row carries only what
-    // is left: Go's plan and its limits doc.
+    // The console sits on the update row; the Go layer's own action row carries
+    // the plan link, and it renders INSIDE that layer — above the shared spend
+    // and footer rows, not below them.
+    // Plan first: it lives in the Go layer, above the shared footer that
+    // carries the console.
     expect(findAll(tree, "a").map((a) => a.props.href)).toEqual([
-      CONSOLE_URL,
       GO_PLAN_URL,
-      GO_LIMITS_DOC_URL,
+      CONSOLE_URL,
     ]);
+    const order = classOrder(tree);
+    expect(order.indexOf("dsh-oc-usage-links")).toBeGreaterThan(
+      order.indexOf("dsh-oc-usage-breakdown")
+    );
+    expect(order.indexOf("dsh-oc-usage-links")).toBeLessThan(
+      order.indexOf("dsh-oc-usage-footer")
+    );
     expect(byClass(tree, "dsh-oc-usage-console")[0]?.props.href).toBe(
       CONSOLE_URL
     );
@@ -245,7 +265,7 @@ describe("UsagePanel", () => {
     expect(byClass(busy, "dsh-oc-usage-refresh")[0]?.props.disabled).toBe(true);
   });
 
-  it("gives Zen one link — top-up — and Go the console plus two actions", () => {
+  it("gives Zen one link — top-up — and Go the console plus the plan", () => {
     // Same component, different content. Zen's single action IS the console on
     // the update row (labelled 充值, which is what a pay-as-you-go user wants
     // from it), so repeating it below would be two links to one page.
@@ -256,9 +276,8 @@ describe("UsagePanel", () => {
 
     const go = UsagePanel(panelProps({ usage: usage() }));
     expect(findAll(go, "a").map((a) => a.props.href)).toEqual([
-      CONSOLE_URL,
       GO_PLAN_URL,
-      GO_LIMITS_DOC_URL,
+      CONSOLE_URL,
     ]);
     expect(collectText(go)).toContain("t:usageConsole");
     expect(collectText(go)).toContain("t:usageUpgradePlan");

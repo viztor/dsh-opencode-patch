@@ -229,8 +229,30 @@ export const UsagePanel = ({
           </div>
         )}
 
-        {/* Divider */}
         <div className="dsh-oc-usage-divider" />
+
+        {/*
+          What to DO about the quota, in the layer that owns the quota. This row
+          used to sit at the very bottom, under the update/console footer, where
+          it read as one more global action rather than the answer to the windows
+          directly above it — and on a Zen route the block it belonged to is not
+          even rendered. Data, not branches: `panelActions` is the whole
+          difference between the two popovers.
+        */}
+        {panelActions(isZen).length > 0 && (
+          <div className="dsh-oc-usage-links">
+            {panelActions(isZen).map((action) => (
+              <a
+                href={action.href}
+                key={action.href}
+                rel="noreferrer noopener"
+                target="_blank"
+              >
+                {t(action.labelKey)}
+              </a>
+            ))}
+          </div>
+        )}
       </>
     )}
 
@@ -312,25 +334,5 @@ export const UsagePanel = ({
         {t(isZen ? "usageTopUp" : "usageConsole")}
       </a>
     </div>
-    {/*
-      What to DO about it, per provider. The console is on the row above for
-      both, so it is not repeated here: Go adds the plan and the limits doc,
-      Zen adds nothing (its one action IS that link, labelled 充值). Data, not
-      branches — `panelActions` is the whole difference between the popovers.
-    */}
-    {panelActions(isZen).length > 0 && (
-      <div className="dsh-oc-usage-links">
-        {panelActions(isZen).map((action) => (
-          <a
-            href={action.href}
-            key={action.href}
-            rel="noreferrer noopener"
-            target="_blank"
-          >
-            {t(action.labelKey)}
-          </a>
-        ))}
-      </div>
-    )}
   </div>
 );
