@@ -669,13 +669,13 @@ describe("registerUsageRemotes", () => {
     const injected: string[][] = [];
     let pending: (() => void) | undefined;
     // `effect` lives on the PLUGIN context, not on the injected scope.
-    const scope = {
-      typert: {
-        register: (contribution: Record<string, unknown>): void => {
-          registered.push(contribution);
-        },
+    // `typert` lives on the PLUGIN context too.
+    const typert = {
+      register: (contribution: Record<string, unknown>): void => {
+        registered.push(contribution);
       },
     };
+    const scope = {};
 
     registerUsageRemotes({
       effect: (fn: () => void): void => {
@@ -685,6 +685,7 @@ describe("registerUsageRemotes", () => {
         injected.push(deps);
         cb(scope);
       },
+      typert,
     });
 
     expect(injected).toEqual([["typert"]]);
