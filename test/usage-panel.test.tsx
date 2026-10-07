@@ -295,12 +295,12 @@ describe("UsagePanel", () => {
     // Zen route you are already paying per token, and OpenCode has no balance
     // endpoint at all — so there the row could only restate the badge.
     expect(
-      byClass(UsagePanel(panelProps({ usage: usage() })), "dsh-oc-zen-card")
+      byClass(UsagePanel(panelProps({ usage: usage() })), "dsh-oc-usage-detail")
     ).toHaveLength(0);
     expect(
       byClass(
         UsagePanel(panelProps({ usage: usage({ zenOverflow: true }) })),
-        "dsh-oc-zen-card"
+        "dsh-oc-usage-detail"
       )
     ).toHaveLength(1);
     expect(
@@ -308,7 +308,7 @@ describe("UsagePanel", () => {
         UsagePanel(
           panelProps({ isZen: true, usage: usage({ zenOverflow: true }) })
         ),
-        "dsh-oc-zen-card"
+        "dsh-oc-usage-detail"
       )
     ).toHaveLength(0);
   });
