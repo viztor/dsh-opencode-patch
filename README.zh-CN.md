@@ -209,7 +209,7 @@ opencode-responses:
 │ [+] Attach                            [DeepSeek V4.1 Flash ⌄] [⬆]│
 └─────────────────────────────────────────────────────────────────┘
    [ ⭕ 73% Context ]   [ ⭕ 42% Go Quota ]   ← when OpenCode Go is active
-   [ ⭕ 73% Context ]   [ 🪙 $0.00 ]            ← 使用 OpenCode Zen 时
+   [ ⭕ 73% Context ]   [ ⭕ $0.00 ]            ← 使用 OpenCode Zen 时
 ```
 
 #### 模式 A — OpenCode Go (`opencode-go`)
@@ -224,19 +224,12 @@ opencode-responses:
 │  ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 ├──────────────────────────────────────────────┤
 │  • 5 hours                               42% │
-│    Resets in 3h 12m                          │
+│    Resets 3h 12m                             │
 │  • Weekly                                18% │
-│    Resets in 5d 8h                           │
+│    Resets 5d 8h                              │
 │  • Monthly                               65% │
-│    Resets in 22d 4h                          │
+│    Resets 22d 4h                             │
 ├──────────────────────────────────────────────┤
-│  QUOTA OVERVIEW                              │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐      │
-│  │ 5-Hour   │ │ Weekly   │ │ Monthly  │      │
-│  │ 42%      │ │ 18%      │ │ 65%      │      │
-│  │ in 3h 12m│ │ in 5d 8h │ │ in 22d 4h│      │
-│  └──────────┘ └──────────┘ └──────────┘      │
-│                                              │
 │  SESSION SPEND                               │
 │  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
 │                                        $0.42 │
@@ -251,7 +244,7 @@ opencode-responses:
 
 #### 模式 B — OpenCode Zen (`opencode`)
 
-- **Zen 胶囊**：一枚紧凑的硬币徽标，显示本会话累计花费（未计价时为 `🪙 $0.00`，计价后如 `🪙 $0.42`）。这是唯一能拿到的真实数字——OpenCode 的 Zen 余额只能通过 console 的 server action 读取，需要浏览器会话，API key 读不到。
+- **Zen 触发器**：同一个环，标签是本会话累计花费（未计价时为 `$0.00`，计价后如 `$0.42`）。这是唯一能拿到的真实数字——OpenCode 的 Zen 余额只能通过 console 的 server action 读取，需要浏览器会话，API key 读不到。
 - **按量计费面板**：带 `Pay-as-you-go` 徽标的头部、按 Token 计费的说明、会话消耗卡片（价格开关开启时），以及指向 [OpenCode 控制台](https://opencode.ai/console)与[定价](https://opencode.ai/pricing)的直达链接。
 
 ```
@@ -501,7 +494,7 @@ if (e.data.responseBody?.includes("GoUsageLimitError")) {
 | **分层子代理** | ❌ | ✅ 注入父会话请求头 |
 | **动态工作区项目** | ❌ | ✅ 由 `session.header.cwd` 派生 |
 | **Auto Review 支持** | ❌ 缺少 `sessionId` 时失败 | ✅ 在 `AsyncLocalStorage` 中回退捕获轮次 |
-| **停靠栏计量表** | 文本字符串 | SVG 环 + Zen 胶囊、会话消耗、模型费率 |
+| **停靠栏计量表** | 文本字符串 | SVG 环、会话消耗、模型费率 |
 | **附加 Zen 额度** | ❌ | ✅ 凭据、环境变量、自动检测 |
 | **模型元数据** | `models.dev/api.json` | 标准 DSH 与 OpenCode 目录参数 |
 
