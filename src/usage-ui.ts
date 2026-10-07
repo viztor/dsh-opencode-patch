@@ -454,10 +454,23 @@ export const isZenProvider = (provider?: string): boolean => {
   return lower.includes("opencode") && !lower.includes("go");
 };
 
-/** The localized copy the meter's header, badge and Zen card render. */
+/** The localized copy the meter's header, badge, tooltip and Zen card render. */
 export interface UsageCopy {
   badgeText: string;
   headline: string;
+  /**
+   * What hovering the trigger says.
+   *
+   * Deliberately NOT `headline`: on Go the ring needs an explanation
+   * ("90% of 5 hours used"), but on Zen the trigger shows session spend and the
+   * headline is just the plan's name — which names nothing the pill does not
+   * already imply. There is no balance or remaining-quota figure to show either:
+   * OpenCode exposes neither (every `balance`/`credits`/`account` path 404s, and
+   * the balance lives in console server actions a browser must fetch). So it
+   * answers the question those numbers would have answered — there is no quota
+   * window, you are metered per token — and says what the figure on screen is.
+   */
+  tooltip: string;
   zenCardCredit: string;
   zenCardDesc: string;
 }
@@ -470,7 +483,7 @@ export interface UsageCopy {
  * first read is in flight).
  */
 export const describeUsage = (
-  _usage: GoUsage | undefined,
+  usage: GoUsage | undefined,
   affecting: AffectingWindowResult | undefined,
   isZen: boolean,
   t: (key: string) => string
@@ -506,7 +519,14 @@ export const describeUsage = (
     : t("zenOverflowActive");
   const zenCardCredit = isLimited ? "Active" : "Ready";
 
-  return { badgeText, headline, zenCardCredit, zenCardDesc };
+  // Go: the ring's own figure, spelled out. Zen: there is no quota to burn
+  // through, so the tooltip says that instead — and names what the pill's
+  // number is, since `$0.00` on its own says nothing.
+  const tooltip = isZen
+    ? `${t("zenNoQuotaWindow")} · ${t("sessionSpend")} ${usage?.session?.costFormatted ?? "$0.00"}`
+    : headline;
+
+  return { badgeText, headline, tooltip, zenCardCredit, zenCardDesc };
 };
 
 /**
