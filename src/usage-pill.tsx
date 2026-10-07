@@ -335,7 +335,7 @@ export const UsagePill = ({
   directory,
   meterProviders,
   modelMarkers: _modelMarkers,
-  reason,
+  reason: _reason,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
   // A fallback rather than an early return: `useSyncExternalStore` is a hook, so
@@ -352,15 +352,7 @@ export const UsagePill = ({
   // the honest state, and it is safe to return here: this is the component's
   // only hook.
   if (directory === undefined) {
-    // TEMPORARY: a visible marker instead of silence. "The meter shows nothing"
-    // has two causes that look identical from outside — the Host handed us no
-    // model directory, or this entry never mounted — and this tells them apart
-    // without the console. Remove once the meter renders.
-    return React.createElement(
-      "span",
-      { style: { fontSize: "0.75em", opacity: 0.6 } },
-      `[opencode 计量表: ${reason ?? "无模型目录"}]`
-    );
+    return null;
   }
 
   const provider = state?.current?.provider ?? state?.pending?.provider ?? "";
