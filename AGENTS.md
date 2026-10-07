@@ -53,6 +53,20 @@ It gated _whether the meter renders_ for the active provider, and its default wa
 
 `DEFAULT_PROVIDERS` therefore moved to `config-values.ts` — the client bundle needs the default and may not import `config.ts` (schemastery). This is the same pattern as `usageKeyEnv`: a row setting that asked the user to restate a decision the composition already owns. Both are gone; prefer removing such a knob over documenting it.
 
+### The meter's trigger: the `Tooltip` wraps the BUTTON
+
+Hovering explains, clicking opens — and the tooltip is what "explains" now, because `3313094` removed hover-to-open when the popover was aligned with the host's own language. The wiring looks correct either way, which is the problem: **the host `Tooltip` clones its child and hands the clone the hover handlers and the anchor ref**, so wrapping our _component_ attaches them to a component that ignores unknown props and the tooltip never appears. Hovering the pill did nothing at all for one release, and nothing in the tree said why.
+
+It sits inside `UsageTrigger`, around the `<button>`, for that reason — the clone needs a DOM node. Two tests pin the seam, because it is invisible from the JSX alone: `usage-panel.test.tsx` asserts the button is the tooltip's _child_ (the tree, not the intent), and `usage-pill-mount.test.tsx` hovers the trigger in a real DOM and reads the `role="tooltip"` that appears.
+
+The stub in `test/primitives-stub.tsx` is the other half and was **missing `Tooltip` entirely** — so every mount test died on "Element type is invalid" while the other 27 files stayed green. It is now the one kit export that returns real elements and holds state, mirroring the host's: clones its child, composes the child's handlers first, bubble as a sibling, inert to the pointer (a tooltip that swallowed the meter's hover would open a panel nobody could close).
+
+### The meter's panel: three actions, one sentence
+
+The panel's action row had **no CSS rule at all**, so its three anchors fell back to the UA default — purple, solid underline, no gap — and concatenated into one run-on line across the panel: `升级套餐控制台与余额额度说明`, which reads as one link and is in fact three (`usageUpgradePlan`, `usageConsole`, `usageLimitsDoc`). Nothing was wrong with the JSX or the copy; the row was simply unstyled, and a stylesheet is only as good as the rules you remember to write. It now carries `display: flex` + a gap and the host's own link language (`--dsw-alias-link`, no underline until hover, per `MarkdownText.module.css`), with a test asserting both that the class is wired and that the sheet still styles it — the two regress independently.
+
+General rule, and the second time this repo has paid for it: **a surface with no rule of its own inherits the browser's**, which ignores the theme entirely. An invented `--color-*` name does the same thing more quietly.
+
 ## Repo map
 
 Host bundle (`lib/index.mjs`) — a thin `apply` barrel over small modules:
@@ -105,12 +119,12 @@ The host UI kit ships **no** boolean control and no boolean/list/enum spec, so t
 
 `plugins.bundle.config` is rendered with `{ view }` only — the host-owned `form` (state + mutate) is passed to `plugins.item` and `plugins.row.config`, **not** to bundle config — so the card owns its scope and `SettingsFormModel` itself. If the host ever ships a boolean or enum field, delete the matching file here and render that instead.
 
-Tests — 482 deterministic cases in 28 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95.5 / 90.9 / 94.1 / 95.5** (statements / branches / functions / lines) — it sits AT the measurement, so it fails only when coverage drops:
+Tests — 493 deterministic cases in 28 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
 
 - Host behavior split by concern: `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` (26) · `session-cost` · `models-discovery`.
 - Host units asserted directly, because every other module narrows through them: `guards` (12) · `config-values` (15) · `cordis-context` (11) · `debug` (5). Each case pins the shapes the unit must REJECT as well as the ones it accepts — an over-accepting guard mis-shapes a host object silently.
 - Routing: `responses-routes` (10) split table · `responses-provider` (26) the mount — and the stand-in host it runs against **reproduces all four collisions**, so four more of those cases assert the stand-in REFUSES the shapes the old mount passed.
-- Client: `settings-page` (25) card + register · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (20) gating + copy/failure parsing · `usage-pill-mount` (13) **the pill's poll loop, retry and dismissal, really mounted** · `usage-panel` (13) trigger + panel · `client-bundle` (4) bundle boundary.
+- Client: `settings-page` (28) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (20) gating + copy/failure parsing · `usage-pill-mount` (14) **the pill's poll loop, retry and dismissal, really mounted** · `usage-panel` (15) trigger + panel · `client-bundle` (4) bundle boundary.
 - The half of the meter that was untested: `go-discovery` (61) credential policy · `usage-service` (30) + `usage-contract` (19, 100%) the Host service and its parsers · `tool-fallback` (25) + `turn-store` (12) the free-tier rewrite and the ALS store.
 - `test/test-helpers.ts` — shared fixtures: mock streams, capture fetch, predicates, `createMockContext`.
 - `test/primitives-stub.tsx` — stand-in for the host UI kit; keep it behaviourally faithful to the real primitives (trimmed drafts, empty clears).
@@ -119,7 +133,7 @@ Supporting files:
 
 - `scripts/name-client-bundle.ts` — renames `vp pack`'s `.cjs` output to `lib/client.js` (DSH loader requires `.js`).
 - `scripts/regenerate-catalog-shim.ts` — writes `src/catalog-data.ts` from models.dev through the plugin's own parser. Runs offline with `--from <path>`, exits 1 when the shim is stale, rewrites with `--write`.
-- `vitest.e2e.config.ts` · `test/e2e/` — the opt-in end-to-end suite (`pnpm run test:e2e`), collected only by that config so `pnpm test` stays offline and deterministic. `opencode-live.e2e.ts` asserts the live `/models` enrichment and `/usage` payload shapes; `patched-fetch-headers.e2e.ts` proves the outgoing header set over a real socket; **`protocol-routing.e2e.ts` asks the gateway which endpoints actually recognise each shipped model** — the one thing a stub cannot do, because the unit tests read the very mapping they are meant to check. All gated on `OPENCODE_E2E=1`, and each keyed block skips without its key — which is why the CI `e2e` job is green on fork PRs.
+- `vitest.e2e.config.ts` · `test/e2e/` — the opt-in end-to-end suite (`pnpm run test:e2e`), collected only by that config so `pnpm test` stays offline and deterministic. `opencode-live.e2e.ts` asserts the live `/models` enrichment and `/usage` payload shapes; `patched-fetch-headers.e2e.ts` proves the outgoing header set over a real socket; **`protocol-routing.e2e.ts` asks the gateway which endpoints actually recognise each shipped model** — the one thing a stub cannot do, because the unit tests read the very mapping they are meant to check. **Its free-tier case pins the ROUTE, not the model**: it asserts `403 FreeTierError`, and that 403 is the `stream`+`read`/`bash` gate refusing the probe — the request carries neither. So the assertion cannot distinguish "recognised" from "refused"; what actually pins the route is the wrong-endpoint cells asserting `500`, which only happens when the gateway parsed the model. A test that told those apart would send `stream: true` plus the two schemas and assert a real completion — and would then behave identically on **both** planes, since the gate is the same. All gated on `OPENCODE_E2E=1`, and each keyed block skips without its key — which is why the CI `e2e` job is green on fork PRs.
 - `cordis.patch.yml` — default plugin row (`id: dsh-opencode-patch`); header comments are the headless-config reference.
 - `scripts/check.ts` — CI/release gate: lib freshness, peer ranges, harness surface contracts, secret scan, consumer install+load, workflow guards, identity/title consistency, client budget. `scripts/publish-scoped.ts` — publishes/mirrors the scoped aliases with idempotent skip-if-exists guards.
 - `.github/workflows/` — `ci.yml` has three jobs: **check** (push/PR/schedule — check + test + build + `scripts/check.ts` + the coverage ratchet, uploading the report), **catalog** (regenerates `src/catalog-data.ts` against models.dev and fails when it is stale), **e2e** (the live gateway). `release.yml` (tag `v*.*.*`) queues per tag instead of cancelling — see the release notes below — packs and hashes the tarball, verifies, then OIDC-publishes the primary + both scoped aliases and confirms every target is readable. `dependabot.yml` keeps both ecosystems current, because the release path is actions and cannot be exercised until it matters.
@@ -141,7 +155,8 @@ pnpm run test:e2e   # opt-in live gateway suite; no-op unless OPENCODE_E2E=1
 - Release: conventional commits on `main` → release-please opens the version + `CHANGELOG.md` PR → merging it tags, and `release.yml` publishes via OIDC (primary + scoped aliases). Never hand-edit `CHANGELOG.md`.
 - DSH Web profile wires the build: `~/.dsh/profiles/web/package.json` deps + `bundles` use `dsh-opencode-patch` (`link:../../../dev/dsh-opencode` only for local dev).
 - Hygiene: never hardcode `ses_…`/keys in src/tests/git; `lib/` gitignored; `OPENCODE_SESSION_ID` env override only.
-- **Client bundle budget**: `lib/client.js` must stay under 64 KiB (`scripts/check.ts`); it currently sits at ~58.5 KB with **~7 KB of headroom**, so the gate is no longer a live constraint — it went from 604 bytes to 7 KB the moment the config-only knobs stopped shipping their copy. Prefer platform primitives over hand-rolled controls (swapping our inline-styled reset `<button>` for the platform's `Button` atom _shrank_ the bundle by 160 bytes), and ask whether a knob belongs in the UI at all before writing copy for it. **Comments ship in the bundle** — long rationale belongs here, not in client modules. Empirically the bundler keeps comments from _imported_ modules but drops the entry's own (`settings-page.tsx`), so trimming that file reclaims nothing; measure with `wc -c lib/client.js` before and after.
+- **Client bundle budget**: `lib/client.js` must stay under **72 KiB** (`scripts/check.ts`). It sat at ~58.5 KB when this note was written, the gate was 64 KiB then too, and the bundle is **65,529 bytes** after this round — at which point the number had stopped answering the question it was built for. What it really watches is a **dependency getting bundled instead of left external**, and that arrives as a jump of thousands of bytes, not as creep; the ceiling was raised rather than leave the next copy string tripping a guard about bundling. Prefer platform primitives over hand-rolled controls (swapping our inline-styled reset `<button>` for the platform's `Button` atom _shrank_ the bundle by 160 bytes), and ask whether a knob belongs in the UI at all before writing copy for it. **Comments ship in the bundle** — long rationale belongs here, not in client modules. The entry's own comments ship too: measured 2026-10-07, **7 of `settings-page.tsx`'s 8 blocks survive into `lib/client.js`**, so trimming that file reclaims bytes (the earlier note claiming otherwise was wrong). Comments are ~13.7 KB of the payload, which makes them the cheapest lever there is — and the reason the documented one worked. Measure with `wc -c lib/client.js` before and after. **Two kinds of shrink, only one of which is free**: deleting CSS no component renders any more is pure win (1.9 KB came out of the bars and cards the panel dropped), whereas cutting prose to fit a number moves knowledge out of the file that owns it.
+- **Dead CSS is shipped weight**: `STYLES` is a template literal in the bundle, so a rule nothing renders still costs bytes forever. `cbe7280` removed the panel's progress bar and its three quota cards from the JSX and left ~2.4 KB of their rules behind. Grep the class names in `src/usage-*.tsx` before assuming a rule is live.
 
 ## Release automation: the decisions that are load-bearing
 
@@ -188,6 +203,35 @@ Rules that keep the two from fighting:
 | `500 Internal server error` | **wrong format** | served on the other endpoint (next section) |
 
 `space-bunny-free` is the unmetered class: it returns a full `chat.completion` with **no key, no `x-opencode-client`, no User-Agent**, and it still succeeds with the whole header set injected. **Our header restoration is additive, not a gate**, so nothing has to special-case a model that needs no auth — verified both ways. Worth knowing though: `fetch-patch.ts` sets `Authorization` whenever the caller omitted it or sent a dummy (`Bearer unused`/`undefined`/`null`). On an unmetered model that is unnecessary — the call would have worked without it — but it is what rescues the adapter's placeholder for the gated class, so it stays.
+
+### The free-tier gate: `stream:true` AND `read`+`bash`, on BOTH planes
+
+Measured 2026-10-07 on both planes, same account, both credentials. Five runs per cell:
+
+| `(stream, read+bash)` | legacy `/zen/*` | console `/inference/*` |
+| --------------------- | --------------- | ---------------------- |
+| **both**              | **200** (5/5)   | **200** (5/5)          |
+| `stream` only         | 403 (5/5)       | 403                    |
+| `read`+`bash` only    | 403 (5/5)       | 403                    |
+| neither               | 403 (5/5)       | 403                    |
+
+**The gate is conjunctive and it is the same on both planes.** `stream:true` alone 403s; `read`+`bash` alone 403s; `read`-only 403s; `bash`-only 403s; a dummy tool 403s. Only the conjunction returns 200. It applies to the **gated-free class only**: unmetered models (`space-bunny-free`) answer 200 in every cell, and paid models never produce this 403 at all.
+
+Consequences:
+
+- **`tool-fallback.ts` is half the gate and always necessary.** The `stream:true` half is free: DSH's adapter contract is stream-only — `abstract stream(options)` is documented as "the only required method" (`packages/llm/llm/src/index.ts`), and `llm-pi-ai` calls only pi-ai's `streamSimple`. So DSH satisfies it unconditionally and the plugin never sets it. **Between them the plugin satisfies the whole gate.**
+- **The header restoration is not what unlocks the free tier on either plane.** Eliminated by measurement: `User-Agent` (the plugin's own, and the CLI's exact string with its `ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14` suffix — both 200), `x-opencode-request` as a message id, `x-opencode-session-id`, `ses_`-prefixed ids, the console `x-opencode-org-id`, and the tools on their own. Session _registration_ is not a factor either: the session id is only read, for sticky routing and usage attribution.
+
+**How this was found, because the obvious method is worthless here — and it lied twice.** The 403 says "can only be used from within OpenCode", which sends you looking for a missing client signal; every one of those hypotheses is false. What settled it was running the real CLI against a gated model (it succeeded), putting a logging reverse proxy in front to capture the request byte-for-byte, then bisecting that body until one field flipped 403→200.
+
+Two wrong conclusions were recorded before the right one, and both came from the same error — **generalising from one plane, or from one moment**:
+
+1. "`stream:true` is the discriminator" — true, but `read`+`bash` was also required and had been missed.
+2. "the legacy plane's gate is not satisfiable" — **false**. It was measured only with the plugin's own `User-Agent` and, worse, during a window when the same request was returning 403 for an unidentified reason; the identical request returned 200 minutes later and 5/5 after that. A single-probe matrix is not a measurement of a gate.
+
+**So: verify a gate across planes, across credentials, and repeat it.** A 403 sampled once is a fact about that instant, not about the rule.
+
+**The free tier was never broken, on either plane.** What an account switch actually breaks is the **meter** — the console token is rejected by the legacy `/zen/go/v1/usage` the plugin still points at.
 
 **The free tier is split across TWO protocols, and the protocol is route-level.** `ModelProtocolUnsupported` (a vendor 400) means the request reached the gateway on an endpoint that does not serve that model. Probe each model with a keyless POST: the endpoint that _recognises_ it answers `403 FreeTierError` ("OpenCode's free tier can only be used from within OpenCode" — the rule the header restoration exists to satisfy), while the endpoint that does not answers `500 Internal server error`. Measured 2026-10-04 against `https://opencode.ai/zen/v1`:
 
