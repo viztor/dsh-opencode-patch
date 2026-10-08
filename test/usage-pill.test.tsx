@@ -58,8 +58,10 @@ describe("usage-pill: helper functions & calculations", () => {
     // `1h 11m`, 59m59s into `1h`, and pulled a 6d23h window off the relative
     // ladder ~20s early — while the day branch truncated minutes. A countdown
     // must never claim more time than remains, so one policy: floored.
+    // An explicit locale: the text is localized now, so a bare call would assert
+    // whatever the test runner's default locale happens to be.
     const at = (ms: number): ReturnType<typeof formatRelativeReset> =>
-      formatRelativeReset(isoAt(ms));
+      formatRelativeReset(isoAt(ms), "en");
     expect(at(30 * 60 * 1000 + 500)).toEqual({
       kind: "duration",
       text: "30m",
@@ -81,15 +83,16 @@ describe("usage-pill: helper functions & calculations", () => {
     );
     expect(at(1_000_000).text).toBe("16m");
     // A sub-minute POSITIVE diff. The old code only guarded `diffMs <= 0`, so
-    // 1-29s rounded to the string `0m`.
-    expect(at(20_000)).toEqual({ kind: "duration", text: "<1m" });
+    // 1-29s rounded to the string `0m`. Its wording is copy, not a duration, so
+    // it is its own kind and `resetLabel` supplies the text per locale.
+    expect(at(20_000)).toEqual({ kind: "underMinute", text: "" });
 
     // A window that already rolled over says so. This is reachable: the panel
     // re-derives at every render from a payload up to a poll old, so for as long
     // as a minute after a boundary the old `resetsAt` is in the past — and the
     // old code answered `<1m`, the exact shape of the fabricated rows this
     // panel removed.
-    expect(formatRelativeReset(isoAt(-5000))).toEqual({
+    expect(formatRelativeReset(isoAt(-5000), "en")).toEqual({
       kind: "passed",
       text: "",
     });
@@ -100,7 +103,7 @@ describe("usage-pill: helper functions & calculations", () => {
 
     // Beyond a week it renders a locale date, tagged `absolute` because that is
     // the shape that composes with a PREFIX rather than a suffix.
-    const far = formatRelativeReset(isoAt(9 * 86400 * 1000));
+    const far = formatRelativeReset(isoAt(9 * 86400 * 1000), "en");
     expect(far.kind).toBe("absolute");
     expect(far.text).not.toMatch(/^\d+d/);
 
@@ -109,6 +112,89 @@ describe("usage-pill: helper functions & calculations", () => {
       kind: "absolute",
       text: "not-a-date",
     });
+  });
+
+  it("falls back to a unit table when the engine has no DurationFormat", () => {
+    // The fallback is why a missing API cannot blank the row, and it is a unit
+    // TABLE rather than a second formatter: same composition, two words per
+    // language. Exercised by taking the constructor away, because Node ships it
+    // and the branch would otherwise never run.
+    const had = Object.hasOwn(Intl, "DurationFormat");
+    const original: unknown = Reflect.get(Intl, "DurationFormat");
+    assert.equal(Reflect.deleteProperty(Intl, "DurationFormat"), true);
+    try {
+      const at = (ms: number, locale: string): string =>
+        formatRelativeReset(isoAt(ms), locale).text;
+      expect(at((2 * 86400 + 4 * 3600) * 1000, "en")).toBe("2d 4h");
+      expect(at((2 * 86400 + 4 * 3600) * 1000, "zh")).toBe("2天4小时");
+      expect(at(30 * 60 * 1000 + 500, "zh")).toBe("30分");
+      expect(at(2 * 86400 * 1000, "en")).toBe("2d");
+      expect(at(45 * 60 * 1000, "en")).toBe("45m");
+    } finally {
+      if (had) {
+        Reflect.set(Intl, "DurationFormat", original);
+      }
+    }
+    // Read through `Reflect`: this project's `lib` is ES2024, which predates
+    // the constructor, so `Intl.DurationFormat` is not a typed property.
+    expect(typeof Reflect.get(Intl, "DurationFormat")).toBe("function");
+  });
+
+  it("renders an absolute reset in Chinese with 点/分, not HH:mm", () => {
+    // CLDR's zh time pattern is `HH:mm`, so `Intl.DateTimeFormat` alone gives
+    // `11月7日 08:55`. A Chinese sentence writes `11月7日8点55分`, so the
+    // platform's own PARTS are reused and only the hour/minute separator is
+    // localized — the month/day literals and the numerals stay the platform's.
+    const zh = formatRelativeReset(isoAt(9 * 86400 * 1000), "zh");
+    expect(zh.kind).toBe("absolute");
+    expect(zh.text).toMatch(/月\d+日\d+点\d+分$/u);
+    expect(zh.text).not.toContain(":");
+    // And the leading zero comes off the hour, because 点 takes the bare number.
+    expect(zh.text).not.toMatch(/日0\d点/u);
+
+    // English keeps the platform's whole assembled string.
+    const en = formatRelativeReset(isoAt(9 * 86400 * 1000), "en");
+    expect(en.kind).toBe("absolute");
+    expect(en.text).toMatch(/[A-Z][a-z]{2} \d+, \d+:\d+ [AP]M$/u);
+  });
+
+  it("falls back when the engine's own formatter refuses the call", () => {
+    // The second reason the fallback exists: an engine that HAS the constructor
+    // but throws on this input (a locale it rejects, a malformed part) must
+    // still leave a readable row rather than an empty one.
+    const had = Object.hasOwn(Intl, "DurationFormat");
+    const original: unknown = Reflect.get(Intl, "DurationFormat");
+    const refusing = function refusing(): never {
+      throw new Error("refused");
+    };
+    Reflect.set(Intl, "DurationFormat", refusing);
+    try {
+      expect(formatRelativeReset(isoAt(45 * 60 * 1000), "en").text).toBe("45m");
+      expect(formatRelativeReset(isoAt(45 * 60 * 1000), "zh").text).toBe(
+        "45分"
+      );
+    } finally {
+      if (had) {
+        Reflect.set(Intl, "DurationFormat", original);
+      }
+    }
+  });
+
+  it("localizes the duration units, not just the label", () => {
+    // The units used to be Latin and hardcoded (`1h 11m`), which put an English
+    // abbreviation inside a Chinese clause: `1h 11m后重置`. `Intl.DurationFormat`
+    // is the platform's own answer — the same call that gives `1h 11m` in en
+    // gives `1小时11分钟` in zh, with each locale's ordering and unit words.
+    const zh = (ms: number): string =>
+      formatRelativeReset(isoAt(ms), "zh").text;
+    expect(zh(30 * 60 * 1000 + 500)).toBe("30分钟");
+    expect(zh((3 * 3600 + 15 * 60) * 1000)).toBe("3小时15分钟");
+    expect(zh((2 * 86400 + 4 * 3600) * 1000)).toBe("2天4小时");
+    expect(zh(2 * 86400 * 1000)).toBe("2天");
+    // And en keeps the compact Latin form it always had.
+    expect(
+      formatRelativeReset(isoAt((2 * 86400 + 4 * 3600) * 1000), "en").text
+    ).toBe("2d 4h");
   });
 
   it("prioritizes rate-limited window as the affecting bottleneck", () => {

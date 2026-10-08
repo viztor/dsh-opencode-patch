@@ -233,19 +233,29 @@ describe("UsagePanel", () => {
     // all, which is why it shipped; `t` in this file echoes keys, so the real
     // dictionaries are used here.
     const en = {
-      usageResets: "Resets",
+      usageResetsAtPrefix: "Resets ",
+      usageResetsAtSuffix: "",
       usageResetsIn: " until reset",
       usageResetPassed: "Already reset",
+      usageResetUnderMinute: "<1m",
     };
     const zh = {
-      usageResets: "重置于",
+      usageResetsAtPrefix: "",
+      usageResetsAtSuffix: "重置",
       usageResetsIn: "后重置",
       usageResetPassed: "已重置",
+      usageResetUnderMinute: "<1分",
     };
     const duration: RelativeReset = { kind: "duration", text: "1h 11m" };
     const absolute: RelativeReset = {
       kind: "absolute",
-      text: "Nov 7, 08:55 AM",
+      text: "Nov 7, 8:55 AM",
+    };
+    // The same instant as zh renders it — the date and time words are the
+    // platform's, only the hour/minute separator is Chinese.
+    const absoluteZh: RelativeReset = {
+      kind: "absolute",
+      text: "11月7日8点55分",
     };
     const passed: RelativeReset = { kind: "passed", text: "" };
     const translator =
@@ -257,13 +267,24 @@ describe("UsagePanel", () => {
     // the copy carries its own leading space rather than the panel adding it.
     expect(resetLabel(duration, translator(en))).toBe("1h 11m until reset");
     expect(resetLabel(duration, translator(zh))).toBe("1h 11m后重置");
-    // An instant takes a PREFIX.
-    expect(resetLabel(absolute, translator(en))).toBe("Resets Nov 7, 08:55 AM");
-    expect(resetLabel(absolute, translator(zh))).toBe("重置于 Nov 7, 08:55 AM");
+    // An instant takes a prefix in en and a SUFFIX in zh: the two languages
+    // disagree about where the word goes, which is why the dictionary carries
+    // both halves and one of them is empty per locale. `重置于 11月7日 08:55` was
+    // the wrong shape AND the wrong time format.
+    expect(resetLabel(absolute, translator(en))).toBe("Resets Nov 7, 8:55 AM");
+    expect(resetLabel(absoluteZh, translator(zh))).toBe("11月7日8点55分重置");
+    expect(resetLabel(absoluteZh, translator(en))).toBe(
+      "Resets 11月7日8点55分"
+    );
     // A window that already rolled over has no countdown to give, and must not
     // claim one.
     expect(resetLabel(passed, translator(en))).toBe("Already reset");
     expect(resetLabel(passed, translator(zh))).toBe("已重置");
+    // Under a minute: copy, not a duration, so the unit localizes too — the old
+    // hardcoded `<1m` put a Latin unit in the Chinese line.
+    const underMinute: RelativeReset = { kind: "underMinute", text: "" };
+    expect(resetLabel(underMinute, translator(en))).toBe("<1m until reset");
+    expect(resetLabel(underMinute, translator(zh))).toBe("<1分后重置");
   });
 
   it("renders a passed reset without inventing a countdown", () => {
