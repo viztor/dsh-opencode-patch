@@ -453,7 +453,7 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
  * standing instruction is to raise the ceiling, never to cut content.
  */
 /**
- * A TRIPWIRE, not a budget. 88 KiB sits ~1.4 KB above the real working size
+ * A TRIPWIRE, not a budget. 96 KiB sits ~2 KB above the real working size
  * (86.5 KB), which is the whole point: the number catches a dependency being
  * bundled instead of left external, and that lands as a jump of THOUSANDS of
  * bytes. It must never fire on prose or on a feature that earns its bytes.
@@ -465,11 +465,18 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
  * behaviour, and the owner's standing instruction is to raise the ceiling
  * rather than delete something to fit.
  *
+ * Raised 88 -> 96 when the settings card gained the Go usage summary. That was
+ * a measured +7.8 KB, and it is the module's own source: this file's rule is
+ * that comments ship, and the summary's rationale (why "left" is a percentage
+ * and never a dollar figure) is load-bearing. Verified against a stashed
+ * baseline before raising, precisely because a jump that size is the shape this
+ * guard exists to catch.
+ *
  * The margin is what matters, not the number: at 85 the bundle sat 526 bytes
  * under the line, which means the next honest edit trips a guard whose only
  * job is to notice a dependency.
  */
-const CLIENT_BUDGET = 88 * 1024;
+const CLIENT_BUDGET = 96 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);
