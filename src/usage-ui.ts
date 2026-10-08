@@ -580,10 +580,99 @@ export const getWindowColorFor = (affecting?: AffectingWindowResult): string =>
  * serving both could only ever be right for one of them, and `重置于 1h 11m`
  * literally reads "resets at 1h 11m".
  */
+/**
+ * One instant in the reader's own language.
+ *
+ * `Intl.DateTimeFormat` renders zh's time as `08:55` — CLDR's zh time pattern is
+ * `HH:mm` — but a Chinese sentence writes `8点55分`. So for zh the platform's own
+ * PARTS are reused and only the hour/minute separator is localized: the
+ * month/day literals (`11`, `月`, `7`, `日`) come out of the formatter untouched,
+ * and the leading zero comes off the hour because 点 takes the bare number.
+ * English keeps the platform's whole assembled string.
+ */
+const absoluteText = (locale: string | undefined, target: Date): string => {
+  const format = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    month: "short",
+  });
+  if (locale?.startsWith("zh") !== true) {
+    return format.format(target);
+  }
+  const parts = format.formatToParts(target);
+  const hourIndex = parts.findIndex((part) => part.type === "hour");
+  const head = parts
+    .slice(0, hourIndex)
+    .map((part) => part.value)
+    .join("")
+    .trim();
+  const value = (type: string): string =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${head}${value("hour").replace(/^0/, "")}点${value("minute")}分`;
+};
+
+/** The engine's own duration formatter (ES2025; this project's lib is ES2024). */
+type DurationFormatCtor = new (
+  locale?: string,
+  options?: { style?: string }
+) => { format: (value: unknown) => string };
+
+/** Whether a value is that constructor. A predicate, so no assertion is needed. */
+const isDurationFormatCtor = (value: unknown): value is DurationFormatCtor =>
+  typeof value === "function";
+
 export interface RelativeReset {
-  kind: "duration" | "absolute" | "passed";
+  kind: "duration" | "underMinute" | "absolute" | "passed";
   text: string;
 }
+
+/**
+ * One duration in the reader's own language.
+ *
+ * `Intl.DurationFormat` is the platform's built-in for this and is used whenever
+ * the engine ships it — Chrome 129+, Safari 18.4+, Firefox 139+, Node 24+. The
+ * `narrow` style is what a quota row wants: `1h 11m` in en and `1小时11分钟` in
+ * zh, with each locale's own unit words, ordering and pluralisation. The
+ * alternative was a hand-rolled unit table, which is a second formatter and a
+ * second set of translation decisions.
+ *
+ * The fallback exists because a missing API must not blank the row, and it is
+ * deliberately a unit TABLE rather than a second formatter: same composition,
+ * two words per language.
+ */
+const durationText = (
+  locale: string | undefined,
+  parts: { days?: number; hours?: number; minutes?: number }
+): string => {
+  // Read off `Intl` through a GUARD, not an assertion. The constructor is
+  // ES2025 and this project's `lib` is ES2024, so the type is ours to name — but
+  // naming it is not the same as asserting it, and the engine either ships the
+  // function or it does not.
+  const candidate: unknown = Reflect.get(Intl, "DurationFormat");
+  if (isDurationFormatCtor(candidate)) {
+    try {
+      return new candidate(locale, { style: "narrow" }).format(parts);
+    } catch {
+      // An engine that rejects the locale must fall through, not blank the row.
+    }
+  }
+  const zh = locale?.startsWith("zh") === true;
+  const units = zh
+    ? { d: "天", h: "小时", m: "分" }
+    : { d: "d", h: "h", m: "m" };
+  const out: string[] = [];
+  if (parts.days !== undefined && parts.days > 0) {
+    out.push(`${parts.days}${units.d}`);
+  }
+  if (parts.hours !== undefined && parts.hours > 0) {
+    out.push(`${parts.hours}${units.h}`);
+  }
+  if (parts.minutes !== undefined && parts.minutes > 0) {
+    out.push(`${parts.minutes}${units.m}`);
+  }
+  return out.join(zh ? "" : " ");
+};
 
 export const formatRelativeReset = (
   dateStr: string,
@@ -611,39 +700,42 @@ export const formatRelativeReset = (
   const diffMinutes = Math.floor(diffMs / 60_000);
   if (diffMinutes < 1) {
     // The sub-minute case for a POSITIVE diff. Guarding only `diffMs <= 0` left
-    // 1-29s rounding to `0m`.
-    return { kind: "duration", text: "<1m" };
+    // 1-29s rounding to the string `0m`. Its WORDING is copy rather than a
+    // duration — no locale formats "under a minute" as a number of minutes —
+    // so it carries its own kind and `resetLabel` supplies the text.
+    return { kind: "underMinute", text: "" };
   }
   if (diffMinutes < 60) {
-    return { kind: "duration", text: `${diffMinutes}m` };
+    return {
+      kind: "duration",
+      text: durationText(locale, { minutes: diffMinutes }),
+    };
   }
   const diffHours = Math.floor(diffMinutes / 60);
   const remMinutes = diffMinutes % 60;
   if (diffHours < 24) {
     return {
       kind: "duration",
-      text: remMinutes > 0 ? `${diffHours}h ${remMinutes}m` : `${diffHours}h`,
+      text: durationText(locale, {
+        hours: diffHours,
+        ...(remMinutes > 0 ? { minutes: remMinutes } : {}),
+      }),
     };
   }
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) {
     const remHours = diffHours % 24;
     // Same zero guard the hour branch above already applies, so exactly two
-    // days reads `2d` rather than `2d 0h`.
+    // days reads `2天` / `2d` rather than `2天0小时`.
     return {
       kind: "duration",
-      text: remHours > 0 ? `${diffDays}d ${remHours}h` : `${diffDays}d`,
+      text: durationText(locale, {
+        days: diffDays,
+        ...(remHours > 0 ? { hours: remHours } : {}),
+      }),
     };
   }
-  return {
-    kind: "absolute",
-    text: new Date(target).toLocaleDateString(locale, {
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      month: "short",
-    }),
-  };
+  return { kind: "absolute", text: absoluteText(locale, new Date(target)) };
 };
 
 /**
@@ -654,8 +746,10 @@ export const formatRelativeReset = (
  *
  * - duration — a SUFFIX, because the unit is Latin and the label is not:
  *   `1h 11m后重置` / `1h 11m until reset`.
- * - absolute — a PREFIX, which is what a point in time needs:
- *   `重置于 11月7日 08:55` / `Resets Nov 7, 08:55 AM`.
+ * - absolute — a prefix AND a suffix, because the two languages disagree about
+ *   where the word goes: `Resets Nov 7, 8:55 AM` puts it first, `11月7日8点55分重置`
+ *   puts it last. Both halves live in the dictionary and one of them is empty per
+ *   locale.
  * - passed — the window already rolled over, so there is no countdown to give.
  *
  * One prefix for all three produced `重置于 1h 11m`, which reads "resets at
@@ -665,17 +759,24 @@ export const resetLabel = (
   reset: RelativeReset,
   t: (key: ResetCopyKey) => string
 ): string => {
-  if (reset.kind === "duration") {
-    return `${reset.text}${t("usageResetsIn")}`;
+  if (reset.kind === "duration" || reset.kind === "underMinute") {
+    const text =
+      reset.kind === "underMinute" ? t("usageResetUnderMinute") : reset.text;
+    return `${text}${t("usageResetsIn")}`;
   }
   if (reset.kind === "passed") {
     return t("usageResetPassed");
   }
-  return `${t("usageResets")} ${reset.text}`;
+  return `${t("usageResetsAtPrefix")}${reset.text}${t("usageResetsAtSuffix")}`;
 };
 
 /** The copy keys {@link resetLabel} composes, so a rename cannot drift. */
-export type ResetCopyKey = "usageResets" | "usageResetsIn" | "usageResetPassed";
+export type ResetCopyKey =
+  | "usageResetsAtPrefix"
+  | "usageResetsAtSuffix"
+  | "usageResetsIn"
+  | "usageResetPassed"
+  | "usageResetUnderMinute";
 
 export interface AffectingWindowResult {
   key: "monthly" | "rolling" | "weekly";
