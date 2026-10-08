@@ -125,7 +125,18 @@ export const STYLES = `
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   padding: 3px 9px;
-  border-radius: 999px;
+  /* --dsw-radius-md (12px), NOT 999px. The stadium IS a host idiom — it is what
+   * Tag, the Switch track, the kit's Pill and the close button all use — but
+   * every one of those is a FIXED-height chip, where a pill reads as a pill.
+   * On this trigger the radius clamps to half the box, so 999px turns it into
+   * the same stadium while the model selector beside it stays a rounded rect:
+   * two neighbouring controls, two different corner languages.
+   *
+   * The reference is the host's own composer control, which pairs the two
+   * properties at issue: border-radius var(--dsw-radius-md) with background
+   * var(--dsw-alias-interactive-bg-hover) — the fill we already use, so the
+   * colour was never wrong and only the radius was. */
+  border-radius: var(--dsw-radius-md, 12px);
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
