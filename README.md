@@ -179,6 +179,25 @@ If your host has no loaded `llm-pi-ai` entry, the plugin registers nothing and s
 
 ---
 
+### 5. The catalog: what gets merged, and what wins
+
+The model list is assembled from four sources, each answering a different question:
+
+| Source | Answers |
+| :-- | :-- |
+| Bundled shim | what can be offered before any network call — cold start, offline |
+| models.dev | the canonical spec, price and display name |
+| The gateway's `/models` | what **this account** actually has |
+| Discovery decoration | what `discoverModels` should answer |
+
+Merging is **additive**: adapter rows are kept, canonical rows are appended when a model is missing, and a row is dropped only when the provider-scoped retirement list names it — a fact, not a guess. Display names and prices come from models.dev, because a gateway listing carries ids and little else.
+
+Two things follow that you will notice in use. **Cold start is never empty** — the bundled shim answers before the first refresh, so the picker has models immediately. And **a model models.dev has no row for still appears**, with `—` where its rate would be: never a guess, and never the previous model's name.
+
+Both generated files are checked in CI (`catalog:shim`, `limits:shim`); they exit non-zero when the vendor's data moved, which is the only way to notice models.dev changing under you.
+
+→ Protocol routing, the merge and the UI in technical detail: [`docs/protocol-routing-and-merge.md`](./docs/protocol-routing-and-merge.md) · [中文](./docs/protocol-routing-and-merge.zh-CN.md)
+
 ## 🖥 The Interface
 
 ### Settings card — _Settings → Plugins → OpenCode Patch_
