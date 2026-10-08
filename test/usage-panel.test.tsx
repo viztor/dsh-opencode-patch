@@ -464,8 +464,25 @@ describe("UsagePanel", () => {
     expect(collectText(tree)).not.toContain("t:zenCredit");
   });
 
+  it("keeps each window two blocks: one label row, one bar", () => {
+    // The reset used to own a line BELOW the bar, so a window was three stacked
+    // blocks and three windows were nine lines — and the last reset sat flush
+    // against the session spend with nothing between them. Label, reset and
+    // percent now share one line; the bar is the only thing under it.
+    const tree = UsagePanel(panelProps({ usage: usage() }));
+    const row = byClass(tree, "dsh-oc-usage-row")[0];
+    const labels = findAll(row, "span").map((node) => node.props.className);
+    expect(labels).toContain("dsh-oc-usage-row-left");
+    expect(labels).toContain("dsh-oc-usage-row-reset");
+    expect(labels).toContain("dsh-oc-usage-row-right");
+
+    // And the class that made the third block is gone from both sides.
+    expect(byClass(tree, "dsh-oc-usage-subrow")).toHaveLength(0);
+    expect(STYLES).not.toContain("dsh-oc-usage-subrow");
+  });
+
   it("renders the limited label through the sheet, not an inline style", () => {
-    // The subrow used to carry its colour in an ad-hoc `style` prop — the only
+    // The reset line used to carry its colour in an ad-hoc `style` prop — the only
     // one surviving in the panel — so a second limited-state tone could only
     // duplicate it or diverge from it.
     const limited = usage({

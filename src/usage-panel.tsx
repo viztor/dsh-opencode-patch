@@ -211,6 +211,24 @@ export const UsagePanel = ({
                         />
                         {t(entry.labelKey)}
                       </span>
+                      {/*
+                        The reset used to own its own line below the bar, which
+                        made every window THREE blocks deep and the three windows
+                        nine lines tall — and the last reset sat flush against the
+                        session spend with nothing between them. It belongs on
+                        the label row: label left, reset and percent right, one
+                        line per window plus the bar that gives the number its
+                        shape.
+                      */}
+                      <span className="dsh-oc-usage-row-reset">
+                        {t("usageResets")}{" "}
+                        {formatRelativeReset(window.resetsAt, locale)}
+                        {window.status === "rate-limited" && (
+                          <span className="dsh-oc-usage-limited">
+                            {t("usageLimited")}
+                          </span>
+                        )}
+                      </span>
                       <span className="dsh-oc-usage-row-right">
                         {window.percent}%
                       </span>
@@ -231,17 +249,6 @@ export const UsagePanel = ({
                         }}
                       />
                     </div>
-                  </div>
-                  <div className="dsh-oc-usage-subrow">
-                    <span>
-                      {t("usageResets")}{" "}
-                      {formatRelativeReset(window.resetsAt, locale)}
-                    </span>
-                    {window.status === "rate-limited" && (
-                      <span className="dsh-oc-usage-limited">
-                        {t("usageLimited")}
-                      </span>
-                    )}
                   </div>
                 </div>
               );
