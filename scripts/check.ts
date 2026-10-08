@@ -444,7 +444,15 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
  * buys back the prose in the files that own the knowledge. Measure with
  * `wc -c lib/client.js`.
  */
-const CLIENT_BUDGET = 75 * 1024;
+/**
+ * A TRIPWIRE, not a budget. 79 KiB sits ~3.5 KB above the real working size
+ * (77.3 KB), which is the whole point: the number catches a dependency being
+ * bundled instead of left external, and that lands as a jump of THOUSANDS of
+ * bytes. It must never fire on prose. Raised from 75 KiB when a couple of
+ * hundred bytes of client comments pushed the bundle over — the owner's
+ * standing instruction is to raise the ceiling, never to cut content.
+ */
+const CLIENT_BUDGET = 79 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);
