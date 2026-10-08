@@ -56,7 +56,15 @@ export const en = {
     "Shows accumulated session cost and the active model's per-million-token rate in the meter, priced from models.dev. Turn off to show quota only.",
   usageRefreshFailed: "Refresh failed",
   usageRefreshing: "Refreshing…",
-  usageResets: "Resets",
+  /**
+   * The absolute shape's word, in TWO halves: a locale puts it where its own
+   * grammar wants it. English reads `Resets Nov 7, 8:55 AM` (prefix, empty
+   * suffix); Chinese reads `11月7日8点55分重置` (empty prefix, suffix). Word order
+   * is a property of the language, so it belongs in the dictionary rather than
+   * in a branch in the panel.
+   */
+  usageResetsAtPrefix: "Resets ",
+  usageResetsAtSuffix: "",
   /**
    * The SUFFIX form, for a countdown: `1h 11m until reset`. Carries its own
    * leading space because zh does not want one (`1h 11m后重置`), and the two
@@ -65,6 +73,12 @@ export const en = {
   usageResetsIn: " until reset",
   /** A window whose reset instant has already passed — see `RelativeReset`. */
   usageResetPassed: "Already reset",
+  /**
+   * Under a minute to go. Copy rather than a duration: no locale formats "less
+   * than a minute" as a number of minutes, and the old hardcoded `<1m` leaked
+   * a Latin unit into the Chinese line.
+   */
+  usageResetUnderMinute: "<1m",
   usageRetry: "Retry now",
   usageTitle: "OpenCode Go usage",
   usageAuthRejected: "Go key rejected — check this account’s key",
@@ -138,9 +152,11 @@ export const zh: Record<keyof typeof en, string> = {
     "在额度表中显示本会话累计花费与当前模型每百万 Token 费率（取自 models.dev）。关闭后仅显示额度。",
   usageRefreshFailed: "刷新失败",
   usageRefreshing: "正在刷新…",
-  usageResets: "重置于",
+  usageResetsAtPrefix: "",
+  usageResetsAtSuffix: "重置",
   usageResetsIn: "后重置",
   usageResetPassed: "已重置",
+  usageResetUnderMinute: "<1分",
   usageRetry: "立即重试",
   usageTitle: "OpenCode Go 用量",
   usageAuthRejected: "Go 密钥被拒 — 请检查该账号的 Go key",
