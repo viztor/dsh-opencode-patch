@@ -255,7 +255,7 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  OpenCode Zen                [Pay-as-you-go]  │
 ├───────────────────────────────────────────────┤
 │  Session Spend                                │
-│  Space Bunny Free · no extra charge     $0.00│
+│  Space Bunny Free · Free     $0.00│
 ├───────────────────────────────────────────────┤
 │  ⟳ Updated 08:30                    Top up ›   │
 └───────────────────────────────────────────────┘

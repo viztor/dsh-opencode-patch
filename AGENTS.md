@@ -136,18 +136,27 @@ Stacked, that is solid white. The right declaration is the host's actual menu ma
 
 **Two host surfaces are floating boxes, and matching on "it is also a floating surface" got this wrong twice.** The panel is **menu material** (`--dsw-menu-surface-fill` + `--dsw-menu-backdrop-filter`, the pair the theme's `[data-menu-material]` stroke rule is built for — the host's own `Menu` opts in by rendering `data-menu-material="translucent"`). The dockkit **float** is not: `position: fixed`, an opaque `--dsw-alias-bg-layer-2`, no backdrop, docked to the screen edge. They differ where it counts:
 
-| | popover / **menu material** (ours) | dockkit **float** |
+|  | popover / **menu material** (ours) | dockkit **float** |
 | --- | --- | --- |
 | radius | `--dsw-radius-lg` (16px) | `--dsw-radius-panel` (28px) |
 | stroke | `--dsw-alias-border-l3` | `--dsw-alias-border-l2` |
 | elevation | `--dsw-elevation-prominent` | `--dsw-elevation-prominent` |
 | source | `MenuSurface.module.css`, `[data-menu-material]` | `_float_6nhg2_156` in the app stylesheet |
 
-Radius went `lg` → `panel` → back to `lg`, and the stroke `l3` → `l2` → back to `l3`, across two rounds of "read the host's values" that made it worse both times. **The discriminator is MATERIAL, not resemblance**: check whether the reference surface is the same *kind* of thing (translucent popover vs opaque docked panel), not merely a similar shape. A screenshot is what catches this; the code cannot.
+Radius went `lg` → `panel` → back to `lg`, and the stroke `l3` → `l2` → back to `l3`, across two rounds of "read the host's values" that made it worse both times. **The discriminator is MATERIAL, not resemblance**: check whether the reference surface is the same _kind_ of thing (translucent popover vs opaque docked panel), not merely a similar shape. A screenshot is what catches this; the code cannot.
 
-**The border scale is not inverted, and reading a level number without the values is how that gets questioned.** Light-theme alpha: `l1` 4%, `l2` 10%, `l3` 12%, `l4` 16%. A **higher number is a stronger border** — `l4` is the loudest in the app and `l1` the faintest. `l3`/`l4` also happen to be the **control** scale (switch track, outline button, input, tag, dockkit dividers), which is why "the chat box is l3, so we should be l4" reaches for the strongest token in the app when the answer is the popover's own.
+**The stroke is chosen by the THEME, per theme, off an ATTRIBUTE — so do not declare it.** The owner's first instinct ("maybe we should use `border-l4`?") was **right**, and two rounds of reasoning talked them out of it. The theme ships:
 
-**A token's NAME is not evidence.** `--dsw-elevation-panel` exists, so the panel was moved onto it; the host's surfaces use `--dsw-elevation-prominent`. Contrast `--dsw-radius-panel`, whose name holds — for the *float*, not for us. **Read the consumer, and read the consumer that matches your material.**
+```
+body                                            -> --dsw-elevation-stroke-color: border-l4
+body[data-ds-dark-theme] [data-menu-material]   -> border-l3
+```
+
+There is **no light-theme `[data-menu-material]` rule**. Grepping that selector out of context yields a rule that reads like a global one and is in fact **dark-only** — which is why `l3` looked correct (it was the dark answer) and why hardcoding it was wrong in the light theme, the theme every screenshot here is taken in. The panel now carries `data-menu-material="translucent"`, exactly what the host's own `Menu` renders, and declares **no** stroke of its own: the theme decides, and both themes are right. **Opting in beats re-declaring** — a hand-set `--dsw-elevation-stroke-color` pins one theme's answer and silently breaks the other's, which is a worse bug than the one it replaced because it looks correct in whichever theme you test it in.
+
+**The border scale is not inverted.** Light-theme alpha: `l1` 4%, `l2` 10%, `l3` 12%, `l4` 16% — a **higher number is a stronger border**, `l4` the loudest in the app, `l1` the faintest. Read the value before the name; "is l1 the top?" is answerable from the alpha in one command and worth answering before acting on it.
+
+**Read a CSS rule WITH its selector, never as a bare match.** Three times in one session: a `body[data-ds-dark-theme]` rule read as global, a dockkit float read as "the panel's reference", and an `elevation-stroke-color` definition traced across a JS string boundary (`lib/client.js` embeds CSS as string literals, so naive brace-matching walks out of the CSS and into JavaScript — parse the blob, not the file). The theme's CSS lives in `dsh-client-ui-theme/lib/client.js` as embedded strings; `grep` proves a rule exists, never which scope it applies to.
 
 **Braces cannot appear in `STYLES` comments.** The panel tests extract a rule with a brace-free match, so a `{` in an explanatory comment truncates the captured rule and fails every assertion in the file — with an error that names a missing declaration rather than a comment. Same family as the backtick rule below: prose inside a template literal has escaping constraints the linter does not check.
 
@@ -201,12 +210,12 @@ The host UI kit ships **no** boolean control and no boolean/list/enum spec, so t
 
 `plugins.bundle.config` is rendered with `{ view }` only — the host-owned `form` (state + mutate) is passed to `plugins.item` and `plugins.row.config`, **not** to bundle config — so the card owns its scope and `SettingsFormModel` itself. If the host ever ships a boolean or enum field, delete the matching file here and render that instead.
 
-Tests — 538 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
+Tests — 539 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
 
 - Host behavior split by concern: `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` (27) · `session-cost` · `models-discovery`.
 - Host units asserted directly, because every other module narrows through them: `guards` (12) · `config-values` (15) · `cordis-context` (11) · `debug` (5). Each case pins the shapes the unit must REJECT as well as the ones it accepts — an over-accepting guard mis-shapes a host object silently.
 - Routing: `responses-routes` (10) split table · `responses-provider` (26) the mount — and the stand-in host it runs against **reproduces all four collisions**, so four more of those cases assert the stand-in REFUSES the shapes the old mount passed.
-- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (23) gating + copy/failure parsing · `usage-pill-mount` (18) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (30) trigger + panel · `client-bundle` (4) bundle boundary.
+- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (23) gating + copy/failure parsing · `usage-pill-mount` (18) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (31) trigger + panel · `client-bundle` (4) bundle boundary.
 - The half of the meter that was untested: `go-discovery` (61) credential policy · `usage-service` (32) + `usage-contract` (19, 100%) the Host service and its parsers · `tool-fallback` (25) + `turn-store` (12) the free-tier rewrite and the ALS store.
 - `test/test-helpers.ts` — shared fixtures: mock streams, capture fetch, predicates, `createMockContext`.
 - `test/primitives-stub.tsx` — stand-in for the host UI kit; keep it behaviourally faithful to the real primitives (trimmed drafts, empty clears).
