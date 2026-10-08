@@ -69,6 +69,25 @@ export interface UsageTriggerProps {
   usage: GoUsage | undefined;
 }
 
+/**
+ * The Go hover: EVERY window, because the trigger can print only one of them.
+ *
+ * The host `Tooltip` takes a TEXT label — its type is not a node — so the answer
+ * is one line rather than a row per window. A richer card would be the host's
+ * `HoverCard` (anchor + content), which is the built-in for that shape.
+ */
+export const goQuotaTooltip = (
+  t: (key: string) => string,
+  usage: GoUsage | undefined
+): string => {
+  if (usage === undefined) {
+    return t("usageTitle");
+  }
+  return BREAKDOWN_WINDOWS.map(
+    ({ key, labelKey }) => `${t(labelKey)} ${usage[key].percent}%`
+  ).join(" · ");
+};
+
 export const UsageTrigger = ({
   displayPercent,
   isLimited,

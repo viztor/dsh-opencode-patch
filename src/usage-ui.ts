@@ -795,35 +795,27 @@ export interface AffectingWindowResult {
   window: UsageWindow;
 }
 
+/** Whether a window is OUT: the vendor says so, or it is at the cap. */
+const isExhausted = (window: UsageWindow): boolean =>
+  window.status === "rate-limited" || window.percent >= 100;
+
 export const getAffectingWindow = (usage: GoUsage): AffectingWindowResult => {
-  // 1. Any rate-limited window is actively blocking the user
-  if (usage.monthly.status === "rate-limited") {
+  // 1. A window that is OUT is what the reader has to see, widest first: a
+  //    monthly cap explains a refusal that the 5-hour window does not.
+  if (isExhausted(usage.monthly)) {
     return { key: "monthly", label: "Monthly", window: usage.monthly };
   }
-  if (usage.weekly.status === "rate-limited") {
+  if (isExhausted(usage.weekly)) {
     return { key: "weekly", label: "Weekly", window: usage.weekly };
   }
-  if (usage.rolling.status === "rate-limited") {
+  if (isExhausted(usage.rolling)) {
     return { key: "rolling", label: "5-Hour", window: usage.rolling };
   }
 
-  // 2. Otherwise pick the highest percentage
-  const candidates: {
-    key: "monthly" | "rolling" | "weekly";
-    label: string;
-    window: UsageWindow;
-  }[] = [
-    { key: "monthly", label: "Monthly", window: usage.monthly },
-    { key: "weekly", label: "Weekly", window: usage.weekly },
-    { key: "rolling", label: "5-Hour", window: usage.rolling },
-  ];
-  candidates.sort((a, b) => b.window.percent - a.window.percent);
-
-  const [top] = candidates;
-  if (top !== undefined && top.window.percent > 0) {
-    return top;
-  }
-  // Default to rolling hourly quota when all are 0
+  // 2. Otherwise the 5-HOUR window, which resets soonest and so is the one the
+  //    reader can still act on. Picking the HIGHEST percentage made the meter
+  //    answer for the weekly window (33%) while the 5-hour window (11%) was the
+  //    live constraint — read as "why is it showing the weekly limit?".
   return { key: "rolling", label: "5-Hour", window: usage.rolling };
 };
 
