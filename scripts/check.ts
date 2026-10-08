@@ -454,8 +454,13 @@ if (existsSync(clientPath)) {
     );
   } else {
     fail(
-      `lib/client.js is ${clientStat.size} bytes, over the ${CLIENT_BUDGET} tripwire — ` +
-        "a dependency was likely bundled instead of left external"
+      `lib/client.js is ${clientStat.size} bytes, over the ${CLIENT_BUDGET} tripwire. ` +
+        "Two causes, two responses — the owner's standing instruction is to RAISE THE " +
+        "CEILING, never to cut content:\n" +
+        "  - a jump of thousands of bytes? A dependency was bundled instead of left " +
+        "external. Add it to deps.neverBundle in vite.config.ts.\n" +
+        "  - a few hundred bytes of copy or comments? Raise CLIENT_BUDGET. Do NOT trim " +
+        "prose to fit a number that exists only to catch the case above."
     );
   }
 } else {
