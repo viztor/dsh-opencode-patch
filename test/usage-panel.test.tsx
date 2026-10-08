@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionUsageSnapshot } from "../src/session-cost.ts";
+import { en as copyEn, zh as copyZh } from "../src/settings-copy.ts";
 import type { GoUsage } from "../src/usage-contract.ts";
 import {
   UsagePanel,
@@ -285,6 +286,57 @@ describe("UsagePanel", () => {
     const underMinute: RelativeReset = { kind: "underMinute", text: "" };
     expect(resetLabel(underMinute, translator(en))).toBe("<1m until reset");
     expect(resetLabel(underMinute, translator(zh))).toBe("<1分后重置");
+  });
+
+  it("renders the composed reset line through the panel, in both languages", () => {
+    // The gap that let `重置于 1h 11m` ship: `t` in this file echoes keys, so the
+    // COMPOSED string was invisible to every panel test — only the helper was
+    // ever asserted. These cases drive the real dictionaries through the real
+    // component and read the line as a user would.
+    const windows = {
+      monthly: {
+        percent: 10,
+        resetsAt: isoAt(9 * 86400 * 1000),
+        status: "ok" as const,
+      },
+      rolling: {
+        percent: 20,
+        // 90m30s, not a bare 90m: the formatter FLOORS, so a fixture sitting
+        // exactly on the minute lands in the bucket below it the moment any
+        // time passes between `isoAt()` and the assertion.
+        resetsAt: isoAt(90 * 60 * 1000 + 30_000),
+        status: "ok" as const,
+      },
+      weekly: {
+        percent: 30,
+        resetsAt: isoAt(3 * 86400 * 1000),
+        status: "ok" as const,
+      },
+    };
+    // `collectText` returns one entry PER TEXT NODE, so a substring assertion
+    // needs them joined — `toContain` on the array would demand an exact match.
+    const line = (locale: "en" | "zh"): string => {
+      const dict = locale === "zh" ? copyZh : copyEn;
+      return collectText(
+        UsagePanel(
+          panelProps({
+            locale,
+            t: (key: string) => dict[key as keyof typeof dict] ?? key,
+            usage: usage(windows),
+          })
+        )
+      ).join(" ");
+    };
+
+    // A duration reads as a suffix in both languages, with the units localized.
+    expect(line("en")).toContain("1h 30m until reset");
+    expect(line("zh")).toContain("1小时30分钟后重置");
+    // An instant is a prefix in en and a suffix in zh.
+    expect(line("en")).toMatch(/Resets [A-Z][a-z]{2} \d+, \d+:\d+ [AP]M/u);
+    expect(line("zh")).toMatch(/月\d+日\d+点\d+分重置/u);
+    // And the malformed composition this pins against never appears.
+    expect(line("zh")).not.toContain("重置于 1小时");
+    expect(line("zh")).not.toContain("重置于 3天");
   });
 
   it("renders a passed reset without inventing a countdown", () => {
