@@ -551,10 +551,12 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
-  it("switches the footer between loading and last-updated, and wires retry", () => {
-    expect(collectText(UsagePanel(panelProps({ updatedAt: null })))).toContain(
-      "t:usageLoading"
-    );
+  it("leaves the footer empty until the first read, then wires retry", () => {
+    // No loading text: a cell that fills in and then empties makes the row jump
+    // on every mount, which reads as a glitch rather than as progress.
+    expect(
+      collectText(UsagePanel(panelProps({ updatedAt: null })))
+    ).not.toContain("usageLoading");
 
     const retry = vi.fn<() => void>();
     const ready = UsagePanel(panelProps({ retry }));
