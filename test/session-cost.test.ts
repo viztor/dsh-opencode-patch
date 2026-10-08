@@ -39,11 +39,15 @@ beforeEach(() => {
 });
 
 describe("formatUsd", () => {
-  it("keeps sub-cent precision until the amount is legible", () => {
+  it("always reads two decimals, whatever the magnitude", () => {
+    // The tiered formatter (3dp below a cent, 4dp below a tenth) printed
+    // $0.006 on the trigger — precision in the wrong place. A meter is a
+    // gauge, not an invoice, and a number whose LENGTH changes with its value
+    // makes the row shift on every turn.
     expect(formatUsd(0)).toBe("$0.00");
-    // Below a tenth of a cent, four decimals is the smallest honest reading.
-    expect(formatUsd(0.00012)).toBe("$0.0001");
-    expect(formatUsd(0.0042)).toBe("$0.004");
+    expect(formatUsd(0.00012)).toBe("$0.00");
+    expect(formatUsd(0.0042)).toBe("$0.00");
+    expect(formatUsd(0.006)).toBe("$0.01");
     expect(formatUsd(0.42)).toBe("$0.42");
     expect(formatUsd(12.3456)).toBe("$12.35");
   });
