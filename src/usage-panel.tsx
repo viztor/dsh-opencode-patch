@@ -6,7 +6,11 @@
  * @module dsh-opencode-patch/usage-panel
  */
 
-import { Tag, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+import {
+  IconRefreshOutlineRegular,
+  Tag,
+  Tooltip,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
 import { formatUsd } from "./go-limits.ts";
@@ -22,33 +26,24 @@ import {
 } from "./usage-ui.ts";
 
 /**
- * The refresh glyph, drawn here rather than imported: the host kit ships no icon
- * set, and a hand-rolled 12px arrow is smaller than any dependency that would
- * carry one. `currentColor` so it rides the muted label colour beside it.
+ * The refresh glyph is the HOST'S, not a hand-drawn arrow.
+ *
+ * This used to carry a comment claiming the kit ships no icon set, and that
+ * claim is why the arrow stayed hand-drawn — it ships ~150 icons. Every icon is
+ * `(props) => <Artwork {...props} strokeWidth={…}>` over a `size = 16` default,
+ * so the only thing we choose is the size. `currentColor` comes from the
+ * artwork, which is what lets it ride the muted label colour beside it.
+ *
+ * General rule, and it cost a hand-rolled divider, dot and pill before it was
+ * written down: **a claim about what the host does NOT ship must be verified
+ * before it is written, because it freezes the decision.**
  */
 const RefreshIcon = (): React.ReactElement => (
-  <svg
+  <IconRefreshOutlineRegular
     aria-hidden="true"
     className="dsh-oc-usage-refresh-icon"
-    fill="none"
-    height="12"
-    viewBox="0 0 16 16"
-    width="12"
-  >
-    <path
-      d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeWidth="1.5"
-    />
-    <path
-      d="M13.2 1.8v3h-3"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.5"
-    />
-  </svg>
+    size={14}
+  />
 );
 
 /** The ring / Zen pill that opens the panel. */
