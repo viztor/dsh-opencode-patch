@@ -311,9 +311,11 @@ describe("UsagePanel", () => {
     expect(panel).not.toContain("--dsw-specific-menu");
     expect(panel).not.toContain("--dsw-alias-bg-layer-2");
     expect(panel).not.toMatch(/background-color:\s*Canvas/);
-    // The host scopes this stroke to its menu material; we are the material.
+    // The stroke level is the SURFACE scale, not the control one: l1 is a
+    // floating dropdown, l2 a floating panel, l3/l4 are controls (switch track,
+    // outline button, input). l2 is what the harness's own floating panel uses.
     expect(panel).toContain(
-      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
+      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l2)"
     );
   });
 
@@ -562,15 +564,20 @@ describe("UsagePanel", () => {
       STYLES.replaceAll(/\/\*[\s\S]*?\*\//g, "")
     )?.[0];
     expect(rule).toContain("var(--dsw-radius-panel, 28px)");
-    expect(rule).toContain("var(--dsw-elevation-panel");
     expect(rule).not.toContain("--dsw-radius-lg");
-    expect(rule).not.toContain("--dsw-elevation-prominent");
 
-    // The border was already the host's value and must stay it: the theme puts
-    // --dsw-alias-border-l3 (#0000001f / #ffffff29) on [data-menu-material].
+    // Read off the harness's own floating panel (_float_6nhg2_156), which is
+    // this same kind of thing in this same dock.
+    expect(rule).toContain("var(--dsw-elevation-prominent");
+    expect(rule).not.toContain("--dsw-elevation-panel");
+
+    // l3/l4 are the CONTROL scale — switch track, outline button, input, table
+    // divider. The chat box is on l3 because it is a control; surfaces are l1
+    // (dropdown) and l2 (panel). l2 is what the dockkit float uses.
     expect(rule).toContain(
-      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
+      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l2)"
     );
+    expect(rule).not.toMatch(/alias-border-l[134]/);
   });
 
   it("draws NO window rows when Go's quota could not be read", () => {
