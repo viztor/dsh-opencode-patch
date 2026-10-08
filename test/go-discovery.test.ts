@@ -671,24 +671,42 @@ describe("resolveGoApiKey: which source the policy selects", () => {
     }
   });
 
-  it("never lets a Zen key satisfy the Go lookup, under any policy", async () => {
-    // The Go `/usage` endpoint rejects `oc_sk_…` outright. Handing it the Zen
-    // key "because it was captured most recently" is the exact failure the
-    // tier argument on every captured step exists to prevent.
-    process.env.OPENCODE_API_KEY = "oc_sk_zen";
-    recordCapturedApiKey("oc_sk_zen", "opencode", ZEN_REQUEST);
+  it("hands the Go lookup an oc_sk_ key, because the endpoint accepts one", async () => {
+    // This test used to assert the opposite, on the stated premise that "the Go
+    // `/usage` endpoint rejects `oc_sk_…` outright". Probed live on 2026-10-08:
+    // an `oc_sk_…` key answers `/zen/go/v1/usage` with HTTP 200 and real
+    // windows. The prefix is not a tier marker, so a guard that filtered on it
+    // discarded the one credential that worked — and the meter, falling through
+    // to nothing, drew an overflow card with no quota at all.
+    //
+    // The endpoint decides entitlement; `usage.ts`'s 403 branch reads that
+    // answer. Nothing here guesses from the string.
+    process.env.OPENCODE_GO_API_KEY = "oc_sk_go_capable";
     for (const policy of KEY_SOURCE_POLICIES) {
-      expect(
-        await resolveGoApiKey(bare(), "opencode-go", policy)
-      ).toBeUndefined();
-      expect(await resolveGoApiKey(bare(), undefined, policy)).toBeUndefined();
+      expect(await resolveGoApiKey(bare(), "opencode-go", policy)).toBe(
+        "oc_sk_go_capable"
+      );
     }
-    // A Go key in the environment still answers, proving the lookup failed on
-    // the Zen key rather than on a broken environment.
-    process.env.OPENCODE_GO_API_KEY = "sk-go";
+    // What still keeps a Zen *capture* out of a Go lookup is the TIER it was
+    // observed on, not its prefix: `ZEN_REQUEST` classifies as `zen`, and
+    // `tierSatisfies` refuses a zen-tier capture for a go target. That rule
+    // reads the request, which is evidence, rather than the string, which is
+    // not.
+    delete process.env.OPENCODE_GO_API_KEY;
+    delete process.env.OPENCODE_API_KEY;
+    recordCapturedApiKey("oc_sk_zen", "opencode", ZEN_REQUEST);
     expect(await resolveGoApiKey(bare(), "opencode-go", "configured")).toBe(
-      "sk-go"
+      undefined
     );
+  });
+
+  it("still refuses a placeholder, whatever the prefix", async () => {
+    // The guard that remains is the one that was always load-bearing: a dummy
+    // is not a credential. Dropping the prefix test must not drop this.
+    process.env.OPENCODE_GO_API_KEY = "unused";
+    expect(
+      await resolveGoApiKey(bare(), "opencode-go", "auto")
+    ).toBeUndefined();
   });
 
   it("resolves nothing at all when every source is empty", async () => {
@@ -760,15 +778,17 @@ describe("resolveGoKeyForRef: the reference ladder", () => {
     expect(probe.asked).toEqual([DEFAULT_USAGE_KEY_ENV]);
   });
 
-  it("skips a Zen key in the store and tries the next candidate", async () => {
-    // Tier safety is a property of the *value*, not of where it came from: a
-    // stored credential with the Zen prefix is as unusable as one in the env.
+  it("takes the declared reference's value even when it is an oc_sk_ key", async () => {
+    // This used to assert that a stored `oc_sk_…` value was skipped in favour
+    // of the next candidate. It is not skipped: the prefix does not name a
+    // tier, and the endpoint accepts these keys (measured, 2026-10-08). The
+    // declared reference is the one the user wrote down, so it wins.
     const probe = withCredentials({
       DSH_TEST_GO_KEY: "oc_sk_zen",
       OPENCODE_GO_API_KEY: "sk-go",
     });
     expect(await resolveGoKeyForRef(probe.context, "DSH_TEST_GO_KEY")).toBe(
-      "sk-go"
+      "oc_sk_zen"
     );
     expect(probe.asked).toEqual(["DSH_TEST_GO_KEY", DEFAULT_USAGE_KEY_ENV]);
   });
@@ -830,10 +850,16 @@ describe("resolveGoKeyForRef: the reference ladder", () => {
     ).toBeUndefined();
   });
 
-  it("rejects a Zen key from the environment too", async () => {
-    // The environment is a store like any other. A Go reference pointing at a
-    // Zen secret must resolve to nothing, not to the Zen secret.
+  it("accepts an oc_sk_ key from the environment, and still refuses a dummy", async () => {
+    // The environment is a store like any other, so it follows the same rule
+    // the store does: a real credential is handed over whatever its prefix, and
+    // only a placeholder is refused.
     process.env.OPENCODE_GO_API_KEY = "oc_sk_zen";
+    expect(await resolveGoKeyForRef(composition(), DEFAULT_USAGE_KEY_ENV)).toBe(
+      "oc_sk_zen"
+    );
+
+    process.env.OPENCODE_GO_API_KEY = "unused";
     expect(
       await resolveGoKeyForRef(composition(), DEFAULT_USAGE_KEY_ENV)
     ).toBeUndefined();

@@ -187,6 +187,25 @@ Cost of skipping the check, all paid for in one session: a hand-drawn 12px refre
 
 **And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
 
+### A prefix is not an entitlement (2026-10-08)
+
+The Go meter showed **no quota at all** — just the Zen-balance card and no windows — and the reason was a one-line filter in `go-discovery.ts`:
+
+```ts
+/** Whether a resolved value is a usable Go credential. Zen keys are not. */
+const isUsableGoKey = (value) => value !== undefined && value.length > 0 && !value.startsWith("oc_sk_");
+```
+
+The comment gave the reason: *"Zen keys lack the OpenCode Go subscription entitlement and will 403 when sent to the Go quota endpoint."* **That is measurably false.** `curl https://opencode.ai/zen/go/v1/usage` with the `oc_sk_…` value stored as `OPENCODE_GO_API_KEY` answers **HTTP 200 and real windows** (`{"rolling":{"percent":6},"weekly":{"percent":3},"monthly":{"percent":1}}`). OpenCode issues that prefix for Go credentials too. The user's `OPENCODE_API_KEY` and `OPENCODE_GO_API_KEY` hold the *same* value — there is one key, and it works on both planes.
+
+So the guard discarded the only credential that worked. Resolution fell through to `capturedAny` (nothing) and then to the no-key branch, which returns `zenOverflowUsage` — the same shape a genuine 403 produces. **Two different situations, one panel**: "your Go plan ran out" and "we could not read your quota at all" rendered identically, and the second one is a lie.
+
+The rule this is the second half of: **do not encode a belief about a third party as a hard filter.** The endpoint's own answer is evidence; a string prefix is a guess about the vendor's key format, and it was wrong within one vendor release. What still separates the tiers is the *observed request* (`tierForRequest` → `tierSatisfies`), which is why a zen-tier capture is still refused for a go lookup — the test that used to pin the prefix now pins that instead. The `403 EntitlementError` branch is what handles a credential genuinely lacking entitlement: a reading, not a guess.
+
+**The corollary for the UI, which is what made this expensive:** a fallback that means *two* things cannot be diagnosed from a screenshot. `quotaUnavailable` correctly stopped the three fabricated `0%` rows from being drawn — but it also removed the last visible sign that anything was wrong, so the panel looked like a confident "nothing to report". When a state is inferred rather than read, say which.
+
+**And a chip that restates the title is not a second fact.** The Go panel read `OpenCode Go` … `Go Plan`. The `Go Plan` chip repeated the title and added nothing, so it is gone when the plan is fine and appears only as `Limited`, where it says something the header does not. Same test as every row in this panel: *what question does this say something about?* Zen's `Pay-as-you-go` chip stays, because the title `OpenCode Zen` does not name the billing model.
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:
@@ -233,13 +252,13 @@ The host UI kit ships **no** boolean control and no boolean/list/enum spec, so t
 
 `plugins.bundle.config` is rendered with `{ view }` only — the host-owned `form` (state + mutate) is passed to `plugins.item` and `plugins.row.config`, **not** to bundle config — so the card owns its scope and `SettingsFormModel` itself. If the host ever ships a boolean or enum field, delete the matching file here and render that instead.
 
-Tests — 544 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
+Tests — 546 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
 
 - Host behavior split by concern: `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` (27) · `session-cost` · `models-discovery`.
 - Host units asserted directly, because every other module narrows through them: `guards` (12) · `config-values` (15) · `cordis-context` (11) · `debug` (5). Each case pins the shapes the unit must REJECT as well as the ones it accepts — an over-accepting guard mis-shapes a host object silently.
 - Routing: `responses-routes` (10) split table · `responses-provider` (26) the mount — and the stand-in host it runs against **reproduces all four collisions**, so four more of those cases assert the stand-in REFUSES the shapes the old mount passed.
-- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (23) gating + copy/failure parsing · `usage-pill-mount` (20) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (34) trigger + panel · `client-bundle` (4) bundle boundary.
-- The half of the meter that was untested: `go-discovery` (61) credential policy · `usage-service` (32) + `usage-contract` (19, 100%) the Host service and its parsers · `tool-fallback` (25) + `turn-store` (12) the free-tier rewrite and the ALS store.
+- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (23) gating + copy/failure parsing · `usage-pill-mount` (20) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (35) trigger + panel · `client-bundle` (4) bundle boundary.
+- The half of the meter that was untested: `go-discovery` (63) credential policy · `usage-service` (32) + `usage-contract` (19, 100%) the Host service and its parsers · `tool-fallback` (25) + `turn-store` (12) the free-tier rewrite and the ALS store.
 - `test/test-helpers.ts` — shared fixtures: mock streams, capture fetch, predicates, `createMockContext`.
 - `test/primitives-stub.tsx` — stand-in for the host UI kit; keep it behaviourally faithful to the real primitives (trimmed drafts, empty clears).
 

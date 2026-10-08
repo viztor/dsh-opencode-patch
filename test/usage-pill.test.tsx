@@ -313,7 +313,10 @@ describe("usage-pill: derived copy & failure parsing", () => {
     });
     const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
     expect(copy.headline).toBe("80% of Weekly used");
-    expect(copy.badgeText).toBe("Go Plan");
+    // No badge: the header already reads `OpenCode Go`, so `Go Plan` beside it
+    // was a second statement of the same fact. `Limited` still appears when the
+    // plan actually is — that is the case the chip earns its place in.
+    expect(copy.badgeText).toBe("");
     expect(copy.zenCardDesc).toBe("t:zenOverflowActive");
   });
 
