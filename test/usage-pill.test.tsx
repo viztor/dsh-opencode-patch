@@ -384,8 +384,14 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // behind it (OpenCode exposes no such endpoint).
     const usage = createMockUsage({ zenOverflow: true });
     const copy = describeUsage(usage, getAffectingWindow(usage), true, t);
-    expect(copy.headline).toBe("t:zenPaygTitle");
     expect(copy.badgeText).toBe("t:zenPaygBadge");
+
+    // The hover answers "is this metered?" — it does NOT repeat the account
+    // name, which is already the panel header one click away. The trigger showed
+    // "OpenCode Zen" here for as long as it borrowed the ring's string, and a
+    // tooltip that restates what you can already see explains nothing.
+    expect(copy.tooltip).toBe("t:zenPaygTooltip");
+    expect(copy.tooltip).not.toBe(copy.title);
   });
 
   it("reports Zen overflow as Ready until the plan is actually limited", () => {

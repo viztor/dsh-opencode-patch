@@ -76,6 +76,7 @@ export const en = {
   goTier: "Go",
   monthlyAllowance: "Monthly allowance",
   zenPaygTitle: "OpenCode Zen",
+  zenPaygTooltip: "Pay-as-you-go · no quota window",
 };
 
 /** `zh` mirrors `en` key-for-key; the type makes a missing key a compile error. */
@@ -149,6 +150,7 @@ export const zh: Record<keyof typeof en, string> = {
   goTier: "Go",
   monthlyAllowance: "月度额度",
   zenPaygTitle: "OpenCode Zen",
+  zenPaygTooltip: "按量计费 · 无额度窗口",
 };
 
 /** Renders a copy key for the card's `t` prop. */
