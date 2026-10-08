@@ -327,45 +327,35 @@ export const STYLES = `
   font-weight: 600;
 }
 
-.dsh-oc-usage-divider {
-  height: 0.5px;
-  background: var(--dsw-alias-border-l3, color-mix(in srgb, currentColor 10%, transparent));
-  margin: 14px 0 12px;
-}
-
+/* The footer carries the timestamp AND every action now. The upgrade-plan link had its own
+   row once, behind a divider, which made the panel a row taller and put a second
+   action in a second place. Links keep the host's own language — the colour is
+   from its MarkdownText stylesheet — because unstyled anchors ran together into
+   one sentence. See AGENTS.md, "The meter's panel". */
 .dsh-oc-usage-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary, currentColor);
   padding-top: 4px;
 }
 
-/* Actions: three targets, so they must read as three links. Unstyled, they ran
-   together into one sentence; the host's link language is in its MarkdownText
-   stylesheet. See AGENTS.md, "The meter's panel". */
-.dsh-oc-usage-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-top: 10px;
-}
-
-.dsh-oc-usage-links a {
+.dsh-oc-usage-console {
   color: var(--dsw-alias-link, currentColor);
-  font-size: 11px;
   font-weight: 500;
   text-decoration: none;
+  white-space: nowrap;
 }
 
-.dsh-oc-usage-links a:hover,
-.dsh-oc-usage-links a:focus-visible {
+.dsh-oc-usage-console:hover,
+.dsh-oc-usage-console:focus-visible {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
 
-.dsh-oc-usage-links a:focus-visible {
+.dsh-oc-usage-console:focus-visible {
   outline: none;
   border-radius: var(--dsw-radius-xs, 4px);
   box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
