@@ -246,6 +246,16 @@ What made it visible was the localization work beside it: the panel's `locale` i
 - **When two values must agree, they must have the same lifetime.** `t` and `locale` are two halves of one rendered line; binding one at construction and reading the other per render is a latent split that no single-language test can see.
 - **A comment that describes intended behaviour is not evidence of it.** This one had been read and trusted for several sessions. The test beside it said _"the active locale is read PER CALL, so the meter can follow a switch"_ — and then handed out `zh` **unconditionally**, so the switch it described was never performed and the capture went unnoticed. The test now mutates the locale and asserts the same `t` follows, and it was verified to FAIL against the old code (`expected 'OpenCode Go 用量' to be 'OpenCode Go usage'`) before being kept. **A test for a behaviour must perform that behaviour**; asserting a constant is not the same as exercising a switch.
 
+### One session, two balances: the accumulator had to learn the plane (2026-10-08)
+
+The Zen panel read `当前会话消耗 $1.44` against `MiMo-V2.6-Flash Free · 免费`. The owner's instruction — *"we need to differ credit spent with zen and go respectively"* — named it: the session accumulator folds **every turn of the session into one number**, and a turn did not know which billing plane served it. A session that ran Go `mimo-v2.6-pro` (paid, Go allowance) and then Zen `mimo-v2.6-flash-free` (free) carried the Go money into the Zen panel, which read as Zen charging $1.44 for a model that is free.
+
+The stream hook already knew — `catalogPlaneForRoute(providerKey)` was in scope for the catalog lookup — it just never told the accumulator. Now it does: `recordTurnUsage` takes the plane, the accumulator keeps `costGo` / `costZen`, the wire snapshot carries `costByPlane`, and `attachSession` — which is the one place that knows which plane a READING is for — projects `planeCostFormatted` onto the snapshot. The panel reads that. The all-planes total stays on `costUsd` for anything that wants the whole story.
+
+**Where the projection lives is the design decision.** It is host-side, inside `attachSession`, not client-side from `costByPlane` — because the client must accept a snapshot that predates the split (the field is optional on the wire, parsed to zeros) and must not be the one deciding which balance a panel answers for. The panel test therefore arrives at two fixtures already projected, the same way the wire delivers them, and asserts each panel shows only its own number.
+
+**The split is by the plane that SERVED the turn, not by the model's home.** `findModelSpec` prefers the Go catalog for pricing — fine, the two planes agree on rates for shared ids — but the attribution question is "which balance paid", and that is the route the turn ran on.
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:
@@ -292,12 +302,12 @@ The host UI kit ships **no** boolean control and no boolean/list/enum spec, so t
 
 `plugins.bundle.config` is rendered with `{ view }` only — the host-owned `form` (state + mutate) is passed to `plugins.item` and `plugins.row.config`, **not** to bundle config — so the card owns its scope and `SettingsFormModel` itself. If the host ever ships a boolean or enum field, delete the matching file here and render that instead.
 
-Tests — 553 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
+Tests — 554 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
 
 - Host behavior split by concern: `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` (27) · `session-cost` · `models-discovery`.
 - Host units asserted directly, because every other module narrows through them: `guards` (12) · `config-values` (15) · `cordis-context` (11) · `debug` (5). Each case pins the shapes the unit must REJECT as well as the ones it accepts — an over-accepting guard mis-shapes a host object silently.
 - Routing: `responses-routes` (10) split table · `responses-provider` (26) the mount — and the stand-in host it runs against **reproduces all four collisions**, so four more of those cases assert the stand-in REFUSES the shapes the old mount passed.
-- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (27) gating + copy/failure parsing · `usage-pill-mount` (20) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (38) trigger + panel · `client-bundle` (4) bundle boundary.
+- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (27) gating + copy/failure parsing · `usage-pill-mount` (20) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (39) trigger + panel · `client-bundle` (4) bundle boundary.
 - The half of the meter that was untested: `go-discovery` (63) credential policy · `usage-service` (32) + `usage-contract` (19, 100%) the Host service and its parsers · `tool-fallback` (25) + `turn-store` (12) the free-tier rewrite and the ALS store.
 - `test/test-helpers.ts` — shared fixtures: mock streams, capture fetch, predicates, `createMockContext`.
 - `test/primitives-stub.tsx` — stand-in for the host UI kit; keep it behaviourally faithful to the real primitives (trimmed drafts, empty clears).

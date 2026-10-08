@@ -9,6 +9,8 @@
  * @module dsh-opencode-patch/session-cost
  */
 
+import type { CatalogPlane } from "./models-catalog.ts";
+
 export interface ModelCostRate {
   cache_read?: number;
   cache_write?: number;
@@ -23,6 +25,8 @@ export interface TurnRecord {
   isFree?: boolean;
   model: string;
   outputTokens: number;
+  /** The billing plane that served the turn — which balance the spend hits. */
+  plane: CatalogPlane;
   timestamp: number;
   totalTokens: number;
 }
@@ -38,8 +42,18 @@ export interface SessionUsageSnapshot {
   /** Human-readable rate for {@link activeModel}, e.g. `$2.5 / $15 per 1M`. */
   activeRateFormatted?: string;
   cacheReadTokens: number;
+  /** Spend attributed to each billing plane — Go allowance vs Zen balance. */
+  costByPlane: { go: number; zen: number };
   costFormatted: string;
   costUsd: number;
+  /**
+   * THIS route's plane spend, projected by the usage service once it knows
+   * which plane the reading is for. `costUsd` above is the session's
+   * all-planes total and is the wrong number for a panel that answers for one
+   * balance.
+   */
+  planeCostFormatted?: string;
+  planeSpendUsd?: number;
   /**
    * True when the ACTIVE model is free — the catalog's free-tier flag, not a
    * plan entitlement. The name this carried (`includedInPlan`) said the Go plan
@@ -60,7 +74,9 @@ interface MutableSessionUsage {
   activeModel?: string;
   activeRate?: ModelCostRate;
   cacheReadTokens: number;
+  costGo: number;
   costUsd: number;
+  costZen: number;
   history: TurnRecord[];
   inputTokens: number;
   modelsUsed: Set<string>;
@@ -147,6 +163,8 @@ const toSnapshot = (val: MutableSessionUsage): SessionUsageSnapshot => {
           ),
         }),
     cacheReadTokens: val.cacheReadTokens,
+    /** Spend attributed to each billing plane; every turn knows its own. */
+    costByPlane: { go: val.costGo, zen: val.costZen },
     costFormatted: formatUsd(val.costUsd),
     costUsd: val.costUsd,
     ...(val.activeIsFree === true ? { freeModel: true } : {}),
@@ -158,7 +176,15 @@ const toSnapshot = (val: MutableSessionUsage): SessionUsageSnapshot => {
   };
 };
 
-/** Record a completed turn's token usage into the session accumulator. */
+/**
+ * Record a completed turn's token usage into the session accumulator.
+ *
+ * `plane` is which billing plane served the turn — Go allowance or Zen balance —
+ * and it is what makes the split below possible. A session that switches planes
+ * midway (Go `mimo-v2.6-pro`, then Zen `mimo-v2.6-flash-free`) used to fold BOTH
+ * planes' spend into one total, so the Zen panel billed the session with money
+ * the Go allowance had paid. Each turn is attributed where it was served.
+ */
 export const recordTurnUsage = (
   sessionId: string,
   tokens: {
@@ -169,11 +195,14 @@ export const recordTurnUsage = (
   },
   cost?: ModelCostRate,
   model = "unknown",
-  isFree = false
+  isFree = false,
+  plane: CatalogPlane = "zen"
 ): SessionUsageSnapshot => {
   const existing = sessionStore.get(sessionId) ?? {
     cacheReadTokens: 0,
+    costGo: 0,
     costUsd: 0,
+    costZen: 0,
     history: [],
     inputTokens: 0,
     modelsUsed: new Set<string>(),
@@ -194,6 +223,7 @@ export const recordTurnUsage = (
     ...(isFree ? { isFree: true } : {}),
     model,
     outputTokens: tokens.outputTokens ?? 0,
+    plane,
     timestamp: Date.now(),
     totalTokens: total,
   };
@@ -225,6 +255,8 @@ export const recordTurnUsage = (
         }
       : {}),
     cacheReadTokens: existing.cacheReadTokens + (tokens.cacheReadTokens ?? 0),
+    costGo: existing.costGo + (plane === "go" ? turnCost : 0),
+    costZen: existing.costZen + (plane === "zen" ? turnCost : 0),
     costUsd: existing.costUsd + turnCost,
     history: [...existing.history, turnRecord],
     inputTokens: existing.inputTokens + (tokens.inputTokens ?? 0),

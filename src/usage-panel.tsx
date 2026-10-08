@@ -117,7 +117,7 @@ export const UsageTrigger = ({
       </svg>
       <span>
         {isZen && showUsagePrice && usage?.session !== undefined
-          ? usage.session.costFormatted
+          ? (usage.session.planeCostFormatted ?? usage.session.costFormatted)
           : triggerLabel}
       </span>
     </button>
@@ -332,7 +332,13 @@ export const UsagePanel = ({
           </span>
         </div>
         <span className="dsh-oc-usage-detail-value">
-          {usage.session.costFormatted}
+          {/*
+            THIS plane's spend, not the session's all-planes total. The Zen row
+            once read $1.44 of Go allowance spend against a FREE model, because
+            the accumulator folds every turn of the session into one number and
+            the panel answered for a balance it was not reading.
+          */}
+          {usage.session.planeCostFormatted ?? usage.session.costFormatted}
         </span>
       </div>
     )}
