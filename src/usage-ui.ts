@@ -628,13 +628,23 @@ export interface UsageCopy {
    */
   title: string;
   /**
-   * The ring explained in words — the trigger's hover label.
+   * The ring explained in words — what the GO trigger says on hover.
    *
-   * On Go it names the bottleneck window ("90% of Weekly used"); on Zen the
-   * trigger shows session spend instead of a ring, so this is the account name
-   * and nothing more.
+   * It names the bottleneck window ("90% of Weekly used"). It is a sentence
+   * ABOUT A RING, which is why it cannot also be the Zen trigger's label: the
+   * Zen trigger shows session spend and has no ring, and binding it to this
+   * string is what made the hover say nothing but the account name.
    */
   headline: string;
+  /**
+   * The trigger's hover label, per provider.
+   *
+   * A tooltip has to MEAN the number beside it. Go's number is a ring, so
+   * `headline` explains it. Zen's number is session spend, and the question that
+   * raises is "is this metered?" — answered here once, in words, rather than by
+   * repeating the panel header (which is `title`, and is already on screen).
+   */
+  tooltip: string;
   zenCardCredit: string;
   zenCardDesc: string;
 }
@@ -657,14 +667,14 @@ export const describeUsage = (
 
   const title = isZen ? t("zenPaygTitle") : t("goPlanTitle");
 
-  let headline: string;
-  if (isZen) {
-    headline = title;
-  } else if (isLimited) {
-    headline = `${affecting?.label} quota limited`;
-  } else {
-    headline = `${percent}% of ${affecting?.label ?? "quota"} used`;
-  }
+  const headline = isLimited
+    ? `${affecting?.label} quota limited`
+    : `${percent}% of ${affecting?.label ?? "quota"} used`;
+
+  // The trigger's hover label. Go's number IS a ring, so the headline explains
+  // it; Zen's number is session spend, which asks a different question —
+  // "is this metered?" — and gets the one honest answer we have.
+  const tooltip = isZen ? t("zenPaygTooltip") : headline;
 
   let badgeText: string;
   if (isZen) {
@@ -685,7 +695,7 @@ export const describeUsage = (
     : t("zenOverflowActive");
   const zenCardCredit = isLimited ? "Active" : "Ready";
 
-  return { badgeText, headline, title, zenCardCredit, zenCardDesc };
+  return { badgeText, headline, title, tooltip, zenCardCredit, zenCardDesc };
 };
 
 /**

@@ -297,7 +297,7 @@ const ActiveUsage = ({
   // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
   // The hover label is the SAME string the panel opens under: no second
   // composition, no keys an older served dictionary has not heard of.
-  const { badgeText, headline, title, zenCardCredit, zenCardDesc } =
+  const { badgeText, title, tooltip, zenCardCredit, zenCardDesc } =
     describeUsage(usage, affecting, isZen, t);
 
   return (
@@ -325,7 +325,7 @@ const ActiveUsage = ({
         showUsagePrice={showUsagePrice}
         strokeDasharray={strokeDasharray}
         t={t}
-        tooltipLabel={headline}
+        tooltipLabel={tooltip}
         triggerLabel={triggerLabel}
         usage={usage}
       />
