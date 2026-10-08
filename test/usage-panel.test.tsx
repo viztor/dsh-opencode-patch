@@ -54,6 +54,7 @@ const session = (
   overrides: Partial<SessionUsageSnapshot> = {}
 ): SessionUsageSnapshot => ({
   cacheReadTokens: 0,
+  costByPlane: { go: 0, zen: 0.42 },
   costFormatted: "$0.42",
   costUsd: 0.42,
   inputTokens: 10,
@@ -337,6 +338,49 @@ describe("UsagePanel", () => {
     // And the malformed composition this pins against never appears.
     expect(line("zh")).not.toContain("重置于 1小时");
     expect(line("zh")).not.toContain("重置于 3天");
+  });
+
+  it("shows each panel its OWN plane's spend, not the session total", () => {
+    // The accumulator folds every turn of a session into one number, and the
+    // Zen panel once billed the session with it: $1.44 of GO allowance spend
+    // displayed against a FREE model, on a panel that answers for the Zen
+    // balance. The snapshot now carries the split, and each panel reads its own.
+    // The projection is the HOST's job (attachSession knows the route's plane),
+    // so each fixture arrives at the panel already projected — the same way the
+    // wire delivers it.
+    const base = {
+      ...session(),
+      costByPlane: { go: 1.44, zen: 0 } as const,
+      costFormatted: "$1.44",
+      costUsd: 1.44,
+      freeModel: true,
+    };
+
+    // Zen: the free model spent nothing OF ZEN, whatever the session's total is.
+    const zen = UsagePanel(
+      panelProps({
+        isZen: true,
+        usage: usage({
+          session: { ...base, planeCostFormatted: "$0.00", planeSpendUsd: 0 },
+        }),
+      })
+    );
+    expect(collectText(zen)).toContain("$0.00");
+    expect(collectText(zen)).not.toContain("$1.44");
+
+    // Go: the same session, projected for the Go allowance, which DID pay.
+    const go = UsagePanel(
+      panelProps({
+        usage: usage({
+          session: {
+            ...base,
+            planeCostFormatted: "$1.44",
+            planeSpendUsd: 1.44,
+          },
+        }),
+      })
+    );
+    expect(collectText(go)).toContain("$1.44");
   });
 
   it("renders a passed reset without inventing a countdown", () => {

@@ -223,7 +223,8 @@ export const createStreamHook = (
             { cacheReadTokens, inputTokens, outputTokens, totalTokens },
             spec?.cost,
             modelName,
-            spec?.is_free
+            spec?.is_free,
+            catalogPlaneForRoute(providerKey)
           );
         }
         yield chunk;

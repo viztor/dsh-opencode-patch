@@ -35,6 +35,7 @@ import {
 } from "./models-catalog.ts";
 import {
   describeModel,
+  formatUsd,
   getSessionUsage,
   type SessionUsageSnapshot,
 } from "./session-cost.ts";
@@ -138,20 +139,42 @@ const attachSession = (
   // user's face. An unknown price is its own answer (`formatModelRate(undefined)`),
   // not a reason to display the wrong model.
   if (!isProspective) {
-    return nameModel(session, plane);
+    return withPlaneSpend(nameModel(session, plane), plane);
   }
   const spec = catalogFor(plane, selected);
-  return nameModel(
-    describeModel(
-      session,
-      selected,
-      spec?.cost,
-      spec?.is_free === true,
-      spec?.name
+  return withPlaneSpend(
+    nameModel(
+      describeModel(
+        session,
+        selected,
+        spec?.cost,
+        spec?.is_free === true,
+        spec?.name
+      ),
+      plane
     ),
     plane
   );
 };
+
+/**
+ * Project THIS route's plane spend onto the snapshot as `planeCostFormatted`.
+ *
+ * The accumulator's `costUsd` is the session's ALL-planes total, which is the
+ * wrong number for a panel that answers for one balance: the Zen row read $1.44
+ * of Go allowance spend against a FREE model, and the owner read it as Zen
+ * charging $1.44 for a model that is free. The split travels on the snapshot
+ * (`costByPlane`); this is where the reading picks its own plane's number. The
+ * all-planes total stays on `costUsd` for anything that wants the whole story.
+ */
+const withPlaneSpend = (
+  snapshot: SessionUsageSnapshot,
+  plane: CatalogPlane
+): SessionUsageSnapshot => ({
+  ...snapshot,
+  planeCostFormatted: formatUsd(snapshot.costByPlane[plane]),
+  planeSpendUsd: snapshot.costByPlane[plane],
+});
 
 /** The catalog spec for a model, or `undefined` when the catalog has none. */
 const catalogFor = (

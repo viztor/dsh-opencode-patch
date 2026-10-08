@@ -154,6 +154,12 @@ export const parseGoUsage = (value: unknown): GoUsage => {
         typeof sessionRaw.cacheReadTokens === "number"
           ? sessionRaw.cacheReadTokens
           : 0,
+      // The plane split is OPTIONAL on the wire: a snapshot recorded before the
+      // split carries no `costByPlane`, and the client must accept that rather
+      // than reject the whole reading — the floor is the ALL-planes total, which
+      // is what `costUsd` already is. `sessionRaw` is `Record<string, unknown>`,
+      // so the record itself is read through `isRecord` before its fields are.
+      costByPlane: parseCostByPlane(sessionRaw.costByPlane),
       costFormatted: sessionRaw.costFormatted,
       costUsd: typeof sessionRaw.costUsd === "number" ? sessionRaw.costUsd : 0,
       ...(sessionRaw.freeModel === true ? { freeModel: true } : {}),
@@ -231,6 +237,19 @@ export interface UsageQuery {
  * Validate the optional query. The whole value is optional on the wire
  * (`acceptsUndefined`), as is every field within it.
  */
+/**
+ * The per-plane spend, optional on the wire. A snapshot recorded before the
+ * split carries none; the floor is zero per plane and the ALL-planes total,
+ * which `costUsd` already holds, still tells the whole story.
+ */
+const parseCostByPlane = (raw: unknown): { go: number; zen: number } => {
+  const plane = isRecord(raw) ? raw : {};
+  return {
+    go: typeof plane.go === "number" ? plane.go : 0,
+    zen: typeof plane.zen === "number" ? plane.zen : 0,
+  };
+};
+
 export const parseUsageQuery = (value?: unknown): UsageQuery => {
   if (value === undefined || value === null) {
     return {};
