@@ -382,8 +382,13 @@ export const UsagePanel = ({
         >
           <RefreshIcon />
         </button>
+        {/* Nothing at all until the first read lands. A "Loading usage..." cell
+            is a state that exists for a moment and then disappears, so the row
+            changes width and the footer jumps on every mount — a blip from
+            showing progress nobody needs. The refresh button already carries the
+            affordance; the timestamp is the only thing here worth reading. */}
         {updatedAt === null
-          ? t("usageLoading")
+          ? ""
           : `${t("usageLastUpdated")} ${new Date(updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
       </span>
       <a
