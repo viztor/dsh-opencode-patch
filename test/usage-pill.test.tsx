@@ -53,22 +53,62 @@ const isoAt = (offsetMs: number): string =>
   new Date(Date.now() + offsetMs).toISOString();
 
 describe("usage-pill: helper functions & calculations", () => {
-  it("formats relative countdown timers accurately", () => {
-    // Pure durations, with no English prefix: the panel supplies a localised label
-    // ("Resets" / "重置于"), so an "in …" here would half-translate the line.
-    expect(formatRelativeReset(isoAt(-5000))).toBe("<1m");
-    expect(formatRelativeReset(isoAt(30 * 60 * 1000 + 500))).toBe("30m");
-    expect(formatRelativeReset(isoAt((3 * 3600 + 15 * 60) * 1000))).toBe(
-      "3h 15m"
+  it("floors the countdown, and never claims a reset that already happened", () => {
+    // FLOOR, not round. `Math.round` on the TOTAL minutes turned 1h10m36s into
+    // `1h 11m`, 59m59s into `1h`, and pulled a 6d23h window off the relative
+    // ladder ~20s early — while the day branch truncated minutes. A countdown
+    // must never claim more time than remains, so one policy: floored.
+    const at = (ms: number): ReturnType<typeof formatRelativeReset> =>
+      formatRelativeReset(isoAt(ms));
+    expect(at(30 * 60 * 1000 + 500)).toEqual({
+      kind: "duration",
+      text: "30m",
+    });
+    expect(at((3 * 3600 + 15 * 60) * 1000)).toEqual({
+      kind: "duration",
+      text: "3h 15m",
+    });
+    expect(at((2 * 86400 + 4 * 3600) * 1000)).toEqual({
+      kind: "duration",
+      text: "2d 4h",
+    });
+
+    // Boundaries the old rounding got wrong, in both directions.
+    expect(at(59 * 60 * 1000 + 59 * 1000).text).toBe("59m");
+    expect(at((23 * 3600 + 59 * 60 + 40) * 1000).text).toBe("23h 59m");
+    expect(at((6 * 86400 + 23 * 3600 + 59 * 60 + 40) * 1000).text).toBe(
+      "6d 23h"
     );
-    expect(formatRelativeReset(isoAt((2 * 86400 + 4 * 3600) * 1000))).toBe(
-      "2d 4h"
-    );
-    // Beyond a week it renders a locale date, so just assert it left the
-    // relative shape instead of pinning an exact localized string.
-    expect(formatRelativeReset(isoAt(9 * 86400 * 1000))).not.toMatch(/^\d+d /);
-    // Unparseable input is returned verbatim rather than throwing.
-    expect(formatRelativeReset("not-a-date")).toBe("not-a-date");
+    expect(at(1_000_000).text).toBe("16m");
+    // A sub-minute POSITIVE diff. The old code only guarded `diffMs <= 0`, so
+    // 1-29s rounded to the string `0m`.
+    expect(at(20_000)).toEqual({ kind: "duration", text: "<1m" });
+
+    // A window that already rolled over says so. This is reachable: the panel
+    // re-derives at every render from a payload up to a poll old, so for as long
+    // as a minute after a boundary the old `resetsAt` is in the past — and the
+    // old code answered `<1m`, the exact shape of the fabricated rows this
+    // panel removed.
+    expect(formatRelativeReset(isoAt(-5000))).toEqual({
+      kind: "passed",
+      text: "",
+    });
+
+    // Exactly N days reads `2d`, not `2d 0h` — the hour branch already guarded
+    // its zero and the day branch did not.
+    expect(at(2 * 86400 * 1000).text).toBe("2d");
+
+    // Beyond a week it renders a locale date, tagged `absolute` because that is
+    // the shape that composes with a PREFIX rather than a suffix.
+    const far = formatRelativeReset(isoAt(9 * 86400 * 1000));
+    expect(far.kind).toBe("absolute");
+    expect(far.text).not.toMatch(/^\d+d/);
+
+    // Unparseable input is handed back verbatim rather than thrown away.
+    expect(formatRelativeReset("not-a-date")).toEqual({
+      kind: "absolute",
+      text: "not-a-date",
+    });
   });
 
   it("prioritizes rate-limited window as the affecting bottleneck", () => {

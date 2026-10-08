@@ -19,7 +19,13 @@ import {
   UsageTrigger,
   type UsageTriggerProps,
 } from "../src/usage-panel.tsx";
-import { CONSOLE_URL, GO_PLAN_URL, STYLES } from "../src/usage-ui.ts";
+import {
+  CONSOLE_URL,
+  GO_PLAN_URL,
+  type RelativeReset,
+  resetLabel,
+  STYLES,
+} from "../src/usage-ui.ts";
 import {
   childrenOf,
   collectText,
@@ -220,6 +226,61 @@ describe("UsageTrigger", () => {
 });
 
 describe("UsagePanel", () => {
+  it("composes the reset line with the grammar its shape needs", () => {
+    // The bug this pins: one prefix key served both shapes, so the panel printed
+    // `重置于 1h 11m` — "resets at 1h 11m" — for two of the three windows, while
+    // being correct only for the absolute one. Nothing asserted this line at
+    // all, which is why it shipped; `t` in this file echoes keys, so the real
+    // dictionaries are used here.
+    const en = {
+      usageResets: "Resets",
+      usageResetsIn: " until reset",
+      usageResetPassed: "Already reset",
+    };
+    const zh = {
+      usageResets: "重置于",
+      usageResetsIn: "后重置",
+      usageResetPassed: "已重置",
+    };
+    const duration: RelativeReset = { kind: "duration", text: "1h 11m" };
+    const absolute: RelativeReset = {
+      kind: "absolute",
+      text: "Nov 7, 08:55 AM",
+    };
+    const passed: RelativeReset = { kind: "passed", text: "" };
+    const translator =
+      (dict: typeof en) =>
+      (key: keyof typeof en): string =>
+        dict[key];
+
+    // A duration takes a SUFFIX — zh wants no space, en needs one, which is why
+    // the copy carries its own leading space rather than the panel adding it.
+    expect(resetLabel(duration, translator(en))).toBe("1h 11m until reset");
+    expect(resetLabel(duration, translator(zh))).toBe("1h 11m后重置");
+    // An instant takes a PREFIX.
+    expect(resetLabel(absolute, translator(en))).toBe("Resets Nov 7, 08:55 AM");
+    expect(resetLabel(absolute, translator(zh))).toBe("重置于 Nov 7, 08:55 AM");
+    // A window that already rolled over has no countdown to give, and must not
+    // claim one.
+    expect(resetLabel(passed, translator(en))).toBe("Already reset");
+    expect(resetLabel(passed, translator(zh))).toBe("已重置");
+  });
+
+  it("renders a passed reset without inventing a countdown", () => {
+    // End to end through the panel: a past `resetsAt` must reach the row as the
+    // passed copy, never as `<1m`.
+    const stale = usage({
+      rolling: {
+        percent: 4,
+        resetsAt: "2026-10-07T00:00:00Z",
+        status: "ok",
+      },
+    });
+    const text = collectText(UsagePanel(panelProps({ usage: stale })));
+    expect(text).toContain("t:usageResetPassed");
+    expect(text).not.toContain("<1m");
+  });
+
   it("draws each window's state through the kit's StateDot", () => {
     // The dot was a hand-rolled 6px circle with an inline backgroundColor per
     // state — one more look-alike of a primitive this repo already ships, with
@@ -241,7 +302,11 @@ describe("UsagePanel", () => {
         UsagePanel(
           panelProps({
             usage: usage({
-              rolling: { percent: 90, resetsAt: "2026-11-01T00:00:00Z" },
+              rolling: {
+                percent: 90,
+                resetsAt: "2026-11-01T00:00:00Z",
+                status: "ok",
+              },
             }),
           })
         ),

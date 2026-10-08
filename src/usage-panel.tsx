@@ -20,6 +20,7 @@ import {
   BREAKDOWN_WINDOWS,
   CONSOLE_URL,
   formatRelativeReset,
+  resetLabel,
   getWindowState,
   WINDOW_STATE_COLOR,
   panelActions,
@@ -206,6 +207,10 @@ export const UsagePanel = ({
                 every window that is limited, not only the monthly one. */}
             {BREAKDOWN_WINDOWS.map((entry) => {
               const window: UsageWindow = usage[entry.key];
+              // Computed once: the shape decides the grammar below, and calling
+              // the formatter twice could straddle a boundary between the two
+              // reads.
+              const reset = formatRelativeReset(window.resetsAt, locale);
               return (
                 <div key={entry.key}>
                   <div className="dsh-oc-usage-window">
@@ -232,8 +237,15 @@ export const UsagePanel = ({
                         shape.
                       */}
                       <span className="dsh-oc-usage-row-reset">
-                        {t("usageResets")}{" "}
-                        {formatRelativeReset(window.resetsAt, locale)}
+                        {/*
+                          Grammar follows the SHAPE. A duration is a suffix
+                          (`1h 11m后重置`), an absolute instant is a prefix
+                          (`重置于 11月7日 08:55`), and a window that has already
+                          rolled over says so instead of claiming a countdown.
+                          One prefix for all three produced `重置于 1h 11m` —
+                          "resets at 1h 11m".
+                        */}
+                        {resetLabel(reset, t)}
                         {window.status === "rate-limited" && (
                           <span className="dsh-oc-usage-limited">
                             {t("usageLimited")}
