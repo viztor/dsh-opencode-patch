@@ -344,6 +344,18 @@ const ActiveUsage = ({
   const { badgeText, title, tooltip, zenCardCredit, zenCardDesc } =
     describeUsage(usage, affecting, isZen, t);
 
+  // A Zen hover answers the question its number raises, and that number is the
+  // spend — so the label leads with the price. With no record to price it falls
+  // back to the billing model, which is the only other true thing to say.
+  const zenSpend =
+    usage?.session === undefined
+      ? undefined
+      : (usage.session.planeCostFormatted ?? usage.session.costFormatted);
+  const tooltipLabel =
+    isZen && zenSpend !== undefined
+      ? `${t("sessionSpend")} ${zenSpend} · ${t("zenPaygBadge")}`
+      : tooltip;
+
   return (
     <span
       className="dsh-oc-usage-root"
@@ -369,7 +381,7 @@ const ActiveUsage = ({
         showUsagePrice={showUsagePrice}
         strokeDasharray={strokeDasharray}
         t={t}
-        tooltipLabel={tooltip}
+        tooltipLabel={tooltipLabel}
         triggerLabel={triggerLabel}
         usage={usage}
       />

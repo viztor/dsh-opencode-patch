@@ -200,7 +200,7 @@ opencode-responses:
 
 ### 输入框停靠栏计量表
 
-计量表挂载在 `conversation.composer.dock` 中 DSH 原生 `ContextMeter` 旁：
+计量表挂载在 `conversation.composer.dock` 中 DSH 原生 `ContextMeter` 旁。逐状态的行为说明（触发按钮的三种状态、两个面板、每一行的含义、三种「没有数字」的区别）见 [`docs/quota-meter.zh-CN.md`](./docs/quota-meter.zh-CN.md)。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
