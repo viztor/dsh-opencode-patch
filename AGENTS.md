@@ -258,7 +258,7 @@ The stream hook already knew — `catalogPlaneForRoute(providerKey)` was in scop
 
 ### When the owner says "don't estimate", the honest widget is a NOTE (2026-10-08)
 
-Asked how the Go panel could show "allowance spend + overage spend", the first answer sketched a split — `zenOverflow` first true as the boundary — and the owner caught the flaw in one line: *"if overflow is enabled, the session will just continue to run, isn't it?"* They were right, twice over:
+Asked how the Go panel could show "allowance spend + overage spend", the first answer sketched a split — `zenOverflow` first true as the boundary — and the owner caught the flaw in one line: _"if overflow is enabled, the session will just continue to run, isn't it?"_ They were right, twice over:
 
 - **Overflow is not a session state.** The gateway decides it **per request** — at 100% the gateway returns `GoUsageLimitError` (402/429), and with _Use balance_ enabled it silently bills the overflow to Zen. A monthly window resets, percent falls back, and the session moves between the two regimes repeatedly. There is no "first moment of overflow" to split on.
 - **And the flag was misread.** On the SUCCESS path `zenOverflow: zenInfo.isConfigured` — it means "a Zen balance is configured", not "overflowing". Only the 403 branch's `zenOverflowUsage` means exhausted. Splitting on it would have billed the whole session as overage for anyone with a Zen key.
@@ -266,6 +266,17 @@ Asked how the Go panel could show "allowance spend + overage spend", the first a
 The owner's direction: **不要写估算。就这样吧,写一个小的信息框** — no estimates; a small note in the popover. The note travels with the Zen-credit card (overflow active only) and states the MECHANISM, not numbers: session spend is split by where each turn ran; when the Go plan overflows the gateway bills the overflow to Zen; OpenCode publishes no within-allowance vs overage split. Replacing, not joining, the config notice — the slot's question changes from "how do I enable the fallback" to "where is the money going", and two callouts of the same class would be the nested-box mistake again.
 
 The rule this closes: **a number that cannot be honest is not rendered, and the mechanism that explains the absence is.** An estimate wearing a precise outfit is worse than the note — it reads as a measurement, and the reader makes decisions on it.
+
+### CI caught what local tests read back (2026-10-08)
+
+The push went green locally and CI failed **both jobs**, for reasons local verification could not see:
+
+1. **The catalog shim was stale.** `models.dev` moved between the last regeneration and the push — the Go plane grew 29 → 31 models, `space-bunny-free` became `space-bunny`, and the Zen plane grew to 83. The nightly `catalog` job exists precisely because no unit test can catch this: the tests read the very mapping they are meant to verify. `pnpm run catalog:shim --write` regenerated it, and **five hardcoded counts** in `catalog.test.ts` moved with it.
+2. **`AGENTS.md` had formatting issues.** The markdown formatter covers every file, and an edit made through a string replacement had drifted.
+
+And one failure the regeneration **created**, which is the instructive one: `usage-service.test.ts` picked `space-bunny` as its "picked model the catalog has no price for" — _the live case at the time_. The refreshed catalog **added `space-bunny`**, so the assertion inverted. An id chosen for being absent is an id that can arrive; the test now uses one that cannot, and its comment says why.
+
+**The meta-lesson: "verify everything" has to include the CI run, not just the local suite.** Local `vp check` + full tests + gate were all green on this tree; the failures lived in a regenerated artifact and a doc file. The nightly catalog job is the only check that runs against the moving source.
 
 ### The audit closed out (2026-10-08, same day)
 

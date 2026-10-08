@@ -486,8 +486,9 @@ describe("GoUsageService readings", () => {
     // The bug this pins: the panel named the PREVIOUS model while the picker
     // showed the new one, because the re-description was gated on a catalog hit.
     // A missing price is its own answer; it is never a reason to display the
-    // wrong model. `space-bunny` is the live case — the limits table lists it,
-    // models.dev's catalog does not.
+    // wrong model. `space-bunny-x` stands in for that case — a picked id the catalog
+    // has no row for. (models.dev briefly ADDED `space-bunny`, proving the
+    // premise is time-sensitive: assert against an id that cannot appear.)
     recordTurnUsage(
       "s-miss",
       { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
@@ -497,11 +498,11 @@ describe("GoUsageService readings", () => {
     );
     stubFetch(() => new Response(okBody()));
     const usage = await serviceWithKey("sk-live-key").read({
-      model: "space-bunny",
+      model: "space-bunny-x",
       provider: "opencode-go",
       sessionId: "s-miss",
     });
-    expect(usage.session?.activeModel).toBe("space-bunny");
+    expect(usage.session?.activeModel).toBe("space-bunny-x");
     // No name and no price, but NOT the old model and NOT a leftover `freeModel`
     // from the free model the session actually last ran.
     expect(usage.session?.activeModelName).toBeUndefined();

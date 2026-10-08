@@ -195,6 +195,19 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "LongCat-2.0",
   },
   {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0.03,
+      cache_write: 0,
+      input: 0.15,
+      output: 0.6,
+    },
+    id: "space-bunny",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 524_288,
+    name: "Space Bunny",
+  },
+  {
     context_window: 204_800,
     cost: {
       cache_read: 0.06,
@@ -207,20 +220,6 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "MiniMax-M2.7",
     provider_npm: "@ai-sdk/anthropic",
-  },
-  {
-    context_window: 1_048_576,
-    cost: {
-      cache_read: 0,
-      cache_write: 0,
-      input: 0,
-      output: 0,
-    },
-    id: "space-bunny-free",
-    input_modalities: ["text", "image"],
-    is_free: true,
-    max_output_tokens: 524_288,
-    name: "Space Bunny Free",
   },
   {
     context_window: 1_048_576,
@@ -325,6 +324,20 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     provider_npm: "@ai-sdk/openai",
   },
   {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0.01,
+      cache_write: 0.125,
+      input: 0.1,
+      output: 0.5,
+    },
+    id: "claude-haiku-5-5",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 128_000,
+    name: "Claude Haiku 5.5",
+    provider_npm: "@ai-sdk/anthropic",
+  },
+  {
     context_window: 1_050_000,
     cost: {
       cache_read: 0.01,
@@ -374,6 +387,19 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Muse Spark 1.3 Contributor",
     provider_npm: "@ai-sdk/openai",
+  },
+  {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "step-5-preview-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 65_536,
+    name: "Step 5 Preview Free",
   },
   {
     context_window: 1_000_000,
@@ -467,18 +493,6 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 128_000,
     name: "GPT-5.4",
     provider_npm: "@ai-sdk/openai",
-  },
-  {
-    context_window: 1_048_576,
-    cost: {
-      input: 0,
-      output: 0,
-    },
-    id: "fledge-alpha-free",
-    input_modalities: ["text", "image"],
-    is_free: true,
-    max_output_tokens: 131_072,
-    name: "Fledge Alpha Free",
   },
   {
     context_window: 200_000,
@@ -662,6 +676,18 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     provider_npm: "@ai-sdk/openai",
   },
   {
+    context_window: 524_288,
+    cost: {
+      cache_read: 0.07,
+      input: 0.68,
+      output: 2.09,
+    },
+    id: "mistral-large-4",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 262_144,
+    name: "Mistral Large 4",
+  },
+  {
     context_window: 262_144,
     cost: {
       cache_read: 0.02,
@@ -737,6 +763,18 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     input_modalities: ["text"],
     max_output_tokens: 131_072,
     name: "MiniMax-M2.5",
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      input: 0,
+      output: 0,
+    },
+    id: "exo-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 131_072,
+    name: "Exo Free",
   },
   {
     context_window: 400_000,
@@ -1240,6 +1278,20 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     provider_npm: "@ai-sdk/openai",
   },
   {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0.01,
+      cache_write: 0.125,
+      input: 0.1,
+      output: 0.5,
+    },
+    id: "claude-haiku-5-5",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 128_000,
+    name: "Claude Haiku 5.5",
+    provider_npm: "@ai-sdk/anthropic",
+  },
+  {
     context_window: 1_048_576,
     cost: {
       cache_read: 0.15,
@@ -1360,6 +1412,19 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 128_000,
     name: "GPT-5.1 Codex Mini",
     provider_npm: "@ai-sdk/openai",
+  },
+  {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "step-5-preview-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 65_536,
+    name: "Step 5 Preview Free",
   },
   {
     context_window: 1_000_000,
