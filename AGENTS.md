@@ -282,6 +282,21 @@ And one failure the regeneration **created**, which is the instructive one: `usa
 
 **And the regeneration jobs move in PAIRS.** Fixing the catalog shim exposed the NEXT stale artifact: `go-limits-data.ts` — same vendor source (the Go docs table), same nightly-freshness gate, and this time the change was the id shape (`claude-haiku-5.5` → `claude-haiku-5-5`), which is exactly the kind of rename that silently orphans a lookup. The gate then failed on `lib/` being older than `src/` — a regenerated artifact is not deployed until the bundles are rebuilt, because the host loads `lib/index.mjs`, not `src/`. **Regenerating a generated file is a three-step deploy: regenerate, rebuild the bundles, then commit both.**
 
+### The panel's words were localized and its numbers were not (2026-10-09)
+
+The owner read the live panel: `4h 59m后重置`, `3d 3h后重置`, `Nov 7 at 8:55 AM重置`, `更新于 04:57 AM` — Chinese copy wrapped around English times, in a Chinese UI. One unwired prop. The meter's language arrives as **two** props:
+
+| prop | feeds | wired? |
+| --- | --- | --- |
+| `t` | every word (`meterTranslate`) | yes — `ctx.locale.getLocale().active` |
+| `getLocale` | every `Intl` date and duration | **no — never passed at all** |
+
+So `locale` was `undefined`, `Intl` fell back to the **browser's** default (English), and the panel painted English times inside Chinese sentences. `Intl.DurationFormat(undefined)` is exactly `4h 59m`; `Intl.DateTimeFormat(undefined, …)` is `Nov 7 at 8:55 AM`. Nothing was wrong with either formatter — the input was.
+
+This is the "same lifetime" lesson one step further out: it is not only that `t` and `locale` must share a lifetime, it is that **they are two props and only one was wired**. A test asserted `t` followed a language switch and passed the whole time, because nothing asserted the other half. The pin now does — and it cannot pass vacuously, because before the fix the property did not exist on the injected props at all.
+
+**And where the note goes.** The owner's other report was that a four-line billing paragraph dominated a one-line row. It is a statement about a **mechanism**, so it now lives behind an ⓘ tooltip on the credit row (`IconInfoOutlineRegular`, wrapped in a `<span>` because the host's `Tooltip` clones its child and hands the clone a ref). The config notice — _enable Use balance in the console_ — stays visible, because it is an **instruction the reader has to act on**. The test: **an explanation can hide behind a hover; an instruction cannot.**
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:

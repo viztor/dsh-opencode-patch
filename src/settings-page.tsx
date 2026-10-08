@@ -351,7 +351,12 @@ export const apply = (ctx: ClientContext): void => {
           }
           return res;
         },
+        // The dictionary and every `Intl` formatter must agree on the
+        // language: `t` selects the words, `getLocale` feeds the dates and
+        // durations. One getter, read at call time, so a switch moves both —
+        // wiring only `t` left the numbers in the browser's own locale.
         t: meterTranslate(() => ctx.locale?.getLocale?.()?.active),
+        getLocale: () => ctx.locale?.getLocale?.()?.active,
       };
     };
 

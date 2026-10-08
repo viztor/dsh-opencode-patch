@@ -786,38 +786,35 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
+  it("puts the billing rule behind a tooltip, not in the panel", () => {
+    // The note is a paragraph about a mechanism; the panel is a gauge. It is
+    // the LABEL of a tooltip on the Zen-credit row, so the row stays one line.
+    const withOverflow = UsagePanel(
+      panelProps({ usage: usage({ zenOverflow: true }) })
+    );
+    const labels = findAllOf(withOverflow, new Set(["Tooltip"])).map(
+      (node) => node.props.label
+    );
+    expect(labels).toContain("t:usageOverflowBilling");
+    // It is no longer body text, and the old callout is gone from the tree.
+    expect(collectText(withOverflow)).not.toContain("t:usageOverflowBilling");
+    expect(byClass(withOverflow, "dsh-oc-usage-zen-notice")).toHaveLength(0);
+  });
+
   it("warns about Zen fallback only when limited without overflow", () => {
-    // Limited WITHOUT overflow: the config notice is the one message.
-    expect(
-      collectText(UsagePanel(panelProps({ isLimited: true, usage: usage() })))
-    ).toContain("t:usageZenFallbackNotice");
-    expect(
-      collectText(UsagePanel(panelProps({ isLimited: true, usage: usage() })))
-    ).not.toContain("t:usageOverflowBilling");
+    // Limited WITHOUT overflow: the config notice is the one message, and it
+    // stays VISIBLE — it is an instruction the reader has to act on, which is
+    // exactly what does not belong behind a hover.
+    const limited = UsagePanel(panelProps({ isLimited: true, usage: usage() }));
+    expect(collectText(limited)).toContain("t:usageZenFallbackNotice");
+    expect(byClass(limited, "dsh-oc-usage-zen-notice")).toHaveLength(1);
 
-    // With overflow, the BILLING note replaces it: the notice slot's question
-    // changes from "how do I enable the fallback" to "where is the money going".
-    expect(
-      collectText(
-        UsagePanel(
-          panelProps({ isLimited: true, usage: usage({ zenOverflow: true }) })
-        )
-      )
-    ).toContain("t:usageOverflowBilling");
-    expect(
-      collectText(
-        UsagePanel(
-          panelProps({ isLimited: true, usage: usage({ zenOverflow: true }) })
-        )
-      )
-    ).not.toContain("t:usageZenFallbackNotice");
-
-    // And a plain overflow reading (not limited) still carries the note.
-    expect(
-      collectText(
-        UsagePanel(panelProps({ usage: usage({ zenOverflow: true }) }))
-      )
-    ).toContain("t:usageOverflowBilling");
+    // With overflow the config notice would be wrong — the fallback is already
+    // on — so it is absent and the billing rule rides the credit row.
+    const overflowing = UsagePanel(
+      panelProps({ isLimited: true, usage: usage({ zenOverflow: true }) })
+    );
+    expect(collectText(overflowing)).not.toContain("t:usageZenFallbackNotice");
   });
 
   it("keeps the trigger's corner language equal to the composer control's", () => {
