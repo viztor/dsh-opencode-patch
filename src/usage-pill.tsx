@@ -281,7 +281,11 @@ const ActiveUsage = ({
     ? `0 ${CIRCUMFERENCE}`
     : ringGeometry(displayPercent).strokeDasharray;
 
-  let triggerLabel = "…";
+  // Empty, never an ellipsis. "…" is a promise that a number is coming, and on
+  // a poll that cannot answer it the pill flickers … / 42% / … / 42% — which
+  // reads as a glitch, not as progress. The ring already says there is a meter;
+  // a failed read says "!" because that IS information.
+  let triggerLabel = "";
   if (usage !== undefined) {
     triggerLabel = `${displayPercent}%`;
   } else if (failure !== null) {

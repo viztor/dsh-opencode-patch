@@ -121,6 +121,30 @@ afterEach(() => {
 });
 
 describe("usage-pill: the poll loop", () => {
+  it("shows no loading ellipsis while the first read is still pending", async () => {
+    // "…" flickers … / 42% / … on every poll that cannot answer, which reads as
+    // a glitch rather than progress. Empty is stable, and the ring is already
+    // there; a FAILED read says "!" because that IS information.
+    // Never settles: this IS the "still loading" state the test needs.
+    const readUsage = vi.fn().mockReturnValue(
+      new Promise<void>(() => {
+        // Intentionally empty — the read stays pending for the whole test.
+      })
+    );
+    const view = render(
+      <UsagePill
+        directory={storeFor({ current: { provider: "opencode-go" } })}
+        readUsage={readUsage}
+        t={t}
+      />
+    );
+    await waitFor(() => {
+      expect(readUsage).toHaveBeenCalled();
+    });
+    const button = view.container.querySelector("button");
+    expect(button?.textContent).toBe("");
+  });
+
   it("reads once on mount and shows the quota it got back", async () => {
     const readUsage = vi.fn().mockResolvedValue(USAGE);
     await renderPill(readUsage);
