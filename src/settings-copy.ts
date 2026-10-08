@@ -90,6 +90,15 @@ export const en = {
   usageAuthRejected: "Go key rejected — check this account’s key",
   usageUnavailable: "Unavailable",
   usageUpgradePlan: "Upgrade plan",
+  usageSummaryTitle: "Go usage",
+  usageSummaryStatusOk: "Healthy",
+  usageSummaryStatusLimited: "Limit reached",
+  usageSummaryUnavailable: "Quota unavailable",
+  usageSummaryUsed: "used",
+  usageSummaryRemaining: "left",
+  usageSummaryAllowance: "Monthly allowance",
+  usageSummaryNote:
+    'OpenCode publishes a percentage per window and no balance, so "left" is the complement of that same percentage — not a dollar figure. The plan tier is not discoverable either.',
   usageZenFallbackNotice:
     "When Go plan limits are reached, requests automatically fall back to Zen balance only if 'Use balance' is enabled on this Go subscription's account in the OpenCode Console. Separate Zen accounts cannot be debited for Go plan overflow.",
   /**
@@ -177,6 +186,15 @@ export const zh: Record<keyof typeof en, string> = {
   usageAuthRejected: "Go 密钥被拒 — 请检查该账号的 Go key",
   usageUnavailable: "暂不可用",
   usageUpgradePlan: "升级套餐",
+  usageSummaryTitle: "Go 用量",
+  usageSummaryStatusOk: "状态正常",
+  usageSummaryStatusLimited: "已达限额",
+  usageSummaryUnavailable: "读不到配额",
+  usageSummaryUsed: "已用",
+  usageSummaryRemaining: "剩余",
+  usageSummaryAllowance: "月度额度",
+  usageSummaryNote:
+    "OpenCode 每个窗口只提供百分比、没有余额接口，所以「剩余」是同一百分比的反面，而不是美元数；套餐档位也无法探测。",
   usageZenFallbackNotice:
     "当 Go 套餐额度用尽时，仅在当前 Go 订阅账号的控制台中开启了「使用余额 (Use balance)」时才会自动回退；独立账号的 Zen 余额无法跨账号自动承接。",
   usageOverflowBilling:
