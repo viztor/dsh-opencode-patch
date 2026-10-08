@@ -218,6 +218,38 @@ export function Tag({ children, tone = "outline" }: KitProps) {
 }
 
 /**
+ * `StateDot` renders for real: the meter's window rows draw one per quota
+ * window, so a `{props, type}` object would fail the same way `Tag` did. The
+ * stub keeps the host's contract — `data-state` on a span sized by `size`
+ * (default 10, 14 for the ongoing spinner) — so tests can assert WHICH state a
+ * row shows, which is the fact that matters now that the colour lives in the
+ * kit's stylesheet.
+ */
+export function StateDot({
+  state,
+  size,
+  className,
+}: {
+  state: "done" | "warning" | "ongoing" | "error" | "idle";
+  size?: number;
+  className?: string;
+}) {
+  const edge = size ?? 10;
+  return (
+    <span
+      aria-hidden="true"
+      className={
+        className === undefined
+          ? "dsh-stub-state-dot"
+          : `dsh-stub-state-dot ${className}`
+      }
+      data-state={state}
+      style={{ height: edge, width: edge }}
+    />
+  );
+}
+
+/**
  * Icons must be REAL elements here too, for the same reason `Tag` is: the meter
  * renders the refresh button with the host's own icon, and a `{props, type}`
  * object fails as "Element type is invalid" the moment the panel mounts. The
