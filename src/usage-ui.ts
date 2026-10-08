@@ -198,18 +198,29 @@ export const STYLES = `
    */
   background: var(--dsw-menu-surface-fill, Canvas);
   backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
-  /* The host scopes this stroke to a [data-menu-material] selector — which its
-   * own Menu sets by rendering a data-menu-material="translucent" attribute — and
-   * the value it puts there: --dsw-alias-border-l3, #0000001f light / #ffffff29
-   * dark. This one was already right; it is the radius and the elevation that
-   * were off, and both of those are values that had to be read rather than
-   * guessed. */
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
-  /* Same mistake in the elevation: the theme defines panel / prominent / soft,
-   * and a panel wants the one called panel — the 0.5px stroke plus
-   * 0 3px 8px 0 #00000008 and 0 0 16px 0 #00000005. "Prominent" is a louder
-   * surface; it belongs to something meant to dominate. */
-  box-shadow: var(--dsw-elevation-panel, 0 3px 8px rgba(0, 0, 0, 0.03));
+  /* NOT border-l3, and NOT border-l4. The host uses one scale for surfaces and
+   * another for controls:
+   *   l1  a floating dropdown / scroll surface   (sets elevation-stroke-color)
+   *   l2  a floating PANEL surface               (the dockkit float: l2)
+   *   l3  controls — switch track, outline button, table divider, segmented
+   *   l4  controls — button, input, tag outline, dockkit dividers
+   * The chat box sits on l3 because it is a CONTROL. That makes l4 the loudest
+   * control in the app, not "one step above a panel": we are a surface, so the
+   * question is l1-vs-l2, and the answer is l2 — what the harness's own floating
+   * panel uses. Going up the l3→l4 axis would have made us read as the loudest
+   * element on screen while being a popover.
+   *
+   * Reading the scale is only possible from the CONSUMERS, which live in
+   * dsh-web-frontend/dist/assets/index-*.css, not in the theme. */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  /* --dsw-elevation-prominent, and this was briefly "panel" because a token by
+   * that name exists. The harness's OWN floating panel — the dockkit float, the
+   * same class of thing in this same dock — reads
+   *   box-shadow: var(--dsw-elevation-prominent)
+   * so prominent is the surface elevation, and elevation-panel is a token nobody
+   * consumes. Reverted after reading the consumer instead of the name, which is
+   * the mistake this file has now paid for twice. */
+  box-shadow: var(--dsw-elevation-prominent, 0 12px 36px rgba(0, 0, 0, 0.28));
   color: var(--dsw-alias-label-primary, CanvasText);
   font-size: 12px;
   line-height: 1.5;
