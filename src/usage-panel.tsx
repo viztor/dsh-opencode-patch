@@ -186,7 +186,11 @@ export const UsagePanel = ({
         HOVER fill token as its resting background, so it sat permanently lit.
         `danger` is the host's tone for a limit; `neutral` is a plain label.
       */}
-      <Tag tone={isLimited && !isZen ? "danger" : "neutral"}>{badgeText}</Tag>
+      {/* An empty label draws an empty chip, which is a frame around nothing.
+          The Go panel has no badge to show until the plan is limited. */}
+      {badgeText.length > 0 && (
+        <Tag tone={isLimited && !isZen ? "danger" : "neutral"}>{badgeText}</Tag>
+      )}
     </div>
 
     {!isZen && (
