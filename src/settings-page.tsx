@@ -214,8 +214,13 @@ const modelDirectoryStore = (
 const meterTranslate =
   (active: string | undefined): ((key: string) => string) =>
   (key: string): string => {
-    const dict = active === "zh" ? zh : en;
-    return dict[key as keyof typeof dict] ?? key;
+    // Widened to an index signature ON PURPOSE: the caller holds an arbitrary
+    // key, so the lookup is a miss-or-hit at runtime and `?? key` is the miss.
+    // The previous form asserted `key as keyof typeof dict`, which is a
+    // narrower type than the value it was given — an assertion that existed
+    // only to satisfy the compiler about a lookup that is untyped by nature.
+    const dict: Record<string, string> = active === "zh" ? zh : en;
+    return dict[key] ?? key;
   };
 
 export const apply = (ctx: ClientContext): void => {

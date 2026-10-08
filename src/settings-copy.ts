@@ -57,6 +57,14 @@ export const en = {
   usageRefreshFailed: "Refresh failed",
   usageRefreshing: "Refreshing…",
   usageResets: "Resets",
+  /**
+   * The SUFFIX form, for a countdown: `1h 11m until reset`. Carries its own
+   * leading space because zh does not want one (`1h 11m后重置`), and the two
+   * cannot share a composition rule.
+   */
+  usageResetsIn: " until reset",
+  /** A window whose reset instant has already passed — see `RelativeReset`. */
+  usageResetPassed: "Already reset",
   usageRetry: "Retry now",
   usageTitle: "OpenCode Go usage",
   usageAuthRejected: "Go key rejected — check this account’s key",
@@ -131,6 +139,8 @@ export const zh: Record<keyof typeof en, string> = {
   usageRefreshFailed: "刷新失败",
   usageRefreshing: "正在刷新…",
   usageResets: "重置于",
+  usageResetsIn: "后重置",
+  usageResetPassed: "已重置",
   usageRetry: "立即重试",
   usageTitle: "OpenCode Go 用量",
   usageAuthRejected: "Go 密钥被拒 — 请检查该账号的 Go key",
