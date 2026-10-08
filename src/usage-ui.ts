@@ -201,23 +201,20 @@ export const STYLES = `
    */
   background: var(--dsw-menu-surface-fill, Canvas);
   backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
-  /* --dsw-alias-border-l3, and this is where it started too. It comes from the
-   * theme's [data-menu-material] rule, which is exactly what this panel is: the
-   * host's own Menu renders data-menu-material="translucent" to pick it up, and
-   * this panel sets the same --dsw-menu-surface-fill / --dsw-menu-backdrop-filter
-   * pair. l2 was read off the dockkit float instead — a different material.
+  /* The stroke is NOT declared here, and never needed to be. Hardcoding one
+   * level broke the other theme — which is why the owner's first instinct
+   * ("should we use border-l4?") was RIGHT and two rounds of reasoning talked
+   * them out of it.
    *
-   * The scale is NOT inverted, for the record: light-theme alpha runs l1 4%,
-   * l2 10%, l3 12%, l4 16%, so a HIGHER number is a STRONGER border. l4 would
-   * have been the strongest border in the app; l1 the faintest.
-   *
-   * HOW TO PICK THE REFERENCE, having got this wrong twice: match on MATERIAL,
-   * not on resemblance. Two host surfaces are floating boxes — one translucent
-   * with a backdrop (a popover: radius-lg, border-l3) and one opaque and docked
-   * (the float: radius-panel, border-l2). "Also a floating surface" is not the
-   * same question as "the same kind of surface", and picking the wrong one is
-   * invisible until a screenshot disagrees. */
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+   * The theme picks it per theme, off the attribute the host's own Menu sets:
+   *     body                                          -> border-l4
+   *     body[data-ds-dark-theme] [data-menu-material] -> border-l3
+   * There is NO light-theme [data-menu-material] rule, so l3 is a DARK value
+   * that reads like a global one. Grep it without its selector and you get the
+   * wrong answer in the light theme — the theme every screenshot here is in.
+   * The panel is menu material, so it carries the attribute and takes whatever
+   * the theme says; setting the variable here would pin one theme's answer and
+   * silently break the other's. */
   /* --dsw-elevation-prominent, and this was briefly "panel" because a token by
    * that name exists. The harness's OWN floating panel — the dockkit float, the
    * same class of thing in this same dock — reads

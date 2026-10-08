@@ -311,11 +311,9 @@ describe("UsagePanel", () => {
     expect(panel).not.toContain("--dsw-specific-menu");
     expect(panel).not.toContain("--dsw-alias-bg-layer-2");
     expect(panel).not.toMatch(/background-color:\s*Canvas/);
-    // Menu material, so a menu's stroke: the theme puts border-l3 on
-    // [data-menu-material], which the host's Menu opts into.
-    expect(panel).toContain(
-      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
-    );
+    // The stroke itself is not declared in CSS at all — see the attribute case
+    // below, which asserts it on the element where it actually lives.
+    expect(panel).not.toContain("elevation-stroke-color");
   });
 
   it("gives a rejected credential its own heading, not the refresh one", () => {
@@ -552,6 +550,18 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
+  it("opts into the menu material with the host's own attribute", () => {
+    // The stroke is chosen by the THEME per theme, off this attribute:
+    // body -> border-l4 (light), body[data-ds-dark-theme] [data-menu-material]
+    // -> border-l3. Declaring the level in CSS would pin one theme and break
+    // the other, which is exactly what hardcoding --dsw-alias-border-l3 did —
+    // and the owner's first instinct ("use l4?") was right all along.
+    const root = UsagePanel(panelProps());
+    expect(isElement(root) && root.props["data-menu-material"]).toBe(
+      "translucent"
+    );
+  });
+
   it("uses the host's PANEL radius and elevation, not a control's", () => {
     // Read from the host, not guessed: --dsw-radius-panel is 28px and is what
     // the harness's own floating panels in this dock use; --dsw-radius-lg is
@@ -571,11 +581,10 @@ describe("UsagePanel", () => {
     expect(rule).toContain("var(--dsw-elevation-prominent");
     expect(rule).not.toContain("--dsw-elevation-panel");
 
-    expect(rule).toContain(
-      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
-    );
-    // l2/l4 are the dockkit float's and the control scale's, respectively.
-    expect(rule).not.toMatch(/alias-border-l[124]/);
+    // The stroke is not declared at all. The theme picks it PER THEME off
+    // data-menu-material: body -> l4 (light), and the dark override -> l3.
+    // Declaring a level here would pin one theme and break the other.
+    expect(rule).not.toContain("elevation-stroke-color");
   });
 
   it("draws NO window rows when Go's quota could not be read", () => {
