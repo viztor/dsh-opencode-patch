@@ -227,22 +227,22 @@ describe("UsagePanel", () => {
     // The console sits on the update row; the Go layer's own action row carries
     // the plan link, and it renders INSIDE that layer — above the shared spend
     // and footer rows, not below them.
-    // Plan first: it lives in the Go layer, above the shared footer that
-    // carries the console.
+    // Both actions, in the FOOTER, plan first. The plan link used to have its own
+    // row behind a divider — one row taller, and a second action in a second
+    // place. Every link now sits together and reads as what it is.
     expect(findAll(tree, "a").map((a) => a.props.href)).toEqual([
       GO_PLAN_URL,
       CONSOLE_URL,
     ]);
     const order = classOrder(tree);
-    expect(order.indexOf("dsh-oc-usage-links")).toBeGreaterThan(
-      order.indexOf("dsh-oc-usage-breakdown")
+    for (const name of ["dsh-oc-usage-links", "dsh-oc-usage-divider"]) {
+      expect(order).not.toContain(name);
+    }
+    // The console is inside the footer, after the timestamp it refreshes.
+    expect(order.indexOf("dsh-oc-usage-console")).toBeGreaterThan(
+      order.indexOf("dsh-oc-usage-updated")
     );
-    expect(order.indexOf("dsh-oc-usage-links")).toBeLessThan(
-      order.indexOf("dsh-oc-usage-footer")
-    );
-    expect(byClass(tree, "dsh-oc-usage-console")[0]?.props.href).toBe(
-      CONSOLE_URL
-    );
+    expect(byClass(tree, "dsh-oc-usage-console")).toHaveLength(2);
   });
 
   it("refreshes by icon beside the timestamp, not by a second label", () => {
@@ -272,7 +272,7 @@ describe("UsagePanel", () => {
     const zen = UsagePanel(panelProps({ isZen: true, usage: usage() }));
     expect(findAll(zen, "a").map((a) => a.props.href)).toEqual([CONSOLE_URL]);
     expect(collectText(zen)).toContain("t:usageTopUp");
-    expect(byClass(zen, "dsh-oc-usage-links")).toHaveLength(0);
+    expect(byClass(zen, "dsh-oc-usage-console")).toHaveLength(1);
 
     const go = UsagePanel(panelProps({ usage: usage() }));
     expect(findAll(go, "a").map((a) => a.props.href)).toEqual([
@@ -343,12 +343,12 @@ describe("UsagePanel", () => {
     // together into one sentence across the panel: "升级套餐控制台与余额额度说明".
     // Both halves regress independently, so pin the wiring and the sheet.
     const tree = UsagePanel(panelProps({ usage: usage() }));
-    expect(byClass(tree, "dsh-oc-usage-links")).toHaveLength(1);
+    expect(byClass(tree, "dsh-oc-usage-console")).toHaveLength(2);
 
-    const row = /\.dsh-oc-usage-links \{[^}]*\}/.exec(STYLES)?.[0];
+    const row = /\.dsh-oc-usage-footer \{[^}]*\}/.exec(STYLES)?.[0];
     expect(row).toContain("gap:");
 
-    const anchor = /\.dsh-oc-usage-links a \{[^}]*\}/.exec(STYLES)?.[0];
+    const anchor = /\.dsh-oc-usage-console \{[^}]*\}/.exec(STYLES)?.[0];
     // Only `--dsw-*` resolves; an invented token falls back to its own literal
     // colour and the link ignores the theme.
     expect(anchor).toContain("--dsw-alias-link");
@@ -510,7 +510,7 @@ describe("UsagePanel", () => {
       order.indexOf("dsh-oc-usage-breakdown")
     );
     expect(order.indexOf("dsh-oc-usage-detail")).toBeLessThan(
-      order.indexOf("dsh-oc-usage-links")
+      order.indexOf("dsh-oc-usage-footer")
     );
 
     // No allowance, no row — and never on a Zen route, where the Go plan is not
