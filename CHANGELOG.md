@@ -6,6 +6,78 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.14.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.13.0...v0.14.0) (2026-10-08)
+
+
+### Features
+
+* a rejected Go credential says so, instead of 'unavailable' ([b7cbc86](https://github.com/viztor/dsh-opencode-patch/commit/b7cbc864c7c0a3fa92d8965c442b12796dd60281))
+* mount the host's own llm-pi-ai below an isolated auth scope ([fb12d8d](https://github.com/viztor/dsh-opencode-patch/commit/fb12d8dddd3824d989051ebcfe822cfc8f29497f))
+* route each OpenCode Zen model to the API its own SDK names ([20c8afc](https://github.com/viztor/dsh-opencode-patch/commit/20c8afc5a8410885725a2bab420271dbddb78143))
+* say when the Go plan is what ran out ([3f6da6c](https://github.com/viztor/dsh-opencode-patch/commit/3f6da6cc56c3c3b82c773213125969d43d3b14f0))
+* seat the meter beside the model selector ([61680cc](https://github.com/viztor/dsh-opencode-patch/commit/61680ccb62b261df4bcc022728474819951264e0))
+* show session spend in the Zen trigger instead of the title ([5e7b4eb](https://github.com/viztor/dsh-opencode-patch/commit/5e7b4eb0854e60fbaaedd521a3e23ddbbb116388))
+* the free model's ring goes hollow, and the windows get their bars back ([3d01323](https://github.com/viztor/dsh-opencode-patch/commit/3d013239b9727ff39ecf5062ef4d6f8be5e442a1))
+* the Go panel says what the percentage is a percentage OF ([1b3f906](https://github.com/viztor/dsh-opencode-patch/commit/1b3f906e9b9f833d2ea6bddcfa5b1883041a5252))
+* the meter's footer, and a rate that follows the picker ([438682e](https://github.com/viztor/dsh-opencode-patch/commit/438682eff4029ee671a6a2637d4adde841246ade))
+* the overflow card carries a billing note, not estimates ([1f92c46](https://github.com/viztor/dsh-opencode-patch/commit/1f92c46af8126c54d4889abb3a490c13a64d58dc))
+* the plugin card shows Go usage and status, with what is left on the side ([362f8fd](https://github.com/viztor/dsh-opencode-patch/commit/362f8fd32788119ed7bea7300e29371991e17549))
+* the spend row always renders, the Zen hover carries the price, and the meter has a Chinese behaviour doc ([75f6d47](https://github.com/viztor/dsh-opencode-patch/commit/75f6d47bbc82f35ef99be98366c4eff523bc1cbb))
+* the Zen tooltip answers "how much is left" ([23a8bbb](https://github.com/viztor/dsh-opencode-patch/commit/23a8bbbf4ef0fc3898c58d526a16312d97848a5c))
+
+
+### Bug Fixes
+
+* a custom gateway gets catalog enrichment, not just headers ([44ce711](https://github.com/viztor/dsh-opencode-patch/commit/44ce711cffbcd1edad830c2f06de76a0c69ecdcf))
+* a model or provider switch re-reads immediately, not on the next tick ([5aea039](https://github.com/viztor/dsh-opencode-patch/commit/5aea0395805b6d91dd5b5bbd595c7825e9650600))
+* a refresh click completes a full spin, however fast the read is ([f602aee](https://github.com/viztor/dsh-opencode-patch/commit/f602aeea1a918026f91b95c607baf8766b3b5b0f))
+* call the Host's listing with its own service as the receiver ([51ff423](https://github.com/viztor/dsh-opencode-patch/commit/51ff423e9ee3937a7e33d7777430921ed67055e7))
+* declare remote.opencodeGoUsage now that the host registers it ([fed3fdc](https://github.com/viztor/dsh-opencode-patch/commit/fed3fdc8a23bb037cd88d000a6ba64c121eb6a06))
+* declare remote.opencodeGoUsage, the meter's own remote ([7fa623a](https://github.com/viztor/dsh-opencode-patch/commit/7fa623a8e4a53ae65aca247a4a7a8fb69e8de169))
+* declare remote.session, which is its own inject key ([5c15384](https://github.com/viztor/dsh-opencode-patch/commit/5c15384c5821a9e6db662b18ad3a6f66a06c500d))
+* declare the quota method as Remote instead of hand-rolling a contribution ([37c265f](https://github.com/viztor/dsh-opencode-patch/commit/37c265fccd5757b77612a86aa9e0eaa905f25760))
+* declare the remote service the model directory reaches through ([289e28b](https://github.com/viztor/dsh-opencode-patch/commit/289e28b3c2bb5bfb5dacf820555e564aa47831aa))
+* drop the pnpm allowBuilds placeholder an aborted install left behind ([754683f](https://github.com/viztor/dsh-opencode-patch/commit/754683f8a1f8b2047918e01511c8c74e2daaab95))
+* **e2e:** the free-tier gate now fires on every endpoint ([d0da181](https://github.com/viztor/dsh-opencode-patch/commit/d0da1817f17473baa122afe980919d33f5aad473))
+* each panel answers for its OWN balance's spend ([67dde64](https://github.com/viztor/dsh-opencode-patch/commit/67dde648c67d91cdd46e49dc91a9b6c2d24047fa))
+* fail the gate when lib/ is missing or older than src/ ([bc2820c](https://github.com/viztor/dsh-opencode-patch/commit/bc2820cdc0c762f5958e96162e6c484eb845ecd5))
+* give the pill's fallback store a stable snapshot ([78afd36](https://github.com/viztor/dsh-opencode-patch/commit/78afd3695453410089eade5ed2e6262dd00ec7e1))
+* let the effect own the mount's withdrawal, not the mount ([76cc32f](https://github.com/viztor/dsh-opencode-patch/commit/76cc32f90c7be454051592fc2124d79811da0043))
+* localise the reset countdown, which was hardcoded English ([0efc2cb](https://github.com/viztor/dsh-opencode-patch/commit/0efc2cbaed461bd68701877d14bd28b20925dcbe))
+* mount the usage contribution from the client ([e416621](https://github.com/viztor/dsh-opencode-patch/commit/e416621649f08b8253644a5bf7e735d4921ce905))
+* never hand the Host a null inject face ([cc4a4f9](https://github.com/viztor/dsh-opencode-patch/commit/cc4a4f9b98cd1258439e7838451160ea5ff88c21))
+* no loading state, no ellipsis — empty is stable ([0956621](https://github.com/viztor/dsh-opencode-patch/commit/095662155baed1d0c9178e127d668dcc1ac369f2))
+* regenerate the catalog shim after models.dev moved, and re-pin the counts ([ee0622b](https://github.com/viztor/dsh-opencode-patch/commit/ee0622b18352526d27221172a62a9b420a21d58b))
+* regenerate the go-limits shim after the vendor renamed an id ([2e9b5ad](https://github.com/viztor/dsh-opencode-patch/commit/2e9b5ad30ed4ad00309805245c2a14c040951d70))
+* session spend always reads two decimals ([4ca13b6](https://github.com/viztor/dsh-opencode-patch/commit/4ca13b6679a429d98195d0fbf3a334a348ef4c0e))
+* take effect from the plugin context, not the injected scope ([c60bff9](https://github.com/viztor/dsh-opencode-patch/commit/c60bff9316192315e9e990065080b520432d942d))
+* take typert from the plugin context too ([f0e27c7](https://github.com/viztor/dsh-opencode-patch/commit/f0e27c7876ba40168886d5851f858c1b6d5c649e))
+* the bundle ceiling is a tripwire, so stop trimming prose for it ([c2c294d](https://github.com/viztor/dsh-opencode-patch/commit/c2c294d52cd9b331056cc35f2d7392deca8779f4))
+* the free-model row names the model, and stops repeating its own value ([056d2a1](https://github.com/viztor/dsh-opencode-patch/commit/056d2a18fd077bb28eef1ab16137d3159f0cff7e))
+* the Go meter threw away the one credential that worked ([9ecef63](https://github.com/viztor/dsh-opencode-patch/commit/9ecef639ec8589c03e19e995163e0b0b9bf332ac))
+* the Go quota window no longer leaks into the Zen route ([1a05d1a](https://github.com/viztor/dsh-opencode-patch/commit/1a05d1a67da445fb76e7c388dbb9ded56b1369c5))
+* the meter showed no tooltip and ran its three actions together ([b0680db](https://github.com/viztor/dsh-opencode-patch/commit/b0680db47a9bc82fcb968931997abec800322299))
+* the meter's Intl locale was never wired, and the billing note moves into a tooltip ([54ebb34](https://github.com/viztor/dsh-opencode-patch/commit/54ebb34aaa405d7f45bae86402c22a93ff4cc189))
+* the meter's translator follows a live language switch ([66b18d8](https://github.com/viztor/dsh-opencode-patch/commit/66b18d8cd6c3217ec1497132154b5f9a186aee90))
+* the panel header names the account, not its state ([89e25fc](https://github.com/viztor/dsh-opencode-patch/commit/89e25fcdb7849e28f57b805976d474a3c531f01e))
+* the panel is translucent again, and one name for the bundle ([6663c36](https://github.com/viztor/dsh-opencode-patch/commit/6663c36f622f3560249e89193808bb963b2c9204))
+* the panel names the model you picked, even with no price for it ([3f92037](https://github.com/viztor/dsh-opencode-patch/commit/3f9203753e0c102ab04b118e0cda90a63fd1fbf4))
+* the panel no longer draws three invented 0% windows ([4a9e92c](https://github.com/viztor/dsh-opencode-patch/commit/4a9e92c488c6bab57b37de8ba260ae4084d0ef4b))
+* the panel opts into the menu material instead of declaring its stroke ([91ded65](https://github.com/viztor/dsh-opencode-patch/commit/91ded6517b8a8bafcc20aab3febeb54ead2cf542))
+* the panel's stroke is border-l2, and the elevation goes back ([1b75062](https://github.com/viztor/dsh-opencode-patch/commit/1b7506224a9976474bd77de78e731f131d5e4e83))
+* the reset countdown floors, and composes with its own grammar ([00f4a13](https://github.com/viztor/dsh-opencode-patch/commit/00f4a13879d8c39bcec2c5dc95ac99414e27908d))
+* the reset line is a sentence, so its word order is per-language ([5dab110](https://github.com/viztor/dsh-opencode-patch/commit/5dab11002fb40fb6c2dbc34bd8d7ec209efb55a4))
+* the usage note hides behind a tooltip, not a paragraph ([43e634b](https://github.com/viztor/dsh-opencode-patch/commit/43e634b03a7aa610a2cef1e89d1bd48aee48d5c1))
+* the Zen tooltip explains the spend instead of naming the account ([9e33279](https://github.com/viztor/dsh-opencode-patch/commit/9e33279714d086ee595a0d1b52877ce1099409dd))
+* wait for the usage namespace in the scoped inject, not the top-level one ([5d78e58](https://github.com/viztor/dsh-opencode-patch/commit/5d78e58605e0d4ef610b3999d0961100bf4c7f0a))
+
+
+### Reverts
+
+* do not declare remote.opencodeGoUsage ([7714f7e](https://github.com/viztor/dsh-opencode-patch/commit/7714f7e4c960c1e66f825f9c02896f39af54157e))
+* never declare remote.opencodeGoUsage as an inject key ([fb79c56](https://github.com/viztor/dsh-opencode-patch/commit/fb79c569faf7838d19ca2a74399322a34d3127ec))
+* radius and stroke back to the menu's own values ([ff475ab](https://github.com/viztor/dsh-opencode-patch/commit/ff475abb0da29123d89c4ef3c04d28f684bb8e38))
+
 ## [0.13.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.12.0...v0.13.0) (2026-10-05)
 
 
