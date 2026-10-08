@@ -14,7 +14,11 @@
  * @module dsh-opencode-patch/settings-usage
  */
 
-import { StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
+import {
+  IconInfoOutlineRegular,
+  StateDot,
+  Tooltip,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
 import { formatUsd } from "./go-limits.ts";
@@ -112,8 +116,35 @@ export const UsageSummaryView = ({
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: 12, fontWeight: 600 }}>
+        <span
+          style={{
+            alignItems: "center",
+            display: "inline-flex",
+            fontSize: 12,
+            fontWeight: 600,
+            gap: 4,
+          }}
+        >
           {t("usageSummaryTitle")}
+          {/*
+            The note is an explanation, so it lives behind this affordance — the
+            same rule the composer panel's billing note follows. A paragraph
+            under the rows made the caveat the loudest thing on a summary that
+            is meant to be read at a glance. Inline styles because this surface
+            has no stylesheet: the meter's classes are not rendered here.
+          */}
+          <Tooltip label={t("usageSummaryNote")} side="top">
+            <span
+              style={{
+                color: "var(--dsw-alias-label-tertiary)",
+                cursor: "help",
+                display: "inline-flex",
+              }}
+              tabIndex={0}
+            >
+              <IconInfoOutlineRegular size={13} />
+            </span>
+          </Tooltip>
         </span>
         <span
           style={{ color: "var(--dsw-alias-label-secondary)", fontSize: 11 }}
@@ -184,16 +215,6 @@ export const UsageSummaryView = ({
           )}`}
         </div>
       )}
-
-      <div
-        style={{
-          color: "var(--dsw-alias-label-tertiary)",
-          fontSize: 10,
-          lineHeight: 1.5,
-        }}
-      >
-        {t("usageSummaryNote")}
-      </div>
     </div>
   );
 };
