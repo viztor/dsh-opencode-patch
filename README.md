@@ -198,9 +198,23 @@ Eight controls in three sections — the decisions a user actually makes. Everyt
 
 Override-style knobs (literal strings, markers, route lists) are deliberately **config-only** so a default fits every documented setup — see [Configuration Reference](#-configuration-reference).
 
+The card also carries a **live Go usage summary** above the controls — the same reading the composer meter shows, in the layout the vendor's own console uses: one row per window, with what is **left** held out on the right.
+
+```
+Go usage                                           Healthy
+● 5 hours    0% used · resets in 4h 58m           100% left
+● Weekly    28% used · resets in 3d 2h             72% left
+● Monthly   14% used · resets Nov 7, 8:55 AM       86% left
+Monthly allowance  mimo-v2.6-pro · Go $60 · Plus $120         ⓘ
+```
+
+"Left" is a **percentage, never a dollar figure**: `/usage` publishes a percent per window and no balance at all, and the plan tier is not discoverable — so a dollar remainder would be a guess. The ⓘ states that. A quota that cannot be read says so and prints **no numbers**, rather than a row of zeroes that reads as a measurement.
+
 ### Composer dock meter
 
 The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.dock`:
+
+Per-state behaviour — the trigger's three states, both panels, what every row answers, and the three different kinds of "no number" — is documented in [docs/quota-meter.zh-CN.md](./docs/quota-meter.zh-CN.md) (Chinese).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -244,6 +258,8 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 ```
 
 #### Mode B — OpenCode Zen (`opencode`)
+
+A Zen route renders **no Go figure anywhere**: the ring is hollow (there is no window to run out of), the label is the spend rather than a percentage, a rate-limited **Go** plan does not paint the **Zen** trigger as an alert, and hovering carries the price (`Session Spend $0.00 · Pay-as-you-go`). A Go window is a fact about a plan this route never bills against, so it does not appear here.
 
 - **Zen trigger**: the same ring, carrying the session's accumulated spend as its label (`$0.00` before anything has been priced, `$0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
 - **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, the session-spend row (when the price switch is on), and one link — [OpenCode Console](https://opencode.ai/console), labelled **Top up**, because top-up is what a pay-as-you-go user wants from that page and it has no URL of its own.
