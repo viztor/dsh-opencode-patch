@@ -150,6 +150,16 @@ describe("UsageTrigger", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it("does not paint the Zen trigger as an alert for a GO limit", () => {
+    // `isLimited` is the GO window's state. On a Zen route it means nothing —
+    // the route bills per token and no window of it can be exhausted — so the
+    // red frame must not appear there.
+    const tree = UsageTrigger(triggerProps({ isLimited: true, isZen: true }));
+    expect(firstOf(tree, "button").props.className).toBe(
+      "dsh-oc-usage-trigger"
+    );
+  });
+
   it("renders the ring for Zen too, with spend as the label", () => {
     const tree = UsageTrigger(
       triggerProps({ isZen: true, usage: usage({ session: session() }) })

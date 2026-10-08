@@ -297,6 +297,22 @@ This is the "same lifetime" lesson one step further out: it is not only that `t`
 
 **And where the note goes.** The owner's other report was that a four-line billing paragraph dominated a one-line row. It is a statement about a **mechanism**, so it now lives behind an ⓘ tooltip on the credit row (`IconInfoOutlineRegular`, wrapped in a `<span>` because the host's `Tooltip` clones its child and hands the clone a ref). The config notice — _enable Use balance in the console_ — stays visible, because it is an **instruction the reader has to act on**. The test: **an explanation can hide behind a hover; an instruction cannot.**
 
+### The Go window is a GO fact, and the Zen route rendered three of them (2026-10-09)
+
+The owner's report: _"when user is using zen, it still shows the opencode go percentage feels off."_ The Zen trigger read `28%` — the Go plan's **weekly** window — beside a per-token bill, with the ring filled from that same window. Three separate leaks, all from one source: `getAffectingWindow(usage)` reads the GO windows, and the Zen route consulted it anyway.
+
+| surface | before | now |
+| --- | --- | --- |
+| trigger label | fell back to `${displayPercent}%` (Go) when there was no session record | empty — Zen's number is the spend, and there is none to show yet |
+| ring fill | filled from the Go window unless `allowance === undefined` | **hollow**, because Zen has no window to run out of |
+| trigger frame | `dsh-oc-usage-alert` whenever the GO window was rate-limited | the alert is the Go plan's; Zen does not take it |
+
+The `isFree` name was the tell. It meant "the ring has nothing to fill", and it was spelled as `session.freeModel === true || (isZen && allowance === undefined)` — a free-model test AND a provider test wearing one name, which is why the Zen case fell through the moment an allowance row existed for the model. On Zen the ring is hollow for the same reason a free model's is: **there is nothing to run out of.** One clause now says so.
+
+The panel had this right all along — every Go-only row is gated on `!isZen` — so the leak was visible only on the TRIGGER, which is the one surface the panel's gating never covered.
+
+**And nothing caught it.** The suite had a Zen-trigger test that passed `session()` explicitly, so it exercised the spend label and never the no-session fallback the owner actually hit; and `UsageTrigger` is a pure component, so a props-level test could only assert what the caller had already decided. The pins are therefore at both levels: a mount-level case (the fixture's affecting window is rate-limited at 90% — a Go state — and carries no `session`) asserting no percent, a hollow ring and no alert; and a trigger-level case for the frame. Both were verified to FAIL against the old code before being kept.
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:
