@@ -217,6 +217,35 @@ export function Tag({ children, tone = "outline" }: KitProps) {
   );
 }
 
+/**
+ * Icons must be REAL elements here too, for the same reason `Tag` is: the meter
+ * renders the refresh button with the host's own icon, and a `{props, type}`
+ * object fails as "Element type is invalid" the moment the panel mounts. The
+ * third time this stub has been the thing that broke — missing `Tooltip`, then
+ * `Tag`, now an icon. When the meter starts drawing a kit export, check this file
+ * in the SAME commit.
+ *
+ * Mirrors the host: `(props) => <Artwork {...props} strokeWidth={…} />` over an
+ * `svg` with a `size = 16` default, so the stub keeps `className`/`size`.
+ */
+export interface IconProps {
+  className?: string;
+  size?: number;
+}
+
+export function IconRefreshOutlineRegular({ className, size = 16 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      data-stub-icon="refresh"
+      height={size}
+      viewBox="0 0 16 16"
+      width={size}
+    />
+  );
+}
+
 export function SegmentedControl(props: KitProps) {
   return { props, type: "SegmentedControl" };
 }
