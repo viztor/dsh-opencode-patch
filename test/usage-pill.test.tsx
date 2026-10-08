@@ -49,6 +49,20 @@ const createMockUsage = (overrides?: Partial<GoUsage>): GoUsage => ({
 });
 
 /** ISO timestamp `offsetMs` from now — negative is in the past. */
+/**
+ * Slack for every duration fixture, in milliseconds.
+ *
+ * `formatRelativeReset` floors, and it reads `Date.now()` at CALL time — so a
+ * fixture built at exactly 45 minutes and asserted as `45m` is a race that any
+ * elapsed millisecond loses. CI lost it: `expected '44m' to be '45m'`. Every
+ * fixture below therefore sits this far ABOVE the boundary it asserts, which
+ * keeps the floored result stable for any drift under half a minute.
+ */
+const SLACK_MS = 30_000;
+
+/** A duration fixture that cannot be floored out from under its assertion. */
+const ahead = (ms: number): number => ms + SLACK_MS;
+
 const isoAt = (offsetMs: number): string =>
   new Date(Date.now() + offsetMs).toISOString();
 
@@ -66,11 +80,11 @@ describe("usage-pill: helper functions & calculations", () => {
       kind: "duration",
       text: "30m",
     });
-    expect(at((3 * 3600 + 15 * 60) * 1000)).toEqual({
+    expect(at(ahead((3 * 3600 + 15 * 60) * 1000))).toEqual({
       kind: "duration",
       text: "3h 15m",
     });
-    expect(at((2 * 86400 + 4 * 3600) * 1000)).toEqual({
+    expect(at(ahead((2 * 86400 + 4 * 3600) * 1000))).toEqual({
       kind: "duration",
       text: "2d 4h",
     });
@@ -99,7 +113,7 @@ describe("usage-pill: helper functions & calculations", () => {
 
     // Exactly N days reads `2d`, not `2d 0h` — the hour branch already guarded
     // its zero and the day branch did not.
-    expect(at(2 * 86400 * 1000).text).toBe("2d");
+    expect(at(ahead(2 * 86400 * 1000)).text).toBe("2d");
 
     // Beyond a week it renders a locale date, tagged `absolute` because that is
     // the shape that composes with a PREFIX rather than a suffix.
@@ -125,11 +139,11 @@ describe("usage-pill: helper functions & calculations", () => {
     try {
       const at = (ms: number, locale: string): string =>
         formatRelativeReset(isoAt(ms), locale).text;
-      expect(at((2 * 86400 + 4 * 3600) * 1000, "en")).toBe("2d 4h");
-      expect(at((2 * 86400 + 4 * 3600) * 1000, "zh")).toBe("2天4小时");
+      expect(at(ahead((2 * 86400 + 4 * 3600) * 1000), "en")).toBe("2d 4h");
+      expect(at(ahead((2 * 86400 + 4 * 3600) * 1000), "zh")).toBe("2天4小时");
       expect(at(30 * 60 * 1000 + 500, "zh")).toBe("30分");
-      expect(at(2 * 86400 * 1000, "en")).toBe("2d");
-      expect(at(45 * 60 * 1000, "en")).toBe("45m");
+      expect(at(ahead(2 * 86400 * 1000), "en")).toBe("2d");
+      expect(at(ahead(45 * 60 * 1000), "en")).toBe("45m");
     } finally {
       if (had) {
         Reflect.set(Intl, "DurationFormat", original);
@@ -169,8 +183,10 @@ describe("usage-pill: helper functions & calculations", () => {
     };
     Reflect.set(Intl, "DurationFormat", refusing);
     try {
-      expect(formatRelativeReset(isoAt(45 * 60 * 1000), "en").text).toBe("45m");
-      expect(formatRelativeReset(isoAt(45 * 60 * 1000), "zh").text).toBe(
+      expect(formatRelativeReset(isoAt(ahead(45 * 60 * 1000)), "en").text).toBe(
+        "45m"
+      );
+      expect(formatRelativeReset(isoAt(ahead(45 * 60 * 1000)), "zh").text).toBe(
         "45分"
       );
     } finally {
@@ -188,12 +204,13 @@ describe("usage-pill: helper functions & calculations", () => {
     const zh = (ms: number): string =>
       formatRelativeReset(isoAt(ms), "zh").text;
     expect(zh(30 * 60 * 1000 + 500)).toBe("30分钟");
-    expect(zh((3 * 3600 + 15 * 60) * 1000)).toBe("3小时15分钟");
-    expect(zh((2 * 86400 + 4 * 3600) * 1000)).toBe("2天4小时");
-    expect(zh(2 * 86400 * 1000)).toBe("2天");
+    expect(zh(ahead((3 * 3600 + 15 * 60) * 1000))).toBe("3小时15分钟");
+    expect(zh(ahead((2 * 86400 + 4 * 3600) * 1000))).toBe("2天4小时");
+    expect(zh(ahead(2 * 86400 * 1000))).toBe("2天");
     // And en keeps the compact Latin form it always had.
     expect(
-      formatRelativeReset(isoAt((2 * 86400 + 4 * 3600) * 1000), "en").text
+      formatRelativeReset(isoAt(ahead((2 * 86400 + 4 * 3600) * 1000)), "en")
+        .text
     ).toBe("2d 4h");
   });
 
