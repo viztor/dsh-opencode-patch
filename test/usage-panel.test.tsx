@@ -551,6 +551,26 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
+  it("puts the refresh control AFTER the timestamp it refreshes", () => {
+    // Leading with the icon read as a lone button with a caption beside it, and
+    // the 20px hit box plus a 5px gap left a hole where the sentence should be.
+    // A value followed by the thing that refreshes it reads like any "as of"
+    // field — and the 20px target stays, because the gap was not its padding.
+    const cell = UsagePanel(panelProps({ updatedAt: 1_700_000_000_000 }));
+    const order = classOrder(cell).filter(
+      (name) =>
+        name === "dsh-oc-usage-updated" || name === "dsh-oc-usage-refresh"
+    );
+    expect(order).toEqual(["dsh-oc-usage-updated", "dsh-oc-usage-refresh"]);
+
+    // The target keeps its 20px box; only the gap tightened.
+    const rule = /\.dsh-oc-usage-refresh \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(rule).toContain("width: 20px");
+    expect(rule).toContain("padding: 0");
+    const cellRule = /\.dsh-oc-usage-updated \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(cellRule).toContain("gap: 1px");
+  });
+
   it("leaves the footer empty until the first read, then wires retry", () => {
     // No loading text: a cell that fills in and then empties makes the row jump
     // on every mount, which reads as a glitch rather than as progress.
