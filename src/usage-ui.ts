@@ -300,13 +300,6 @@ export const STYLES = `
   color: var(--dsw-alias-label-tertiary, currentColor);
 }
 
-.dsh-oc-usage-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
 .dsh-oc-usage-row-right {
   flex: none;
   font-variant-numeric: tabular-nums;
@@ -533,25 +526,49 @@ export const STYLES = `
 // disallowed for DSH client plugins.
 
 /**
- * The ring colour before a window exists.
+ * What a window's fill state IS, in the kit's own vocabulary.
  *
- * Split from {@link getWindowColor} so the "no data yet" case is a named idea
- * instead of a nested ternary at the call site.
+ * `StateDotState` — the same union `@deepseek-ai/dsh-client-ui-primitives`'
+ * `StateDot` takes — reads `done` / `warning` / `error`, and its CSS maps each
+ * to the exact `--dsw-alias-state-*` token this file used to inline. Returning
+ * the SEMANTIC instead of a colour string is what let the window rows adopt the
+ * kit's dot: a hand-rolled 6px circle with an inline `backgroundColor` per
+ * state was one more look-alike of a primitive this repo already ships.
+ *
+ * The ring and the bar keep reading COLOURS off these names (they are strokes
+ * and fills, not dots), so the token map below stays the single place the
+ * percentage ladder is written down.
+ */
+export type WindowState = "done" | "warning" | "error";
+
+export const getWindowState = (window: UsageWindow): WindowState => {
+  if (window.status === "rate-limited" || window.percent >= 100) {
+    return "error";
+  }
+  if (window.percent >= 80) {
+    return "warning";
+  }
+  return "done";
+};
+
+/** The state ladder as colours, for strokes and fills the kit does not ship. */
+export const WINDOW_STATE_COLOR: Record<WindowState, string> = {
+  done: "var(--dsw-alias-state-success-primary)",
+  warning: "var(--dsw-alias-state-warn-primary)",
+  error: "var(--dsw-alias-state-error-primary)",
+};
+
+export const getWindowColor = (window: UsageWindow): string =>
+  WINDOW_STATE_COLOR[getWindowState(window)];
+
+/**
+ * The ring colour before a window exists — `done`, the neutral assumption;
+ * the ring refills the moment data lands.
  */
 export const getWindowColorFor = (affecting?: AffectingWindowResult): string =>
   affecting === undefined
-    ? "var(--dsw-alias-state-success-primary)"
+    ? WINDOW_STATE_COLOR.done
     : getWindowColor(affecting.window);
-
-export const getWindowColor = (window: UsageWindow): string => {
-  if (window.status === "rate-limited" || window.percent >= 100) {
-    return "var(--dsw-alias-state-error-primary)";
-  }
-  if (window.percent >= 80) {
-    return "var(--dsw-alias-state-warn-primary)";
-  }
-  return "var(--dsw-alias-state-success-primary)";
-};
 
 export const formatRelativeReset = (
   dateStr: string,

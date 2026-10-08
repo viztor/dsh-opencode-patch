@@ -187,6 +187,16 @@ Cost of skipping the check, all paid for in one session: a hand-drawn 12px refre
 
 **And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
 
+### The audit closed out (2026-10-08, same day)
+
+Every row of the table above has now been resolved — and one verdict FLIPPED:
+
+- **`.dsh-oc-usage-dot` → `StateDot`: swapped.** The colour helpers now return the SEMANTIC — `getWindowState(window)` is `"done" | "warning" | "error"`, the kit's own union — and the rows render `<StateDot state={getWindowState(window)} />`. The kit's stylesheet maps those three states to the exact `--dsw-alias-state-*` tokens the hand-rolled circle inlined, so the look is unchanged and the theme owns it. The bar and the ring are strokes/fills the kit does not ship, so they read COLOURS off `WINDOW_STATE_COLOR`, the one map where the percentage ladder is written. Test asserts `props.state` on the ELEMENT TYPE (`findAllOf(tree, new Set(["StateDot"]))`) — this file walks the unmounted tree, so the kit's span never appears in it; asserting the rendered class would have been asserting nothing.
+- **trigger → `Pill`: rejected, and the rejection is now a decision, not drift.** `Pill.module.css` is a 24px fixed-height `999px` stadium with a resting `bg-layer-2` fill — all three are what this session's fixes removed from the trigger (ghost at rest, radius-md, content-sized). Adopting the primitive would have re-introduced the exact look the owner sent screenshots about.
+- **`SizeText`/`Totals`: still open**, deliberate. The allowance row is plain text by the one-frame rule; no visual complaint has named it.
+
+The audit table is a POINT-IN-TIME record (dated), not a live checklist — this section is the live state.
+
 ### What the meter still hand-rolls (audit, 2026-10-08)
 
 | we hand-roll | the kit ships | verdict |
@@ -223,12 +233,12 @@ The host UI kit ships **no** boolean control and no boolean/list/enum spec, so t
 
 `plugins.bundle.config` is rendered with `{ view }` only — the host-owned `form` (state + mutate) is passed to `plugins.item` and `plugins.row.config`, **not** to bundle config — so the card owns its scope and `SettingsFormModel` itself. If the host ever ships a boolean or enum field, delete the matching file here and render that instead.
 
-Tests — 543 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
+Tests — 544 deterministic cases in 29 files; polling helper instead of sleeps; each file restores `globalThis.fetch`/env in `afterEach` (the hook must live in every file, not just the old monolith). `pnpm run test:coverage` enforces a ratchet at **95 / 90 / 93 / 95** (statements / branches / functions / lines, with per-file floors on `responses-provider`) — it sits just above the measurement, so it fails only when coverage drops:
 
 - Host behavior split by concern: `session` · `config` · `fetch-patch` · `lifecycle` · `manifest` · `usage` · `catalog` (27) · `session-cost` · `models-discovery`.
 - Host units asserted directly, because every other module narrows through them: `guards` (12) · `config-values` (15) · `cordis-context` (11) · `debug` (5). Each case pins the shapes the unit must REJECT as well as the ones it accepts — an over-accepting guard mis-shapes a host object silently.
 - Routing: `responses-routes` (10) split table · `responses-provider` (26) the mount — and the stand-in host it runs against **reproduces all four collisions**, so four more of those cases assert the stand-in REFUSES the shapes the old mount passed.
-- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (23) gating + copy/failure parsing · `usage-pill-mount` (20) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (33) trigger + panel · `client-bundle` (4) bundle boundary.
+- Client: `settings-page` (29) card + register + **unload** · `settings-field-shell` (7) row chrome · `settings-boolean-field` (3) toggle · `settings-choice-field` (7) enum · `usage-pill` (23) gating + copy/failure parsing · `usage-pill-mount` (20) **the pill's poll loop, switch re-reads, retry and dismissal, really mounted** · `usage-panel` (34) trigger + panel · `client-bundle` (4) bundle boundary.
 - The half of the meter that was untested: `go-discovery` (61) credential policy · `usage-service` (32) + `usage-contract` (19, 100%) the Host service and its parsers · `tool-fallback` (25) + `turn-store` (12) the free-tier rewrite and the ALS store.
 - `test/test-helpers.ts` — shared fixtures: mock streams, capture fetch, predicates, `createMockContext`.
 - `test/primitives-stub.tsx` — stand-in for the host UI kit; keep it behaviourally faithful to the real primitives (trimmed drafts, empty clears).
