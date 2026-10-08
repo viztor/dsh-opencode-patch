@@ -372,7 +372,20 @@ export const UsagePanel = ({
       label spelling that out was noise on a row this short.
     */}
     <div className="dsh-oc-usage-footer">
+      {/* The control comes AFTER the value, not before it. Leading with the
+          icon made the cell read as a lone button with a caption beside it, and
+          the 20px hit box around a 14px glyph plus a 5px gap left a hole where
+          the sentence should be. A value followed by the thing that refreshes it
+          is the same reading as any "as of" field. */}
       <span className="dsh-oc-usage-updated">
+        {/* Nothing at all until the first read lands. A "Loading usage..." cell
+            is a state that exists for a moment and then disappears, so the row
+            changes width and the footer jumps on every mount — a blip from
+            showing progress nobody needs. The refresh button already carries the
+            affordance; the timestamp is the only thing here worth reading. */}
+        {updatedAt === null
+          ? ""
+          : `${t("usageLastUpdated")} ${new Date(updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
         <button
           aria-label={refreshing ? t("usageRefreshing") : t("usageRetry")}
           className="dsh-oc-usage-refresh"
@@ -382,14 +395,6 @@ export const UsagePanel = ({
         >
           <RefreshIcon />
         </button>
-        {/* Nothing at all until the first read lands. A "Loading usage..." cell
-            is a state that exists for a moment and then disappears, so the row
-            changes width and the footer jumps on every mount — a blip from
-            showing progress nobody needs. The refresh button already carries the
-            affordance; the timestamp is the only thing here worth reading. */}
-        {updatedAt === null
-          ? ""
-          : `${t("usageLastUpdated")} ${new Date(updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
       </span>
       <a
         className="dsh-oc-usage-console"
