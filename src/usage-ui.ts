@@ -176,14 +176,17 @@ export const STYLES = `
   box-sizing: border-box;
   padding: 14px 16px;
   border: 0;
-  /* The host has a token NAMED for this and we were not using it. Its own
-   * floating panels in this very dock (dsh-dockkit-float and the _float_ CSS
-   * module) are border-radius: var(--dsw-radius-panel) — 28px. We sat on
-   * --dsw-radius-lg (16px), which is a CONTROL radius, not a surface one: a
-   * panel visibly less round than every panel around it. Read the values, not
-   * the names — both tokens exist and both are real, and only one is the
-   * product. */
-  border-radius: var(--dsw-radius-panel, 28px);
+  /* --dsw-radius-lg, 16px — which is where this STARTED, before two rounds of
+   * "read the host's values" made it worse. The right reference is
+   * MenuSurface.module.css, because this panel IS menu material: its .surface and
+   * .backing rules take --dsw-radius-lg, and .compact takes --dsw-radius-md.
+   * (Braces cannot appear in this comment — the tests extract a rule with a
+   * brace-free match, so one here truncates every assertion in this file.)
+   *   * The 28px --dsw-radius-panel belongs to the dockkit FLOAT, which is a
+   * position:fixed panel docked to the screen edge with an opaque
+   * --dsw-alias-bg-layer-2 and no backdrop. Different material, different radius —
+   * see the note on choosing the reference. */
+  border-radius: var(--dsw-radius-lg, 16px);
   /* The host's own menu material, and the one line that decides whether this
    * reads as part of the harness. --dsw-menu-surface-fill is TRANSLUCENT
    * (#f8f9fa94 light, #43454a73 dark) so the blur behind it shows through.
@@ -198,21 +201,23 @@ export const STYLES = `
    */
   background: var(--dsw-menu-surface-fill, Canvas);
   backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
-  /* NOT border-l3, and NOT border-l4. The host uses one scale for surfaces and
-   * another for controls:
-   *   l1  a floating dropdown / scroll surface   (sets elevation-stroke-color)
-   *   l2  a floating PANEL surface               (the dockkit float: l2)
-   *   l3  controls — switch track, outline button, table divider, segmented
-   *   l4  controls — button, input, tag outline, dockkit dividers
-   * The chat box sits on l3 because it is a CONTROL. That makes l4 the loudest
-   * control in the app, not "one step above a panel": we are a surface, so the
-   * question is l1-vs-l2, and the answer is l2 — what the harness's own floating
-   * panel uses. Going up the l3→l4 axis would have made us read as the loudest
-   * element on screen while being a popover.
+  /* --dsw-alias-border-l3, and this is where it started too. It comes from the
+   * theme's [data-menu-material] rule, which is exactly what this panel is: the
+   * host's own Menu renders data-menu-material="translucent" to pick it up, and
+   * this panel sets the same --dsw-menu-surface-fill / --dsw-menu-backdrop-filter
+   * pair. l2 was read off the dockkit float instead — a different material.
    *
-   * Reading the scale is only possible from the CONSUMERS, which live in
-   * dsh-web-frontend/dist/assets/index-*.css, not in the theme. */
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+   * The scale is NOT inverted, for the record: light-theme alpha runs l1 4%,
+   * l2 10%, l3 12%, l4 16%, so a HIGHER number is a STRONGER border. l4 would
+   * have been the strongest border in the app; l1 the faintest.
+   *
+   * HOW TO PICK THE REFERENCE, having got this wrong twice: match on MATERIAL,
+   * not on resemblance. Two host surfaces are floating boxes — one translucent
+   * with a backdrop (a popover: radius-lg, border-l3) and one opaque and docked
+   * (the float: radius-panel, border-l2). "Also a floating surface" is not the
+   * same question as "the same kind of surface", and picking the wrong one is
+   * invisible until a screenshot disagrees. */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   /* --dsw-elevation-prominent, and this was briefly "panel" because a token by
    * that name exists. The harness's OWN floating panel — the dockkit float, the
    * same class of thing in this same dock — reads

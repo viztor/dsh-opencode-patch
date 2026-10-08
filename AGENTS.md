@@ -134,20 +134,22 @@ Stacked, that is solid white. The right declaration is the host's actual menu ma
 
 **The lesson is not "invented tokens fail" — that is already recorded above, and these were NOT invented.** It is that a chain of individually valid tokens can still be wrong, and reading a token's NAME says nothing about the product. `--dsw-specific-menu` is the _specific_ (higher-emphasis) menu; a plain floating surface wants the _surface fill_. Grepping the checkout proves a token EXISTS, never that it is the right one — read its VALUE, in both themes. The test strips CSS comments before asserting, because a rule that merely TALKS about `--dsw-specific-menu` is not a rule that sets it, and otherwise the explanation of the fix fails the test for the fix.
 
-**The border scale is TWO scales, and reading a level number out of context picks the wrong one.** The owner asked for `border-l4` because the chat box is `l3` and we sit above it. Reading the consumers shows that reasoning is off by an axis:
+**Two host surfaces are floating boxes, and matching on "it is also a floating surface" got this wrong twice.** The panel is **menu material** (`--dsw-menu-surface-fill` + `--dsw-menu-backdrop-filter`, the pair the theme's `[data-menu-material]` stroke rule is built for — the host's own `Menu` opts in by rendering `data-menu-material="translucent"`). The dockkit **float** is not: `position: fixed`, an opaque `--dsw-alias-bg-layer-2`, no backdrop, docked to the screen edge. They differ where it counts:
 
-| level | used by |
-| --- | --- |
-| `l1` | a floating dropdown / scroll surface (`elevation-stroke-color`) |
-| `l2` | a floating **PANEL** — `_float_6nhg2_156`, the dockkit float |
-| `l3` | **controls**: switch track, outline button, table row divider, SegmentedControl indicator |
-| `l4` | **controls**: button, input field, tag outline, dockkit tab dividers |
+| | popover / **menu material** (ours) | dockkit **float** |
+| --- | --- | --- |
+| radius | `--dsw-radius-lg` (16px) | `--dsw-radius-panel` (28px) |
+| stroke | `--dsw-alias-border-l3` | `--dsw-alias-border-l2` |
+| elevation | `--dsw-elevation-prominent` | `--dsw-elevation-prominent` |
+| source | `MenuSurface.module.css`, `[data-menu-material]` | `_float_6nhg2_156` in the app stylesheet |
 
-The chat box sits on `l3` because it is a **control**. So `l4` is not "one step above a panel" — it is the loudest CONTROL in the app. We are a surface, so the question is `l1` vs `l2`, and the host's own floating panel answers it: **`l2`**. Going up the `l3`→`l4` axis would have made a popover read as the loudest element on screen. **Ask which scale a thing is on before picking a number on it.**
+Radius went `lg` → `panel` → back to `lg`, and the stroke `l3` → `l2` → back to `l3`, across two rounds of "read the host's values" that made it worse both times. **The discriminator is MATERIAL, not resemblance**: check whether the reference surface is the same *kind* of thing (translucent popover vs opaque docked panel), not merely a similar shape. A screenshot is what catches this; the code cannot.
 
-**A token's NAME is not evidence; and I changed one on the name, then had to revert it.** `--dsw-elevation-panel` exists, so the panel was moved onto it — and the harness's own floating panels use `--dsw-elevation-prominent`. Reverted. The host defines three elevations and consumes one of them for surfaces; the other two exist for consumers this repo cannot see. Contrast with `--dsw-radius-panel`, where the name **did** hold up, because the dockkit float uses it too. The rule that survives: **read the consumer, not the definition, and treat a matching name as a hypothesis to confirm — roughly half of them here are traps in both directions.**
+**The border scale is not inverted, and reading a level number without the values is how that gets questioned.** Light-theme alpha: `l1` 4%, `l2` 10%, `l3` 12%, `l4` 16%. A **higher number is a stronger border** — `l4` is the loudest in the app and `l1` the faintest. `l3`/`l4` also happen to be the **control** scale (switch track, outline button, input, tag, dockkit dividers), which is why "the chat box is l3, so we should be l4" reaches for the strongest token in the app when the answer is the popover's own.
 
-**The host has a token NAMED for panels and we were not using it for the radius.** `--dsw-radius-panel` (**28px**) and `--dsw-elevation-panel` both exist. The radius was `--dsw-radius-lg` (16px) — a real token, and a _control's_ radius. The radius is now read off the harness's OWN floating panels, which live in this very composer dock (`dsh-dockkit-float` and the `_float_` CSS module both declare `border-radius: var(--dsw-radius-panel)`); the host's Menu renders `data-menu-material="translucent"`, which is what supplies the stroke colour. **The border colour was already correct** (`--dsw-alias-border-l3`, `#0000001f` / `#ffffff29`) — worth saying out loud, because "fix the border" is how the radius and elevation get changed without being read.
+**A token's NAME is not evidence.** `--dsw-elevation-panel` exists, so the panel was moved onto it; the host's surfaces use `--dsw-elevation-prominent`. Contrast `--dsw-radius-panel`, whose name holds — for the *float*, not for us. **Read the consumer, and read the consumer that matches your material.**
+
+**Braces cannot appear in `STYLES` comments.** The panel tests extract a rule with a brace-free match, so a `{` in an explanatory comment truncates the captured rule and fails every assertion in the file — with an error that names a missing declaration rather than a comment. Same family as the backtick rule below: prose inside a template literal has escaping constraints the linter does not check.
 
 Two files carry these values, and **neither is the checkout root**: token VALUES in `dsh-client-ui-theme/lib/client.js`, but token USAGE in the shipped app stylesheet at `dsh-web-frontend/dist/assets/index-*.css` — which is where the dockkit/float rules above were found. A token defined in the theme and only _consumed_ in the app is invisible if you search the theme for its name.
 
