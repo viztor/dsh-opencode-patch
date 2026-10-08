@@ -71,7 +71,7 @@ General rule, and the second time this repo has paid for it: **a surface with no
 
 **Do not hand-roll a look-alike of a primitive you already ship.** The meter's billing badge was a `<span>` with its own padding, radius and fill — a clone of `Tag`, which this repo already uses for the settings card's "Overridden" badge. The clone got the palette wrong in the way clones do: it used `--dsw-alias-interactive-bg-hover` as its **resting** background, so the chip sat permanently lit, exactly like the trigger. It is `<Tag tone={isLimited ? "danger" : "neutral"}>` now, and deleting the two hand-rolled rules plus the dead retry rules took **1,141 bytes** off the bundle. When the host ships the primitive, the primitive is both more correct and smaller.
 
-**Anything the meter RENDERS must be a real component in the stub.** `test/primitives-stub.tsx` returns `{props, type}` objects for most of the kit, which is fine because the settings tests only _walk_ the tree. The meter's `usage-pill-mount` test mounts for real — so a kit export the panel draws has to return elements and hold state there, or the suite dies with "Element type is invalid" while every other file stays green. This has now bitten twice: the missing `Tooltip` (which cost all thirteen mount tests), and `Tag` the moment the badge started using it. Before wiring a new kit component into the panel, check what the stub returns for it.
+**Anything the meter RENDERS must be a real component in the stub — and it is always the SAME commit.** `test/primitives-stub.tsx` returns `{props, type}` objects for most of the kit, which is fine because the settings tests only _walk_ the tree. The meter's `usage-pill-mount` test mounts for real — so a kit export the panel draws has to return elements there, or the suite dies with "Element type is invalid" while every other file stays green. **Three times now**: the missing `Tooltip` (cost all thirteen mount tests), `Tag` when the badge started using it, and `IconRefreshOutlineRegular` when the hand-drawn arrow was finally swapped for the host's icon. The rule that actually saves time: **wiring a kit export into the panel and stubbing it are one edit** — do both in the same commit, or the suite is the thing that tells you.
 
 **A meter row must name its subject, and the free case is still a model.** The session-spend row read `${activeModel} · ${activeRateFormatted}`, and both halves went wrong on a free model: the identity was the raw id (`muse-spark-1.3-contributor-free` — a debug value, and the second time that row said "free"), and the rate was the string `Free Tier ($0.00)` — a sentence containing the number the row already prints in its value column. The free branch then "fixed" it by rendering `t("freeModel")` alone, which dropped the model name entirely: the one row whose value is always `$0.00` became the only row that could not say what you were paying for. It is now the same shape either way — which model, then what it costs — with the name coming from the catalog (`describeModel` takes a display name, `attachSession` backfills one for the id a turn recorded, since a turn only ever knows the id the gateway speaks) and the rate string reduced to `Free`, which is what a field that otherwise holds a per-million price should say.
 
@@ -154,6 +154,28 @@ Two files carry these values, and **neither is the checkout root**: token VALUES
 **Backticks inside `STYLES` terminate the template literal.** Third time this session. The parse error names a comment as the syntax problem ("Expected a semicolon"), and `vp fmt` does not catch it, so `vp check` passes on a file that will not compile — the symptom is a vitest transform failure with four test FILES failing on import. Recovery: `awk '/^export const STYLES = `/,/^`;$/' src/usage-ui.ts | grep -c '`'` must print **2**.
 
 Token values live in `@deepseek-ai/dsh-client-ui-theme`'s `lib/client.js` (403 `--dsw-*` names). Search THAT file, not the checkout root: every package under the checkout is a symlink into the pnpm store, so `grep -r` from the root finds nothing — which is how this looked like an invented token for a minute.
+
+### STANDING RULE: every UI addition or alteration must start from the host's built-ins
+
+**Before writing or restyling any UI here, read what `@deepseek-ai/dsh-client-ui-primitives` already ships, and use it.** The kit is in our own `node_modules` (it exports `Switch`, `Button`, `Tag`, `Tooltip`, `Menu`, `Tooltip`, …). Its `lib/` also carries **one CSS module per component** — `Pill.module.css`, `MenuSurface.module.css`, `StateDot.module.css`, `Button.module.css`, `Tag.module.css`, `Divider`, `HoverCard`, `DisclosureRow`, `Toast`, `ShortcutKeys`, `Modal`, `Tooltip`, `Input`, `SegmentedControl`, `TextShimmer`, `PathLabel`, `Checkbox`, `RiskConfirmation`, `ConnectionIndicator`, `ImageLightbox`, `ImagePreview`, `MenuGroup`, `CodeCard` — which is the fastest inventory of the host's design language available: **a component we hand-roll is one whose CSS module we never opened.**
+
+Cost of skipping the check, all paid for in one session: a hand-drawn 12px refresh arrow (the code even claimed _the host kit ships no icon set_ — **it ships ~150 icons**, including `IconRefreshOutlineRegular`); a hand-rolled divider; a hand-rolled state dot; a hand-rolled pill. Every one of them is smaller, wrong, and unthemed next to the built-in.
+
+**And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
+
+### What the meter still hand-rolls (audit, 2026-10-08)
+
+| we hand-roll | the kit ships | verdict |
+| --- | --- | --- |
+| `RefreshIcon` — 12px arrow SVG | `IconRefreshOutlineRegular` (1px stroke) / `…Medium` | **swap** — done, and the "no icon set" comment is gone |
+| `.dsh-oc-usage-divider` | `Divider` (host has `_divider_6nhg2_39`) | swap |
+| `.dsh-oc-usage-dot` | `StateDot` | swap |
+| the trigger pill itself | `Pill` + `Pill.module.css` | candidate — a real refactor, not a substitution |
+| the ring SVG | `WithoutRing` (an exclusion helper, not a gauge) | keep the ring; there is no ring primitive |
+| footer links `<a>` | — | keep, they are anchors with a target |
+| `~$186K` style sizes | `SizeText`, `Totals` | candidate, for the allowance row |
+
+`WithoutRing` is the trap in this list: the name invites swapping the meter's ring for it, and it is a **context-exclusion helper** for a model menu. Read the component, not the name — the same lesson as `--dsw-elevation-panel`, and the reason both are written down.
 
 ### Why the card owns its boolean/list fields
 
