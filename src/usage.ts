@@ -85,12 +85,17 @@ const zenOverflowUsage = (
   sessionId?: string,
   query?: UsageQuery
 ): GoUsage => {
+  // The three windows are a TYPE FLOOR, not a reading — see `quotaUnavailable`
+  // in usage-contract.ts for why the panel must not render them. Filling them
+  // with 0% and a reset time of "now" is the only way to satisfy the shape
+  // without inventing a number, and the flag is what stops them being drawn.
   const resetsAt = new Date().toISOString();
   const window = (): UsageWindow => ({ percent: 0, resetsAt, status: "ok" });
   const session = attachSession(sessionId, query);
   return {
     monthly: window(),
     rolling: window(),
+    quotaUnavailable: true,
     ...(session === undefined ? {} : { session }),
     source,
     weekly: window(),

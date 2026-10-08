@@ -607,10 +607,26 @@ describe("GoUsageService gateway failures", () => {
     const before = await service.read();
     const after = await service.read();
     expect(after.zenOverflow).toBe(true);
-    expect(after.rolling.percent).toBe(0);
-    expect(after.weekly.percent).toBe(0);
-    expect(after.monthly.percent).toBe(0);
     expect(after.source).toBe(before.source);
+
+    // The zeros are a TYPE FLOOR — they exist only to satisfy the shape, and
+    // the flag is what stops them being drawn. Verified against the live API:
+    // the same key returns real figures moments after an EntitlementError, so
+    // asserting `percent === 0` here would pin a fabricated number as if it
+    // were a reading.
+    expect(after.quotaUnavailable).toBe(true);
+    expect(after.rolling.percent).toBe(0);
+  });
+
+  it("does NOT mark a healthy reading as quota-unavailable", async () => {
+    // Overflow being CONFIGURED is the normal case — a Zen key exists and Go
+    // still reports real windows. Only the unreadable reading carries the flag,
+    // or every Go user would lose their quota rows.
+    stubFetch(() => new Response(okBody()));
+    process.env.OPENCODE_API_KEY = "oc_sk_zen-key";
+    const usage = await serviceWithKey("sk-live-key").read();
+    expect(usage.quotaUnavailable).toBeUndefined();
+    expect(usage.rolling.percent).toBeGreaterThan(0);
   });
 
   it("refuses an EntitlementError when there is no Zen credit to overflow into", async () => {

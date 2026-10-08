@@ -191,7 +191,11 @@ export const UsagePanel = ({
     {!isZen && (
       <>
         {/* Breakdown Section */}
-        {usage !== undefined && (
+        {/* No window rows when Go's quota could not be read. The three figures
+            would be a type floor, not a measurement — and they rendered as three
+            confident 0% rows all counting down from <1m. The overflow row below
+            still shows: that inference came from the 403 and is honest. */}
+        {usage !== undefined && usage.quotaUnavailable !== true && (
           <div className="dsh-oc-usage-breakdown">
             {/* One row per window; the rate-limited badge now appears on
                 every window that is limited, not only the monthly one. */}
