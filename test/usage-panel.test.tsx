@@ -550,6 +550,22 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
+  it("keeps the trigger's corner language equal to the composer control's", () => {
+    // 999px is a host idiom for Tag / Switch / Pill — all fixed-height chips. On
+    // a trigger the radius clamps to half the box, so it became a stadium beside
+    // a model selector that stayed a rounded rect. The host's composer control
+    // pairs --dsw-radius-md with the hover fill this trigger already uses, so
+    // the COLOUR was right and only the radius was not.
+    const rule = /\.dsh-oc-usage-trigger \{[^}]*\}/.exec(
+      STYLES.replaceAll(/\/\*[\s\S]*?\*\//g, "")
+    )?.[0];
+    expect(rule).toContain("var(--dsw-radius-md, 12px)");
+    expect(rule).not.toContain("999px");
+
+    // And the fill stays the host's own, not an invented fallback.
+    expect(STYLES).toContain("var(--dsw-alias-interactive-bg-hover");
+  });
+
   it("opts into the menu material with the host's own attribute", () => {
     // The stroke is chosen by the THEME per theme, off this attribute:
     // body -> border-l4 (light), body[data-ds-dark-theme] [data-menu-material]
