@@ -18,6 +18,7 @@ import {
   RETIRED_ZEN_MODEL_IDS,
   type CatalogModelSpec,
 } from "./catalog-data.ts";
+import { DEFAULT_GATEWAY_URLS } from "./config.ts";
 import { isRecord } from "./guards.ts";
 import type { ModelCostRate } from "./session-cost.ts";
 
@@ -385,16 +386,44 @@ export const getLiveZenCatalog = (
 /** Legacy alias for getLiveGoCatalog. */
 export const getLiveCatalog = getLiveGoCatalog;
 
-/** Check whether a request URL is interrogating the models directory on OpenCode. */
-export const isModelsListingUrl = (url: string): boolean => {
-  if (!url.includes("opencode.ai/zen")) {
+/**
+ * Check whether a request URL is interrogating the models directory.
+ *
+ * The gateway marker is a PARAMETER, not a constant. It used to be hardcoded to
+ * `opencode.ai/zen` while `isOpenCodeRequest` already took `gatewayUrls` — so a
+ * relay or mirror that matched every other OpenCode rule got the headers and the
+ * session id but no catalog enrichment, and the only symptom was a shorter model
+ * list. Same shape as that predicate: match any configured marker, defaulting to
+ * the stock one.
+ *
+ * @param url - the request URL
+ * @param gatewayUrls - configured gateway markers; defaults to the stock one
+ */
+export const isModelsListingUrl = (
+  url: string,
+  gatewayUrls: readonly string[] = DEFAULT_GATEWAY_URLS
+): boolean => {
+  const onGateway = gatewayUrls.some(
+    (marker) => marker.length > 0 && url.includes(marker)
+  );
+  if (!onGateway) {
     return false;
   }
   return url.endsWith("/models") || url.includes("/models?");
 };
 
-export const isGoModelsListingUrl = (url: string): boolean =>
-  isModelsListingUrl(url) &&
+/**
+ * Whether that listing is on the GO plane.
+ *
+ * The plane is a property of the PATH, never of the host: a custom gateway's Go
+ * route is still `/go/v1`, so this reads the same way for a relay as for
+ * opencode.ai — which is exactly why the marker above had to be lifted out.
+ */
+export const isGoModelsListingUrl = (
+  url: string,
+  gatewayUrls?: readonly string[]
+): boolean =>
+  isModelsListingUrl(url, gatewayUrls) &&
   (url.includes("/zen/go") || url.includes("/go/v1"));
 
 /**

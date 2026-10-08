@@ -118,6 +118,40 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
   });
 
+  it("enriches a configured custom gateway, not just opencode.ai", () => {
+    // The gap this closes: `isModelsListingUrl` hardcoded `opencode.ai/zen`
+    // while `isOpenCodeRequest` already honoured `gatewayUrls`. A relay that
+    // matched every other OpenCode rule got the headers and the session id and
+    // then no catalog — the only symptom was a shorter model list, which reads
+    // as "fewer models" rather than as a broken rule.
+    const gateways = ["https://relay.example.com/opencode"];
+    expect(
+      isModelsListingUrl(
+        "https://relay.example.com/opencode/v1/models",
+        gateways
+      )
+    ).toBe(true);
+    // …and the default no longer matches it, because the marker replaced the
+    // constant: a custom gateway is opted into, not additionally allowed.
+    expect(
+      isModelsListingUrl("https://relay.example.com/opencode/v1/models")
+    ).toBe(false);
+
+    // The Go plane is the PATH, so a relay's Go route is recognised too.
+    expect(
+      isGoModelsListingUrl(
+        "https://relay.example.com/opencode/go/v1/models",
+        gateways
+      )
+    ).toBe(true);
+    expect(
+      isGoModelsListingUrl(
+        "https://relay.example.com/opencode/v1/models",
+        gateways
+      )
+    ).toBe(false);
+  });
+
   it("ships active Zen free tiers and flagships in the bundled shim", () => {
     // The shim answers before the first live refresh, and a refresh merges by
     // replacing the whole set — so these counts are the cold-start picker, and a
