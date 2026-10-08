@@ -551,6 +551,31 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
+  it("draws NO window rows when Go's quota could not be read", () => {
+    // The screenshot this pins: three confident "0%" rows all counting down from
+    // "<1m". Those figures were never measured — the Host fills them to satisfy
+    // the shape when /usage refuses, and 0% plus a reset time of "now" is what
+    // a type floor looks like once it is rendered. The live API returns real
+    // figures for the same key moments later.
+    const unreadable = UsagePanel(
+      panelProps({
+        usage: { ...usage(), quotaUnavailable: true, zenOverflow: true },
+      })
+    );
+    expect(byClass(unreadable, "dsh-oc-usage-breakdown")).toHaveLength(0);
+    // The overflow inference is honest — it came from the 403 — so it stays.
+    expect(collectText(unreadable)).toContain("t:zenOverflowActive");
+
+    // A normal reading still draws all three, even with overflow configured
+    // (that is the common case: a Zen key exists AND Go quota is readable).
+    expect(
+      byClass(
+        UsagePanel(panelProps({ usage: usage() })),
+        "dsh-oc-usage-breakdown"
+      )
+    ).toHaveLength(1);
+  });
+
   it("puts the refresh control AFTER the timestamp it refreshes", () => {
     // Leading with the icon read as a lone button with a caption beside it, and
     // the 20px hit box plus a 5px gap left a hole where the sentence should be.

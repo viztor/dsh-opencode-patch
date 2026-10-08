@@ -45,6 +45,23 @@ export interface GoUsage {
   /** Opaque Host identity for this endpoint/account; never a credential or its hash. */
   source?: string;
   weekly: UsageWindow;
+  /**
+   * The window figures above are a TYPE FLOOR, not a measurement.
+   *
+   * Set when the Host could not read Go's quota at all (403 EntitlementError
+   * with a Zen balance configured), so it falls back to handing billing over to
+   * Zen. `zenOverflowUsage` still has to return three `UsageWindow`s, and the
+   * only way to fill them without inventing a number is `percent: 0` and a
+   * reset time of "now" — which rendered as three `0%` rows all counting down
+   * from `<1m`, i.e. a precise, confident-looking claim that the reading did not
+   * support. Verified against the live API: the same Go key returns real
+   * figures (2% / 1% / a monthly reset in November) moments later.
+   *
+   * The panel renders NO window rows when this is set. The inference that Go
+   * overflowed is still honest — it is derived from the 403 — so the overflow
+   * row stays; the three percentages were never knowable.
+   */
+  quotaUnavailable?: boolean;
   /** Whether Zen balance overflow fallback is active or configured. */
   zenOverflow?: boolean;
 }
