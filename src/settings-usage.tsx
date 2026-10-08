@@ -133,7 +133,7 @@ export const UsageSummaryView = ({
             is meant to be read at a glance. Inline styles because this surface
             has no stylesheet: the meter's classes are not rendered here.
           */}
-          <Tooltip label={t("usageSummaryNote")} side="top">
+          <Tooltip label={t("usageSummaryNote")} portal side="top">
             <span
               style={{
                 color: "var(--dsw-alias-label-tertiary)",
