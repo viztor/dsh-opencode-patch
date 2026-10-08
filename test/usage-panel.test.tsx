@@ -350,6 +350,18 @@ describe("UsagePanel", () => {
     expect(line("zh")).not.toContain("重置于 3天");
   });
 
+  it("keeps the spend row when there is nothing to price, and says so", () => {
+    // The row used to be OMITTED when the accumulator held nothing for the
+    // session — which reads as "this feature is gone", not as "no turns yet".
+    // The accumulator is per-process and only counts OpenCode-route turns, so
+    // that state is reachable on every host restart.
+    const bare = UsagePanel(
+      panelProps({ usage: usage({ session: undefined }) })
+    );
+    expect(collectText(bare)).toContain("t:sessionSpendEmpty");
+    expect(collectText(bare)).toContain("—");
+  });
+
   it("shows each panel its OWN plane's spend, not the session total", () => {
     // The accumulator folds every turn of a session into one number, and the
     // Zen panel once billed the session with it: $1.44 of GO allowance spend
@@ -675,22 +687,20 @@ describe("UsagePanel", () => {
     // Zen route you are already paying per token, and OpenCode has no balance
     // endpoint at all — so there the row could only restate the badge.
     expect(
-      byClass(UsagePanel(panelProps({ usage: usage() })), "dsh-oc-usage-detail")
-    ).toHaveLength(0);
+      collectText(UsagePanel(panelProps({ usage: usage() })))
+    ).not.toContain("t:zenCredit");
     expect(
-      byClass(
-        UsagePanel(panelProps({ usage: usage({ zenOverflow: true }) })),
-        "dsh-oc-usage-detail"
+      collectText(
+        UsagePanel(panelProps({ usage: usage({ zenOverflow: true }) }))
       )
-    ).toHaveLength(1);
+    ).toContain("t:zenCredit");
     expect(
-      byClass(
+      collectText(
         UsagePanel(
           panelProps({ isZen: true, usage: usage({ zenOverflow: true }) })
-        ),
-        "dsh-oc-usage-detail"
+        )
       )
-    ).toHaveLength(0);
+    ).not.toContain("t:zenCredit");
   });
 
   it("says the billing model once: the badge carries it", () => {
@@ -777,12 +787,13 @@ describe("UsagePanel", () => {
     );
 
     // No allowance, no row — and never on a Zen route, where the Go plan is not
-    // what the user is on.
+    // what the user is on. Asserted by CONTENT: the always-drawn spend row
+    // carries the same class, so a count here would be counting that.
     expect(
-      byClass(UsagePanel(panelProps({ usage: usage() })), "dsh-oc-usage-detail")
-    ).toHaveLength(0);
+      collectText(UsagePanel(panelProps({ usage: usage() })))
+    ).not.toContain("t:monthlyAllowance");
     expect(
-      byClass(
+      collectText(
         UsagePanel(
           panelProps({
             isZen: true,
@@ -790,10 +801,9 @@ describe("UsagePanel", () => {
               allowance: { go: 60, goPlus: 120, model: "mimo-v2.6-flash" },
             }),
           })
-        ),
-        "dsh-oc-usage-detail"
+        )
       )
-    ).toHaveLength(0);
+    ).not.toContain("t:monthlyAllowance");
   });
 
   it("puts the billing rule behind a tooltip, not in the panel", () => {
