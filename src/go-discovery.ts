@@ -329,9 +329,26 @@ const resolveRef = async (
   return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : undefined;
 };
 
-/** Whether a resolved value is a usable Go credential. Zen keys are not. */
+/**
+ * Whether a resolved value is a usable credential for the Go quota endpoint.
+ *
+ * There is no prefix test here any more, and the reason is measured rather than
+ * argued. This used to reject `oc_sk_…` on the belief that "Zen keys lack the
+ * OpenCode Go subscription entitlement and will 403 when sent to the Go quota
+ * endpoint". Probed live on 2026-10-08: an `oc_sk_…` key stored as
+ * `OPENCODE_GO_API_KEY` answers `/zen/go/v1/usage` with **HTTP 200 and real
+ * windows** — OpenCode issues that prefix for Go credentials too, so the prefix
+ * does not name a tier.
+ *
+ * The cost of the old guard was not a wasted request; it was the ONE credential
+ * that worked being thrown away, after which the meter fell through to
+ * `capturedAny` (or to no key at all) and drew an overflow card with no quota
+ * anywhere on it. `usage.ts`'s `403 EntitlementError` branch is what handles a
+ * credential that genuinely lacks Go entitlement — the endpoint's own answer,
+ * rather than a guess about a string.
+ */
 const isUsableGoKey = (value: string | undefined): value is string =>
-  value !== undefined && value.length > 0 && !value.startsWith("oc_sk_");
+  value !== undefined && value.length > 0 && !isPlaceholderApiKey(value);
 
 /**
  * Look one credential reference up for the Go quota endpoint.

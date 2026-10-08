@@ -735,7 +735,11 @@ export const describeUsage = (
   } else if (isLimited) {
     badgeText = t("usageLimited");
   } else {
-    badgeText = "Go Plan";
+    // Nothing. The header already reads `OpenCode Go`, so a `Go Plan` chip
+    // beside it repeats the title and adds no fact — the same test every row in
+    // this panel has to pass. The chip still appears for `Limited`, where it
+    // says something the title does not.
+    badgeText = "";
   }
 
   // The Zen card renders on a GO route with overflow only (`usage-panel.tsx`),

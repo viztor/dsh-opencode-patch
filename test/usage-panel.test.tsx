@@ -155,6 +155,18 @@ describe("UsageTrigger", () => {
     );
   });
 
+  it("draws no badge at all when the label would be empty", () => {
+    // The Go panel has nothing to say on the right until the plan is limited,
+    // and an empty `Tag` is a frame around nothing.
+    const plain = UsagePanel(panelProps({ badgeText: "", usage: usage() }));
+    expect(findAllOf(plain, new Set(["Tag"])).length).toBe(0);
+    // `Limited` is the case that earns the chip.
+    const limited = UsagePanel(
+      panelProps({ badgeText: "Limited", isLimited: true, usage: usage() })
+    );
+    expect(findAllOf(limited, new Set(["Tag"]))[0]?.props.tone).toBe("danger");
+  });
+
   it("draws the badge with the host's Tag, not a hand-rolled span", () => {
     // The hand-rolled version used the HOVER fill token as its resting
     // background, so the chip sat permanently lit. `neutral` is the host's plain
