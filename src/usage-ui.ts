@@ -337,7 +337,6 @@ export const STYLES = `
 .dsh-oc-usage-limited {
   margin-left: 6px;
   color: var(--dsw-alias-state-error-primary);
-  font-weight: 600;
 }
 
 /* The footer carries the timestamp AND every action now. The upgrade-plan link had its own
@@ -460,7 +459,6 @@ export const STYLES = `
 }
 
 .dsh-oc-usage-warning strong {
-  font-weight: 600;
 }
 
 /* The detail line is a <p>, whose UA margins would double the padding. */
@@ -507,7 +505,6 @@ export const STYLES = `
 
 .dsh-oc-usage-detail-title {
   font-size: 11px;
-  font-weight: 600;
   color: var(--dsw-alias-label-primary, currentColor);
 }
 
@@ -530,7 +527,6 @@ export const STYLES = `
 /* Same metrics as a breakdown row's value, so the rows line up as one list. */
 .dsh-oc-usage-detail-value {
   font-size: 12px;
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-primary, currentColor);
   white-space: nowrap;
@@ -881,7 +877,6 @@ export interface UsageCopy {
    */
   tooltip: string;
   zenCardCredit: string;
-  zenCardDesc: string;
 }
 
 /**
@@ -929,12 +924,9 @@ export const describeUsage = (
   // limited and the overflow is live, or the plan is fine and the balance is
   // standing by. A Zen route never reaches them — there the badge already says
   // pay-as-you-go, and OpenCode has no balance endpoint to report.
-  const zenCardDesc = isLimited
-    ? t("zenFallbackNotice")
-    : t("zenOverflowActive");
   const zenCardCredit = isLimited ? "Active" : "Ready";
 
-  return { badgeText, headline, title, tooltip, zenCardCredit, zenCardDesc };
+  return { badgeText, headline, title, tooltip, zenCardCredit };
 };
 
 /**

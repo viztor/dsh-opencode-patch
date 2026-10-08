@@ -341,8 +341,12 @@ const ActiveUsage = ({
   // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
   // The hover label is the SAME string the panel opens under: no second
   // composition, no keys an older served dictionary has not heard of.
-  const { badgeText, title, tooltip, zenCardCredit, zenCardDesc } =
-    describeUsage(usage, affecting, isZen, t);
+  const { badgeText, title, tooltip, zenCardCredit } = describeUsage(
+    usage,
+    affecting,
+    isZen,
+    t
+  );
 
   // A Zen hover answers the question its number raises, and that number is the
   // spend — so the label leads with the price. With no record to price it falls
@@ -407,7 +411,6 @@ const ActiveUsage = ({
           updatedAt={current === null ? null : current.updatedAt}
           usage={usage}
           zenCardCredit={zenCardCredit}
-          zenCardDesc={zenCardDesc}
         />
       )}
     </span>

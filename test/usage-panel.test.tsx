@@ -119,7 +119,6 @@ const panelProps = (
   updatedAt: 1_700_000_000_000,
   usage: undefined,
   zenCardCredit: "t:zenPaygBadge",
-  zenCardDesc: "t:zenOverflowActive",
   ...overrides,
 });
 
@@ -903,7 +902,6 @@ describe("UsagePanel", () => {
     );
     expect(byClass(unreadable, "dsh-oc-usage-breakdown")).toHaveLength(0);
     // The overflow inference is honest — it came from the 403 — so it stays.
-    expect(collectText(unreadable)).toContain("t:zenOverflowActive");
 
     // A normal reading still draws all three, even with overflow configured
     // (that is the common case: a Zen key exists AND Go quota is readable).
