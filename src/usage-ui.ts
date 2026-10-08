@@ -104,6 +104,12 @@ export const STYLES = `
   display: inline-flex;
   min-width: 0;
   vertical-align: middle;
+  /* The trigger carries 9px of side padding for its hit area, and the dock adds
+     its own gap — stacked, they read as one wide space beside the model
+     selector. Pull the BOX back by part of that padding so the visual edge sits
+     at the dock's rhythm. The hit area is untouched: shrinking the padding
+     instead would trade accessibility for spacing, which is the wrong trade. */
+  margin-right: -6px;
 }
 
 /*
