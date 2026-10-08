@@ -177,12 +177,22 @@ export const STYLES = `
   padding: 14px 16px;
   border: 0;
   border-radius: var(--dsw-radius-lg, 16px);
-  /* The host's menu material. --dsw-menu-surface-fill is TRANSLUCENT, so the
-   * blur behind it shows through. This panel used to stack an opaque token over
-   * #fff and rendered solid white; the layers are named in AGENTS.md.
+  /* The host's own menu material, and the one line that decides whether this
+   * reads as part of the harness. --dsw-menu-surface-fill is TRANSLUCENT
+   * (#f8f9fa94 light, #43454a73 dark) so the blur behind it shows through.
+   *
+   * This used to stack --dsw-specific-menu (#f8f9faf0 — 94% opaque) over
+   * --dsw-alias-bg-layer-2 (--dsw-static-neutral-bluish-00: #fff, fully
+   * opaque). Two real tokens, correct-looking names, and the sum was solid
+   * white: the only popover in the composer that did not look like one. The
+   * tokens were checked and the RESULT was not — a fallback chain cannot be
+   * verified by reading the name. --dsw-specific-menu is the *specific*
+   * (higher-emphasis) menu; a plain floating surface wants the surface fill.
    */
   background: var(--dsw-menu-surface-fill, Canvas);
   backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
+  /* The host scopes this stroke to a [data-menu-material] selector; we ARE the
+   * material, so we take the same stroke the theme sets there. */
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   box-shadow: var(--dsw-elevation-prominent, 0 12px 36px rgba(0, 0, 0, 0.28));
   color: var(--dsw-alias-label-primary, CanvasText);

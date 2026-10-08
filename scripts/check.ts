@@ -430,23 +430,31 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
 /* ------------------------------------------ 11. the client stays lean */
 
 /*
- * A ceiling, not a target. It was 64 KiB when the bundle was 604 bytes of copy,
- * and the panel's own work since put it at ~66 KB — so at that number the gate no
- * longer answered the question it was built for. What it is really watching is a
- * DEPENDENCY getting bundled instead of left external, and that shows up as a
- * jump of thousands of bytes, not as a slow creep. 72 KiB keeps that signal while
- * leaving room for the meter to keep its rows; a real regression still lands far
- * above it. Measure with `wc -c lib/client.js`.
+ * A TRIPWIRE, not a budget. The owner: "the budget doesn't matter — it is there to
+ * avoid accidents." It was 64 KiB when the bundle was 604 bytes of copy, then 72
+ * KiB when the panel's own work reached ~73 KB — and at THAT number it stopped
+ * answering the question it exists for, because a comment or a copy string trips
+ * it just as hard as the accident it was built to catch.
+ *
+ * What it really watches is a DEPENDENCY bundled instead of left external, and
+ * that arrives as a jump of THOUSANDS of bytes. So the ceiling sits ~3 KB above
+ * the real working size: far enough that prose and copy never trip it, far
+ * enough below that a real regression (a date library, an SDK — the bundled React
+ * alone is 40+ KB) still lands over it. Raising it costs nothing in signal and
+ * buys back the prose in the files that own the knowledge. Measure with
+ * `wc -c lib/client.js`.
  */
-const CLIENT_BUDGET = 72 * 1024;
+const CLIENT_BUDGET = 75 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);
   if (clientStat.size <= CLIENT_BUDGET) {
-    ok(`lib/client.js is ${clientStat.size} bytes, under budget`);
+    ok(
+      `lib/client.js is ${clientStat.size} bytes, under the ${CLIENT_BUDGET} tripwire`
+    );
   } else {
     fail(
-      `lib/client.js is ${clientStat.size} bytes, over the ${CLIENT_BUDGET} budget — ` +
+      `lib/client.js is ${clientStat.size} bytes, over the ${CLIENT_BUDGET} tripwire — ` +
         "a dependency was likely bundled instead of left external"
     );
   }
