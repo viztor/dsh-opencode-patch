@@ -278,6 +278,8 @@ And one failure the regeneration **created**, which is the instructive one: `usa
 
 **The meta-lesson: "verify everything" has to include the CI run, not just the local suite.** Local `vp check` + full tests + gate were all green on this tree; the failures lived in a regenerated artifact and a doc file. The nightly catalog job is the only check that runs against the moving source.
 
+**And the e2e failure that survived the regeneration was the VENDOR moving, not us.** The free-tier case asserted a wrong-endpoint cell answers `500` (a model the endpoint does not parse) — measured 2026-10-07. Re-probed live on 2026-10-09: the gateway now answers `403 FreeTierError` on **both** endpoints, having widened the entitlement gate. The assertion was stale against the vendor, not against the code, and the fix is a guard: a `403 FreeTierError` on a wrong-endpoint cell still proves the gateway parsed the model, so the route stays pinned by "parsed everywhere, gated everywhere" — with a comment naming what the cell can no longer prove. **An e2e that asserts a vendor's behaviour inherits the vendor's right to change it; date-stamp the measurement, and when it breaks, re-probe before re-asserting.**
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:

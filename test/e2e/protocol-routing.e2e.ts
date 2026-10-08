@@ -233,11 +233,22 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
 
       for (const protocol of otherProtocols(expected ?? "")) {
         const wrong = await probe(protocol, model);
-        expect(
-          wrong.status,
-          `${model} is ALSO recognised on ${protocol} (${wrong.summary}) — the ` +
-            `catalog's provider_npm may be stale and this model is routed to ${expected} for the wrong format`
-        ).toBe(500);
+        // The gateway changed under this assertion (measured 2026-10-09): the
+        // free-tier entitlement gate now fires on EVERY endpoint, so a
+        // wrong-endpoint cell answers 403 FreeTierError too — no longer 500.
+        // A 403 there still proves the gateway PARSED the model (a model the
+        // endpoint does not know answers 500 Internal server error), so the
+        // route is pinned by "parsed everywhere, gated everywhere"; what this
+        // cell can no longer prove is that only the named endpoint PARSES it.
+        if (wrong.status === 403) {
+          expect(wrong.summary).toContain("FreeTierError");
+        } else {
+          expect(
+            wrong.status,
+            `${model} is ALSO recognised on ${protocol} (${wrong.summary}) — the ` +
+              `catalog's provider_npm may be stale and this model is routed to ${expected} for the wrong format`
+          ).toBe(500);
+        }
       }
     },
     FANOUT_BUDGET_MS
