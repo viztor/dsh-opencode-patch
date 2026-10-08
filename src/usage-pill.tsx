@@ -101,6 +101,26 @@ export interface UsagePillProps {
   t: (key: string) => string;
 }
 
+/**
+ * One full turn of the refresh glyph, and the minimum a click stays busy.
+ *
+ * These two must agree: the CSS animates `dsh-oc-spin` for 0.9s per cycle, and
+ * the manual refresh holds its state open for at least this long, so the button
+ * always completes a turn instead of flickering. A test pins the number against
+ * the keyframes, because the two drifting apart is exactly how the glyph went
+ * from "a full cycle" back to "an unreadable flicker".
+ */
+export const MIN_FEEDBACK_MS = 900;
+
+/**
+ * Whether the reader has asked for less motion.
+ *
+ * Read at call time, not at module load: the query can change between renders,
+ * and a cached answer would pin the first preference the reader ever had.
+ */
+const reducedMotion = (): boolean =>
+  globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
 const noop = (): void => {
   /* no-op */
 };
@@ -147,6 +167,7 @@ const ActiveUsage = ({
         return;
       }
       busy = true;
+      const startedAt = Date.now();
       setRefreshing(true);
       try {
         const value = await readUsage(provider, model);
@@ -174,6 +195,22 @@ const ActiveUsage = ({
       } finally {
         busy = false;
         if (alive) {
+          // A click must show AT LEAST one full turn of the refresh glyph. The
+          // spin already exists (rotate 360deg, 0.9s, infinite) but the read is
+          // usually faster than that, so the icon flickered for ~100ms and
+          // completed no cycle at all — the click looked like it did nothing.
+          //
+          // Only a MANUAL refresh is padded. The 60s poll is invisible, and
+          // holding its state open would just delay the next tick. Skipped
+          // entirely under prefers-reduced-motion, where a full turn is motion
+          // the reader has opted out of — the data still lands, just without the
+          // animation to wait for.
+          const remaining = MIN_FEEDBACK_MS - (Date.now() - startedAt);
+          if (manual && remaining > 0 && !reducedMotion()) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, remaining);
+            });
+          }
           setRefreshing(false);
         }
       }

@@ -29,10 +29,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GoUsage } from "../src/usage-contract.ts";
 import {
+  MIN_FEEDBACK_MS,
   UsagePill,
   type ModelDirectoryState,
   type SnapshotStore,
 } from "../src/usage-pill.tsx";
+import { STYLES } from "../src/usage-ui.ts";
 
 /** A quota reading with one window in each of the states the panel distinguishes. */
 const USAGE: GoUsage = {
@@ -344,6 +346,50 @@ describe("usage-pill: failure handling", () => {
     await waitFor(() => {
       expect(element(".dsh-oc-usage-trigger").textContent).toContain("90%");
     });
+  });
+
+  it("completes a full spin on a click, however fast the read is", async () => {
+    // The spin existed (rotate 360deg, 0.9s, infinite) but the read resolved in
+    // ~100ms, so the glyph flickered and completed NO cycle — a click that
+    // looked like it did nothing. A manual refresh now holds its state open for
+    // at least one full turn.
+    const readUsage = vi.fn().mockResolvedValue(USAGE);
+    await renderPill(readUsage);
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).toContain("0%");
+    });
+
+    await act(async () => {
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
+    });
+
+    // Click, then advance LESS than a full cycle: the button must still be busy,
+    // which is the whole point — it cannot clear before the turn is done.
+    await act(async () => {
+      fireEvent.click(element(".dsh-oc-usage-refresh"));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const busy = element(".dsh-oc-usage-refresh") as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(
+      (element(".dsh-oc-usage-refresh") as HTMLButtonElement).disabled
+    ).toBe(false);
+  });
+
+  it("keeps the CSS spin and the busy window on the SAME duration", () => {
+    // These two drifting apart is exactly how a full cycle decayed into an
+    // unreadable flicker, so the number is pinned against the keyframes rather
+    // than trusted to whoever edits the CSS next.
+    const rule =
+      /\.dsh-oc-usage-refresh:disabled \.dsh-oc-usage-[\w-]+ \{[^}]*\}/.exec(
+        STYLES
+      )?.[0];
+    const seconds = Number(/([\d.]+)s/.exec(rule ?? "")?.[1] ?? "NaN");
+    expect(seconds).toBe(MIN_FEEDBACK_MS / 1000);
   });
 
   it("retries on demand from the panel", async () => {
