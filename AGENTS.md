@@ -227,13 +227,24 @@ The reset line under each quota window was wrong in five separate ways at once, 
 
 Follow-up to the countdown fix, forced by the owner reading the rendered line: `重置于 11月7日 08:55` should be `11月7日8点55分重置`. Two separate mistakes in one string.
 
-**The order.** English wants the word first (`Resets Nov 7, 8:55 AM`); Chinese wants it last (`11月7日8点55分重置`). The previous code hardcoded a PREFIX for the absolute shape and a SUFFIX for the duration shape, which was really an English word-order rule wearing a "shape" label — and it is why the fix that split `usageResets` by *shape* still read wrong in zh. **Word order is a property of the LANGUAGE, not of the shape**, so the dictionary now carries both halves (`usageResetsAtPrefix` / `usageResetsAtSuffix`) and each locale fills exactly one. A helper that picks prefix-vs-suffix by kind is a helper that has quietly learned English.
+**The order.** English wants the word first (`Resets Nov 7, 8:55 AM`); Chinese wants it last (`11月7日8点55分重置`). The previous code hardcoded a PREFIX for the absolute shape and a SUFFIX for the duration shape, which was really an English word-order rule wearing a "shape" label — and it is why the fix that split `usageResets` by _shape_ still read wrong in zh. **Word order is a property of the LANGUAGE, not of the shape**, so the dictionary now carries both halves (`usageResetsAtPrefix` / `usageResetsAtSuffix`) and each locale fills exactly one. A helper that picks prefix-vs-suffix by kind is a helper that has quietly learned English.
 
 **The units.** `Intl.DurationFormat` (ES2025) is the platform's own answer for durations and does the whole job: `narrow` gives `1h 11m` in en and `1小时11分钟` in zh, with each locale's unit words, ordering and pluralisation. It is not in this project's `lib` (ES2024), so the type is named locally — and read through a **type predicate**, not an assertion, because `as` on a platform-owned type is the same mistake `meterTranslate` made (and `Reflect.get` returns `any`, which the lint flags just as hard). The fallback for engines without it is a unit TABLE, not a second formatter: same composition, two words per language. Both fallback reasons are tested — a missing constructor, and one that throws — because Node ships the constructor, so neither branch would otherwise ever run.
 
 **And `点/分`.** CLDR's zh time pattern is `HH:mm`, so `Intl.DateTimeFormat` alone renders `11月7日 08:55` and will never produce `8点55分`. Rather than hand-write the whole date, the platform's own **`formatToParts`** is reused and only the hour/minute separator is localized: `月`/`日` and the numerals come out of the formatter untouched, and the leading zero comes off the hour because 点 takes the bare number. Reuse the platform's parts; replace only the part it gets wrong for the sentence you are building.
 
 **The tripwire moved 79 → 85 KiB**, per the standing instruction. The real working size is 81.3 KB and the ceiling now sits ~3.7 KB above it, which is what keeps it pointed at the one failure it exists to catch — a dependency bundled instead of left external, which lands as a jump of thousands of bytes. Nothing was cut to fit.
+
+### A doc comment that describes the opposite of the code (2026-10-08)
+
+`meterTranslate` carried this: *"the active locale comes from the service per call … A language switch lands on the next render without a reload, because the id is read at call time, not captured."* The code did the opposite — `meterTranslate(ctx.locale?.getLocale?.()?.active)` **evaluated the id once**, when the injector was built, and closed over it. `t` was frozen at whatever language was active at construction.
+
+What made it visible was the localization work beside it: the panel's `locale` is read **per render** (it feeds `Intl` for the dates and durations), while `t` was frozen. So a live language switch produced a row whose WORDS were one language and whose NUMBERS were another — `OpenCode Go 用量` above `3d 17h until reset`. The fix is one parameter: `meterTranslate` now takes a **getter** and calls it inside the lookup, so the doc comment became true instead of being deleted.
+
+**Two lessons, and the second is the one that generalises.**
+
+- **When two values must agree, they must have the same lifetime.** `t` and `locale` are two halves of one rendered line; binding one at construction and reading the other per render is a latent split that no single-language test can see.
+- **A comment that describes intended behaviour is not evidence of it.** This one had been read and trusted for several sessions. The test beside it said *"the active locale is read PER CALL, so the meter can follow a switch"* — and then handed out `zh` **unconditionally**, so the switch it described was never performed and the capture went unnoticed. The test now mutates the locale and asserts the same `t` follows, and it was verified to FAIL against the old code (`expected 'OpenCode Go 用量' to be 'OpenCode Go usage'`) before being kept. **A test for a behaviour must perform that behaviour**; asserting a constant is not the same as exercising a switch.
 
 ### The audit closed out (2026-10-08, same day)
 

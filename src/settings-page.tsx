@@ -212,14 +212,21 @@ const modelDirectoryStore = (
  * was never bitten: it mounts after boot, when the race is already decided.
  */
 const meterTranslate =
-  (active: string | undefined): ((key: string) => string) =>
+  (active: () => string | undefined): ((key: string) => string) =>
   (key: string): string => {
     // Widened to an index signature ON PURPOSE: the caller holds an arbitrary
     // key, so the lookup is a miss-or-hit at runtime and `?? key` is the miss.
     // The previous form asserted `key as keyof typeof dict`, which is a
     // narrower type than the value it was given — an assertion that existed
     // only to satisfy the compiler about a lookup that is untyped by nature.
-    const dict: Record<string, string> = active === "zh" ? zh : en;
+    // The GETTER is called here, not at construction. The doc above claimed
+    // exactly this and the code did the opposite: `meterTranslate(active)`
+    // captured the id once, so `t` was frozen at whatever language was active
+    // when the injector was built, while the panel's `locale` — which feeds
+    // `Intl` for the dates and durations — was re-read on every render. A live
+    // language switch therefore produced a row whose WORDS were one language
+    // and whose NUMBERS were another.
+    const dict: Record<string, string> = active() === "zh" ? zh : en;
     return dict[key] ?? key;
   };
 
@@ -344,7 +351,7 @@ export const apply = (ctx: ClientContext): void => {
           }
           return res;
         },
-        t: meterTranslate(ctx.locale?.getLocale?.()?.active),
+        t: meterTranslate(() => ctx.locale?.getLocale?.()?.active),
       };
     };
 
