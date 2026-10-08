@@ -346,7 +346,11 @@ export const STYLES = `
 .dsh-oc-usage-updated {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  /* Tight: the button's own 20px box already carries the breathing room, and
+     the gap was on top of it. The target stays 20px — padding is not what makes
+     this row look empty, and shrinking the hit area to close a gap would trade
+     accessibility for a pixel. */
+  gap: 1px;
   min-width: 0;
 }
 
