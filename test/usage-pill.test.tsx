@@ -234,7 +234,8 @@ describe("usage-pill: helper functions & calculations", () => {
     expect(affected.label).toBe("Monthly");
     expect(affected.window.status).toBe("rate-limited");
 
-    // No rate-limited window at all → highest percentage wins.
+    // Nothing is OUT, so the 5-HOUR window answers — it resets soonest, and
+    // picking the highest percentage here made the meter answer for monthly.
     const healthy = createMockUsage({
       monthly: {
         percent: 30,
@@ -244,10 +245,10 @@ describe("usage-pill: helper functions & calculations", () => {
       rolling: { percent: 0, resetsAt: isoAt(3600 * 1000), status: "ok" },
       weekly: { percent: 0, resetsAt: isoAt(86400 * 3 * 1000), status: "ok" },
     });
-    expect(getAffectingWindow(healthy).label).toBe("Monthly");
+    expect(getAffectingWindow(healthy).label).toBe("5-Hour");
   });
 
-  it("selects window with highest percentage when no window is rate-limited", () => {
+  it("shows the 5-hour window when nothing is out, whatever the percentages", () => {
     const usage = createMockUsage({
       monthly: {
         percent: 30,
@@ -266,11 +267,12 @@ describe("usage-pill: helper functions & calculations", () => {
       },
     });
 
-    // Weekly at 80% is the active bottleneck, not monthly or rolling.
+    // Nothing is OUT, so the 5-hour window answers even though weekly is the
+    // higher percentage: it is the window that resets soonest.
     const affecting = getAffectingWindow(usage);
-    expect(affecting.key).toBe("weekly");
-    expect(affecting.label).toBe("Weekly");
-    expect(affecting.window.percent).toBe(80);
+    expect(affecting.key).toBe("rolling");
+    expect(affecting.label).toBe("5-Hour");
+    expect(affecting.window.percent).toBe(10);
 
     // All-zero usage falls back to the rolling window rather than null.
     const zeroed = createMockUsage({
@@ -452,10 +454,10 @@ describe("usage-pill: derived copy & failure parsing", () => {
 
   it("describes a healthy Go reading with the bottleneck window", () => {
     const usage = createMockUsage({
-      weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
+      rolling: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
     });
     const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
-    expect(copy.headline).toBe("80% of Weekly used");
+    expect(copy.headline).toBe("80% of 5-Hour used");
     // No badge: the header already reads `OpenCode Go`, so `Go Plan` beside it
     // was a second statement of the same fact. `Limited` still appears when the
     // plan actually is — that is the case the chip earns its place in.
@@ -493,7 +495,7 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // The header said the ring's figure, which changed on every poll. Both
     // readings now belong to the rows and the badge; the title is the account.
     const healthy = createMockUsage({
-      weekly: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
+      rolling: { percent: 80, resetsAt: isoAt(3600 * 1000), status: "ok" },
     });
     const limited = createMockUsage({
       monthly: { percent: 100, resetsAt: isoAt(1000), status: "rate-limited" },
@@ -511,7 +513,7 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // The ring's explanation did not die with the header: it is the hover label.
     expect(
       describeUsage(healthy, getAffectingWindow(healthy), false, t).headline
-    ).toBe("80% of Weekly used");
+    ).toBe("80% of 5-Hour used");
   });
 
   it("flags a rate-limited window in the headline and badge", () => {

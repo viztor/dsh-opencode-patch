@@ -16,7 +16,7 @@ import React, {
 
 import { DEFAULT_PROVIDERS } from "./config-values.ts";
 import type { GoUsage } from "./usage-contract.ts";
-import { UsagePanel, UsageTrigger } from "./usage-panel.tsx";
+import { goQuotaTooltip, UsagePanel, UsageTrigger } from "./usage-panel.tsx";
 import {
   CIRCUMFERENCE,
   describeUsage,
@@ -351,10 +351,13 @@ const ActiveUsage = ({
     usage?.session === undefined
       ? undefined
       : (usage.session.planeCostFormatted ?? usage.session.costFormatted);
-  const tooltipLabel =
-    isZen && zenSpend !== undefined
-      ? `${t("sessionSpend")} ${zenSpend} · ${t("zenPaygBadge")}`
-      : tooltip;
+  const zenTooltip =
+    zenSpend === undefined
+      ? tooltip
+      : `${t("sessionSpend")} ${zenSpend} · ${t("zenPaygBadge")}`;
+  // Go lists every window: the trigger prints one number, and the next question
+  // is always "and the other two?".
+  const tooltipLabel = isZen ? zenTooltip : goQuotaTooltip(t, usage);
 
   return (
     <span
