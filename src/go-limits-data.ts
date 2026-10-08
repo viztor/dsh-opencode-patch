@@ -12,7 +12,7 @@
 import type { ModelAllowance } from "./go-limits.ts";
 
 export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
-  "claude-haiku-5.5": {
+  "claude-haiku-5-5": {
     go: 15,
     goPlus: 60,
     name: "Claude Haiku 5.5 (≤ 100K tokens)",

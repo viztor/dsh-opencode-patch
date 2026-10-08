@@ -280,6 +280,8 @@ And one failure the regeneration **created**, which is the instructive one: `usa
 
 **And the e2e failure that survived the regeneration was the VENDOR moving, not us.** The free-tier case asserted a wrong-endpoint cell answers `500` (a model the endpoint does not parse) — measured 2026-10-07. Re-probed live on 2026-10-09: the gateway now answers `403 FreeTierError` on **both** endpoints, having widened the entitlement gate. The assertion was stale against the vendor, not against the code, and the fix is a guard: a `403 FreeTierError` on a wrong-endpoint cell still proves the gateway parsed the model, so the route stays pinned by "parsed everywhere, gated everywhere" — with a comment naming what the cell can no longer prove. **An e2e that asserts a vendor's behaviour inherits the vendor's right to change it; date-stamp the measurement, and when it breaks, re-probe before re-asserting.**
 
+**And the regeneration jobs move in PAIRS.** Fixing the catalog shim exposed the NEXT stale artifact: `go-limits-data.ts` — same vendor source (the Go docs table), same nightly-freshness gate, and this time the change was the id shape (`claude-haiku-5.5` → `claude-haiku-5-5`), which is exactly the kind of rename that silently orphans a lookup. The gate then failed on `lib/` being older than `src/` — a regenerated artifact is not deployed until the bundles are rebuilt, because the host loads `lib/index.mjs`, not `src/`. **Regenerating a generated file is a three-step deploy: regenerate, rebuild the bundles, then commit both.**
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:
