@@ -313,6 +313,16 @@ The panel had this right all along — every Go-only row is gated on `!isZen` �
 
 **And nothing caught it.** The suite had a Zen-trigger test that passed `session()` explicitly, so it exercised the spend label and never the no-session fallback the owner actually hit; and `UsageTrigger` is a pure component, so a props-level test could only assert what the caller had already decided. The pins are therefore at both levels: a mount-level case (the fixture's affecting window is rate-limited at 90% — a Go state — and carries no `session`) asserting no percent, a hollow ring and no alert; and a trigger-level case for the frame. Both were verified to FAIL against the old code before being kept.
 
+### A floored countdown makes an exact fixture a RACE (2026-10-09)
+
+CI failed on `expected '44m' to be '45m'` — and the code was right. `formatRelativeReset` floors (correctly), and it reads `Date.now()` **at call time**, so a fixture built at exactly 45 minutes and asserted as `45m` is a race that any elapsed millisecond loses. Reproduced deterministically: build the fixture, burn one millisecond, and it reads `44m`. Locally it passed; on a loaded runner it did not.
+
+**Thirteen fixtures in one file sat exactly ON a floor boundary** — `45m`, `3h15m`, `2d4h`, `2d` — every one of them a latent flake that had simply never lost the race. They now all go through `ahead()`, which adds `SLACK_MS` (30s) so the floored result is stable for any drift under half a minute. The precedent was already in the suite (`90m30s`, not a bare `90m`); what was missing was applying it to the rest.
+
+**The rule: a test fixture for a FLOORED value must sit above the boundary it asserts.** An exact value is only safe when the assertion is exact for a different reason — a fixed instant, or an echoed key.
+
+Two traps in the mechanical fix, both worth naming. A blind string replacement wrapped `at(ms, locale)` as `at(ahead(ms, locale))`, silently swallowing the locale — which the suite caught as `expected '2d 4h' to be '2天4小时'`, not as a missing-slack failure. And the first run after the fix reported **one failure in eight consecutive runs, eight times**: a deterministic break, not a flake, which is exactly what a repeated run is for.
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:
