@@ -409,7 +409,7 @@ export const UsagePanel = ({
                 behind this affordance instead of in the panel: the panel is a
                 gauge, and four lines of prose made the note the loudest thing
                 on it. Hovering explains; the row stays one line. */}
-            <Tooltip label={t("usageOverflowBilling")} side="top">
+            <Tooltip label={t("usageOverflowBilling")} portal side="top">
               <span className="dsh-oc-usage-info" tabIndex={0}>
                 <IconInfoOutlineRegular size={14} />
               </span>

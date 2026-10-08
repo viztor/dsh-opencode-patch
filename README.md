@@ -228,9 +228,9 @@ Per-state behaviour — the trigger's three states, both panels, what every row 
 
 #### Mode A — OpenCode Go (`opencode-go`)
 
-- **Adaptive bottleneck ring**: a real-time SVG ring showing the currently _limiting_ window (`42%`, `80%`, or `100%` when rate-limited). On a **free model** the ring renders hollow in the muted track colour — the plan's limit says nothing about a bill that cannot be charged, and red against `$0.00` would read as "you are out of money".
+- **Adaptive ring**: a real-time SVG ring for the window that answers the question. A window that is **out** — rate-limited, or at its cap — is shown, widest first (monthly → weekly → 5-hour), because a monthly cap explains a refusal the 5-hour window does not. Otherwise it shows the **5-hour** window, which resets soonest and so is the one you can still act on. On a **free model** the ring renders hollow in the muted track colour — the plan's limit says nothing about a bill that cannot be charged, and red against `$0.00` would read as "you are out of money".
 - **Semantic colors**: green below 80% (`--dsw-alias-state-success-primary`), amber at ≥80% (`--dsw-alias-state-warn-primary`), red at the cap (`--dsw-alias-state-error-primary`).
-- **Click panel**: three window rows with live reset countdowns and a bar per window, a session-spend row naming the **currently selected** model, a Zen-overflow row, a rate-limited alert, and act-on-it links. Hovering the trigger shows a `Tooltip` with the headline instead of opening the panel.
+- **Click panel**: three window rows with live reset countdowns and a bar per window, a session-spend row naming the **currently selected** model, a Zen-overflow row, a rate-limited alert, and act-on-it links. Hovering the trigger shows a `Tooltip` listing **every** window (`5 hours 11% · Weekly 33% · Monthly 16%`), because the trigger can print only one of them and the next question is always "and the other two?".
 - **A model the catalog has no price for reads `—`, not `Free`.** The panel names whatever the picker has selected, even when models.dev has no entry for it yet (it syncs on a schedule), because showing the previous model's name is worse than showing no price.
 
 ```
