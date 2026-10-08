@@ -482,7 +482,12 @@ describe("usage-pill: hover, click and dismissal", () => {
       await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(element('[role="tooltip"]').textContent).toContain("quota limited");
+    // EVERY window, not one sentence: the trigger can print only one of them,
+    // and the reader's next question is always "and the other two?".
+    const label = element('[role="tooltip"]').textContent ?? "";
+    expect(label).toContain("usage_rolling 90%");
+    expect(label).toContain("usage_weekly 55%");
+    expect(label).toContain("usage_monthly 40%");
   });
 
   it("explains the Zen spend instead of repeating the account name", async () => {
