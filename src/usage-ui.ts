@@ -176,7 +176,14 @@ export const STYLES = `
   box-sizing: border-box;
   padding: 14px 16px;
   border: 0;
-  border-radius: var(--dsw-radius-lg, 16px);
+  /* The host has a token NAMED for this and we were not using it. Its own
+   * floating panels in this very dock (dsh-dockkit-float and the _float_ CSS
+   * module) are border-radius: var(--dsw-radius-panel) — 28px. We sat on
+   * --dsw-radius-lg (16px), which is a CONTROL radius, not a surface one: a
+   * panel visibly less round than every panel around it. Read the values, not
+   * the names — both tokens exist and both are real, and only one is the
+   * product. */
+  border-radius: var(--dsw-radius-panel, 28px);
   /* The host's own menu material, and the one line that decides whether this
    * reads as part of the harness. --dsw-menu-surface-fill is TRANSLUCENT
    * (#f8f9fa94 light, #43454a73 dark) so the blur behind it shows through.
@@ -191,10 +198,18 @@ export const STYLES = `
    */
   background: var(--dsw-menu-surface-fill, Canvas);
   backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
-  /* The host scopes this stroke to a [data-menu-material] selector; we ARE the
-   * material, so we take the same stroke the theme sets there. */
+  /* The host scopes this stroke to a [data-menu-material] selector — which its
+   * own Menu sets by rendering a data-menu-material="translucent" attribute — and
+   * the value it puts there: --dsw-alias-border-l3, #0000001f light / #ffffff29
+   * dark. This one was already right; it is the radius and the elevation that
+   * were off, and both of those are values that had to be read rather than
+   * guessed. */
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
-  box-shadow: var(--dsw-elevation-prominent, 0 12px 36px rgba(0, 0, 0, 0.28));
+  /* Same mistake in the elevation: the theme defines panel / prominent / soft,
+   * and a panel wants the one called panel — the 0.5px stroke plus
+   * 0 3px 8px 0 #00000008 and 0 0 16px 0 #00000005. "Prominent" is a louder
+   * surface; it belongs to something meant to dominate. */
+  box-shadow: var(--dsw-elevation-panel, 0 3px 8px rgba(0, 0, 0, 0.03));
   color: var(--dsw-alias-label-primary, CanvasText);
   font-size: 12px;
   line-height: 1.5;
