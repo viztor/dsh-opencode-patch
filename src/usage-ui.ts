@@ -283,10 +283,14 @@ export const STYLES = `
   gap: 10px;
 }
 
+/* The kit's dot keeps a 10px SLOT but paints a 6px core inside it, so 2px of
+   every side is empty. A 7px gap therefore read as ~9px beside a 6px circle —
+   the dot looked detached from its label, like a marker hanging at the row's
+   front. 4px makes the optical gap match the circle. */
 .dsh-oc-usage-row-left {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
   font-size: 12px;
@@ -309,11 +313,13 @@ export const STYLES = `
 }
 
 /* The bar is the shape the number takes: one track per window, the fill the
-   window's own colour. Two pixels — a progress bar that is also a ruler. */
+   window's own colour. Two pixels — a progress bar that is also a ruler.
+   It spans the WHOLE row, starting under the state dot: the 13px indent that
+   used to align it with the label left the dot hanging outside the row's own
+   bounds, like a list marker, and cost the ruler the width it exists to use. */
 .dsh-oc-usage-bar {
   height: 2px;
   margin-top: 4px;
-  margin-left: 13px;
   border-radius: var(--dsw-radius-full, 999px);
   background: var(--dsw-alias-border-l4, currentColor);
   overflow: hidden;
