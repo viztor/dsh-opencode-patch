@@ -453,17 +453,23 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
  * standing instruction is to raise the ceiling, never to cut content.
  */
 /**
- * A TRIPWIRE, not a budget. 85 KiB sits ~3.7 KB above the real working size
- * (81.3 KB), which is the whole point: the number catches a dependency being
+ * A TRIPWIRE, not a budget. 88 KiB sits ~1.4 KB above the real working size
+ * (86.5 KB), which is the whole point: the number catches a dependency being
  * bundled instead of left external, and that lands as a jump of THOUSANDS of
  * bytes. It must never fire on prose or on a feature that earns its bytes.
  *
- * Raised 75 -> 79 when client comments pushed it over, and 79 -> 85 when the
- * reset line gained localized durations and an absolute date-time composed from
- * `Intl` parts. Both were real behaviour, and the owner's standing instruction
- * is to raise the ceiling rather than delete something to fit.
+ * Raised 75 -> 79 when client comments pushed it over, 79 -> 85 when the reset
+ * line gained localized durations and an absolute date-time composed from
+ * `Intl` parts, and 85 -> 88 when the session-spend row became a component with
+ * its own empty state and the Zen hover gained the price. All three were real
+ * behaviour, and the owner's standing instruction is to raise the ceiling
+ * rather than delete something to fit.
+ *
+ * The margin is what matters, not the number: at 85 the bundle sat 526 bytes
+ * under the line, which means the next honest edit trips a guard whose only
+ * job is to notice a dependency.
  */
-const CLIENT_BUDGET = 85 * 1024;
+const CLIENT_BUDGET = 88 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

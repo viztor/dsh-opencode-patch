@@ -39,6 +39,12 @@ export const en = {
   readOnly: "This deployment stores settings read-only.",
   reset: "Reset to default",
   sessionSpend: "Session Spend",
+  /**
+   * The spend row is always drawn; this is what it says when the accumulator
+   * holds nothing for the session. Hiding the row instead reads as "the feature
+   * is gone", and the panel cannot tell that apart from "no turns yet".
+   */
+  sessionSpendEmpty: "No turns yet in this session",
   save: "Save",
   saveFailed: "The deployment did not accept these values.",
   saving: "Saving…",
@@ -143,6 +149,7 @@ export const zh: Record<keyof typeof en, string> = {
   readOnly: "当前部署配置为只读。",
   reset: "恢复默认",
   sessionSpend: "当前会话消耗",
+  sessionSpendEmpty: "本会话暂无记录",
   save: "保存",
   saveFailed: "保存失败，请检查填写内容。",
   saving: "保存中…",

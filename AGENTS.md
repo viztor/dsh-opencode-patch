@@ -323,6 +323,21 @@ CI failed on `expected '44m' to be '45m'` — and the code was right. `formatRel
 
 Two traps in the mechanical fix, both worth naming. A blind string replacement wrapped `at(ms, locale)` as `at(ahead(ms, locale))`, silently swallowing the locale — which the suite caught as `expected '2d 4h' to be '2天4小时'`, not as a missing-slack failure. And the first run after the fix reported **one failure in eight consecutive runs, eight times**: a deterministic break, not a flake, which is exactly what a repeated run is for.
 
+### A row that disappears reads as a feature that is gone (2026-10-09)
+
+The owner: _"estimated consumed token price that part was gone for some reason."_ It was not gone — it was **omitted**, because the row was gated on `usage.session !== undefined` and the accumulator held nothing for that session. The accumulator lives in the **Host process** and counts only OpenCode-route turns, so "nothing yet" is reachable on every `dsh web` restart. A missing row cannot be told apart from a deleted feature, and the reader concluded the latter.
+
+The row is now **always drawn**, with an explicit empty state (`本会话暂无记录` / `No turns yet in this session` and a `—`), which is the same rule this file already recorded twice: **when a state is inferred rather than read, say which.** `showUsagePrice` still gates the row itself — that is a user decision — but the absence of DATA is now a state the panel can show.
+
+**Two mechanical lessons from doing it.**
+
+- **A component extracted for readability hides its children from a tree-walking test.** The row became `SpendRow`, and every panel test that walks the unmounted tree stopped seeing it — `collectText` returned the parent's own text and nothing below. The repo's convention is that these presentational components are **pure functions of their props with no hooks**, so the fix is to CALL it (`{showUsagePrice && SpendRow({ t, usage })}`) rather than render it. A `<SpendRow/>` element is a node whose body never runs in a walk that does not mount, which is the same reason the `StateDot` assertion reads `props.state` off the element type.
+- **Two assertions counted `dsh-oc-usage-detail` rows and meant "the Zen card is absent" / "the allowance row is absent".** With a third row now always present, a count is a count of the wrong thing. Both were re-pinned by CONTENT (`t:zenCredit`, `t:monthlyAllowance`) — which is what they were always about.
+
+**And the Zen hover now carries the price**, because that is the question the trigger's number raises: `当前会话消耗 $0.00 · 按量计费`. With no record it keeps the billing-model answer, which is the only other true thing to say.
+
+**The tripwire moved 85 → 88 KiB.** At 85 the bundle sat **526 bytes** under the line, so the next honest edit would have tripped a guard whose only job is to notice a dependency being bundled. The margin is what matters, not the number.
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:

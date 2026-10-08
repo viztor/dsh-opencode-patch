@@ -125,6 +125,59 @@ export const UsageTrigger = ({
   </Tooltip>
 );
 
+/**
+ * The session-spend row, and the one row here that is ALWAYS drawn.
+ *
+ * It used to be omitted whenever the accumulator held nothing for the session,
+ * which reads as "this feature is gone" rather than "no turns yet" — and that
+ * state is reachable on every host restart, because the accumulator lives in
+ * the Host process and counts only OpenCode-route turns. A row that cannot
+ * distinguish the two has to say which.
+ */
+const SpendRow = ({
+  t,
+  usage,
+}: {
+  t: (key: string) => string;
+  usage: GoUsage | undefined;
+}): React.ReactElement => {
+  const session = usage?.session;
+  return (
+    <div className="dsh-oc-usage-detail">
+      <div className="dsh-oc-usage-detail-left">
+        <span className="dsh-oc-usage-detail-title">{t("sessionSpend")}</span>
+        {/*
+          The SAME shape either way: which model, then what it costs. The free
+          case used to drop the model entirely and print a bare sentence, so the
+          one row that said "$0.00" was also the one row that could not say what
+          you are paying for — and the id it fell back to
+          (`muse-spark-1.3-contributor-free`) said "free" a third time.
+        */}
+        <span className="dsh-oc-usage-detail-desc">
+          {session === undefined
+            ? t("sessionSpendEmpty")
+            : `${session.activeModelName ?? session.activeModel ?? ""} · ${
+                session.freeModel === true
+                  ? t("freeModel")
+                  : (session.activeRateFormatted ?? "")
+              }`}
+        </span>
+      </div>
+      <span className="dsh-oc-usage-detail-value">
+        {/*
+          THIS plane's spend, not the session's all-planes total. The Zen row
+          once read $1.44 of Go allowance spend against a FREE model, because
+          the accumulator folds every turn of the session into one number and
+          the panel answered for a balance it was not reading.
+        */}
+        {session === undefined
+          ? "—"
+          : (session.planeCostFormatted ?? session.costFormatted)}
+      </span>
+    </div>
+  );
+};
+
 /** The hover/click panel: quota breakdown, spend, Zen overflow and actions. */
 export interface UsagePanelProps {
   badgeText: string;
@@ -313,36 +366,14 @@ export const UsagePanel = ({
 
     {/* Session spend & active-model rate. Priced on the Host from
         models.dev rates, so the client never ships the catalog. */}
-    {showUsagePrice && usage?.session !== undefined && (
-      <div className="dsh-oc-usage-detail">
-        <div className="dsh-oc-usage-detail-left">
-          <span className="dsh-oc-usage-detail-title">{t("sessionSpend")}</span>
-          {/*
-            The SAME shape either way: which model, then what it costs. The free
-            case used to drop the model entirely and print a bare sentence, so the
-            one row that said "$0.00" was also the one row that could not say what
-            you are paying for — and the id it fell back to
-            (`muse-spark-1.3-contributor-free`) said "free" a third time.
-          */}
-          <span className="dsh-oc-usage-detail-desc">
-            {`${usage.session.activeModelName ?? usage.session.activeModel ?? ""} · ${
-              usage.session.freeModel === true
-                ? t("freeModel")
-                : (usage.session.activeRateFormatted ?? "")
-            }`}
-          </span>
-        </div>
-        <span className="dsh-oc-usage-detail-value">
-          {/*
-            THIS plane's spend, not the session's all-planes total. The Zen row
-            once read $1.44 of Go allowance spend against a FREE model, because
-            the accumulator folds every turn of the session into one number and
-            the panel answered for a balance it was not reading.
-          */}
-          {usage.session.planeCostFormatted ?? usage.session.costFormatted}
-        </span>
-      </div>
-    )}
+    {/*
+      Called, not rendered: every component in this file is a pure function of
+      its props with no hooks, so tests invoke them directly and walk the tree —
+      and an element of a component type hides its own children from a walk that
+      never mounts. `<SpendRow/>` would put the row out of reach of exactly the
+      assertions that pin it.
+    */}
+    {showUsagePrice && SpendRow({ t, usage })}
 
     {/*
       The Zen card answers "where does an over-limit Go request get billed?"
