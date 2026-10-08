@@ -215,6 +215,12 @@ describe("settings-page: apply & slots", () => {
       .fn()
       .mockResolvedValue({ ok: true, value: { test: 123 } });
 
+    // Mutable so the switch at the end of this test is actually PERFORMED. It
+    // used to hand out zh unconditionally, which is why a dictionary captured at
+    // construction went unnoticed: the test asserted the language but never
+    // changed it, while its own comment claimed the switch worked.
+    const localeState = { active: "zh" };
+
     const ctx = {
       effect: (fn: () => unknown) => fn(),
       modelDirectories: {
@@ -231,7 +237,7 @@ describe("settings-page: apply & slots", () => {
       locale: {
         bind: () => (key: string) => key,
         register: () => () => {},
-        getLocale: () => ({ active: "zh", revision: 1 }),
+        getLocale: () => ({ active: localeState.active, revision: 1 }),
       },
       inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
         callback(ctx),
@@ -280,6 +286,15 @@ describe("settings-page: apply & slots", () => {
     // shared namespace a stale bundle could hold.
     expect(injected.t("usageTitle")).toBe("OpenCode Go 用量");
     expect(injected.t("keyNoOneWrote")).toBe("keyNoOneWrote");
+
+    // The switch the comment above describes, actually performed. `t` is built
+    // ONCE — it is a prop — so a dictionary captured at construction would keep
+    // answering Chinese here while the panel's `locale`, which feeds `Intl` for
+    // the dates and durations, moved to English: one row, two languages.
+    localeState.active = "en";
+    expect(injected.t("usageTitle")).toBe("OpenCode Go usage");
+    localeState.active = "zh";
+    expect(injected.t("usageTitle")).toBe("OpenCode Go 用量");
   });
 
   it("boots with no services at all, and tears down cleanly", () => {
