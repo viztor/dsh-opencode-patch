@@ -276,31 +276,6 @@ export const UsagePanel = ({
             </span>
           </div>
         )}
-
-        <div className="dsh-oc-usage-divider" />
-
-        {/*
-          What to DO about the quota, in the layer that owns the quota. This row
-          used to sit at the very bottom, under the update/console footer, where
-          it read as one more global action rather than the answer to the windows
-          directly above it — and on a Zen route the block it belonged to is not
-          even rendered. Data, not branches: `panelActions` is the whole
-          difference between the two popovers.
-        */}
-        {panelActions(isZen).length > 0 && (
-          <div className="dsh-oc-usage-links">
-            {panelActions(isZen).map((action) => (
-              <a
-                href={action.href}
-                key={action.href}
-                rel="noreferrer noopener"
-                target="_blank"
-              >
-                {t(action.labelKey)}
-              </a>
-            ))}
-          </div>
-        )}
       </>
     )}
 
@@ -399,6 +374,25 @@ export const UsagePanel = ({
           <RefreshIcon />
         </button>
       </span>
+      {/* Every link lives in the footer now. `升级套餐` used to have its own row,
+          between a divider and the spend block, where it read as a section
+          header rather than the answer to the windows above it — and it put a
+          second action in a second place on a 320px panel, so the panel was one
+          row taller for it. Beside 控制台 they read as what they are: actions.
+          Still two links because they are two destinations — opencode.ai/go is
+          the plan page, /console is the console SPA, both probed, neither
+          reachable from the other. */}
+      {panelActions(isZen).map((action) => (
+        <a
+          className="dsh-oc-usage-console"
+          href={action.href}
+          key={action.href}
+          rel="noreferrer noopener"
+          target="_blank"
+        >
+          {t(action.labelKey)}
+        </a>
+      ))}
       <a
         className="dsh-oc-usage-console"
         href={CONSOLE_URL}

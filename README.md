@@ -233,15 +233,13 @@ The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.d
 │  Monthly allowance                           │
 │  mimo-v2.6-flash              Go $60 · Plus $120│
 ├──────────────────────────────────────────────┤
-│  Upgrade plan                                │
-├──────────────────────────────────────────────┤
 │  Session Spend                               │
 │  deepseek-v4.1-flash · $0.15 / $0.6 per 1M   │
 │                                        $0.42 │
 │  Available Zen Balance                       │
 │  Ready for overflow                   Ready  │
 ├──────────────────────────────────────────────┤
-│  ⟳ Updated 08:30                    Console › │
+│  ⟳ Updated 08:30             Upgrade  Console › │
 └──────────────────────────────────────────────┘
 ```
 
