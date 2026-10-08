@@ -19,6 +19,8 @@ import { SettingsBooleanField } from "./settings-boolean-field.tsx";
 import { SettingsChoiceField } from "./settings-choice-field.tsx";
 import type { Translate } from "./settings-copy.ts";
 import { CARD_FIELDS, type CardFieldSpec } from "./settings-fields.ts";
+import { UsageSummary } from "./settings-usage.tsx";
+import type { GoUsage } from "./usage-contract.ts";
 
 interface CardField {
   invalid: boolean;
@@ -57,6 +59,10 @@ const GroupHeading: React.FC<{ first: boolean; label: string }> = (props) => (
 
 export interface CardProps {
   discard: () => void;
+  /** The active UI language, read at render so a switch moves this section too. */
+  getLocale?: () => string | undefined;
+  /** The Host's quota read; absent when the usage service is not registered. */
+  readUsage?: () => Promise<GoUsage | undefined>;
   edit: (field: string, text: string) => void;
   resetField: (field: string) => void;
   save: () => void;
@@ -152,30 +158,52 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
   };
 
   return (
-    <SettingsForm
-      labels={formLabels(t)}
-      onDiscard={props.discard}
-      onSave={props.save}
-      state={state.shell}
-    >
-      {CARD_FIELDS.flatMap((entry, index) => {
-        const control = controlFor(entry);
-        // The register keeps each group's entries contiguous, so a heading is
-        // inserted exactly where the group changes — no second list of sections
-        // to drift out of step with the fields.
-        const startsGroup =
-          index === 0 || CARD_FIELDS[index - 1]?.group !== entry.group;
-        return startsGroup
-          ? [
-              <GroupHeading
-                first={index === 0}
-                key={`group-${entry.group}`}
-                label={t(entry.group)}
-              />,
-              control,
-            ]
-          : [control];
-      })}
-    </SettingsForm>
+    <>
+      {/*
+        The quota readout sits ABOVE the form and is deliberately NOT a floating
+        card: this is a settings page, so it borrows the page's own row language
+        (flat, hairline separator) rather than the composer popover's material.
+      */}
+      {props.readUsage !== undefined && (
+        <div
+          style={{
+            borderBottom: "0.5px solid var(--dsw-alias-border-l2)",
+            marginBottom: 12,
+            paddingBottom: 12,
+          }}
+        >
+          <UsageSummary
+            getLocale={props.getLocale}
+            readUsage={props.readUsage}
+            t={t}
+          />
+        </div>
+      )}
+      <SettingsForm
+        labels={formLabels(t)}
+        onDiscard={props.discard}
+        onSave={props.save}
+        state={state.shell}
+      >
+        {CARD_FIELDS.flatMap((entry, index) => {
+          const control = controlFor(entry);
+          // The register keeps each group's entries contiguous, so a heading is
+          // inserted exactly where the group changes — no second list of sections
+          // to drift out of step with the fields.
+          const startsGroup =
+            index === 0 || CARD_FIELDS[index - 1]?.group !== entry.group;
+          return startsGroup
+            ? [
+                <GroupHeading
+                  first={index === 0}
+                  key={`group-${entry.group}`}
+                  label={t(entry.group)}
+                />,
+                control,
+              ]
+            : [control];
+        })}
+      </SettingsForm>
+    </>
   );
 };

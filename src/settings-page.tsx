@@ -24,6 +24,7 @@ import { isRecord } from "./guards.ts";
 import { OpencodeCard } from "./settings-card.tsx";
 import { en, zh } from "./settings-copy.ts";
 import { SPECS } from "./settings-fields.ts";
+import { readGoUsage } from "./settings-usage.tsx";
 import { usageRemote } from "./usage-contract.ts";
 import { UsagePill } from "./usage-pill.tsx";
 
@@ -454,7 +455,11 @@ export const apply = (ctx: ClientContext): void => {
           ctx.slots?.register?.(
             {
               inject: () => ({
+                // The card reads the same Host service the meter does — one
+                // owner for credential resolution and the endpoint.
+                getLocale: () => ctx.locale?.getLocale?.()?.active,
                 hooks: { opencodeCard: store },
+                readUsage: () => readGoUsage(ctx),
                 ...model.actions(),
               }),
               key: alias.key,
