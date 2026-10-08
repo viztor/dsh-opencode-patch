@@ -216,7 +216,6 @@ export interface UsagePanelProps {
   updatedAt: number | null;
   usage: GoUsage | undefined;
   zenCardCredit: string;
-  zenCardDesc: string;
 }
 
 export const UsagePanel = ({
@@ -235,7 +234,6 @@ export const UsagePanel = ({
   updatedAt,
   usage,
   zenCardCredit,
-  zenCardDesc,
 }: UsagePanelProps): React.ReactElement => (
   <div
     aria-busy={refreshing}
@@ -371,7 +369,7 @@ export const UsagePanel = ({
               {/* WHICH model — the allowance is per model, so the figure is
                 meaningless without it. */}
               <span className="dsh-oc-usage-detail-desc">
-                {usage.allowance.model}
+                {usage.session?.activeModelName ?? usage.allowance.model}
               </span>
             </div>
             <span className="dsh-oc-usage-detail-value">
@@ -415,7 +413,6 @@ export const UsagePanel = ({
               </span>
             </Tooltip>
           </span>
-          <span className="dsh-oc-usage-detail-desc">{zenCardDesc}</span>
         </div>
         <span className="dsh-oc-usage-detail-value">{zenCardCredit}</span>
       </div>

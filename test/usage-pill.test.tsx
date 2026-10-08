@@ -462,7 +462,6 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // was a second statement of the same fact. `Limited` still appears when the
     // plan actually is — that is the case the chip earns its place in.
     expect(copy.badgeText).toBe("");
-    expect(copy.zenCardDesc).toBe("t:zenOverflowActive");
   });
 
   it("renders a free model's ring hollow instead of red", () => {
@@ -523,7 +522,6 @@ describe("usage-pill: derived copy & failure parsing", () => {
     const copy = describeUsage(usage, getAffectingWindow(usage), false, t);
     expect(copy.headline).toBe("Monthly quota limited");
     expect(copy.badgeText).toBe("t:usageLimited");
-    expect(copy.zenCardDesc).toBe("t:zenFallbackNotice");
   });
 
   it("switches the copy to pay-as-you-go on a Zen route", () => {
