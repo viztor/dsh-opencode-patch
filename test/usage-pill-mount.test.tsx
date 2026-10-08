@@ -417,6 +417,25 @@ describe("usage-pill: hover, click and dismissal", () => {
     expect(element('[role="tooltip"]').textContent).toContain("quota limited");
   });
 
+  it("explains the Zen spend instead of repeating the account name", async () => {
+    // The screenshot this pins: hovering the Zen pill produced a tooltip that
+    // said only "OpenCode Zen" — the account name, which is the panel header one
+    // click away. The Zen trigger has no ring, so it never had a figure to
+    // explain; it has a spend, and the question that raises is "is this
+    // metered?".
+    const readUsage = vi.fn().mockResolvedValue(USAGE);
+    await renderPill(readUsage, "opencode");
+
+    await act(async () => {
+      fireEvent.mouseEnter(element(".dsh-oc-usage-trigger"));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    const tip = element('[role="tooltip"]').textContent ?? "";
+    expect(tip).toBe("zenPaygTooltip");
+    expect(tip).not.toContain("zenPaygTitle");
+  });
+
   it("stays open while the pointer crosses onto the panel, and closes after it leaves", async () => {
     const readUsage = vi.fn().mockResolvedValue(USAGE);
     await renderPill(readUsage);
