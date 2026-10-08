@@ -34,7 +34,7 @@ import {
   type ModelDirectoryState,
   type SnapshotStore,
 } from "../src/usage-pill.tsx";
-import { STYLES } from "../src/usage-ui.ts";
+import { CIRCUMFERENCE, STYLES } from "../src/usage-ui.ts";
 
 /** A quota reading with one window in each of the states the panel distinguishes. */
 const USAGE: GoUsage = {
@@ -242,6 +242,28 @@ describe("usage-pill: the poll loop", () => {
     ];
     expect(route).toBe("opencode");
     expect(model ?? "none").toBe("none");
+  });
+
+  it("renders no GO window on a Zen route: no percent, no fill, no alert", async () => {
+    // The owner's screenshot: on the Zen route the trigger read `28%` — the GO
+    // plan's weekly window — beside a per-token bill, with the ring filled from
+    // that same window. Every one of those is a fact about a plan the Zen route
+    // never bills against. With no session record yet the honest label is
+    // empty, and the ring is hollow because there is nothing here to run out of.
+    //
+    // The fixture is the exact case: its affecting window is rate-limited at
+    // 90%, which is a GO state, and it carries no `session`.
+    const readUsage = vi.fn().mockResolvedValue(USAGE);
+    await renderPill(readUsage, "opencode");
+
+    const button = document.querySelector(".dsh-oc-usage-trigger");
+    expect(button).not.toBeNull();
+    expect(button?.textContent ?? "").not.toContain("%");
+    // A limited GO plan does not make the ZEN route an alert.
+    expect(button?.className).toBe("dsh-oc-usage-trigger");
+
+    const fill = document.querySelector(".dsh-oc-usage-ring-fill");
+    expect(fill?.getAttribute("stroke-dasharray")).toBe(`0 ${CIRCUMFERENCE}`);
   });
 
   it("does not poll while the document is hidden, and catches up when it returns", async () => {

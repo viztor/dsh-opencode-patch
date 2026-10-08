@@ -95,7 +95,7 @@ export const UsageTrigger = ({
           ? `${t("zenPaygTitle")} (${t("zenPaygBadge")})`
           : `${t("usageTitle")}: ${displayPercent}%`
       }
-      className={`dsh-oc-usage-trigger${isLimited ? " dsh-oc-usage-alert" : ""}`}
+      className={`dsh-oc-usage-trigger${isLimited && !isZen ? " dsh-oc-usage-alert" : ""}`}
       onClick={onClick}
       type="button"
     >
