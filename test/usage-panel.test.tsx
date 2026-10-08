@@ -470,7 +470,7 @@ describe("UsagePanel", () => {
     // against the session spend with nothing between them. Label, reset and
     // percent now share one line; the bar is the only thing under it.
     const tree = UsagePanel(panelProps({ usage: usage() }));
-    const row = byClass(tree, "dsh-oc-usage-row")[0];
+    const [row] = byClass(tree, "dsh-oc-usage-row");
     const labels = findAll(row, "span").map((node) => node.props.className);
     expect(labels).toContain("dsh-oc-usage-row-left");
     expect(labels).toContain("dsh-oc-usage-row-reset");
