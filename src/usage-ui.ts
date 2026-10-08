@@ -272,12 +272,14 @@ export const STYLES = `
   flex-direction: column;
   gap: 10px;
   margin-top: 6px;
+  /* The windows are quota; the rows below are money. Without this the last
+     reset sat flush against the session spend and the two read as one list. */
+  margin-bottom: 14px;
 }
 
 .dsh-oc-usage-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 10px;
 }
 
@@ -285,8 +287,17 @@ export const STYLES = `
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+/* Tertiary, and never competing with the percent for the right edge. */
+.dsh-oc-usage-row-reset {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, currentColor);
 }
 
 .dsh-oc-usage-dot {
@@ -297,6 +308,7 @@ export const STYLES = `
 }
 
 .dsh-oc-usage-row-right {
+  flex: none;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   font-size: 12px;
@@ -320,20 +332,11 @@ export const STYLES = `
   transition: width 0.3s ease;
 }
 
-.dsh-oc-usage-subrow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary, currentColor);
-  margin-top: 2px;
-  padding-left: 13px;
-}
-
 /* Styling lives in the sheet, not inline: an ad-hoc style prop here would be
    the only one surviving in the panel, and a second limited-state tone tomorrow
    would either duplicate it or diverge from it. */
 .dsh-oc-usage-limited {
+  margin-left: 6px;
   color: var(--dsw-alias-state-error-primary);
   font-weight: 600;
 }
