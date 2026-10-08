@@ -71,19 +71,21 @@ interface MutableSessionUsage {
 
 const sessionStore = new Map<string, MutableSessionUsage>();
 
-/** Format a USD dollar amount with appropriate decimal precision. */
-export const formatUsd = (usd: number): string => {
-  if (usd === 0) {
-    return "$0.00";
-  }
-  if (usd < 0.001) {
-    return `$${usd.toFixed(4)}`;
-  }
-  if (usd < 0.01) {
-    return `$${usd.toFixed(3)}`;
-  }
-  return `$${usd.toFixed(2)}`;
-};
+/**
+ * Format a USD dollar amount, always two decimals.
+ *
+ * The precision used to tier by magnitude — three decimals below a cent, four
+ * below a tenth of one — and the owner read `$0.006` on the trigger and called
+ * it too much precision in the wrong place. A meter is a gauge, not an
+ * invoice: `$0.01` of a real spend is an honest rounding of six tenths of a
+ * cent, the same rounding every wallet UI makes. Precision tiers reintroduce
+ * the exact thing the panel keeps paying to remove — a number whose LENGTH
+ * changes with its value, so the row shifts on every turn. (The allowance
+ * table's `formatUsd` in go-limits.ts keeps its own contract: whole dollars
+ * drop the cents, because a published $60 total is not the same kind of
+ * figure as a metered spend.)
+ */
+export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
 
 /** Format model rate per 1M tokens. */
 export const formatModelRate = (
