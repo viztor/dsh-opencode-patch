@@ -353,6 +353,12 @@ It now shows a window only when that window is **OUT** — rate-limited, or at i
 
 Both are the same failure the file records for copy ("a field that repeats a number already on screen is not a second fact"), in layout: **measure what the eye compares, not the box the value came from.**
 
+### Deleting "the line with X in it" deleted the whole statement (2026-10-09)
+
+Removing a dead copy field, the edit was "drop every line containing `zenCardDesc`". In `usage-ui.ts` the function's return was **one line** — `return { badgeText, headline, title, tooltip, zenCardCredit, zenCardDesc };` — so the whole return went with it, and three fields (`headline`, `title`, `tooltip`) became undeclared. The suite reported it the honest way: **568 tests became 439**, because the module no longer parsed. A second pass also cut the head off a multi-line ternary and left `? t("zenOverflowActive");` floating.
+
+**A count that DROPS is not a pass.** 439 green tests looked like a green run; it was 129 tests that never loaded. This is the same family as the CSS rule deleted by index arithmetic — the lesson generalises past CSS: **delete a field by its own declaration and its own use sites, never by "lines that mention it"**, because a line can be a whole statement shared with four other names.
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:
