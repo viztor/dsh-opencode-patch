@@ -551,6 +551,28 @@ describe("UsagePanel", () => {
     ).toHaveLength(0);
   });
 
+  it("uses the host's PANEL radius and elevation, not a control's", () => {
+    // Read from the host, not guessed: --dsw-radius-panel is 28px and is what
+    // the harness's own floating panels in this dock use; --dsw-radius-lg is
+    // 16px and is a CONTROL radius. --dsw-elevation-prominent is a louder
+    // surface than a popover wants; --dsw-elevation-panel is the panel one.
+    // Comments are stripped first — a rule that merely names the token is not a
+    // rule that sets it.
+    const rule = /\.dsh-oc-usage-panel \{[^}]*\}/.exec(
+      STYLES.replaceAll(/\/\*[\s\S]*?\*\//g, "")
+    )?.[0];
+    expect(rule).toContain("var(--dsw-radius-panel, 28px)");
+    expect(rule).toContain("var(--dsw-elevation-panel");
+    expect(rule).not.toContain("--dsw-radius-lg");
+    expect(rule).not.toContain("--dsw-elevation-prominent");
+
+    // The border was already the host's value and must stay it: the theme puts
+    // --dsw-alias-border-l3 (#0000001f / #ffffff29) on [data-menu-material].
+    expect(rule).toContain(
+      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
+    );
+  });
+
   it("draws NO window rows when Go's quota could not be read", () => {
     // The screenshot this pins: three confident "0%" rows all counting down from
     // "<1m". Those figures were never measured — the Host fills them to satisfy
