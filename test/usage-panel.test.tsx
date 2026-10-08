@@ -311,11 +311,10 @@ describe("UsagePanel", () => {
     expect(panel).not.toContain("--dsw-specific-menu");
     expect(panel).not.toContain("--dsw-alias-bg-layer-2");
     expect(panel).not.toMatch(/background-color:\s*Canvas/);
-    // The stroke level is the SURFACE scale, not the control one: l1 is a
-    // floating dropdown, l2 a floating panel, l3/l4 are controls (switch track,
-    // outline button, input). l2 is what the harness's own floating panel uses.
+    // Menu material, so a menu's stroke: the theme puts border-l3 on
+    // [data-menu-material], which the host's Menu opts into.
     expect(panel).toContain(
-      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l2)"
+      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
     );
   });
 
@@ -563,21 +562,20 @@ describe("UsagePanel", () => {
     const rule = /\.dsh-oc-usage-panel \{[^}]*\}/.exec(
       STYLES.replaceAll(/\/\*[\s\S]*?\*\//g, "")
     )?.[0];
-    expect(rule).toContain("var(--dsw-radius-panel, 28px)");
-    expect(rule).not.toContain("--dsw-radius-lg");
+    // The reference is MenuSurface.module.css — THIS panel is menu material
+    // (--dsw-menu-surface-fill + --dsw-menu-backdrop-filter), so it takes a
+    // popover's radius and a [data-menu-material] popover's stroke.
+    expect(rule).toContain("var(--dsw-radius-lg, 16px)");
+    expect(rule).not.toContain("--dsw-radius-panel");
 
-    // Read off the harness's own floating panel (_float_6nhg2_156), which is
-    // this same kind of thing in this same dock.
     expect(rule).toContain("var(--dsw-elevation-prominent");
     expect(rule).not.toContain("--dsw-elevation-panel");
 
-    // l3/l4 are the CONTROL scale — switch track, outline button, input, table
-    // divider. The chat box is on l3 because it is a control; surfaces are l1
-    // (dropdown) and l2 (panel). l2 is what the dockkit float uses.
     expect(rule).toContain(
-      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l2)"
+      "--dsw-elevation-stroke-color: var(--dsw-alias-border-l3)"
     );
-    expect(rule).not.toMatch(/alias-border-l[134]/);
+    // l2/l4 are the dockkit float's and the control scale's, respectively.
+    expect(rule).not.toMatch(/alias-border-l[124]/);
   });
 
   it("draws NO window rows when Go's quota could not be read", () => {
