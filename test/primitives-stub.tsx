@@ -265,6 +265,19 @@ export interface IconProps {
   size?: number;
 }
 
+export function IconInfoOutlineRegular({ className, size = 16 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      data-stub-icon="info"
+      height={size}
+      viewBox="0 0 16 16"
+      width={size}
+    />
+  );
+}
+
 export function IconRefreshOutlineRegular({ className, size = 16 }: IconProps) {
   return (
     <svg

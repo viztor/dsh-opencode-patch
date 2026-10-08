@@ -264,6 +264,7 @@ describe("settings-page: apply & slots", () => {
       directory: unknown;
       meterProviders: string[];
       readUsage: () => Promise<unknown>;
+      getLocale: () => string | undefined;
       t: (k: string) => string;
     };
     expect(injected).toBeDefined();
@@ -295,6 +296,17 @@ describe("settings-page: apply & slots", () => {
     expect(injected.t("usageTitle")).toBe("OpenCode Go usage");
     localeState.active = "zh";
     expect(injected.t("usageTitle")).toBe("OpenCode Go 用量");
+
+    // The same switch must move the `Intl` locale, and that is a SEPARATE prop:
+    // `t` selects the words, `getLocale` feeds every date and duration. Wiring
+    // only `t` left the numbers in the browser's own locale, so a Chinese panel
+    // read `4h 59m后重置` and `Nov 7 at 8:55 AM重置` — one row, two languages,
+    // with the English half coming from the machine rather than the harness.
+    expect(injected.getLocale()).toBe("zh");
+    localeState.active = "en";
+    expect(injected.getLocale()).toBe("en");
+    localeState.active = "zh";
+    expect(injected.getLocale()).toBe("zh");
   });
 
   it("boots with no services at all, and tears down cleanly", () => {

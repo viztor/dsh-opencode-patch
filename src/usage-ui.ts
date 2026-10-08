@@ -510,6 +510,17 @@ export const STYLES = `
   color: var(--dsw-alias-label-tertiary, currentColor);
 }
 
+/* The info affordance that carries the billing rule: a control, not
+   decoration, so it takes the host's label token and says it is hoverable. */
+.dsh-oc-usage-info {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: var(--dsw-alias-label-tertiary, currentColor);
+  cursor: help;
+  vertical-align: middle;
+}
+
 /* Same metrics as a breakdown row's value, so the rows line up as one list. */
 .dsh-oc-usage-detail-value {
   font-size: 12px;

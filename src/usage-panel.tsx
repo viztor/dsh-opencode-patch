@@ -7,6 +7,7 @@
  */
 
 import {
+  IconInfoOutlineRegular,
   IconRefreshOutlineRegular,
   StateDot,
   Tag,
@@ -352,23 +353,22 @@ export const UsagePanel = ({
     {!isZen && usage?.zenOverflow === true && (
       <div className="dsh-oc-usage-detail">
         <div className="dsh-oc-usage-detail-left">
-          <span className="dsh-oc-usage-detail-title">{t("zenCredit")}</span>
+          <span className="dsh-oc-usage-detail-title">
+            {t("zenCredit")}
+            {/* The billing rule is a paragraph about a mechanism, so it lives
+                behind this affordance instead of in the panel: the panel is a
+                gauge, and four lines of prose made the note the loudest thing
+                on it. Hovering explains; the row stays one line. */}
+            <Tooltip label={t("usageOverflowBilling")} side="top">
+              <span className="dsh-oc-usage-info" tabIndex={0}>
+                <IconInfoOutlineRegular size={14} />
+              </span>
+            </Tooltip>
+          </span>
           <span className="dsh-oc-usage-detail-desc">{zenCardDesc}</span>
         </div>
         <span className="dsh-oc-usage-detail-value">{zenCardCredit}</span>
       </div>
-    )}
-
-    {/*
-      The billing note travels WITH the credit card, because the question it
-      answers is the card's own: "this $ went where?" The gateway decides
-      overflow per request and OpenCode publishes no within-allowance vs overage
-      split, so there are no dollar figures to give — only the rule. This is the
-      owner's call, after declining an estimated split: a note states the
-      mechanism; an estimate would have dressed a guess as a measurement.
-    */}
-    {!isZen && usage?.zenOverflow === true && (
-      <div className="dsh-oc-usage-zen-notice">{t("usageOverflowBilling")}</div>
     )}
 
     {isLimited && !isZen && usage?.zenOverflow !== true ? (
