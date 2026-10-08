@@ -248,13 +248,24 @@ What made it visible was the localization work beside it: the panel's `locale` i
 
 ### One session, two balances: the accumulator had to learn the plane (2026-10-08)
 
-The Zen panel read `当前会话消耗 $1.44` against `MiMo-V2.6-Flash Free · 免费`. The owner's instruction — *"we need to differ credit spent with zen and go respectively"* — named it: the session accumulator folds **every turn of the session into one number**, and a turn did not know which billing plane served it. A session that ran Go `mimo-v2.6-pro` (paid, Go allowance) and then Zen `mimo-v2.6-flash-free` (free) carried the Go money into the Zen panel, which read as Zen charging $1.44 for a model that is free.
+The Zen panel read `当前会话消耗 $1.44` against `MiMo-V2.6-Flash Free · 免费`. The owner's instruction — _"we need to differ credit spent with zen and go respectively"_ — named it: the session accumulator folds **every turn of the session into one number**, and a turn did not know which billing plane served it. A session that ran Go `mimo-v2.6-pro` (paid, Go allowance) and then Zen `mimo-v2.6-flash-free` (free) carried the Go money into the Zen panel, which read as Zen charging $1.44 for a model that is free.
 
 The stream hook already knew — `catalogPlaneForRoute(providerKey)` was in scope for the catalog lookup — it just never told the accumulator. Now it does: `recordTurnUsage` takes the plane, the accumulator keeps `costGo` / `costZen`, the wire snapshot carries `costByPlane`, and `attachSession` — which is the one place that knows which plane a READING is for — projects `planeCostFormatted` onto the snapshot. The panel reads that. The all-planes total stays on `costUsd` for anything that wants the whole story.
 
 **Where the projection lives is the design decision.** It is host-side, inside `attachSession`, not client-side from `costByPlane` — because the client must accept a snapshot that predates the split (the field is optional on the wire, parsed to zeros) and must not be the one deciding which balance a panel answers for. The panel test therefore arrives at two fixtures already projected, the same way the wire delivers them, and asserts each panel shows only its own number.
 
 **The split is by the plane that SERVED the turn, not by the model's home.** `findModelSpec` prefers the Go catalog for pricing — fine, the two planes agree on rates for shared ids — but the attribution question is "which balance paid", and that is the route the turn ran on.
+
+### When the owner says "don't estimate", the honest widget is a NOTE (2026-10-08)
+
+Asked how the Go panel could show "allowance spend + overage spend", the first answer sketched a split — `zenOverflow` first true as the boundary — and the owner caught the flaw in one line: *"if overflow is enabled, the session will just continue to run, isn't it?"* They were right, twice over:
+
+- **Overflow is not a session state.** The gateway decides it **per request** — at 100% the gateway returns `GoUsageLimitError` (402/429), and with _Use balance_ enabled it silently bills the overflow to Zen. A monthly window resets, percent falls back, and the session moves between the two regimes repeatedly. There is no "first moment of overflow" to split on.
+- **And the flag was misread.** On the SUCCESS path `zenOverflow: zenInfo.isConfigured` — it means "a Zen balance is configured", not "overflowing". Only the 403 branch's `zenOverflowUsage` means exhausted. Splitting on it would have billed the whole session as overage for anyone with a Zen key.
+
+The owner's direction: **不要写估算。就这样吧,写一个小的信息框** — no estimates; a small note in the popover. The note travels with the Zen-credit card (overflow active only) and states the MECHANISM, not numbers: session spend is split by where each turn ran; when the Go plan overflows the gateway bills the overflow to Zen; OpenCode publishes no within-allowance vs overage split. Replacing, not joining, the config notice — the slot's question changes from "how do I enable the fallback" to "where is the money going", and two callouts of the same class would be the nested-box mistake again.
+
+The rule this closes: **a number that cannot be honest is not rendered, and the mechanism that explains the absence is.** An estimate wearing a precise outfit is worse than the note — it reads as a measurement, and the reader makes decisions on it.
 
 ### The audit closed out (2026-10-08, same day)
 

@@ -86,6 +86,14 @@ export const en = {
   usageUpgradePlan: "Upgrade plan",
   usageZenFallbackNotice:
     "When Go plan limits are reached, requests automatically fall back to Zen balance only if 'Use balance' is enabled on this Go subscription's account in the OpenCode Console. Separate Zen accounts cannot be debited for Go plan overflow.",
+  /**
+   * The billing-semantics note under the Zen-credit card. Deliberately makes no
+   * dollar claims: the gateway decides overflow per request and publishes no
+   * within-allowance vs overage split, so every figure this meter could print
+   * would be an estimate wearing a precise outfit.
+   */
+  usageOverflowBilling:
+    "Session spend is split by where each turn ran: Go plan requests bill to the Go allowance, Zen requests to the Zen balance. When the Go plan overflows, the gateway bills the overflow to Zen — OpenCode publishes no within-allowance vs overage split.",
   usage_monthly: "Monthly",
   usage_rolling: "5 hours",
   usage_weekly: "Weekly",
@@ -164,6 +172,8 @@ export const zh: Record<keyof typeof en, string> = {
   usageUpgradePlan: "升级套餐",
   usageZenFallbackNotice:
     "当 Go 套餐额度用尽时，仅在当前 Go 订阅账号的控制台中开启了「使用余额 (Use balance)」时才会自动回退；独立账号的 Zen 余额无法跨账号自动承接。",
+  usageOverflowBilling:
+    "本会话消耗按轮次归属：Go 套餐请求计入 Go 额度，Zen 请求计入 Zen 余额。Go 套餐溢出时由网关把溢出部分计入 Zen 余额——OpenCode 不提供「额度内 / 溢出」的拆分数据。",
   usage_monthly: "每月",
   usage_rolling: "5 小时",
   usage_weekly: "每周",

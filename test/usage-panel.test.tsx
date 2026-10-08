@@ -787,20 +787,37 @@ describe("UsagePanel", () => {
   });
 
   it("warns about Zen fallback only when limited without overflow", () => {
+    // Limited WITHOUT overflow: the config notice is the one message.
     expect(
-      byClass(
-        UsagePanel(panelProps({ isLimited: true, usage: usage() })),
-        "dsh-oc-usage-zen-notice"
-      )
-    ).toHaveLength(1);
+      collectText(UsagePanel(panelProps({ isLimited: true, usage: usage() })))
+    ).toContain("t:usageZenFallbackNotice");
     expect(
-      byClass(
+      collectText(UsagePanel(panelProps({ isLimited: true, usage: usage() })))
+    ).not.toContain("t:usageOverflowBilling");
+
+    // With overflow, the BILLING note replaces it: the notice slot's question
+    // changes from "how do I enable the fallback" to "where is the money going".
+    expect(
+      collectText(
         UsagePanel(
           panelProps({ isLimited: true, usage: usage({ zenOverflow: true }) })
-        ),
-        "dsh-oc-usage-zen-notice"
+        )
       )
-    ).toHaveLength(0);
+    ).toContain("t:usageOverflowBilling");
+    expect(
+      collectText(
+        UsagePanel(
+          panelProps({ isLimited: true, usage: usage({ zenOverflow: true }) })
+        )
+      )
+    ).not.toContain("t:usageZenFallbackNotice");
+
+    // And a plain overflow reading (not limited) still carries the note.
+    expect(
+      collectText(
+        UsagePanel(panelProps({ usage: usage({ zenOverflow: true }) }))
+      )
+    ).toContain("t:usageOverflowBilling");
   });
 
   it("keeps the trigger's corner language equal to the composer control's", () => {

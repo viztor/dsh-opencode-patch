@@ -359,6 +359,18 @@ export const UsagePanel = ({
       </div>
     )}
 
+    {/*
+      The billing note travels WITH the credit card, because the question it
+      answers is the card's own: "this $ went where?" The gateway decides
+      overflow per request and OpenCode publishes no within-allowance vs overage
+      split, so there are no dollar figures to give — only the rule. This is the
+      owner's call, after declining an estimated split: a note states the
+      mechanism; an estimate would have dressed a guess as a measurement.
+    */}
+    {!isZen && usage?.zenOverflow === true && (
+      <div className="dsh-oc-usage-zen-notice">{t("usageOverflowBilling")}</div>
+    )}
+
     {isLimited && !isZen && usage?.zenOverflow !== true ? (
       <div className="dsh-oc-usage-zen-notice">
         {t("usageZenFallbackNotice")}
