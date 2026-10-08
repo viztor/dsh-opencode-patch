@@ -338,6 +338,21 @@ The row is now **always drawn**, with an explicit empty state (`本会话暂无�
 
 **The tripwire moved 85 → 88 KiB.** At 85 the bundle sat **526 bytes** under the line, so the next honest edit would have tripped a guard whose only job is to notice a dependency being bundled. The margin is what matters, not the number.
 
+### The ring answered for the wrong window (2026-10-09)
+
+`getAffectingWindow` picked the HIGHEST percentage, so with 5-hour 11%, weekly 33%, monthly 16% the meter answered for the **weekly** window. The owner: _"why does it default to showing the weekly limit? It should show the 5-hour limit unless the weekly or monthly limit is full."_
+
+It now shows a window only when that window is **OUT** — rate-limited, or at its cap — widest first (monthly, then weekly, then rolling), and otherwise the **5-hour** window, which resets soonest and so is the one the reader can still act on. **The bottleneck is not the largest number; it is the smallest window that can still refuse you.** The hover lists all three, because the trigger can print only one of them.
+
+**On the built-in the owner asked about:** the host `Tooltip`'s `label` is TEXT — its type is not a node — so a row-per-window card cannot ride it. The kit's **`HoverCard`** (`anchor` + `content`, `openDelayMs`) is the control for that shape. Read the prop TYPE, not the runtime: `Tooltip` resolves `typeof label === "function" ? label() : label`, which renders a node perfectly well and still refuses one at compile time.
+
+**And two CSS values chosen from the element's BOX rather than its PAINT**, same panel, same day:
+
+- `.dsh-oc-usage-bar` carried `margin-left: 13px`, indenting it to align with the label PAST the state dot. That cost the ruler the width it exists to use, and left the dot outside the row's own visual bounds, like a list marker.
+- The kit's `StateDot` keeps a **10px slot** while painting a **6px core** (`inset: 20%`), so a 7px gap read as ~9px beside a 6px circle — the dot looked detached from its label rather than sitting with it.
+
+Both are the same failure the file records for copy ("a field that repeats a number already on screen is not a second fact"), in layout: **measure what the eye compares, not the box the value came from.**
+
 ### The audit closed out (2026-10-08, same day)
 
 Every row of the table above has now been resolved — and one verdict FLIPPED:

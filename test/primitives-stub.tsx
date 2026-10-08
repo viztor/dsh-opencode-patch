@@ -312,6 +312,7 @@ export function SegmentedControl(props: KitProps) {
  * coordinate.
  */
 export interface TooltipProps {
+  portal?: boolean;
   children?: ReactNode;
   delayMs?: number;
   disabled?: boolean;
