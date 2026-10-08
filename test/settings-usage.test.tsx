@@ -18,6 +18,7 @@ import {
   UsageSummaryView,
 } from "../src/settings-usage.tsx";
 import type { GoUsage } from "../src/usage-contract.ts";
+import { findAllOf } from "./test-helpers.ts";
 
 const t = (key: string): string => zh[key as keyof typeof zh] ?? key;
 
@@ -87,20 +88,24 @@ describe("settings: Go usage summary", () => {
   });
 
   it("states the monthly allowance as a total, for both tiers", () => {
-    const body = text(
-      UsageSummaryView({
-        locale: "zh",
-        t,
-        usage: usage({
-          allowance: { go: 60, goPlus: 120, model: "mimo-v2.6-pro" },
-        }),
-      })
-    );
+    const view = UsageSummaryView({
+      locale: "zh",
+      t,
+      usage: usage({
+        allowance: { go: 60, goPlus: 120, model: "mimo-v2.6-pro" },
+      }),
+    });
+    const body = text(view);
     expect(body).toContain("mimo-v2.6-pro");
     expect(body).toContain("$60");
     expect(body).toContain("$120");
-    // And the honest note travels with it.
-    expect(body).toContain(t("usageSummaryNote"));
+    // And the honest note travels with it — as a TOOLTIP label, not as a
+    // paragraph: an explanation hides behind a hover, an instruction does not.
+    expect(body).not.toContain(t("usageSummaryNote"));
+    const labels = findAllOf(view, new Set(["Tooltip"])).map(
+      (node) => node.props.label
+    );
+    expect(labels).toContain(t("usageSummaryNote"));
   });
 });
 
