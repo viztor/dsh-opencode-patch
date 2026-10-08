@@ -8,6 +8,7 @@
 
 import {
   IconRefreshOutlineRegular,
+  StateDot,
   Tag,
   Tooltip,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -19,7 +20,8 @@ import {
   BREAKDOWN_WINDOWS,
   CONSOLE_URL,
   formatRelativeReset,
-  getWindowColor,
+  getWindowState,
+  WINDOW_STATE_COLOR,
   panelActions,
   RADIUS,
   type UsageFailure,
@@ -53,7 +55,7 @@ export interface UsageTriggerProps {
   isZen: boolean;
   onClick: () => void;
   open: boolean;
-  /** Stroke colour for the ring, from `getWindowColor`. */
+  /** Stroke colour for the ring, from `getWindowColorFor`. */
   ringColor: string;
   showUsagePrice: boolean;
   /** Pre-computed ring dash array from `ringGeometry()`. */
@@ -205,10 +207,15 @@ export const UsagePanel = ({
                   <div className="dsh-oc-usage-window">
                     <div className="dsh-oc-usage-row">
                       <span className="dsh-oc-usage-row-left">
-                        <span
-                          className="dsh-oc-usage-dot"
-                          style={{ backgroundColor: getWindowColor(window) }}
-                        />
+                        {/*
+                          The kit's dot, driven by the state the window IS —
+                          done / warning / error — not by a colour string this
+                          file used to inline. Its CSS maps the same three
+                          states to the same `--dsw-alias-state-*` tokens the
+                          hand-rolled 6px circle carried, so the look is
+                          unchanged and the theme owns it again.
+                        */}
+                        <StateDot state={getWindowState(window)} />
                         {t(entry.labelKey)}
                       </span>
                       {/*
@@ -245,7 +252,8 @@ export const UsagePanel = ({
                         className="dsh-oc-usage-bar-fill"
                         style={{
                           width: `${Math.min(100, Math.max(0, window.percent))}%`,
-                          backgroundColor: getWindowColor(window),
+                          backgroundColor:
+                            WINDOW_STATE_COLOR[getWindowState(window)],
                         }}
                       />
                     </div>

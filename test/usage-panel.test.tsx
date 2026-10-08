@@ -208,6 +208,48 @@ describe("UsageTrigger", () => {
 });
 
 describe("UsagePanel", () => {
+  it("draws each window's state through the kit's StateDot", () => {
+    // The dot was a hand-rolled 6px circle with an inline backgroundColor per
+    // state — one more look-alike of a primitive this repo already ships, with
+    // the state ladder written twice (dot and bar). The rows now render the
+    // kit's dot from the SEMANTIC (done/warning/error), and its stylesheet maps
+    // those to the same `--dsw-alias-state-*` tokens; the bar keeps reading the
+    // colour off the one shared map. Pinned on data-state, because that is the
+    // fact the row asserts — the colour is the kit's business.
+    const limited = usage({
+      rolling: {
+        percent: 100,
+        resetsAt: "2026-11-01T00:00:00Z",
+        status: "rate-limited",
+      },
+    });
+    const trees: Array<[ReturnType<typeof UsagePanel>, string]> = [
+      [UsagePanel(panelProps({ usage: usage() })), "done"],
+      [
+        UsagePanel(
+          panelProps({
+            usage: usage({
+              rolling: { percent: 90, resetsAt: "2026-11-01T00:00:00Z" },
+            }),
+          })
+        ),
+        "warning",
+      ],
+      [UsagePanel(panelProps({ usage: limited })), "error"],
+    ];
+    // This file walks the UNMOUNTED tree, so the dot is a function element
+    // typed `StateDot` — its span exists only when mounted (the mount file
+    // covers that side). Assert the type and its `state` prop, which is the
+    // fact the row asserts; the colour is the kit's stylesheet's business.
+    for (const [tree, expected] of trees) {
+      const dots = findAllOf(tree, new Set(["StateDot"]));
+      expect(dots.length).toBe(3);
+      expect(dots.map((dot) => dot.props.state)).toContain(expected);
+    }
+    // And the hand-rolled circle is gone from both sides.
+    expect(STYLES).not.toContain("dsh-oc-usage-dot");
+  });
+
   it("renders the Go breakdown: three window rows and the links", () => {
     const tree = UsagePanel(panelProps({ usage: usage() }));
     // The header names the ACCOUNT, not its state: it used to carry the ring's
