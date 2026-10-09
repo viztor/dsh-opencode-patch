@@ -37,6 +37,12 @@ OpenCode 网关要求 DSH 默认不会发送的请求特征：每一轮都携带
 
 插件在网络层补齐所有缺失的协议要素——**且仅针对 OpenCode 路由**（`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`）。其余全部流量（DeepSeek、OpenAI、Anthropic、GitHub）原样通过。
 
+**三条主线。**
+
+1. **最小侵入。** 不做全局补丁：只拦截本插件声明的路由，其他厂商——DeepSeek、OpenAI、Anthropic、GitHub——的请求原样通过。计量器离"彻底消失"只差一个开关，而不是离"勉强忍受"隔着一个页面。
+2. **原生 DSH 插件。** 一个 `apply()`、一张绑定自己命名空间的设置卡、用 `ctx.inject` 声明服务、按宿主自己的方式填充插槽，文案随宿主语言切换。没有私有钩子，不改宿主代码。
+3. **OpenCode API 兼容。** 网关真正检查的那些特征在网络层还原——与 CLI 同形状的 `ses_…` 会话 id、官方来源头、父会话血统，以及免费层的 `read`/`bash` 工具 schema 回退。
+
 **亮点**
 
 - 🔑 确定性的 `ses_<12hex><14base62>` 会话哈希，跨轮次、子代理与分叉保持 KV 缓存亲和
@@ -354,7 +360,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
         injectProject: true # attach workspace folder (or 'global'); false omits the header
         injectCoreTools: true
         enrichModels: true # merge models.dev specs + active free models into listings
-        usageEnabled: true
+        usageEnabled: true # off = no meter and no price row
         showUsagePrice: true # session spend + active model rate in the meter
         # File-level only debug options:
         debug: false
