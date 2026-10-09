@@ -6,6 +6,19 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.15.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.15.0...v0.15.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **project:** split both separators, so a Windows cwd cannot leak a path
+
+
+### Documentation
+
+* no local path in an example, and a rule so it stays that way
+
+
 ## [0.15.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.14.0...v0.15.0) (2026-10-09)
 
 
