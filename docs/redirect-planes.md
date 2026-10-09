@@ -25,6 +25,10 @@ A **shape** is one wire protocol, named by the SDK a model declares in the catal
 | `@ai-sdk/mistral`   | `mistral-conversations` |   1 |     — |
 | `@ai-sdk/google`    | _(none exists)_         |   8 |     — |
 
+**Absence is the signal, and it is a real one.** Both planes set a provider-level `npm` of `@ai-sdk/openai-compatible` in `models.dev`, and **no model declares it explicitly** — 0 of 120 on Zen, 0 of 36 on Go. A model that speaks the completions shape simply omits `provider.npm` and inherits it. So "no SDK" does not mean "unknown"; it means _the provider default_, which is the protocol the route was itself registered with.
+
+That is why the servability check treats `undefined` as servable, and why `@ai-sdk/openai-compatible` is deliberately **not** in `PROTOCOL_FOR_SDK`: listing it would record the default as though it were an override. The coverage guard still covers the case where a model declares it explicitly — none do today, and if one did, the test would fail and name it rather than dropping the model.
+
 **The two bold cells are the current gap.** The Go plane serves 13 models on shapes other than completions, and the plugin registers no Go-plane route for any of them.
 
 ## 3. Routes
