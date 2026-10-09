@@ -166,13 +166,14 @@ export {
   ANTHROPIC_ROUTE,
   ANTHROPIC_SDK,
   INTERNAL_ROUTES,
-  internalRouteFor,
-  isInternalRoute,
-  isServableSdk,
   PROTOCOL_FOR_SDK,
   RESPONSES_ROUTE,
   RESPONSES_SDK,
   ROUTE_FOR_PROTOCOL,
+  UNSERVED_SDKS,
+  internalRouteFor,
+  isInternalRoute,
+  isServableSdk,
 } from "./responses-routes.ts";
 export {
   inheritedCredentialRef,

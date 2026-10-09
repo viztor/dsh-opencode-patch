@@ -51,6 +51,26 @@ export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
   [ANTHROPIC_SDK]: "anthropic-messages",
 };
 
+/**
+ * SDKs whose dialect no `llm-pi-ai` protocol implements, so their models are
+ * deliberately not offered.
+ *
+ * Every entry here is a DECISION, not an omission — and the distinction is the
+ * point. A model naming an SDK that is in neither this set nor
+ * `PROTOCOL_FOR_SDK` is a GAP: the catalog moved and the code did not, which is
+ * how `mistral-large-4` went missing from the picker while every gate stayed
+ * green. `catalog.test.ts` fails on that case and names the SDK.
+ *
+ * - `@ai-sdk/google` — no Google protocol exists.
+ * - `@ai-sdk/mistral` — Mistral's own dialect. Its models carry a
+ *   `mistral/`-namespaced canonical id and are served by Mistral's SDK, not by
+ *   an OpenAI-compatible one; the three protocols we have do not speak it.
+ */
+export const UNSERVED_SDKS: ReadonlySet<string> = new Set([
+  "@ai-sdk/google",
+  "@ai-sdk/mistral",
+]);
+
 /** The route each non-default protocol is served from. */
 export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> = {
   "openai-responses": RESPONSES_ROUTE,

@@ -14,24 +14,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
+  PROTOCOL_FOR_SDK,
+  RETIRED_ZEN_MODEL_IDS,
+  ROUTE_FOR_PROTOCOL,
+  SESSION_HEADER,
+  UNSERVED_SDKS,
   enrichModelsResponse,
   getLiveGoCatalog,
   getLiveZenCatalog,
   isGoModelsListingUrl,
   isModelsListingUrl,
   isRetiredModel,
+  isServableSdk,
   modelsForSdk,
   parseModelsDevCatalog,
   patchFetch,
-  PROTOCOL_FOR_SDK,
   refreshCatalog,
   resolveConfig,
   resolveRoutedKey,
-  ROUTE_FOR_PROTOCOL,
   sanitizeModalities,
-  isServableSdk,
-  RETIRED_ZEN_MODEL_IDS,
-  SESSION_HEADER,
   type ActiveTurnState,
 } from "../src/index.ts";
 import { findModelSpec } from "../src/models-catalog.ts";
@@ -689,5 +690,31 @@ describe("enrichModelsResponse: a model neither source describes", () => {
     expect(typeof row?.max_output_tokens).toBe("number");
     expect(row?.context_window).toBeGreaterThan(0);
     expect(row?.max_output_tokens).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Every SDK the generated catalog names must be CLASSIFIED - either mapped to a
+ * protocol or listed as deliberately unserved. The failure this prevents is
+ * silent: models.dev gains a new SDK, the freshness gate regenerates the shim
+ * and passes, and the model disappears from the picker because the servability
+ * check treats "unknown" as "unservable".
+ */
+describe("catalog · SDK coverage", () => {
+  it("classifies every provider SDK the catalog names", () => {
+    const named = new Set<string>();
+    for (const plane of [OPENCODE_ZEN_CATALOG, OPENCODE_GO_CATALOG]) {
+      for (const model of Object.values(plane)) {
+        const sdk = (model as { provider_npm?: string }).provider_npm;
+        if (typeof sdk === "string" && sdk.length > 0) {
+          named.add(sdk);
+        }
+      }
+    }
+    const classified = new Set([
+      ...Object.keys(PROTOCOL_FOR_SDK),
+      ...UNSERVED_SDKS,
+    ]);
+    expect([...named].filter((sdk) => !classified.has(sdk))).toEqual([]);
   });
 });
