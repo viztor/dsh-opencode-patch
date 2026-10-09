@@ -48,9 +48,24 @@ const ULID_BYTES = 17;
  * `ses_<12hex><14base62>` — the right LENGTH in the wrong alphabet, since
  * base62 carries lowercase letters a ULID never contains.
  *
- * The suffix stays a pure function of the DSH session id: affinity has to
- * survive a host restart, and a real clock reading would mint a new id on every
- * boot. 26 characters is 130 bits, taken from the top of SHA-256.
+ * The suffix is a pure function of the DSH session id, and that buys exactly ONE
+ * property: **no state**. The id survives a restart because nothing stores it —
+ * not because a hash beats a clock. A timestamped id could be persisted and be
+ * just as stable; this one is stable for free.
+ *
+ * The price is real and this function currently pays it. A ULID's first ten
+ * characters ARE a millisecond timestamp, so a hash-derived suffix claims a
+ * creation instant that is random and often far in the future. The vendor mints
+ * and stores these ids, so it plausibly reads that field — and unlike a cache
+ * miss, a wrong timestamp never heals.
+ *
+ * Affinity does not require surviving a restart: the vendor's cache lives on
+ * their side, and a new id costs one warm-up, not a broken lineage. So the
+ * honest choice is a REAL timestamp with a warm-up per restart, or the same
+ * timestamp persisted. The design that gets both without state takes the
+ * timestamp from the SESSION rather than from this process — a DSH session
+ * outlives a restart — which needs a creation time this module is not given
+ * yet. Until then: 26 characters is 130 bits, taken from the top of SHA-256.
  *
  * @param sessionId - DSH session identifier (stringified before hashing, so
  * numeric ids match their string form).
