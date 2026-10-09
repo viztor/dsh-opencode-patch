@@ -8,3 +8,6 @@ coverage/
 
 # Agent workspace: session notes and scratch data, not source.
 .workbuddy-ai/
+
+# Agent instructions: private notes, never published.
+AGENTS.md
