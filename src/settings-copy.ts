@@ -52,9 +52,9 @@ export const en = {
   unavailable: "This plugin is not loaded, so it cannot be configured.",
   usageConsole: "Console",
   usageTopUp: "Top up",
-  usageEnabled: "Enable Go Quota Monitor (default on)",
+  usageEnabled: "Enable Composer Usage Meter (default on)",
   usageEnabledHint:
-    "Displays live OpenCode Go quota ring in the composer dock beside context usage. Empty inherits default.",
+    "Shows the OpenCode meter in the composer dock beside context usage: the Go quota ring, or the Zen session spend. Empty inherits default.",
   usageLastUpdated: "Last updated",
   usageLimited: "Limit reached",
   usageRefreshFailed: "Refresh failed",
@@ -163,9 +163,9 @@ export const zh: Record<keyof typeof en, string> = {
   unavailable: "插件未加载，暂无法配置。",
   usageConsole: "控制台",
   usageTopUp: "充值",
-  usageEnabled: "开启 OpenCode Go 额度监控（默认开启）",
+  usageEnabled: "开启输入区用量计量（默认开启）",
   usageEnabledHint:
-    "在输入框底部停靠栏（与上下文用量并列）显示实时额度环。留空沿用默认值。",
+    "在输入框停靠栏（与上下文用量并列）显示 OpenCode 用量计量：Go 额度环，或 Zen 会话消耗。留空沿用默认值。",
   usageLastUpdated: "更新于",
   usageLimited: "已达限额",
   usageRefreshFailed: "刷新失败",

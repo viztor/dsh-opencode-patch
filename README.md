@@ -235,7 +235,7 @@ Eight controls in three sections — the decisions a user actually makes. Everyt
 | **Gateway Requests** | Attach Workspace Project | `on` | Tags `x-opencode-project` with the active folder name; off omits the header |
 | **Models & Free Tier** | Enrich Models from Models.dev | `on` | Merges canonical specs, display names, prices and active free models into listings **and** native DSH discovery |
 | **Models & Free Tier** | Inject Core Tools | `on` | Adds the `read` + `bash` schemas free-tier `/responses` bodies require |
-| **Quota Meter** | Enable Go Quota Monitor | `on` | Mounts the live quota / credit meter in the composer dock |
+| **Quota Meter** | Enable Composer Usage Meter | `on` | Mounts the live meter in the composer dock — the Go quota ring, or the Zen session spend |
 | **Quota Meter** | Show Session Spend & Model Rate | `on` | Adds the session's accumulated cost and the active model's per-million-token rate |
 | **Quota Meter** | Credential Source | `auto` | Which key wins when several are known: **Automatic** · **Live request first** · **Declared key first** |
 
