@@ -41,7 +41,7 @@
 
 **Highlights**
 
-- 🔑 Deterministic `ses_<26 Crockford base32>` session hashing with KV-cache affinity across turns, subagents and forks
+- 🔑 Deterministic `ses_<12hex><14base62>` session hashing with KV-cache affinity across turns, subagents and forks
 - 🌐 Gateway origin restoration — `User-Agent`, `x-opencode-client`, `x-opencode-project`, parent-session lineage
 - 🧰 Free-tier `read` + `bash` tool-schema fallback so Zen free models stop failing with `403 FreeTierError`
 - 📇 models.dev-backed catalog with offline shims and background SWR refresh — names, context windows, prices
