@@ -1,9 +1,9 @@
 <div align="center">
+  <p><b>English</b> &nbsp;·&nbsp; <a href="./README.zh-CN.md">简体中文</a></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />Gateway origin headers · Session affinity · Free-tier tool fallback · Live dual-mode quota meter</p>
-
-  <p>🇬🇧 <a href="./README.md"><b>English</b></a> &nbsp;·&nbsp; 🇨🇳 <a href="./README.zh-CN.md">简体中文</a></p>
 
   <p>
     <a href="https://www.npmjs.com/package/dsh-opencode-patch"><img src="https://img.shields.io/npm/v/dsh-opencode-patch.svg" alt="npm version" /></a>
