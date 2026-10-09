@@ -8,21 +8,21 @@ Decompiled from the official `opencode` CLI binary, the gateway enforces differe
 // Extracted from OpenCode CLI's HTTP request builder:
 headers: {
   "x-opencode-session-id": e.sessionID,
-  ...(e.parentSessionID ? { "x-opencode-parent-session-id": e.parentSessionID } : {}),
+  ...(e.parentSessionID ? { "x-opencode-parent-session-id": e.parentSessionID }: {}),
   ...(e.model.providerID.startsWith("opencode")
     ? {
-        ...(k ? { "x-opencode-project": k } : {}),
+        ...(k ? { "x-opencode-project": k }: {}),
         "x-opencode-session": e.sessionID,
         "x-opencode-request": e.user.id,
         "x-opencode-client": e.flags.client,
         "User-Agent": _i
       }
-    : {
+   : {
         "x-session-affinity": e.sessionID,
         "X-Session-Id": e.sessionID,
         "User-Agent": _i
       }),
-  ...(e.parentSessionID ? { "x-parent-session-id": e.parentSessionID } : {})
+  ...(e.parentSessionID ? { "x-parent-session-id": e.parentSessionID }: {})
 }
 ```
 
@@ -63,9 +63,9 @@ This lineage lets upstream servers optimize prompt caching across agent teams an
 
 OpenCode uses `x-opencode-project` to group token usage, requests and cost in the [OpenCode Console](https://opencode.ai/console).
 
-1. **Enabled (default):** the plugin reads the active session's working directory (`session.header.cwd`) and sends its folder name — `/home/you/projects/my-app` → `x-opencode-project: my-app`. Outside a project it falls back to `global`.
-2. **Disabled:** the header is omitted entirely, matching OpenCode CLI's standalone behavior.
-3. **Zero configuration:** no project strings to type or manage — attribution follows your workspace naturally.
+1. Enabled (default): the plugin reads the active session's working directory (`session.header.cwd`) and sends its folder name: `/home/you/projects/my-app` → `x-opencode-project: my-app`. Outside a project it falls back to `global`.
+2. Disabled: the header is omitted entirely, matching OpenCode CLI's standalone behavior.
+3. Zero configuration: no project strings to type or manage: attribution follows your workspace naturally.
 
 ### 4. DSH experimental Auto Review compatibility
 
@@ -111,11 +111,11 @@ Because these calls omit `options.sessionId`, earlier plugin versions short-circ
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
-**Two endpoint levels, and two ways to authenticate.** The endpoints above are not pinned in the CLI's source: they come from the catalog (`models.dev`), which defines a **provider default** (`api` on the provider — `https://opencode.ai/zen/v1` for Zen, `https://opencode.ai/zen/go/v1` for Go) and a per-model **inference** endpoint (`model.api.url`) that overrides it. `provider.ts` resolves `model.api.url ?? provider default`, so every model inherits the default today — but the mechanism is two-level, and a model that sets its own URL is served from it.
+Two endpoint levels, and two ways to authenticate. The endpoints above are not pinned in the CLI's source: they come from the catalog (`models.dev`), which defines a **provider default** (`api` on the provider (`https://opencode.ai/zen/v1` for Zen, `https://opencode.ai/zen/go/v1` for Go) and a per-model **inference** endpoint (`model.api.url`) that overrides it. `provider.ts` resolves `model.api.url ?? provider default`, so every model inherits the default today) but the mechanism is two-level, and a model that sets its own URL is served from it.
 
 Authentication follows the **wire shape**, not the endpoint: the OpenAI planes (`/chat/completions`, `/responses`) send `Authorization: Bearer <key>`; the Anthropic plane (`/messages`) sends `x-api-key: <key>`. `extractApiKeyFromHeaders` reads `Authorization` first and falls back to `x-api-key` / `api-key`, which is what makes one credential usable no matter which plane the adapter routed the turn through.
 
-**Credential isolation (preventing `403 EntitlementError`).** The Go quota endpoint (`https://opencode.ai/zen/go/v1/usage`) is what the subscription windows come from, and the plugin queries it only with the credential the composition already uses for the Go route. **A key prefix does not decide this.** An earlier guard refused `oc_sk_…` keys there on the belief that the prefix meant "Zen, no Go entitlement"; the same prefix answers `200` with real windows. What separates the tiers is the observed request, never the string — see [engineering-notes.md](./engineering-notes.md), "A credential prefix is not an entitlement".
+Credential isolation (preventing `403 EntitlementError`). The Go quota endpoint (`https://opencode.ai/zen/go/v1/usage`) is what the subscription windows come from, and the plugin queries it only with the credential the composition already uses for the Go route. **A key prefix does not decide this.** An earlier guard refused `oc_sk_…` keys there on the belief that the prefix meant "Zen, no Go entitlement"; the same prefix answers `200` with real windows. What separates the tiers is the observed request, never the string: see [engineering-notes.md](./engineering-notes.md), "A credential prefix is not an entitlement".
 
 ```json
 403 {"type":"error","error":{"type":"EntitlementError","message":"OpenCode Go subscription required."}}
@@ -123,7 +123,7 @@ Authentication follows the **wire shape**, not the endpoint: the OpenAI planes (
 
 The plugin isolates them: `resolveGoApiKey` excludes Zen keys from the Go usage query; if only a Zen key exists, usage discovery reports `configured: false` and the ring stays hidden instead of spamming 403s; an `EntitlementError` response is mapped to `configured: false` or to the Zen credit status.
 
-**Go plan overflow to Zen credits.** At 100% of the monthly quota, requests only fall back to Zen balance if _Use balance_ is enabled in the [OpenCode Console](https://opencode.ai/console). OpenCode exposes **no public balance API** (open feature request [anomalyco/opencode#10448](https://github.com/anomalyco/opencode/issues/10448)); overflow is handled server-side:
+Go plan overflow to Zen credits. At 100% of the monthly quota, requests only fall back to Zen balance if _Use balance_ is enabled in the [OpenCode Console](https://opencode.ai/console). OpenCode exposes **no public balance API** (open feature request [anomalyco/opencode#10448](https://github.com/anomalyco/opencode/issues/10448)); overflow is handled server-side:
 
 ```javascript
 // OpenCode CLI rate limit handler:
@@ -160,29 +160,29 @@ How does this compare to Duskriver's [`dsh-opencode-go`](https://www.npmjs.com/p
 
 ### 7. Authoritative model catalogs: dual local shims + real-time SWR updates
 
-OpenCode's gateway `GET …/models` endpoints frequently return a truncated subset — no display names, context windows, max tokens or input modalities. The plugin ships a **stale-while-revalidate** catalog for both planes:
+OpenCode's gateway `GET …/models` endpoints frequently return a truncated subset: no display names, context windows, max tokens or input modalities. The plugin ships a **stale-while-revalidate** catalog for both planes:
 
-1. **Dual bundled shims (zero latency, offline):** `OPENCODE_GO_CATALOG` carries every active Go subscription model with per-million-token rates, so session pricing works before the first refresh; `OPENCODE_ZEN_CATALOG` carries the active free-tier models plus the flagships (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`). The counts are deliberately not restated here: they move with the vendor, they are visible in the generated file, and CI fails when the shim is stale. Retired models are excluded so a failed refresh can never resurrect a row the gateway no longer serves — the three Zen-route Muse Spark 1.2 ids are suppressed, while the paid Go 1.2 contributor entry stays (the CLI still lists it). Startup is instant: no cold-start delay, blocking network calls, or airplane-mode failures.
-2. **Background revalidation:** both catalogs revalidate against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (the OpenCode CLI's canonical cycle), merging new models, deprecations and updated limits. Errors degrade gracefully and retain the active catalog.
-3. **Gateway models-endpoint enrichment:** `patchFetch` intercepts `GET …/models` on OpenCode routes and merges the live Go or Zen catalog — human-friendly names (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`), verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000), correct input modalities (`text`, `image`), with retired Muse Spark 1.2 rows omitted.
-4. **Settings “Fetch Available Models” decoration:** DSH asks the route's own adapter first, and for an installed `opencode` route `llm-pi-ai` answers from its packaged catalog without calling the gateway. The plugin therefore decorates the hosted discovery result: adapter rows and order are preserved, missing canonical rows (e.g. `space-bunny-free`) appended, provider-retired rows removed, and **models whose protocol DSH cannot speak dropped** — offering one could only fail. This is candidate metadata for the settings surface — it never rewrites saved route configuration.
-5. **Native model discovery registration:** on the host runtime the plugin also registers with `ctx.llm.registerModelDiscovery` for `opencode-go` and `opencode`. All three enrichments sit behind the **Enrich Models from Models.dev** switch.
+1. Dual bundled shims (zero latency, offline): `OPENCODE_GO_CATALOG` carries every active Go subscription model with per-million-token rates, so session pricing works before the first refresh; `OPENCODE_ZEN_CATALOG` carries the active free-tier models plus the flagships (`claude-sonnet-4-5`, `claude-opus-4-7`, `gpt-5.4`, `gemini-3.8-flash`, `qwen3.8-max`, `kimi-k3`). The counts are deliberately not restated here: they move with the vendor, they are visible in the generated file, and CI fails when the shim is stale. Retired models are excluded so a failed refresh can never resurrect a row the gateway no longer serves: the three Zen-route Muse Spark 1.2 ids are suppressed, while the paid Go 1.2 contributor entry stays (the CLI still lists it). Startup is instant: no cold-start delay, blocking network calls, or airplane-mode failures.
+2. Background revalidation: both catalogs revalidate against [`https://models.dev/api.json`](https://models.dev/api.json) every **60 minutes** (the OpenCode CLI's canonical cycle), merging new models, deprecations and updated limits. Errors degrade gracefully and retain the active catalog.
+3. Gateway models-endpoint enrichment: `patchFetch` intercepts `GET …/models` on OpenCode routes and merges the live Go or Zen catalog: human-friendly names (`DeepSeek V4.1 Flash`, `Qwen3.8 Flash`, `Grok 4.7`, `MiMo V2.6 Pro`), verified context windows (up to 1,000,000+ tokens) and max output tokens (up to 384,000), correct input modalities (`text`, `image`), with retired Muse Spark 1.2 rows omitted.
+4. Settings “Fetch Available Models” decoration: DSH asks the route's own adapter first, and for an installed `opencode` route `llm-pi-ai` answers from its packaged catalog without calling the gateway. The plugin therefore decorates the hosted discovery result: adapter rows and order are preserved, missing canonical rows (e.g. `space-bunny-free`) appended, provider-retired rows removed, and **models whose protocol DSH cannot speak dropped** (offering one could only fail. This is candidate metadata for the settings surface) it never rewrites saved route configuration.
+5. Native model discovery registration: on the host runtime the plugin also registers with `ctx.llm.registerModelDiscovery` for `opencode-go` and `opencode`. All three enrichments sit behind the **Enrich Models from Models.dev** switch.
 
 ### 8. Session spend & model rate
 
 Behind the **Show Session Spend & Model Rate** switch (on by default):
 
-- **Per-turn accounting:** every `llm/stream` usage event is priced with the executing model's input/output/cache-read rates from the catalog and accumulated on the host — the client receives only the figures, never the catalog.
-- **Scoped per conversation:** the meter sends provider + conversation id, so two open sessions (or a subagent) never read each other's totals.
-- **Mid-session model switches:** the active label and rate follow whatever model runs next, while cumulative spend and the used-model list are preserved.
-- **Free tiers and plan-included models** report `Included in Go Plan` at `$0.00` rather than a misleading rate.
-- **Go plan spend** is a rate-based _estimate_ of consumption, not an invoice — included usage is covered by the plan. The [OpenCode Console](https://opencode.ai/console) remains the billing source of truth.
+- Per-turn accounting: every `llm/stream` usage event is priced with the executing model's input/output/cache-read rates from the catalog and accumulated on the host: the client receives only the figures, never the catalog.
+- Scoped per conversation: the meter sends provider + conversation id, so two open sessions (or a subagent) never read each other's totals.
+- Mid-session model switches: the active label and rate follow whatever model runs next, while cumulative spend and the used-model list are preserved.
+- Free tiers and plan-included models report `Included in Go Plan` at `$0.00` rather than a misleading rate.
+- Go plan spend is a rate-based _estimate_ of consumption, not an invoice: included usage is covered by the plan. The [OpenCode Console](https://opencode.ai/console) remains the billing source of truth.
 
 ### 9. Key resolution per routed model & overage behavior
 
-Different models may route to different accounts (a corporate Go subscription alongside a personal Zen key). `resolveRoutedKey(ctx, provider)` inspects the loaded Cordis rows for the `apiKeyEnv` / literal `apiKey` assigned to each route, and **the route decides which account is queried — not the shape of the key**. The prefix test that used to sit here was removed once it was measured: OpenCode issues `oc_sk_…` for Go credentials too, so the string says nothing about the route in use. The meter queries accordingly:
+Different models may route to different accounts (a corporate Go subscription alongside a personal Zen key). `resolveRoutedKey(ctx, provider)` inspects the loaded Cordis rows for the `apiKeyEnv` / literal `apiKey` assigned to each route, and **the route decides which account is queried: not the shape of the key**. The prefix test that used to sit here was removed once it was measured: OpenCode issues `oc_sk_…` for Go credentials too, so the string says nothing about the route in use. The meter queries accordingly:
 
-- **OpenCode Go (`opencode-go`):** fixed subscription quotas across three windows (5-hour rolling, weekly, monthly %). At 100% the gateway answers `GoUsageLimitError` (HTTP 402/429). Server-side overflow into Zen balance works only if that Go account has _Use balance_ enabled ([opencode.ai/workspace/go](https://opencode.ai/workspace/go)) — a Zen key on a _separate_ account is never debited automatically.
-- **OpenCode Zen (`opencode`):** per-token pay-as-you-go against the account balance; no rolling windows. At $0.00 the gateway returns `HTTP 402 Insufficient account funds` — top up via the Console link in the popover.
+- OpenCode Go (`opencode-go`): fixed subscription quotas across three windows (5-hour rolling, weekly, monthly %). At 100% the gateway answers `GoUsageLimitError` (HTTP 402/429). Server-side overflow into Zen balance works only if that Go account has _Use balance_ enabled ([opencode.ai/workspace/go](https://opencode.ai/workspace/go)): a Zen key on a _separate_ account is never debited automatically.
+- OpenCode Zen (`opencode`): per-token pay-as-you-go against the account balance; no rolling windows. At $0.00 the gateway returns `HTTP 402 Insufficient account funds`: top up via the Console link in the popover.
 
 ---

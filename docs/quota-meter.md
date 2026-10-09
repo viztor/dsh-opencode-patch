@@ -2,7 +2,7 @@
 
 The small control at the right of the composer. It answers exactly one question: **how much of the balance you are actually on has been used.**
 
-The diagrams below are sketches, not pixel renderings — the panel is about 320px wide, and CJK glyphs take two cells in a monospaced font.
+The diagrams below are sketches rather than pixel renderings: the panel is about 320px wide, and CJK glyphs take two cells in a monospaced font.
 
 ## 1. The trigger
 
@@ -10,20 +10,20 @@ Three states, distinguishable at a glance:
 
 | Which route you are on | Appearance | Hover popover |
 | --- | --- | --- |
-| **Go** | a filled ring plus a percentage — `◔ 28%` | `5-hour 11% · Weekly 33% · Monthly 16%` |
-| **Zen**, with a record this session | **no ring**, just the spend — `$0.00` | `Session spend $0.00 · Pay-as-you-go` |
-| **Zen**, no record yet | no ring and no number — `—` | `Pay-as-you-go · no quota window` |
+| **Go** | a filled ring plus a percentage, `◔ 28%` | `5-hour 11% · Weekly 33% · Monthly 16%` |
+| **Zen**, with a record this session | **no ring**, just the spend, `$0.00` | `Session spend $0.00 · Pay-as-you-go` |
+| **Zen**, no record yet | no ring and no number, `—` | `Pay-as-you-go · no quota window` |
 
-**No Go figure ever appears on a Zen route.** No percentage, the ring stays hollow, and a rate-limited Go plan does not tint the Zen trigger red. Go's windows are Go's business; Zen bills per token, **has no quota to measure, and therefore draws no ring at all** — a permanently hollow ring says nothing.
+No Go figure ever appears on a Zen route. No percentage, the ring stays hollow, and a rate-limited Go plan does not tint the Zen trigger red. Go's windows are Go's business; Zen bills per token, **has no quota to measure, and therefore draws no ring at all** — a permanently hollow ring says nothing.
 
 ### Which window the ring answers for
 
-**Not the highest percentage** — the one that can answer the question:
+The window that can answer the question:
 
 1. A window that is **already out** takes precedence, widest first: monthly → weekly → 5-hour. A monthly cap explains a refusal; the 5-hour window cannot.
 2. When none is out, the **5-hour** window is shown: it resets soonest, so it is the one you can still act on.
 
-(The ring used to take the highest percentage, so 5-hour 11%, weekly 33%, monthly 16% showed _weekly_ — while the window actually constraining you was the 5-hour one.)
+(The ring used to take the highest percentage, so 5-hour 11%, weekly 33%, monthly 16% showed _weekly_, while the window actually constraining you was the 5-hour one.)
 
 Hovering lists **all three**, because the trigger can print one number and the next question is always "what about the other two?".
 
@@ -69,7 +69,7 @@ The `ⓘ` expands the billing rule on hover only (session spend is attributed pe
 └──────────────────────────────────────────────┘
 ```
 
-**The spend row is always drawn.** With no record it does not disappear — it says so:
+The spend row is always drawn. With no record it does not disappear. It says so:
 
 ```
 │ Session spend                                │
@@ -99,9 +99,11 @@ No row repeats another: `Pay-as-you-go` appears once, in the badge, and the bala
 
 **Three different "no number" states, and they are not the same thing:**
 
-1. **No turns yet in this session** — the accumulator lives in the Host process's memory, so **restarting `dsh web` clears it**; it also counts only turns that ran on an OpenCode route. One turn fills it.
-2. **Quota unreadable** — a missing credential, or the request failed. The panel then draws **no** windows rather than three `0%` rows: a fabricated zero is worse than a blank.
-3. **Allowance exhausted** — a Go window is at 100%, and the panel switches to showing the Zen takeover state.
+| State | What it means |
+| :-- | :-- |
+| No turns yet in this session | The accumulator lives in the Host process's memory, so **restarting `dsh web` clears it**. It also counts only turns that ran on an OpenCode route. One turn fills it. |
+| Quota unreadable | A missing credential, or the request failed. The panel then draws **no** windows rather than three `0%` rows: a fabricated zero is worse than a blank. |
+| Allowance exhausted | A Go window is at 100%, and the panel switches to showing the Zen takeover state. |
 
 ## 6. The usage summary on the settings page
 
@@ -132,5 +134,6 @@ The token is generated at runtime by `dsh web` and never written to disk, so it 
 
 ## 8. Two design rules
 
-- **A number that cannot tell the truth is not rendered; the explanation of why it is absent takes its place.** An estimate wearing a precise outfit is worse than a sentence — it reads as a measurement.
-- **An explanation can hide behind a hover; an instruction cannot.**
+A number that cannot tell the truth is not rendered; the explanation of why it is absent takes its place. An estimate wearing a precise outfit is worse than a sentence, because it reads as a measurement.
+
+An explanation can hide behind a hover; an instruction cannot.

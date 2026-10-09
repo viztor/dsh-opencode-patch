@@ -75,11 +75,11 @@ These are the rules a correct implementation satisfies. Each one has a test in �
 
 The gap was structural, not a missing branch: **the plane is not part of a route's definition.** `responses-provider.ts` holds one `DEFAULT_BASE_URL` for every route it mounts, and `responses-routes.ts` keys its table by protocol alone, so a Go model cannot be described at all.
 
-1. **Key the route table by (plane, protocol).** `ROUTE_FOR_PLANE_PROTOCOL[plane][protocol] → route`, replacing `ROUTE_FOR_PROTOCOL`. The Zen rows keep their current ids; the Go rows are new.
-2. **Give every route its plane.** A route descriptor carries `{ id, plane, protocol }`, and the mount reads the base URL, catalog and credential **from the plane** rather than from a module constant.
-3. **Make `internalRouteFor` plane-aware.** It currently returns `undefined` for any provider but `opencode`; it must resolve both planes, and still return `undefined` for a model with no mapped protocol.
-4. **Register the Go routes** and add them to `DEFAULT_PROVIDERS`.
-5. **No behaviour change for Zen.** Verified by the suite rather than by inspection: the Zen route ids, the models mounted on each and the base URL they carry are all asserted, and the refactor changed no test that covers them.
+1. Key the route table by (plane, protocol). `ROUTE_FOR_PLANE_PROTOCOL[plane][protocol] → route`, replacing `ROUTE_FOR_PROTOCOL`. The Zen rows keep their current ids; the Go rows are new.
+2. Give every route its plane. A route descriptor carries `{ id, plane, protocol }`, and the mount reads the base URL, catalog and credential **from the plane** rather than from a module constant.
+3. Make `internalRouteFor` plane-aware. It currently returns `undefined` for any provider but `opencode`; it must resolve both planes, and still return `undefined` for a model with no mapped protocol.
+4. Register the Go routes and add them to `DEFAULT_PROVIDERS`.
+5. No behaviour change for Zen. Verified by the suite rather than by inspection: the Zen route ids, the models mounted on each and the base URL they carry are all asserted, and the refactor changed no test that covers them.
 
 ## 7. Verification
 

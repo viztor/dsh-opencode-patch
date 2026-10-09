@@ -25,8 +25,8 @@ One SDK is deliberately **not** served: 8 models name `@ai-sdk/google`, and no p
 
 Three steps, all data-driven:
 
-1. **The catalog carries the SDK.** Every model row in `src/catalog-data.ts` has a `provider_npm` field (`@ai-sdk/openai`, `@ai-sdk/anthropic`, …), generated from models.dev by `scripts/regenerate-catalog-shim.ts`.
-2. **The SDK names a protocol.** `src/responses-routes.ts` holds the only table that maps one to the other:
+1. The catalog carries the SDK. Every model row in `src/catalog-data.ts` has a `provider_npm` field (`@ai-sdk/openai`, `@ai-sdk/anthropic`, …), generated from models.dev by `scripts/regenerate-catalog-shim.ts`.
+2. The SDK names a protocol. `src/responses-routes.ts` holds the only table that maps one to the other:
 
    ```ts
    const PROTOCOL_FOR_SDK = {
@@ -36,7 +36,7 @@ Three steps, all data-driven:
    };
    ```
 
-3. **The protocol names a route.** `internalRouteFor(provider, model, providerNpm)` answers which route serves that model (`opencode-responses`, `opencode-anthropic`, `opencode-mistral`), and only for providers in `COMPLETIONS_ROUTES`, the routes this plugin claims. Anything else returns `undefined` and is left alone.
+3. The protocol names a route. `internalRouteFor(provider, model, providerNpm)` answers which route serves that model (`opencode-responses`, `opencode-anthropic`, `opencode-mistral`), and only for providers in `COMPLETIONS_ROUTES`, the routes this plugin claims. Anything else returns `undefined` and is left alone.
 
 `src/responses-provider.ts` then **mounts the host's own `llm-pi-ai`** under isolated auth scopes to serve those routes. That is the piece with four host contracts to survive; read its header before touching it. The plugin registers the routes, so the user configures nothing.
 
