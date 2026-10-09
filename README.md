@@ -33,9 +33,11 @@
 
 `dsh-opencode-patch` is a DeepSeek Harness host plugin that keeps **OpenCode Zen & Go** models working inside DSH. Connect `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3-contributor-free`, `qwen3.8-flash` and the rest of the OpenCode catalog without network rejections, Cloudflare challenges, entitlement mismatches, or invisible limits.
 
-OpenCode's gateways expect request traits DSH does not send by default: a valid `x-opencode-session` on every turn, official CLI origin proof (`User-Agent`, client/project headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier requests. DSH subagents, background evaluations, and experimental modes like **Auto Review** also invoke the LLM in standalone sessions where `sessionId` is omitted or unlinked.
+**The problem.** OpenCode's gateways expect request traits DSH does not send by default: a valid `x-opencode-session` on every turn, official CLI origin proof (`User-Agent`, client/project headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier requests. Subagents, background evaluations, and experimental modes like **Auto Review** also invoke the LLM in standalone sessions where `sessionId` is omitted or unlinked.
 
-The plugin restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
+**What this does.** It restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
+
+**What you get.** A picker listing the whole OpenCode catalog with real names, prices and context windows; every model sent to the endpoint it is actually served on; and a live meter for the quota or the spend — no configuration.
 
 **Highlights**
 
@@ -77,7 +79,7 @@ The same tree also publishes the scoped aliases [`@viztor/dsh-opencode-patch`](h
 // ~/.dsh/profiles/web/package.json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^0.12.0",
+    "dsh-opencode-patch": "^0.14.0",
   },
   "dsh": {
     "profile": {
@@ -113,7 +115,9 @@ Done — the **OpenCode Patch** card appears under _Settings → Plugins_, and t
 
 ## 🧭 Supported Models & Multi-Protocol Routing
 
-OpenCode serves inference across multiple upstream protocols through one gateway, and the patch covers all four families.
+The gateway serves four protocol families, and **OpenAI alone is two of them**: Chat Completions and Responses are different wire formats, not two names for one thing. A model that needs Responses does not work on the completions endpoint, and the gateway does not fall back — it answers `500`.
+
+DSH can speak three of the four families, so the patch routes those three and **deliberately does not offer the fourth** (Google Generative AI). See the table below.
 
 ### 1. OpenCode Zen (`provider: opencode`) — pay-as-you-go & free tier
 
@@ -133,12 +137,12 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol | served from |
 | :-- | --: | :-- | :-- |
-| _(absent)_ | 26 | OpenAI Chat Completions | the route you configured |
+| _(absent)_ | 28 | OpenAI Chat Completions | the route you configured |
 | `@ai-sdk/openai` | 30 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages | `opencode-anthropic` |
 | `@ai-sdk/google` | 7 | _(no such protocol in DSH)_ | **not offered** |
 
-Counts are the 80 **active** `opencode` models in `models.dev` as of 2026-10-05, measured 2026-10-05 — the remaining 36 of the 116 listed are deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
+Counts are the **83** active `opencode` models in `models.dev` as of 2026-10-09 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 83 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
 
 The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 
