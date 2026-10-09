@@ -6,6 +6,20 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.1.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.0.0...v1.1.0) (2026-10-09)
+
+
+### Features
+
+* **routing:** route and mount per (plane, protocol), closing the Go gap ([0c86082](https://github.com/viztor/dsh-opencode-patch/commit/0c86082a345912add8fc22926aa0ec4dabf8b30a))
+* **routing:** route and mount per (plane, protocol), closing the Go gap ([5982408](https://github.com/viztor/dsh-opencode-patch/commit/5982408426b15a2b07eb6afef6dff5357a4bf3ef))
+
+
+### Bug Fixes
+
+* **test:** toSorted, so the lint gate passes ([9679462](https://github.com/viztor/dsh-opencode-patch/commit/9679462b4738c932205ad39d3eaafe87e2657177))
+* the redundant guard that kept the coverage ratchet red ([eb0a7f7](https://github.com/viztor/dsh-opencode-patch/commit/eb0a7f78ee4c293ea27e407d0db0f36ffd57a9cb))
+
 ## [1.0.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.15.3...v1.0.0) (2026-10-09)
 
 
