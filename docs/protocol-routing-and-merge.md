@@ -1,6 +1,6 @@
 # Protocol routing, catalog merge, and the UI
 
-How this plugin makes OpenCode's models speak the protocol each of them is actually served on, how the model catalog is assembled from several sources, and how the composer meter is built. For the meter's per-state behaviour see [`quota-meter.zh-CN.md`](./quota-meter.zh-CN.md); for the reasoning behind individual decisions see `AGENTS.md`.
+How this plugin makes OpenCode's models speak the protocol each of them is actually served on, how the model catalog is assembled from several sources, and how the composer meter is built. For the meter's per-state behaviour see [`quota-meter.md`](./quota-meter.md); for the reasoning behind individual decisions see `AGENTS.md`.
 
 ## 1. Why routing exists
 

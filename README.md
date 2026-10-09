@@ -232,7 +232,7 @@ Two surfaces, one reading. Both are pure views over the same Host data.
 | **Meter panel** | click the trigger | The windows, the monthly allowance, the session spend, the Zen credit, the action links |
 | **Settings card** | _Settings → Plugins → OpenCode Patch_ | Eight controls, plus a live Go usage summary above them |
 
-Hovering the trigger explains its own number; clicking it opens the panel. The sections below show each surface, and [docs/quota-meter.zh-CN.md](./docs/quota-meter.zh-CN.md) documents every state it can be in.
+Hovering the trigger explains its own number; clicking it opens the panel. The sections below show each surface, and [docs/quota-meter.md](./docs/quota-meter.md) documents every state it can be in.
 
 ### Settings card — _Settings → Plugins → OpenCode Patch_
 
@@ -267,7 +267,7 @@ Monthly allowance  mimo-v2.6-pro · Go $60 · Plus $120         ⓘ
 
 The meter mounts next to DSH's native `ContextMeter` in `conversation.composer.dock`:
 
-Per-state behaviour — the trigger's three states, both panels, what every row answers, and the three different kinds of "no number" — is documented in [docs/quota-meter.zh-CN.md](./docs/quota-meter.zh-CN.md) (Chinese).
+Per-state behaviour — the trigger's three states, both panels, what every row answers, and the three different kinds of "no number" — is documented in [docs/quota-meter.md](./docs/quota-meter.md).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
