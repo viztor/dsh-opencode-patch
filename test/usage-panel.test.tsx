@@ -92,7 +92,6 @@ const triggerProps = (
   onClick: () => {},
   open: false,
   ringColor: "var(--ring)",
-  showUsagePrice: true,
   strokeDasharray: "3 34",
   t,
   tooltipLabel: "42% of Weekly used",
@@ -114,7 +113,6 @@ const panelProps = (
   onMouseLeave: () => {},
   refreshing: false,
   retry: () => {},
-  showUsagePrice: true,
   t,
   updatedAt: 1_700_000_000_000,
   usage: undefined,
@@ -209,14 +207,11 @@ describe("UsageTrigger", () => {
     expect(hover).toContain("--dsw-alias-interactive-bg-hover");
   });
 
-  it("falls back to the Zen title when spend is hidden or absent", () => {
-    const withSpend = usage({ session: session() });
+  it("shows no spend label for Zen when the session has no record", () => {
+    // Nothing to print, so the trigger carries no number — the honest state,
+    // not a zero.
     expect(
-      collectText(
-        UsageTrigger(
-          triggerProps({ isZen: true, showUsagePrice: false, usage: withSpend })
-        )
-      )
+      collectText(UsageTrigger(triggerProps({ isZen: true, usage: usage({}) })))
     ).not.toContain("t:zenPaygTitle");
   });
 
@@ -613,18 +608,14 @@ describe("UsagePanel", () => {
     expect(anchor).not.toContain("--color-");
   });
 
-  it("shows session spend only when enabled and present", () => {
-    const withSession = usage({ session: session() });
+  it("draws the session spend row whenever the session has a record", () => {
+    // There is no second switch inside the meter: the meter is one surface with
+    // one switch, and within it the money is either known or explicitly absent.
     const shown = UsagePanel(
-      panelProps({ showUsagePrice: true, usage: withSession })
+      panelProps({ usage: usage({ session: session() }) })
     );
     expect(collectText(shown)).toContain("t:sessionSpend");
     expect(collectText(shown)).toContain("$0.42");
-
-    const hidden = UsagePanel(
-      panelProps({ showUsagePrice: false, usage: withSession })
-    );
-    expect(collectText(hidden)).not.toContain("t:sessionSpend");
   });
 
   it("names the model even when it costs nothing, and says free once", () => {

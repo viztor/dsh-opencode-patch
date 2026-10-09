@@ -361,7 +361,6 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
         injectCoreTools: true
         enrichModels: true # merge models.dev specs + active free models into listings
         usageEnabled: true # off = no meter and no price row
-        showUsagePrice: true # session spend + active model rate in the meter
         # File-level only debug options:
         debug: false
         debugFile: "/tmp/dsh-opencode-debug.jsonl"
