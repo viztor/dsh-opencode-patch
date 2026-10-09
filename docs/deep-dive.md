@@ -35,26 +35,26 @@ The fetch patch satisfies every variant:
 | `x-session-affinity` | `ses_<12hex><14base62>` | Generic proxy/relay affinity (Cloudflare AI Gateway, LiteLLM, Portkey) |
 | `x-opencode-parent-session-id` | `ses_<parent_hash>` | Hierarchical lineage for DSH subagents (`subagent`, `subagent_fork`) |
 | `x-parent-session-id` | `ses_<parent_hash>` | Generic proxy parent-session affinity |
-| `User-Agent` | `opencode/1.18.34 …` | Prevents Cloudflare WAF Error 1010 challenges |
+| `User-Agent` | `opencode/1.18.33 …` | Prevents Cloudflare WAF Error 1010 challenges. The constant lives in `session.ts`; the patch version tracks the CLI |
 | `x-opencode-client` | `cli` (configurable) | Identifies the client tier to the Zen gateway |
 | `x-opencode-project` | dynamic / `global` | Workspace project attribution for the Console |
 
 ### 2. Hierarchical subagent & parent session lineage
 
-When DSH spawns subagents (`subagent` / `subagent_fork`), each child runs in a separate session. The plugin inspects the host `SessionRegistry` for `session.header.parentSession`, and maps both sessions deterministically through SHA-256:
+When DSH spawns subagents (`subagent` / `subagent_fork`), each child runs in a separate session. The plugin inspects the host `SessionRegistry` for `session.header.parentSession`, and derives an id for each of them the way the vendor's own generator does. SHA-256 supplies the suffix bits and the counter; the twelve hex characters carry the session's real `createdAt`, because the vendor parses that field back as a timestamp and a hash there would hand it a random instant:
 
 ```
-[Parent DSH Session: "session-abc"] ──(SHA-256)──> [ses_parent_12hex14base62]
+[Parent DSH Session: "session-abc"] ──> [ses_<12hex><14base62>]
            │
            ▼ spawns subagent
-[Child DSH Session:  "session-xyz"] ──(SHA-256)──> [ses_child_12hex14base62]
+[Child DSH Session:  "session-xyz"] ──> [ses_<12hex><14base62>]
 
 Outgoing subagent request:
-  x-opencode-session:           ses_child_12hex14base62
-  x-opencode-session-id:        ses_child_12hex14base62
-  x-session-affinity:           ses_child_12hex14base62
-  x-opencode-parent-session-id: ses_parent_12hex14base62
-  x-parent-session-id:          ses_parent_12hex14base62
+  x-opencode-session:           ses_<child 12hex><14base62>
+  x-opencode-session-id:        ses_<child 12hex><14base62>
+  x-session-affinity:           ses_<child 12hex><14base62>
+  x-opencode-parent-session-id: ses_<parent 12hex><14base62>
+  x-parent-session-id:          ses_<parent 12hex><14base62>
 ```
 
 This lineage lets upstream servers optimize prompt caching across agent teams and delegation workflows.
@@ -147,7 +147,7 @@ How does this compare to Duskriver's [`dsh-opencode-go`](https://www.npmjs.com/p
 | **Intercepted routes** | Dedicated Go route only | Any claimed route: `opencode`, `opencode-go`, custom relays |
 | **OpenCode Go models** | ✅ (`/zen/go/v1`) | ✅ (`/zen/go/v1`) |
 | **OpenCode Zen models** | ❌ | ✅ (`/zen/v1` — Claude, GPT-5, Gemini, contributor) |
-| **Multi-protocol gateway** | OpenAI Completions only | Responses + Completions + Anthropic + Google |
+| **Multi-protocol gateway** | OpenAI Completions only | Responses + Completions + Anthropic + Mistral, from the SDK each model declares |
 | **Free-tier tool fallback** | ❌ | ✅ Injects `read` + `bash` schemas automatically |
 | **Hierarchical subagents** | ❌ | ✅ Parent-session headers injected |
 | **Dynamic workspace project** | ❌ | ✅ Derived from `session.header.cwd` |
@@ -170,7 +170,7 @@ OpenCode's gateway `GET …/models` endpoints frequently return a truncated subs
 
 ### 8. Session spend & model rate
 
-Behind the **Show Session Spend & Model Rate** switch (on by default):
+Behind the **Enable Composer Usage Meter** switch (on by default):
 
 - Per-turn accounting: every `llm/stream` usage event is priced with the executing model's input/output/cache-read rates from the catalog and accumulated on the host: the client receives only the figures, never the catalog.
 - Scoped per conversation: the meter sends provider + conversation id, so two open sessions (or a subagent) never read each other's totals.
