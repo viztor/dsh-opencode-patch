@@ -56,7 +56,7 @@ export const GO_ANTHROPIC_ROUTE = "opencode-go-anthropic";
  * each. Routes are keyed by (plane, protocol) for exactly that reason: an SDK
  * says which shape a model needs, never which plane it belongs to.
  */
-export const PLANES: Readonly<Record<string, string>> = {
+export const PLANES = {
   opencode: "https://opencode.ai/zen/v1",
   "opencode-go": "https://opencode.ai/zen/go/v1",
 };
@@ -69,18 +69,24 @@ export const PLANES: Readonly<Record<string, string>> = {
  * never a redirect target — a model already there has nowhere to go.
  */
 export const ROUTE_FOR_PLANE_PROTOCOL: Readonly<
-  Record<string, Readonly<Record<string, string>>>
+  Record<string, { baseURL: string; routes: Readonly<Record<string, string>> }>
 > = {
   opencode: {
-    "openai-responses": RESPONSES_ROUTE,
-    "anthropic-messages": ANTHROPIC_ROUTE,
-    "mistral-conversations": MISTRAL_ROUTE,
+    baseURL: PLANES.opencode,
+    routes: {
+      "openai-responses": RESPONSES_ROUTE,
+      "anthropic-messages": ANTHROPIC_ROUTE,
+      "mistral-conversations": MISTRAL_ROUTE,
+    },
   },
   "opencode-go": {
-    "openai-responses": GO_RESPONSES_ROUTE,
-    "anthropic-messages": GO_ANTHROPIC_ROUTE,
+    baseURL: PLANES["opencode-go"],
+    routes: {
+      "openai-responses": GO_RESPONSES_ROUTE,
+      "anthropic-messages": GO_ANTHROPIC_ROUTE,
+    },
   },
-};
+} as const;
 
 /**
  * The pi-ai protocol each SDK a model may name corresponds to, when that
@@ -122,13 +128,16 @@ export const UNSERVED_SDKS: ReadonlySet<string> = new Set(["@ai-sdk/google"]);
 
 /** The route each non-default protocol is served from. */
 /** The Zen plane's rows of {@link ROUTE_FOR_PLANE_PROTOCOL}. */
-export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> =
-  ROUTE_FOR_PLANE_PROTOCOL.opencode ?? {};
+export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> = {
+  "openai-responses": RESPONSES_ROUTE,
+  "anthropic-messages": ANTHROPIC_ROUTE,
+  "mistral-conversations": MISTRAL_ROUTE,
+};
 
 /** Every route this plugin registers for itself. */
 export const INTERNAL_ROUTES: readonly string[] = Object.values(
   ROUTE_FOR_PLANE_PROTOCOL
-).flatMap((rows) => Object.values(rows));
+).flatMap((plane) => Object.values(plane.routes));
 
 /**
  * Whether a route id is one this plugin owns and keeps out of the UI.
@@ -183,10 +192,10 @@ export const internalRouteFor = (
   // The plane comes from the route the caller selected, and it must BE a plane:
   // a redirected call arrives back here with `provider` already set to an
   // internal route, which is not a key in this table, so it cannot recurse.
-  const rows = ROUTE_FOR_PLANE_PROTOCOL[provider];
-  if (rows === undefined) {
+  const plane = ROUTE_FOR_PLANE_PROTOCOL[provider];
+  if (plane === undefined) {
     return undefined;
   }
   const protocol = PROTOCOL_FOR_SDK[providerNpm];
-  return protocol === undefined ? undefined : rows[protocol];
+  return protocol === undefined ? undefined : plane.routes[protocol];
 };

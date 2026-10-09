@@ -26,6 +26,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   RESPONSES_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
+  getLiveGoCatalog,
   inheritedCredentialRef,
   loadPiAi,
   modelsForSdk,
@@ -711,8 +712,8 @@ describe("responses-provider: the mount survives the host's own instance", () =>
     // Derived from the PLANE table, not hard-coded, and not from the Zen-only
     // view: the mount walks (plane, protocol) pairs, so a route the table names
     // is mounted whenever its own plane carries a model for its protocol.
-    const expected = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
-      ([, rows]) => Object.values(rows)
+    const expected = Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap((plane) =>
+      Object.values(plane.routes)
     );
 
     expect(Object.keys(providers)).toEqual(expected);
@@ -1049,5 +1050,28 @@ describe("responses-provider: the loader's degraded shapes", () => {
       expect(loadPiAi(ctx)).toBeUndefined();
       expect(inheritedCredentialRef(ctx)).toBe("OPENCODE_API_KEY");
     }
+  });
+});
+
+describe("responses-provider: a plane serves only its own catalog", () => {
+  it("offers no model for a protocol its plane does not carry", () => {
+    // The Go plane has no Mistral model. Asking for one must answer nothing -
+    // not fall back to the Zen catalog, which is how a Go route would end up
+    // offering a model the Go endpoint does not serve.
+    expect(modelsForSdk("@ai-sdk/mistral", getLiveGoCatalog())).toEqual([]);
+    expect(
+      modelsForSdk("@ai-sdk/openai", getLiveGoCatalog()).length
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("responses-provider: a loader that breaks its own contract", () => {
+  it("mounts nothing when the loader cannot yield entries", async () => {
+    // The host's loader always exposes `entries`. A composition whose loader
+    // does not is a contract violation, and the mount must answer "nothing to
+    // do" rather than throw inside the caller's startup path.
+    const host = createHost();
+    (host.ctx.loader as { entries: unknown }).entries = 42;
+    await expect(registerResponsesProvider(host.ctx)).resolves.toBeUndefined();
   });
 });

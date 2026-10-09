@@ -752,3 +752,41 @@ describe("catalog · plane and SDK coverage", () => {
     expect([...new Set(gaps)].toSorted()).toEqual([]);
   });
 });
+
+/**
+ * The plane is half of the routing decision. An SDK says which shape a model
+ * needs; only the route the caller selected says which account and base URL
+ * serve it - and a redirected call comes back with an internal route id, which
+ * is not a plane, which is what stops the redirect recursing.
+ */
+describe("routing · the plane half of the decision", () => {
+  it("sends the same SDK to a different route per plane", () => {
+    expect(internalRouteFor("opencode", "gpt-5.4", "@ai-sdk/openai")).toBe(
+      "opencode-responses"
+    );
+    expect(internalRouteFor("opencode-go", "grok-4.7", "@ai-sdk/openai")).toBe(
+      "opencode-go-responses"
+    );
+    expect(
+      internalRouteFor("opencode-go", "minimax-m3", "@ai-sdk/anthropic")
+    ).toBe("opencode-go-anthropic");
+  });
+
+  it("refuses to redirect from anything that is not a plane", () => {
+    // An internal route id is where a redirected call arrives from, so treating
+    // it as a plane would loop.
+    expect(
+      internalRouteFor("opencode-responses", "gpt-5.4", "@ai-sdk/openai")
+    ).toBeUndefined();
+    expect(
+      internalRouteFor("opencode-go-responses", "grok-4.7", "@ai-sdk/openai")
+    ).toBeUndefined();
+  });
+
+  it("leaves a model with no protocol alone", () => {
+    expect(
+      internalRouteFor("opencode-go", "grok-4.7", "@ai-sdk/google")
+    ).toBeUndefined();
+    expect(internalRouteFor("opencode-go", "grok-4.7")).toBeUndefined();
+  });
+});

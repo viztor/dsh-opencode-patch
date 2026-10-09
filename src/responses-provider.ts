@@ -46,7 +46,6 @@ import {
   getLiveZenCatalog,
 } from "./models-catalog.ts";
 import {
-  PLANES,
   PROTOCOL_FOR_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
 } from "./responses-routes.ts";
@@ -492,10 +491,15 @@ export const registerResponsesProvider = async (
   // away. Deferring is the point — this module exists so a deployment that
   // declares NOTHING still works, not to override one that does.
   const wanted = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
-    ([plane, rows]) =>
-      Object.entries(rows)
+    ([plane, entry]) =>
+      Object.entries(entry.routes)
         .filter(([, route]) => !declared.has(route))
-        .map(([protocol, route]) => ({ plane, protocol, route }))
+        .map(([protocol, route]) => ({
+          plane,
+          protocol,
+          route,
+          baseURL: entry.baseURL,
+        }))
   );
   if (wanted.length === 0) {
     ctx.logger?.info?.(
@@ -512,21 +516,17 @@ export const registerResponsesProvider = async (
   }
   const providers: Record<string, unknown> = {};
   const mounted: string[] = [];
-  for (const { plane, protocol, route } of wanted) {
-    // A plane the table names but PLANES does not know is skipped rather than
-    // guessed at: sending a model to the wrong base URL is worse than not
-    // offering the route.
-    const baseURL = PLANES[plane];
-    if (baseURL === undefined) {
-      continue;
-    }
+  for (const { plane, protocol, route, baseURL } of wanted) {
+    // The base URL travels WITH the route, so there is no "unknown plane" case
+    // to guard: a plane the table does not carry has no route to mount.
     const source = planeSource(plane, ctx);
+    // No empty-catalog guard: each route reads its OWN plane's catalog, so a
+    // route whose protocol that plane does not carry has no entry in the table
+    // at all. The guard this replaces existed because every route used the Zen
+    // catalog, which made every Go route empty.
     const models = sdksForProtocol(protocol).flatMap((sdk) =>
       modelsForSdk(sdk, source.catalog)
     );
-    if (models.length === 0) {
-      continue;
-    }
     providers[route] = providerProfile(
       protocol,
       models,
