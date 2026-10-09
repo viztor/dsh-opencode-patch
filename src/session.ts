@@ -3,7 +3,8 @@
  *
  * The gateway rejects requests without a valid OpenCode session id, and it must
  * stay stable for a DSH session or every turn looks like a new conversation to
- * the prompt cache. Everything here is a pure SHA-256 derivation — no table, no
+ * the prompt cache. Everything here is a pure derivation from the DSH session
+ * id and, when the Host knows it, the session's creation time — no table, no
  * randomness, no state to lose on restart.
  *
  * @module dsh-opencode-patch/session
@@ -28,76 +29,93 @@ export const OPENCODE_UA =
   "opencode/1.18.33 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
 
 /**
- * The alphabet the official ids are written in: Crockford base32, which drops
- * I, L, O and U so a transcribed id cannot be misread.
+ * The vendor's own base62 alphabet, character for character (`randomBase62` in
+ * `packages/opencode/src/id/id.ts`): digits, then uppercase, then lowercase.
+ * The ORDER does not matter for validity, only the set does — matching theirs
+ * keeps our suffix indistinguishable from one they minted.
  */
-const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-/** Characters in a ULID, and therefore in every official id suffix. */
-const ULID_LENGTH = 26;
-
-/** Bytes of SHA-256 needed for 26 base32 characters: 26 x 5 = 130 bits. */
-const ULID_BYTES = 17;
+const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /**
- * Derive a valid OpenCode session ID from a DSH sessionId.
+ * Characters of the id that carry a TIMESTAMP: six bytes of
+ * `milliseconds * 0x1000 + counter`, hex-encoded.
+ */
+const TIME_HEX_LENGTH = 12;
+
+/** Characters the vendor fills with `randomBase62`. */
+const RANDOM_LENGTH = 14;
+
+/**
+ * Derive a valid OpenCode session ID: `ses_` + 12 hex + 14 base62.
  *
- * The official CLI mints `ses_` followed by a **ULID**: 26 characters of
- * Crockford base32, whose first 10 encode a millisecond timestamp. A gateway
- * validating the shape expects that alphabet, and this used to emit
- * `ses_<12hex><14base62>` — the right LENGTH in the wrong alphabet, since
- * base62 carries lowercase letters a ULID never contains.
+ * The shape is read off the vendor's own generator rather than inferred
+ * (`packages/opencode/src/id/id.ts`):
  *
- * The suffix is a pure function of the DSH session id, and that buys exactly ONE
- * property: **no state**. The id survives a restart because nothing stores it —
- * not because a hash beats a clock. A timestamped id could be persisted and be
- * just as stable; this one is stable for free.
+ * ```ts
+ * let now = BigInt(currentTimestamp) * BigInt(0x1000) + BigInt(counter)
+ * return prefix + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 12)
+ * ```
  *
- * The price is real and this function currently pays it. A ULID's first ten
- * characters ARE a millisecond timestamp, so a hash-derived suffix claims a
- * creation instant that is random and often far in the future. The vendor mints
- * and stores these ids, so it plausibly reads that field — and unlike a cache
- * miss, a wrong timestamp never heals.
+ * **Those twelve characters are a timestamp, and the vendor reads them back.**
+ * Their `timestamp(id)` divides the hex by `0x1000` to recover milliseconds, so
+ * filling them with hash bytes hands them a random creation instant — often in
+ * the future — and a non-hex alphabet makes that parser throw. When the Host
+ * tells us the session's creation time, that is what goes in.
  *
- * Affinity does not require surviving a restart: the vendor's cache lives on
- * their side, and a new id costs one warm-up, not a broken lineage. So the
- * honest choice is a REAL timestamp with a warm-up per restart, or the same
- * timestamp persisted. The design that gets both without state takes the
- * timestamp from the SESSION rather than from this process — a DSH session
- * outlives a restart — which needs a creation time this module is not given
- * yet. Until then: 26 characters is 130 bits, taken from the top of SHA-256.
+ * Everything else is derived from the DSH session id, so the value is stable:
+ * the same conversation presents the same id on every turn, in every process,
+ * and after a restart, which is what session affinity needs. The 12-bit counter
+ * only disambiguates ids minted within one millisecond, so it comes from the
+ * hash — deterministic and free.
+ *
+ * With no creation time the timestamp is the one thing this function cannot
+ * supply honestly. It then falls back to hash bits, which is the degraded case:
+ * the id is still valid and still stable, but its embedded time is not a time.
  *
  * @param sessionId - DSH session identifier (stringified before hashing, so
  * numeric ids match their string form).
+ * @param createdAt - the session's creation time in milliseconds, when known.
  */
-export const openCodeSessionIdFor = (sessionId: string | number): string => {
+export const openCodeSessionIdFor = (
+  sessionId: string | number,
+  createdAt?: number
+): string => {
   const hash = createHash("sha256").update(String(sessionId)).digest();
-  // Arithmetic, never bitwise: the lint forbids the operators, and base 256
-  // into base 32 needs only multiply and divide.
-  let value = 0n;
-  for (const byte of hash.subarray(0, ULID_BYTES)) {
-    value = value * 256n + BigInt(byte);
+
+  // The counter occupies the low twelve bits: all of `hash[0]` and the high
+  // nibble of `hash[1]`. Arithmetic, not bitwise — the lint forbids the
+  // operators, and the value only has to be stable, not well distributed.
+  const counter = (hash[0] ?? 0) * 16 + Math.floor((hash[1] ?? 0) / 16);
+
+  const time =
+    createdAt !== undefined && Number.isSafeInteger(createdAt) && createdAt >= 0
+      ? (BigInt(createdAt) * 4096n + BigInt(counter)) % 2n ** 48n
+      : BigInt(`0x${hash.subarray(0, 6).toString("hex")}`);
+
+  let random = "";
+  for (let i = 6; i < 20; i += 1) {
+    const byte = hash[i];
+    if (byte !== undefined) {
+      random += BASE62[byte % BASE62.length] ?? "0";
+    }
   }
-  // Drop the low bits so exactly 130 remain, then read them out in fives,
-  // most significant digit first.
-  value /= 2n ** BigInt(ULID_BYTES * 8 - ULID_LENGTH * 5);
-  let suffix = "";
-  for (let index = 0; index < ULID_LENGTH; index += 1) {
-    suffix = (CROCKFORD[Number(value % 32n)] ?? "0") + suffix;
-    value /= 32n;
-  }
-  return `ses_${suffix}`;
+
+  return `ses_${time.toString(16).padStart(TIME_HEX_LENGTH, "0")}${random.slice(0, RANDOM_LENGTH)}`;
 };
+
 /**
  * Session id for a streamed turn, or `undefined` when there is none to carry.
  *
- * Always derives (pure SHA-256): raw DSH UUIDs satisfy no gateway, while
- * derived `ses_…` values route stably everywhere a UUID would.
+ * Always derives: raw DSH UUIDs satisfy no gateway, while derived `ses_…`
+ * values route stably everywhere a UUID would.
  *
  * @param sessionId - the DSH session id carried by the turn.
+ * @param createdAt - that session's creation time in milliseconds, when the
+ * Host's session service can supply it.
  */
 export const headerValueFor = (
-  sessionId: string | number | undefined | null
+  sessionId: string | number | undefined | null,
+  createdAt?: number
 ): string | undefined => {
   if (sessionId === undefined || sessionId === null) {
     return undefined;
@@ -106,7 +124,7 @@ export const headerValueFor = (
   if (raw.length === 0) {
     return undefined;
   }
-  return openCodeSessionIdFor(raw);
+  return openCodeSessionIdFor(raw, createdAt);
 };
 
 /**

@@ -11,7 +11,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import type { ActiveTurnState } from "../src/index.ts";
 
-export const SESSION_RE = /^ses_[0-9A-HJKMNP-TV-Z]{26}$/;
+export const SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 
 export const createMockStream = async function* createMockStream(
   chunk: string

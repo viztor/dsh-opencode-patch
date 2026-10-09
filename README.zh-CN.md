@@ -39,7 +39,7 @@ OpenCode 网关要求 DSH 默认不会发送的请求特征：每一轮都携带
 
 **亮点**
 
-- 🔑 确定性的 `ses_<26 Crockford base32>` 会话哈希，跨轮次、子代理与分叉保持 KV 缓存亲和
+- 🔑 确定性的 `ses_<12hex><14base62>` 会话哈希，跨轮次、子代理与分叉保持 KV 缓存亲和
 - 🌐 网关来源恢复——`User-Agent`、`x-opencode-client`、`x-opencode-project`、父会话谱系
 - 🧰 免费层 `read` + `bash` 工具 schema 回退，让 Zen 免费模型不再报 `403 FreeTierError`
 - 📇 基于 models.dev 的模型目录，带离线预置与后台 SWR 刷新——名称、上下文窗口、价格
