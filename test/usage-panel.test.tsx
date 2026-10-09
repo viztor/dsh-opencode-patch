@@ -836,17 +836,23 @@ describe("UsagePanel", () => {
     expect(collectText(overflowing)).not.toContain("t:usageZenFallbackNotice");
   });
 
-  it("keeps the trigger's corner language equal to the composer control's", () => {
-    // 999px is a host idiom for Tag / Switch / Pill — all fixed-height chips. On
-    // a trigger the radius clamps to half the box, so it became a stadium beside
-    // a model selector that stayed a rounded rect. The host's composer control
-    // pairs --dsw-radius-md with the hover fill this trigger already uses, so
-    // the COLOUR was right and only the radius was not.
+  it("keeps the trigger's corner radius at the host's own RATIO, not at its token", () => {
+    // 999px is a host idiom for fixed-height chips (Tag, Switch, Pill). On this
+    // trigger it clamps to half the box, so it read as a stadium beside a model
+    // selector that stayed a rounded rect.
+    //
+    // The first fix copied the host's own controls, which all declare
+    // --dsw-radius-md. That is right at THEIR height — 12px on a ~28px control
+    // is 43% of it — and wrong here: the trigger is ~20px tall, so the same
+    // 12px clamps to 10px, which is 50% of the box and a stadium again. One
+    // rung down restores the host's own ratio.
     const rule = /\.dsh-oc-usage-trigger \{[^}]*\}/.exec(
       STYLES.replaceAll(/\/\*[\s\S]*?\*\//g, "")
     )?.[0];
-    expect(rule).toContain("var(--dsw-radius-md, 12px)");
+    expect(rule).toContain("var(--dsw-radius-sm, 8px)");
     expect(rule).not.toContain("999px");
+    // And never the host's md: the ratio is the whole point.
+    expect(rule).not.toContain("--dsw-radius-md");
 
     // And the fill stays the host's own, not an invented fallback.
     expect(STYLES).toContain("var(--dsw-alias-interactive-bg-hover");
