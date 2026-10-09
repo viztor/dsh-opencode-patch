@@ -39,6 +39,12 @@
 
 **What you get.** A picker listing the whole OpenCode catalog with real names, prices and context windows; every model sent to the endpoint it is actually served on; and a live meter for the quota or the spend — no configuration.
 
+**Three things it is built around.**
+
+1. **Minimal intrusion.** Nothing is patched globally: requests are intercepted only for the routes this plugin claims, and every other provider — DeepSeek, OpenAI, Anthropic, GitHub — passes through byte-identical. The composer meter is one switch away from being gone, not one screen away from being tolerated.
+2. **A native DSH plugin.** One `apply()`, a settings card bound to its own namespace, services declared through `ctx.inject`, slots filled the way the host fills its own, and copy in both bundled languages. No private hooks, no patched host code.
+3. **OpenCode API compatibility.** The traits the gateways actually check are restored at the network layer — a `ses_…` id shaped exactly like the CLI's own, official origin headers, parent-session lineage, and the free-tier `read`/`bash` schema fallback.
+
 **Highlights**
 
 - 🔑 Deterministic `ses_<12hex><14base62>` session hashing with KV-cache affinity across turns, subagents and forks
@@ -358,7 +364,7 @@ These exist in the schema but render no control — each is a literal, a marker,
         injectProject: true # attach workspace folder (or 'global'); false omits the header
         injectCoreTools: true
         enrichModels: true # merge models.dev specs + active free models into listings
-        usageEnabled: true
+        usageEnabled: true # off = no meter and no price row
         showUsagePrice: true # session spend + active model rate in the meter
         # File-level only debug options:
         debug: false
