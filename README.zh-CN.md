@@ -69,7 +69,7 @@ cd ~/.dsh/profiles/web
 npm install dsh-opencode-patch
 ```
 
-同一代码树还发布作用域别名 [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) 与 [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode)——任选其一安装，行名仍是 `dsh-opencode-patch`。
+包名在所有用到它的地方都是 `dsh-opencode-patch`：你安装的依赖、profile 里的 bundle 条目，以及宿主解析的那一行。
 
 **2. 启用 bundle**——把该包加入 profile 的 `dsh.profile.bundles` 数组：
 
@@ -385,7 +385,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 | 层面 | 目标 |
 | :-- | :-- |
-| **插件包** | npm 上的 `dsh-opencode-patch`，外加 [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) / [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) 作用域别名 |
+| **插件包** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **宿主 profile** | DSH Web profile（`patchReload: live`） |
 | **声明的路由** | `opencode`、`opencode-go`、`opencode-responses`、`opencode-anthropic` |
 | **网关** | `opencode.ai/zen/v1`（`/responses`、`/chat/completions`、`/messages`、`:streamGenerateContent`）、`zen/go/v1`（`/chat/completions`） |

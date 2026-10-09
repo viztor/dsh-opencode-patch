@@ -71,7 +71,7 @@ cd ~/.dsh/profiles/web
 npm install dsh-opencode-patch
 ```
 
-The same tree also publishes the scoped aliases [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) and [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) — install any one of them, the row name stays `dsh-opencode-patch`.
+The package is `dsh-opencode-patch` under every name it is used by: the dependency you install, the bundle entry in your profile, and the row the host resolves.
 
 **2. Enable the bundle** — add the package to the profile's `dsh.profile.bundles` array:
 
@@ -389,7 +389,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 
 | Surface | Target |
 | :-- | :-- |
-| **Plugin package** | `dsh-opencode-patch` on npm + the [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) / [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) scoped aliases |
+| **Plugin package** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
 | **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` |
 | **Gateways** | `opencode.ai/zen/v1` (`/responses`, `/chat/completions`, `/messages`, `:streamGenerateContent`), `zen/go/v1` (`/chat/completions`) |
