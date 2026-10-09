@@ -66,6 +66,14 @@ const ZEN_KEY = process.env.OPENCODE_API_KEY;
 const ZEN_BASE =
   process.env.OPENCODE_ZEN_BASE_URL ?? "https://opencode.ai/zen/v1";
 
+/**
+ * The Go plane. A different base URL AND a different credential — which is why
+ * probing its models against the Zen base proves nothing about them.
+ */
+const GO_KEY = process.env.OPENCODE_GO_API_KEY;
+const GO_BASE =
+  process.env.OPENCODE_GO_BASE_URL ?? "https://opencode.ai/zen/go/v1";
+
 /** Generous: these cross the public internet from CI. */
 const TIMEOUT_MS = 30_000;
 
@@ -154,7 +162,8 @@ interface Probe {
 const probe = async (
   protocol: string,
   model: string,
-  key?: string
+  key?: string,
+  base: string = ZEN_BASE
 ): Promise<Probe> => {
   const path = PATH_FOR[protocol];
   if (path === undefined) {
@@ -164,7 +173,7 @@ const probe = async (
     key === undefined || key.length === 0
       ? {}
       : (AUTH_FOR[protocol]?.(key) ?? {});
-  const response = await fetch(`${ZEN_BASE}${path}`, {
+  const response = await fetch(`${base}${path}`, {
     body: JSON.stringify({ ...BODY_FOR[protocol], model }),
     headers: { ...PLUGIN_HEADERS, ...auth },
     method: "POST",
@@ -198,15 +207,32 @@ const accessDisabled = (result: Probe): boolean =>
  * planes declare different SDKs for the same id — that difference is the whole
  * subject of one of the cases below.
  */
-const servedProtocolFor = (model: string): string | undefined => {
-  const spec = findModelSpecOn("zen", model);
+/** The route id each plane is reached by. */
+const ROUTE_FOR_PLANE = { go: "opencode-go", zen: "opencode" } as const;
+
+/**
+ * The protocol a model is served on, ON ITS OWN PLANE.
+ *
+ * The plane is a parameter rather than a constant because the same model id can
+ * exist on both planes and be served on a different shape in each — which is the
+ * whole reason the route is chosen from (plane, SDK) and not from the SDK.
+ */
+const servedProtocolForOn = (
+  plane: "go" | "zen",
+  model: string
+): string | undefined => {
+  const spec = findModelSpecOn(plane, model);
   if (spec === undefined) {
     return undefined;
   }
-  return internalRouteFor("opencode", model, spec.provider_npm) === undefined
+  return internalRouteFor(ROUTE_FOR_PLANE[plane], model, spec.provider_npm) ===
+    undefined
     ? DEFAULT_PROTOCOL
     : PROTOCOL_FOR_SDK[spec.provider_npm ?? ""];
 };
+
+const servedProtocolFor = (model: string): string | undefined =>
+  servedProtocolForOn("zen", model);
 
 /** Whether the layer redirects this model off the configured route at all. */
 const redirectsOff = (model: string): boolean =>
@@ -409,6 +435,28 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
     // PROTOCOL_FOR_SDK, so the loop above cannot see it — and it carries the
     // largest single group of models in the catalog.
     expect(Object.keys(PATH_FOR)).toContain(DEFAULT_PROTOCOL);
+  });
+
+  it("probes a Go model on the GO base, where its own shapes are served", async (context) => {
+    // The gap this closes: every case above talks to the Zen base, so the Go
+    // plane's 13 non-completions models were covered by unit tests only - and
+    // the unit tests read the very mapping they verify. This sends a real
+    // request to the Go base with the Go credential, which is the only thing
+    // that can prove the plane is routed where it is served.
+    const model = "grok-4.7";
+    expect(servedProtocolForOn("go", model)).toBe("openai-responses");
+    if (GO_KEY === undefined || GO_KEY.length === 0) {
+      context.skip();
+      return;
+    }
+    const parsed = await probe("openai-responses", model, GO_KEY, GO_BASE);
+    // The claim is "this path is the right one", not "this request succeeds":
+    // any answer the gateway produced after reading the model proves that, and a
+    // 404 (no such path) or 500 (the shape does not parse) proves the opposite.
+    // Asserting a specific code instead would make the case a bet on an
+    // entitlement this account may or may not have today.
+    expect(parsed.status).not.toBe(404);
+    expect(parsed.status).not.toBe(500);
   });
 
   it("keeps every sampled model servable, so the cases above are not vacuous", () => {
