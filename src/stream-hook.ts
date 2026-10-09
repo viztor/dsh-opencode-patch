@@ -10,7 +10,6 @@
  */
 
 import type { AsyncLocalStorage } from "node:async_hooks";
-import path from "node:path";
 
 import type { ResolvedPluginConfig } from "./config.ts";
 import { readSessionMetaResolver } from "./cordis-context.ts";
@@ -54,6 +53,33 @@ type StreamHandler = (options: unknown, next: () => unknown) => unknown;
  * @param config - resolved plugin configuration.
  * @param als - turn store shared with the fetch patch.
  */
+/**
+ * The workspace folder name for `x-opencode-project`, or `undefined` when the
+ * path names no folder.
+ *
+ * Splits on BOTH separators instead of calling `path.basename`, which is
+ * platform-specific (Node documents `/` and `\` on Windows, `/` alone on
+ * POSIX). A Windows-shaped `cwd` arriving on a POSIX host is therefore NOT
+ * split by it at all — `path.basename("C:\\Users\\you\\proj")` returns the whole
+ * string — so the full path, username included, would be sent as the project
+ * name. This header is for attribution, not for a filesystem layout.
+ */
+export const projectNameFrom = (cwd: string): string | undefined => {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  // A folder name is trimmed for the same reason the resolver trims `cwd`:
+  // blanks are absent, not values.
+  const folder = trimmed.split(/[\\/]/).pop()?.trim();
+  if (
+    folder === undefined ||
+    folder.length === 0 ||
+    folder === "." ||
+    folder === ".."
+  ) {
+    return undefined;
+  }
+  return folder;
+};
+
 export const createStreamHook = (
   ctx: DebugContext & {
     llm?: {
@@ -173,8 +199,8 @@ export const createStreamHook = (
 
     let project: string | undefined;
     if (sessionMeta?.cwd !== undefined) {
-      const folder = path.basename(sessionMeta.cwd);
-      if (folder.length > 0 && folder !== "/" && folder !== ".") {
+      const folder = projectNameFrom(sessionMeta.cwd);
+      if (folder !== undefined && folder.length > 0) {
         project = folder;
       }
     }
