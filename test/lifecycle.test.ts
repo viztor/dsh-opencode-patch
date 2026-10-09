@@ -54,6 +54,29 @@ describe("apply (plugin lifecycle)", () => {
     expect(registered).toContain("opencode");
   });
 
+  it("registers the usage service only while the meter is on", () => {
+    // The meter toggle is ONE switch with two halves in two processes: the Host
+    // registers the remote face here, and the client's meter injector mounts
+    // only while that face exists (`settings-page.tsx`). Off means the service
+    // is never registered, so there is no trigger, no panel and no price row to
+    // render — absence, not an empty shell.
+    const mounted: string[] = [];
+    const ctx = {
+      effect: () => {},
+      llm: {},
+      on: () => {},
+      plugin: (component: unknown) => {
+        mounted.push((component as { name?: string })?.name ?? "");
+      },
+    } as unknown as CordisContext;
+
+    apply(ctx, { usageEnabled: false });
+    expect(mounted).not.toContain("GoUsageService");
+
+    apply(ctx, { usageEnabled: true });
+    expect(mounted).toContain("GoUsageService");
+  });
+
   it("registers no model discovery when enrichModels is off", () => {
     const registered: string[] = [];
     const ctx = {
