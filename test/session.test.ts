@@ -205,3 +205,57 @@ describe("withStore", () => {
     expect(wrapped).toBe(passthrough);
   });
 });
+
+/**
+ * The vendor PARSES these ids back, so our encoding has to survive their own
+ * reader. These cases run that reader — `timestamp()` from
+ * `packages/opencode/src/id/id.ts` — against ids we minted. This is the
+ * assertion that would have caught the wrong alphabet: the Crockford change
+ * made `BigInt("0x" + hex)` throw for every consumer of that function.
+ */
+describe("session id · parity with the vendor's own reader", () => {
+  /** The vendor's `timestamp()`: slice twelve characters, hex, divide by 0x1000. */
+  const vendorTimestamp = (id: string): number => {
+    const prefix = id.split("_")[0] ?? "";
+    const hex = id.slice(prefix.length + 1, prefix.length + 13);
+    return Number(BigInt(`0x${hex}`) / 0x1000n);
+  };
+
+  it("embeds the creation time exactly where their reader looks for it", () => {
+    const createdAt = 1_759_999_999_999;
+    const id = openCodeSessionIdFor("session-abc", createdAt);
+    // Their buffer is six bytes, so the value they store is the low 48 bits of
+    // `ms * 0x1000 + counter` — their own wrap, every ~795 days
+    // (opencode#42589). Matching it, wrap included, is what makes our id
+    // indistinguishable from one they minted.
+    expect(vendorTimestamp(id)).toBe(createdAt % 2 ** 36);
+  });
+
+  it("keeps the counter in the low twelve bits, below the timestamp", () => {
+    // Two conversations created in the same millisecond must both read back as
+    // that millisecond: the counter disambiguates ids, it does not encode time.
+    const createdAt = 1_700_000_000_000;
+    for (const session of ["alpha", "beta", "gamma"]) {
+      expect(vendorTimestamp(openCodeSessionIdFor(session, createdAt))).toBe(
+        createdAt % 2 ** 36
+      );
+    }
+  });
+
+  it("stays identical for the same session and creation time", () => {
+    // Affinity needs one id per conversation per turn; the timestamp comes from
+    // the SESSION, not from a clock, so nothing here changes on a restart.
+    const createdAt = 1_700_000_000_000;
+    expect(openCodeSessionIdFor("same-session", createdAt)).toBe(
+      openCodeSessionIdFor("same-session", createdAt)
+    );
+  });
+
+  it("still mints an id their reader accepts when no creation time is known", () => {
+    // The degraded path: those twelve characters are hash bits, not a time. The
+    // id must still parse rather than throw inside a consumer.
+    const id = openCodeSessionIdFor("no-created-at");
+    expect(id).toMatch(SESSION_RE);
+    expect(() => vendorTimestamp(id)).not.toThrow();
+  });
+});
