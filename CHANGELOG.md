@@ -6,6 +6,29 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.15.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.14.0...v0.15.0) (2026-10-09)
+
+
+### Features
+
+* **session:** the id carries the session's real createdAt ([6885996](https://github.com/viztor/dsh-opencode-patch/commit/6885996065e62f98b4931da3f32fc27d5e3444f1))
+* the meter shows the 5-HOUR window, and the hover lists all three ([d80c680](https://github.com/viztor/dsh-opencode-patch/commit/d80c680ecf43e2353ae06db84adaea69c3dd794f))
+* the ring is a Go gauge, so Zen does not draw one ([3cb5019](https://github.com/viztor/dsh-opencode-patch/commit/3cb501988c3cf91c73ff82ea51dce7d715d1c737))
+
+
+### Bug Fixes
+
+* one weight for values, no second line under the Zen credit, one spelling of the model ([6d0c344](https://github.com/viztor/dsh-opencode-patch/commit/6d0c34405d984aef2166cf2969125e44782d0e60))
+* **project:** split both separators, so a Windows cwd cannot leak a path ([22e313e](https://github.com/viztor/dsh-opencode-patch/commit/22e313e83519ddd5d7864a4e34e9457f7bf580cd))
+* **session:** derive a ULID-shaped session id, not base62 ([535f7a0](https://github.com/viztor/dsh-opencode-patch/commit/535f7a036be87e27866dee54d75f5498a68cf927))
+* **session:** restore the vendor's id shape, with a real timestamp ([e38ad11](https://github.com/viztor/dsh-opencode-patch/commit/e38ad11e77fda2940029844ac43315b47663cb29))
+* **settings:** the meter switch names what it controls ([98d7077](https://github.com/viztor/dsh-opencode-patch/commit/98d7077de69144899aca8a462ce03f792dc3a376))
+* the info tooltips portal out of their container, and the docs catch up ([3e0beaa](https://github.com/viztor/dsh-opencode-patch/commit/3e0beaa3af9b4e21b66933f9c1e427d34a349269))
+* the trigger hugs its content, with a thinner edge ([16261c0](https://github.com/viztor/dsh-opencode-patch/commit/16261c07cdd85fedda5858cada7d4416ff3bba5f))
+* the trigger sits closer to the model selector ([68b271d](https://github.com/viztor/dsh-opencode-patch/commit/68b271d82bfd3be6b233c4f2fb034b1c09662b70))
+* the trigger's radius steps one rung down, to the host's own ratio ([40815bd](https://github.com/viztor/dsh-opencode-patch/commit/40815bd14217de5aec654dd0072d667bb87ed7b2))
+* the window bar spans its row, and the state dot sits with its label ([17bdb74](https://github.com/viztor/dsh-opencode-patch/commit/17bdb74ca53ab6bbe96a0460e16f9523b5df9be1))
+
 ## [0.15.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.15.0...v0.15.1) (2026-10-09)
 
 
