@@ -104,12 +104,16 @@ export const STYLES = `
   display: inline-flex;
   min-width: 0;
   vertical-align: middle;
-  /* The trigger carries 9px of side padding for its hit area, and the dock adds
-     its own gap — stacked, they read as one wide space beside the model
-     selector. Pull the BOX back by part of that padding so the visual edge sits
-     at the dock's rhythm. The hit area is untouched: shrinking the padding
-     instead would trade accessibility for spacing, which is the wrong trade. */
+  /* The trigger carries side padding for its hit area, and the dock adds its own
+     gap — stacked, they read as one wide space beside the model selector. Pull
+     the BOX back by part of that padding so the visual edge sits at the dock's
+     rhythm. The hit area is untouched: shrinking the padding instead would trade
+     accessibility for spacing, which is the wrong trade. */
   margin-right: -6px;
+  /* Hug the content. A slot wrapper may stretch its child, and a stretched box
+     makes the pill's hover tint wider than the thing inside it — an edge with
+     nothing in it. */
+  flex: none;
 }
 
 /*
@@ -130,7 +134,10 @@ export const STYLES = `
   font: inherit;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  padding: 3px 9px;
+  /* Trimmed from 3px 9px: the box read as a fat edge around a 12px label. The
+   * target is still ~18px tall and ~48px wide, which is a comfortable hit area
+   * — this trims the edge, it does not remove the target. */
+  padding: 2px 7px;
   /* --dsw-radius-md (12px), NOT 999px. The stadium IS a host idiom — it is what
    * Tag, the Switch track, the kit's Pill and the close button all use — but
    * every one of those is a FIXED-height chip, where a pill reads as a pill.
