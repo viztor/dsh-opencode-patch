@@ -68,7 +68,7 @@
 5. [配置参考](#-配置参考)
 6. [故障排查](#-故障排查)
 7. [兼容性与验证](#-兼容性与验证)
-8. [深入解析](./docs/deep-dive.zh-CN.md) — 协议内部实现，已移出本 README
+8. [深入解析](./docs/deep-dive.md) — 协议内部实现，已移出本 README
 9. [署名与许可](#-署名与许可)
 
 ---
@@ -218,7 +218,7 @@ opencode-responses:
 
 两个生成文件都在 CI 里校验（`catalog:shim`、`limits:shim`）；厂商数据变动时它们以非零码退出——这是唯一能发现 models.dev 在你背后变了的办法。
 
-→ 协议路由、合并与界面的技术细节： [`docs/protocol-routing-and-merge.zh-CN.md`](./docs/protocol-routing-and-merge.zh-CN.md) · [English](./docs/protocol-routing-and-merge.md)
+→ 协议路由、合并与界面的技术细节： [`docs/protocol-routing-and-merge.md`](./docs/protocol-routing-and-merge.md) · [English](./docs/protocol-routing-and-merge.md)
 
 ## 🖥 界面
 
@@ -415,7 +415,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 ## 🔍 深入解析
 
-请求头注入矩阵、会话谱系、工作区归属、API 层级与目录内部实现，都在 **[docs/deep-dive.zh-CN.md](./docs/deep-dive.zh-CN.md)**。本 README 只讲你看得见的界面和要配的东西。
+请求头注入矩阵、会话谱系、工作区归属、API 层级与目录内部实现，都在 **[docs/deep-dive.md](./docs/deep-dive.md)**。本 README 只讲你看得见的界面和要配的东西。
 
 ## 👥 署名与许可
 

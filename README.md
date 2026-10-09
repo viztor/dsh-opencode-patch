@@ -220,7 +220,7 @@ Two things follow that you will notice in use. **Cold start is never empty** —
 
 Both generated files are checked in CI (`catalog:shim`, `limits:shim`); they exit non-zero when the vendor's data moved, which is the only way to notice models.dev changing under you.
 
-→ Protocol routing, the merge and the UI in technical detail: [`docs/protocol-routing-and-merge.md`](./docs/protocol-routing-and-merge.md) · [中文](./docs/protocol-routing-and-merge.zh-CN.md)
+→ Protocol routing, the merge and the UI in technical detail: [`docs/protocol-routing-and-merge.md`](./docs/protocol-routing-and-merge.md) · [中文](./docs/protocol-routing-and-merge.md)
 
 ## 🖥 The Interface
 
