@@ -20,15 +20,15 @@ An absolute path from a development machine (`/Users/<name>/…`, `/home/<name>/
 - Use a neutral placeholder in prose and examples — `/home/you/projects/my-app`, `~/dev/my-app`, or just the folder name.
 - **Grep the artifact, not just the tree**, before publishing.
 - Generated output counts: coverage reports, source maps and logs carry absolute paths, so they are gitignored, never committed.
-- The check belongs **before** the commit. Once it ships, removing it means rewriting content *and* history, force-pushing over every tag, and invalidating published provenance.
+- The check belongs **before** the commit. Once it ships, removing it means rewriting content _and_ history, force-pushing over every tag, and invalidating published provenance.
 
 ## HARD RULE: internal notes are private by default
 
-A file's name does not decide whether it is public — its content does. Incident logs, machine-specific commands, credential-resolution details and per-project retrospectives belong outside the repository. This file is deliberately the *public* half; nothing here should describe a particular machine, account or workflow.
+A file's name does not decide whether it is public — its content does. Incident logs, machine-specific commands, credential-resolution details and per-project retrospectives belong outside the repository. This file is deliberately the _public_ half; nothing here should describe a particular machine, account or workflow.
 
 ## Rules a change must follow
 
-- **Start from the host's built-ins.** Read `@deepseek-ai/dsh-client-ui-primitives` before writing any UI. It ships the components *and* one CSS module each, which is the fastest inventory of the design language available. A component we hand-roll is one whose CSS module we never opened.
+- **Start from the host's built-ins.** Read `@deepseek-ai/dsh-client-ui-primitives` before writing any UI. It ships the components _and_ one CSS module each, which is the fastest inventory of the design language available. A component we hand-roll is one whose CSS module we never opened.
 - **Declare cross-plugin services.** `ctx.inject(['slots', 'modelDirectories'], scope => …)` — reading them off the root context fails silently, because every access in that path is optional.
 - **The `Tooltip` clones its child.** Wrap a DOM node, never a component, or the tooltip attaches handlers to something that ignores them and never appears.
 - **One switch per surface.** A switch whose effect only exists inside another switch's surface is a state, not a decision.
@@ -68,4 +68,4 @@ node --experimental-strip-types scripts/check.ts   # bundle gate
 
 Releases are cut by release-please from Conventional Commit subjects, and published to npm by `.github/workflows/release.yml` through OIDC trusted publishing (no stored token). **`CHANGELOG.md` is owned by release-please — never hand-edit it**; clarity comes from commit subjects and the `changelog-sections` mapping in the release-please workflow.
 
-**Let release-please drive the release.** Its version anchor is the latest GitHub **Release**, not the latest tag, so a manual cut (`npm version` + `git tag` + push) creates a tag it cannot see. It then keeps computing from the last release it knows: it re-proposes a version that is already published, that pull request *regresses* `package.json`, and its next run fails with `already_exists` when it tries to create the release a second time. If a manual cut is ever necessary, create the GitHub Release as part of it (`gh release create <tag> --generate-notes`).
+**Let release-please drive the release.** Its version anchor is the latest GitHub **Release**, not the latest tag, so a manual cut (`npm version` + `git tag` + push) creates a tag it cannot see. It then keeps computing from the last release it knows: it re-proposes a version that is already published, that pull request _regresses_ `package.json`, and its next run fails with `already_exists` when it tries to create the release a second time. If a manual cut is ever necessary, create the GitHub Release as part of it (`gh release create <tag> --generate-notes`).
