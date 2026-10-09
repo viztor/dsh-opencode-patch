@@ -22,4 +22,21 @@ jobs:
       - uses: googleapis/release-please-action@v5
         with:
           release-type: node
+          # What the generated CHANGELOG shows, and in what order. Visible:
+          # what a USER gets (features, fixes, performance) plus documentation.
+          # Hidden: the maintenance noise (chores, CI, tests, build, refactors)
+          # that a reader of a release note has no use for — it stays in the
+          # commit log, which is where a maintainer looks for it.
+          changelog-sections: |
+            [
+              { "type": "feat", "section": "Features" },
+              { "type": "fix", "section": "Fixes" },
+              { "type": "perf", "section": "Performance" },
+              { "type": "docs", "section": "Documentation" },
+              { "type": "refactor", "section": "Refactors", "hidden": true },
+              { "type": "test", "section": "Tests", "hidden": true },
+              { "type": "build", "section": "Build", "hidden": true },
+              { "type": "ci", "section": "CI", "hidden": true },
+              { "type": "chore", "section": "Chores", "hidden": true }
+            ]
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
