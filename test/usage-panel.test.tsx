@@ -159,13 +159,14 @@ describe("UsageTrigger", () => {
     );
   });
 
-  it("renders the ring for Zen too, with spend as the label", () => {
+  it("renders NO ring on Zen: there is no gauge to draw", () => {
     const tree = UsageTrigger(
       triggerProps({ isZen: true, usage: usage({ session: session() }) })
     );
-    // The ring is the trigger for both providers. Zen used to show a coin emoji
-    // here, which rendered as a moon in some font stacks.
-    expect(findAll(tree, "svg")).toHaveLength(1);
+    // The ring is a GAUGE, and Zen has none: a permanently hollow ring is
+    // decoration. (It used to be a coin emoji here, which rendered as a moon in
+    // some font stacks — the ring replaced it; the number replaces the ring.)
+    expect(findAll(tree, "svg")).toHaveLength(0);
     expect(collectText(tree)).toContain("$0.42");
     expect(firstOf(tree, "button").props["aria-label"]).toBe(
       "t:zenPaygTitle (t:zenPaygBadge)"

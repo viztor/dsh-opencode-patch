@@ -34,7 +34,7 @@ import {
   type ModelDirectoryState,
   type SnapshotStore,
 } from "../src/usage-pill.tsx";
-import { CIRCUMFERENCE, STYLES } from "../src/usage-ui.ts";
+import { STYLES } from "../src/usage-ui.ts";
 
 /** A quota reading with one window in each of the states the panel distinguishes. */
 const USAGE: GoUsage = {
@@ -262,8 +262,8 @@ describe("usage-pill: the poll loop", () => {
     // A limited GO plan does not make the ZEN route an alert.
     expect(button?.className).toBe("dsh-oc-usage-trigger");
 
-    const fill = document.querySelector(".dsh-oc-usage-ring-fill");
-    expect(fill?.getAttribute("stroke-dasharray")).toBe(`0 ${CIRCUMFERENCE}`);
+    // No ring at all: a gauge with no measurement is decoration.
+    expect(document.querySelector(".dsh-oc-usage-ring-fill")).toBeNull();
   });
 
   it("does not poll while the document is hidden, and catches up when it returns", async () => {

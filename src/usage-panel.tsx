@@ -118,23 +118,35 @@ export const UsageTrigger = ({
       onClick={onClick}
       type="button"
     >
-      {/* The ring is the trigger for both providers; Zen's label is the spend. */}
-      <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
-        <circle className="dsh-oc-usage-ring-track" cx="7" cy="7" r={RADIUS} />
-        {/*
-          Quota colors are CSS custom properties, which do not resolve in SVG
-          presentation attributes — apply the token through `style` instead.
-        */}
-        <circle
-          className="dsh-oc-usage-ring-fill"
-          cx="7"
-          cy="7"
-          r={RADIUS}
-          strokeDasharray={strokeDasharray}
-          style={{ stroke: ringColor }}
-          transform="rotate(-90 7 7)"
-        />
-      </svg>
+      {/*
+        The ring is a GAUGE, and only Go has one. On Zen it was drawn hollow —
+        a gauge with no measurement, which is decoration: the number beside it
+        (the spend) is the whole story. Zen therefore renders the number alone,
+        the same way the model selector next to it is text alone.
+      */}
+      {!isZen && (
+        <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+          <circle
+            className="dsh-oc-usage-ring-track"
+            cx="7"
+            cy="7"
+            r={RADIUS}
+          />
+          {/*
+            Quota colors are CSS custom properties, which do not resolve in SVG
+            presentation attributes — apply the token through `style` instead.
+          */}
+          <circle
+            className="dsh-oc-usage-ring-fill"
+            cx="7"
+            cy="7"
+            r={RADIUS}
+            strokeDasharray={strokeDasharray}
+            style={{ stroke: ringColor }}
+            transform="rotate(-90 7 7)"
+          />
+        </svg>
+      )}
       <span>
         {isZen && showUsagePrice && usage?.session !== undefined
           ? (usage.session.planeCostFormatted ?? usage.session.costFormatted)

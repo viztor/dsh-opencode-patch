@@ -278,9 +278,9 @@ Per-state behaviour — the trigger's three states, both panels, what every row 
 
 #### Mode B — OpenCode Zen (`opencode`)
 
-A Zen route renders no Go figure anywhere: the ring is hollow (there is no window to run out of), the label is the spend rather than a percentage, a rate-limited **Go** plan does not paint the **Zen** trigger as an alert, and hovering carries the price (`Session Spend $0.00 · Pay-as-you-go`). A Go window is a fact about a plan this route never bills against, so it does not appear here.
+A Zen route renders no Go figure anywhere: there is no ring at all (a gauge with no measurement is decoration), the label is the spend rather than a percentage, a rate-limited **Go** plan does not paint the **Zen** trigger as an alert, and hovering carries the price (`Session Spend $0.00 · Pay-as-you-go`). A Go window is a fact about a plan this route never bills against, so it does not appear here.
 
-- **Zen trigger**: the same ring, carrying the session's accumulated spend as its label (`$0.00` before anything has been priced, `$0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
+- **Zen trigger**: the spend as its label, and **no ring** — the ring is a gauge, and Zen has no window to measure (`$0.00` before anything has been priced, `$0.42` after). The figure is the only real number available — OpenCode exposes Zen balance through console server actions that require a browser session, so an API key cannot read it.
 - **Pay-as-you-go panel**: header with a `Pay-as-you-go` badge, the session-spend row (when the price switch is on), and one link — [OpenCode Console](https://opencode.ai/console), labelled **Top up**, because top-up is what a pay-as-you-go user wants from that page and it has no URL of its own.
 
 ```
