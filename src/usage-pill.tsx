@@ -305,11 +305,10 @@ const ActiveUsage = ({
   // about what the user is actually spending, which is zero. Red would read as
   // "you are out of money" against a bill that cannot be charged, so the ring
   // goes hollow instead — the track colour, the empty state.
-  // Zen has no quota window at all, so its ring is hollow for the same reason a
-  // free model's is: there is nothing to run out of. Without this the ring
-  // filled from the GO plan's window on a Zen route — a Go figure drawn on a
-  // per-token bill.
-  const isFree = isZen || usage?.session?.freeModel === true;
+  // A free model has nothing to run out of, so its ring is hollow rather than
+  // red. (Zen needs no clause here: it draws no ring at all — a gauge with no
+  // measurement is decoration.)
+  const isFree = usage?.session?.freeModel === true;
   // `undefined` affecting means the first read is still in flight; success is
   // the neutral assumption, and the ring refills the moment data lands.
   const ringColor = isFree
