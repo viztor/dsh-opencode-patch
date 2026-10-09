@@ -10,6 +10,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { readSessionMetaResolver } from "../src/cordis-context.ts";
 import {
   SESSION_HEADER,
   hasSessionHeader,
@@ -257,5 +258,49 @@ describe("session id · parity with the vendor's own reader", () => {
     const id = openCodeSessionIdFor("no-created-at");
     expect(id).toMatch(SESSION_RE);
     expect(() => vendorTimestamp(id)).not.toThrow();
+  });
+});
+
+/**
+ * The session's OWN creation time is what makes the id's embedded timestamp
+ * real. These pin the two halves of that wiring — where the Host keeps the
+ * value, and that it survives the trip into the header — because either half
+ * failing would quietly fall back to hash bits and nobody would see it.
+ */
+describe("session id · the session's own creation time", () => {
+  /** A Host context whose `sessions` service answers for one id. */
+  const ctxWith = (record: unknown): unknown => ({
+    get: (name: string) =>
+      name === "sessions"
+        ? { get: (id: string) => (id === "s1" ? record : undefined) }
+        : undefined,
+  });
+
+  it("reads createdAt off the RECORD, not out of its header", () => {
+    // The Host validates `record.createdAt`; the header carries cwd and
+    // parentSession. Looking in the wrong one yields no timestamp at all.
+    const meta = readSessionMetaResolver(
+      ctxWith({ createdAt: 1_700_000_000_000, header: { cwd: "/tmp/x" } })
+    )?.("s1");
+    expect(meta?.createdAt).toBe(1_700_000_000_000);
+    expect(meta?.cwd).toBe("/tmp/x");
+  });
+
+  it("drops a createdAt that is not a non-negative safe integer", () => {
+    // A malformed value must not become a timestamp in the id: absent is a
+    // state we handle, a wrong time is not.
+    for (const bad of [-1, 1.5, Number.NaN, "1700", Number.MAX_VALUE * 10]) {
+      const meta = readSessionMetaResolver(
+        ctxWith({ createdAt: bad, header: {} })
+      )?.("s1");
+      expect(meta?.createdAt).toBeUndefined();
+    }
+  });
+
+  it("puts that time where the vendor's reader looks for it", () => {
+    const createdAt = 1_700_000_000_000;
+    const id = headerValueFor("s1", createdAt) ?? "";
+    const hex = id.slice(4, 16);
+    expect(Number(BigInt(`0x${hex}`) / 0x1000n)).toBe(createdAt % 2 ** 36);
   });
 });
