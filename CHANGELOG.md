@@ -11,6 +11,28 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ### Features
 
+* **session:** the id carries the session's real createdAt ([6921a1f](https://github.com/viztor/dsh-opencode-patch/commit/6921a1f8a13385f071b24d44d70f200dc6c94471))
+* the meter shows the 5-HOUR window, and the hover lists all three ([5ad31f9](https://github.com/viztor/dsh-opencode-patch/commit/5ad31f9e3a1b6d2c0510d14b7ce77840e207bc4f))
+* the ring is a Go gauge, so Zen does not draw one ([325df9b](https://github.com/viztor/dsh-opencode-patch/commit/325df9b64ade6009114f3ca6d17215dbbc9533a3))
+
+
+### Bug Fixes
+
+* one weight for values, no second line under the Zen credit, one spelling of the model ([74fb90b](https://github.com/viztor/dsh-opencode-patch/commit/74fb90b225cf2af060c0ac661b6c5c14742d2ba3))
+* **project:** split both separators, so a Windows cwd cannot leak a path ([85ad192](https://github.com/viztor/dsh-opencode-patch/commit/85ad192a50dd87fb01f2638b9b0751b6f683de0e))
+* **session:** derive a ULID-shaped session id, not base62 ([657a3e6](https://github.com/viztor/dsh-opencode-patch/commit/657a3e60ee607afb18eb5cdb7e22b49c6a5aa7ba))
+* **session:** restore the vendor's id shape, with a real timestamp ([60c3805](https://github.com/viztor/dsh-opencode-patch/commit/60c3805f14a39e56725b497a6464010d0196deb7))
+* the info tooltips portal out of their container, and the docs catch up ([921bc6d](https://github.com/viztor/dsh-opencode-patch/commit/921bc6d09185e0a1270bda281cb8a0d4825fb9c5))
+* the trigger hugs its content, with a thinner edge ([4e67e86](https://github.com/viztor/dsh-opencode-patch/commit/4e67e86fdb5d023cdcd61f957449b0f70586c1a1))
+* the trigger sits closer to the model selector ([b4aa97b](https://github.com/viztor/dsh-opencode-patch/commit/b4aa97be995156bc786ad686f4fd9e5257409bde))
+* the trigger's radius steps one rung down, to the host's own ratio ([864726d](https://github.com/viztor/dsh-opencode-patch/commit/864726dedf4f8bd7fab664f9cdc4091374893878))
+* the window bar spans its row, and the state dot sits with its label ([6a1232b](https://github.com/viztor/dsh-opencode-patch/commit/6a1232b76fe9a1018eae0c6b93fc59e2dc4aa412))
+
+## [0.15.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.14.0...v0.15.0) (2026-10-09)
+
+
+### Features
+
 * **session:** the id carries the session's real createdAt ([a6ec19e](https://github.com/viztor/dsh-opencode-patch/commit/a6ec19e02730c04f1bee80a35ad68878c3fb8bb3))
 * the meter shows the 5-HOUR window, and the hover lists all three ([218562a](https://github.com/viztor/dsh-opencode-patch/commit/218562adc62930babfc41da4286ad91335b43afa))
 * the ring is a Go gauge, so Zen does not draw one ([c7a0b54](https://github.com/viztor/dsh-opencode-patch/commit/c7a0b54307f8d45294d7b60824e077377bc0c1a2))
