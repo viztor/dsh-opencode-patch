@@ -6,6 +6,23 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.0.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.15.3...v1.0.0) (2026-10-09)
+
+
+### Features
+
+* **routing:** serve mistral-conversations, so mistral-large-4 is reachable ([95184cf](https://github.com/viztor/dsh-opencode-patch/commit/95184cf93abe8362f9dd00b5aae9fa289e0d5cf3))
+
+
+### Bug Fixes
+
+* **routing:** make the unserved SDKs a decision, not an omission ([a014b91](https://github.com/viztor/dsh-opencode-patch/commit/a014b91a20a959e5f502cd837ffca295b1daefb1))
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([577cc8b](https://github.com/viztor/dsh-opencode-patch/commit/577cc8b654ff2ce33568bd9960c19f701db46579))
+
 ## [0.15.1](https://github.com/viztor/dsh-opencode-patch/compare/v0.15.0...v0.15.1) (2026-10-09)
 
 
