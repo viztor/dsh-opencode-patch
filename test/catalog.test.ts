@@ -22,6 +22,7 @@ import {
   enrichModelsResponse,
   getLiveGoCatalog,
   getLiveZenCatalog,
+  internalRouteFor,
   isGoModelsListingUrl,
   isModelsListingUrl,
   isRetiredModel,
@@ -716,5 +717,43 @@ describe("catalog · SDK coverage", () => {
       ...UNSERVED_SDKS,
     ]);
     expect([...named].filter((sdk) => !classified.has(sdk))).toEqual([]);
+  });
+});
+
+/**
+ * INVARIANT I1 - every model the plugin offers is routable.
+ *
+ * The picker shows both planes' models. A model naming an SDK is served on that
+ * SDK's protocol, so it needs a route on ITS OWN plane: the Go plane's base URL
+ * is not Zen's, and a route carries exactly one of them. Checking the SDK alone
+ * - which is what the servability check does - cannot see the difference, so
+ * this walks (plane, SDK) pairs instead, and names every one that has no route.
+ *
+ * A knowingly unserved SDK is skipped: that is a decision (I5), not a gap.
+ */
+describe("catalog · plane and SDK coverage", () => {
+  // `it.fails` because the Go plane's non-completions models have no route yet:
+  // 7 responses and 6 messages are offered and cannot work. This test is the
+  // executable form of that gap - it passes only while the gap is real, and the
+  // moment the Go routes land it will FAIL, which is the signal to flip it to
+  // `it(...)`. See docs/redirect-planes.md, invariants I1 and I5.
+  it.fails("has a route for every (plane, SDK) pair the catalogs contain", () => {
+    const gaps: string[] = [];
+    const planes = [
+      ["opencode", OPENCODE_ZEN_CATALOG],
+      ["opencode-go", OPENCODE_GO_CATALOG],
+    ] as const;
+    for (const [plane, catalog] of planes) {
+      for (const model of catalog) {
+        const sdk = (model as { provider_npm?: string }).provider_npm;
+        if (sdk === undefined || UNSERVED_SDKS.has(sdk)) {
+          continue;
+        }
+        if (internalRouteFor(plane, model.id, sdk) === undefined) {
+          gaps.push(`${plane} + ${sdk}`);
+        }
+      }
+    }
+    expect([...new Set(gaps)].sort()).toEqual([]);
   });
 });
