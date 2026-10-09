@@ -29,7 +29,7 @@ A **shape** is one wire protocol, named by the SDK a model declares in the catal
 
 That is why the servability check treats `undefined` as servable, and why `@ai-sdk/openai-compatible` is deliberately **not** in `PROTOCOL_FOR_SDK`: listing it would record the default as though it were an override. The coverage guard still covers the case where a model declares it explicitly — none do today, and if one did, the test would fail and name it rather than dropping the model.
 
-**The two bold cells are the current gap.** The Go plane serves 13 models on shapes other than completions, and the plugin registers no Go-plane route for any of them.
+**The two bold cells were the gap, and they are closed.** The Go plane serves 13 models on shapes other than completions; both planes now have a route for every shape either one carries. What made them work was making the plane part of a route's definition, below.
 
 ## 3. Routes
 
@@ -62,25 +62,25 @@ These are the rules a correct implementation satisfies. Each one has a test in �
 | Guard | Holds | Fails when |
 | :-- | :-- | :-- |
 | `catalog.test.ts` · SDK coverage | I5 | the catalog names an SDK that is neither mapped nor knowingly unserved |
-| `catalog.test.ts` · plane × SDK coverage **(new)** | I1 | the catalog contains a (plane, SDK) pair with no route |
+| `catalog.test.ts` · plane × SDK coverage | I1 | the catalog contains a (plane, SDK) pair with no route |
 | `responses-routes.test.ts` · route table | I2, I3 | a route's plane or protocol is ambiguous, or the table names a base that is not its plane's |
-| `protocol-routing.e2e.ts` · live probe | I1, I3 | a protocol is declared routable without a path and an auth convention that were really sent |
+| `protocol-routing.e2e.ts` · live probe | I1, I3 | a protocol is declared routable without a path and an auth convention that were really sent, on either plane |
 | coverage ratchet | — | a new route is added without a test that mounts it |
 
-## 6. Refactor
+## 6. Refactor — done
 
-The gap is structural, not a missing branch: **the plane is not part of a route's definition.** `responses-provider.ts` holds one `DEFAULT_BASE_URL` for every route it mounts, and `responses-routes.ts` keys its table by protocol alone, so a Go model cannot be described at all.
+The gap was structural, not a missing branch: **the plane is not part of a route's definition.** `responses-provider.ts` holds one `DEFAULT_BASE_URL` for every route it mounts, and `responses-routes.ts` keys its table by protocol alone, so a Go model cannot be described at all.
 
 1. **Key the route table by (plane, protocol).** `ROUTE_FOR_PLANE_PROTOCOL[plane][protocol] → route`, replacing `ROUTE_FOR_PROTOCOL`. The Zen rows keep their current ids; the Go rows are new.
 2. **Give every route its plane.** A route descriptor carries `{ id, plane, protocol }`, and the mount reads the base URL, catalog and credential **from the plane** rather than from a module constant.
 3. **Make `internalRouteFor` plane-aware.** It currently returns `undefined` for any provider but `opencode`; it must resolve both planes, and still return `undefined` for a model with no mapped protocol.
 4. **Register the Go routes** and add them to `DEFAULT_PROVIDERS`.
-5. **No behaviour change for Zen.** The refactor must be provably neutral there: the same models, the same routes, the same base.
+5. **No behaviour change for Zen.** Verified by the suite rather than by inspection: the Zen route ids, the models mounted on each and the base URL they carry are all asserted, and the refactor changed no test that covers them.
 
 ## 7. Verification
 
-- The four guards in §5, with the new plane × SDK case written to **fail against the current code** before the refactor lands.
-- `pnpm run test:e2e` with keys present, so the new Go routes are probed live rather than assumed.
+- The four guards in §5. The plane × SDK case was written first and **failed against the code as it was** - `opencode-go + @ai-sdk/openai` and `+ @ai-sdk/anthropic` - then passed once the Go routes landed, which is what makes it a check rather than a restatement.
+- `pnpm run test:e2e` with keys present. The probe now takes the plane, and one case sends a real request to the Go base with the Go credential, asserting only that the gateway PARSED the model - any answer but 404 or 500 - so the case does not bet on an entitlement.
 - The Zen plane compared before and after: route ids, mounted model ids and base URLs must be byte-identical.
 
 ## 8. The full path, front to back
