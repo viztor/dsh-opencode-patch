@@ -754,6 +754,6 @@ describe("catalog · plane and SDK coverage", () => {
         }
       }
     }
-    expect([...new Set(gaps)].sort()).toEqual([]);
+    expect([...new Set(gaps)].toSorted()).toEqual([]);
   });
 });
