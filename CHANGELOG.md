@@ -6,6 +6,27 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [0.15.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.14.0...v0.15.0) (2026-10-09)
+
+
+### Features
+
+* **session:** the id carries the session's real createdAt ([a6ec19e](https://github.com/viztor/dsh-opencode-patch/commit/a6ec19e02730c04f1bee80a35ad68878c3fb8bb3))
+* the meter shows the 5-HOUR window, and the hover lists all three ([218562a](https://github.com/viztor/dsh-opencode-patch/commit/218562adc62930babfc41da4286ad91335b43afa))
+* the ring is a Go gauge, so Zen does not draw one ([c7a0b54](https://github.com/viztor/dsh-opencode-patch/commit/c7a0b54307f8d45294d7b60824e077377bc0c1a2))
+
+
+### Bug Fixes
+
+* one weight for values, no second line under the Zen credit, one spelling of the model ([07a1d25](https://github.com/viztor/dsh-opencode-patch/commit/07a1d25ce46fa6a65a31206764b2229c6ab61897))
+* **session:** derive a ULID-shaped session id, not base62 ([ed96127](https://github.com/viztor/dsh-opencode-patch/commit/ed961279f0da6ac885aed80e745782fbb1f84b40))
+* **session:** restore the vendor's id shape, with a real timestamp ([2fc40c2](https://github.com/viztor/dsh-opencode-patch/commit/2fc40c2f52987cd61b78585d148a95fe32bb814d))
+* the info tooltips portal out of their container, and the docs catch up ([c2a35a5](https://github.com/viztor/dsh-opencode-patch/commit/c2a35a5b0a44cd251f1c559444168713ed8d6bb5))
+* the trigger hugs its content, with a thinner edge ([0857c92](https://github.com/viztor/dsh-opencode-patch/commit/0857c923acf7a34fd35700d80fda35a0e648fdbc))
+* the trigger sits closer to the model selector ([40117a6](https://github.com/viztor/dsh-opencode-patch/commit/40117a6678754af4e1c1eb34dfa567d2a79c4e67))
+* the trigger's radius steps one rung down, to the host's own ratio ([05bf6f1](https://github.com/viztor/dsh-opencode-patch/commit/05bf6f17f9fb590350b24384776849490afb98e7))
+* the window bar spans its row, and the state dot sits with its label ([aa47d4a](https://github.com/viztor/dsh-opencode-patch/commit/aa47d4a2bd46736ce0cc2496920324475eb1b923))
+
 ## [0.14.0](https://github.com/viztor/dsh-opencode-patch/compare/v0.13.0...v0.14.0) (2026-10-08)
 
 
