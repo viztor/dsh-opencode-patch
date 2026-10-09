@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.1.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.1.0...v1.1.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **peer:** the host range excluded the host line we build against ([8862587](https://github.com/viztor/dsh-opencode-patch/commit/8862587ea80f4bfb0544538a0e40577f72223ba3))
+
 ## [1.1.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.0.0...v1.1.0) (2026-10-09)
 
 
