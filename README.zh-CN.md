@@ -33,9 +33,9 @@
 
 `dsh-opencode-patch` 是一个 DeepSeek Harness 宿主插件，让 **OpenCode Zen 与 Go** 模型在 DSH 内持续可用。无需遭遇网络拒绝、Cloudflare 挑战、权益不匹配或隐形限制，即可接入 `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3-contributor-free`、`qwen3.8-flash` 以及 OpenCode 目录中的其余模型。
 
-OpenCode 网关要求 DSH 默认不会发送的请求特征：每一轮都携带有效的 `x-opencode-session`、官方 CLI 的来源证明（`User-Agent`、client/project 请求头、`ses_…` 形式的 ID），以及免费层请求上的 `read`/`bash` 工具定义。DSH 子代理、后台评估以及 **Auto Review** 等实验模式，还会在 `sessionId` 缺失或未关联的独立会话中调用 LLM。
+OpenCode 网关要求 DSH 默认不会发送的请求特征：每一轮都携带有效的 `x-opencode-session`、官方 CLI 的来源证明（`User-Agent`、client/project 请求头、`ses_…` 形式的 ID），以及免费层请求上的 `read`/`bash` 工具定义。DSH 子代理、后台评估以及 **Auto Review** 等实验模式，还会在 `sessionId` 缺失或未关联的独立会话中调用 LLM。而模型落在哪个端点是**模型自身的属性**：DSH 按 provider 行选择传输协议，所以走 Responses / Messages / Mistral 的模型被送到 completions 时会返回 **`500`**。
 
-插件在网络层补齐所有缺失的协议要素——**且仅针对 OpenCode 路由**（`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`）。其余全部流量（DeepSeek、OpenAI、Anthropic、GitHub）原样通过。
+插件在网络层补齐所有缺失的协议要素——**且仅针对 OpenCode 路由**（`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic` / `opencode-mistral`）。其余全部流量（DeepSeek、OpenAI、Anthropic、GitHub）原样通过。
 
 **三条主线。**
 
@@ -107,6 +107,7 @@ npm install dsh-opencode-patch
 | 没有补丁时 | 使用 `dsh-opencode-patch` 后 |
 | :-- | :-- |
 | Zen 免费模型报 `403 FreeTierError` | 自动恢复**网关来源头与工具回退** |
+| 走 Responses / Messages / Mistral 的模型被送到 completions 端点，返回 `500` | **逐模型路由**——按目录里每个模型自己声明的 SDK 派发到对应端点 |
 | 会话 ID 被拒并返回 `400 MissingSessionID` | **确定性的 `ses_…` 会话哈希**与跨轮次亲和 |
 | 子代理丢失对话上下文 | **父会话跟踪**（`x-opencode-parent-session-id`、`x-parent-session-id`） |
 | Auto Review 调用报 `TRANSPORT: Connection error` | **回退会话轮次捕获**，在评估调用之间保留轮次状态 |

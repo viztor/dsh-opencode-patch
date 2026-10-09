@@ -35,7 +35,7 @@
 
 **The problem.** OpenCode's gateways expect request traits DSH does not send by default: a valid `x-opencode-session` on every turn, official CLI origin proof (`User-Agent`, client/project headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier requests. Subagents, background evaluations, and experimental modes like **Auto Review** also invoke the LLM in standalone sessions where `sessionId` is omitted or unlinked.
 
-**What this does.** It restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
+**What this does.** It restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic` / `opencode-mistral`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
 
 **What you get.** A picker listing the whole OpenCode catalog with real names, prices and context windows; every model sent to the endpoint it is actually served on; and a live meter for the quota or the spend — no configuration.
 
@@ -109,6 +109,7 @@ Done — the **OpenCode Patch** card appears under _Settings → Plugins_, and t
 | Without the patch | With `dsh-opencode-patch` |
 | :-- | :-- |
 | Zen free models fail with `403 FreeTierError` | **Gateway origin headers & tool fallbacks** restored automatically |
+| A model served on Responses, Messages or Mistral is sent to the completions endpoint and answers `500` | **Per-model routing** — each model dispatched to the endpoint its own SDK names, read from the catalog |
 | Session IDs rejected with `400 MissingSessionID` | **Deterministic `ses_…` session hashing** and affinity across turns |
 | Subagents lose conversation context | **Parent session tracking** (`x-opencode-parent-session-id`, `x-parent-session-id`) |
 | Auto Review calls fail with `TRANSPORT: Connection error` | **Fallback session turn capture** preserving turn state across eval calls |
