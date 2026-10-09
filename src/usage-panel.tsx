@@ -59,7 +59,6 @@ export interface UsageTriggerProps {
   open: boolean;
   /** Stroke colour for the ring, from `getWindowColorFor`. */
   ringColor: string;
-  showUsagePrice: boolean;
   /** Pre-computed ring dash array from `ringGeometry()`. */
   strokeDasharray: string;
   t: (key: string) => string;
@@ -95,7 +94,6 @@ export const UsageTrigger = ({
   onClick,
   open,
   ringColor,
-  showUsagePrice,
   strokeDasharray,
   t,
   tooltipLabel,
@@ -148,7 +146,7 @@ export const UsageTrigger = ({
         </svg>
       )}
       <span>
-        {isZen && showUsagePrice && usage?.session !== undefined
+        {isZen && usage?.session !== undefined
           ? (usage.session.planeCostFormatted ?? usage.session.costFormatted)
           : triggerLabel}
       </span>
@@ -220,7 +218,6 @@ export interface UsagePanelProps {
   onMouseLeave: () => void;
   refreshing: boolean;
   retry: () => void;
-  showUsagePrice: boolean;
   t: (key: string) => string;
   /** The account's name — `OpenCode Go` / `OpenCode Zen`, stable across polls. */
   title: string;
@@ -240,7 +237,6 @@ export const UsagePanel = ({
   onMouseLeave,
   refreshing,
   retry,
-  showUsagePrice,
   t,
   title,
   updatedAt,
@@ -402,7 +398,7 @@ export const UsagePanel = ({
       never mounts. `<SpendRow/>` would put the row out of reach of exactly the
       assertions that pin it.
     */}
-    {showUsagePrice && SpendRow({ t, usage })}
+    {SpendRow({ t, usage })}
 
     {/*
       The Zen card answers "where does an over-limit Go request get billed?"

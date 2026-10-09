@@ -21,7 +21,6 @@ export const FIELD = {
   injectProject: "injectProject",
   injectUserAgent: "injectUserAgent",
   keySource: "keySource",
-  showUsagePrice: "showUsagePrice",
   usageEnabled: "usageEnabled",
 } as const;
 
@@ -226,13 +225,6 @@ export const CARD_FIELDS: readonly CardFieldSpec[] = [
     hintKey: "usageEnabledHint",
     kind: "boolean",
     labelKey: "usageEnabled",
-  },
-  {
-    field: FIELD.showUsagePrice,
-    group: GROUP.quota,
-    hintKey: "showUsagePriceHint",
-    kind: "boolean",
-    labelKey: "showUsagePrice",
   },
   {
     field: FIELD.keySource,

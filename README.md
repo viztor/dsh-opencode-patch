@@ -365,7 +365,6 @@ These exist in the schema but render no control — each is a literal, a marker,
         injectCoreTools: true
         enrichModels: true # merge models.dev specs + active free models into listings
         usageEnabled: true # off = no meter and no price row
-        showUsagePrice: true # session spend + active model rate in the meter
         # File-level only debug options:
         debug: false
         debugFile: "/tmp/dsh-opencode-debug.jsonl"

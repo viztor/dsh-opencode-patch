@@ -16,7 +16,6 @@ import z from "@deepseek-ai/schemastery";
 import {
   DEFAULT_KEY_SOURCE,
   DEFAULT_PROVIDERS,
-  DEFAULT_SHOW_USAGE_PRICE,
   isKeySourcePolicy,
   KEY_SOURCE_POLICIES,
   type KeySourcePolicy,
@@ -28,7 +27,6 @@ import {
 export {
   DEFAULT_KEY_SOURCE,
   DEFAULT_PROVIDERS,
-  DEFAULT_SHOW_USAGE_PRICE,
   KEY_SOURCE_POLICIES,
   type KeySourcePolicy,
 };
@@ -79,7 +77,6 @@ export const CONFIG_DEFAULTS = {
   originClient: DEFAULT_ORIGIN_CLIENT,
   providers: DEFAULT_PROVIDERS,
   sessionIdEnv: DEFAULT_SESSION_ID_ENV,
-  showUsagePrice: DEFAULT_SHOW_USAGE_PRICE,
   usageBaseURL: DEFAULT_USAGE_BASE_URL,
   usageEnabled: true,
 } as const;
@@ -99,7 +96,6 @@ export interface PluginConfig {
   originClient?: string;
   providers?: string[];
   sessionIdEnv?: string;
-  showUsagePrice?: boolean;
   userAgent?: string;
   usageBaseURL?: string;
   usageEnabled?: boolean;
@@ -123,7 +119,6 @@ export interface ResolvedPluginConfig {
   originClient: string;
   providers: Set<string>;
   sessionIdEnv: string;
-  showUsagePrice: boolean;
   userAgent?: string;
   usageBaseURL: string;
   usageEnabled: boolean;
@@ -191,10 +186,6 @@ export const resolveConfig = (
     ),
     sessionIdEnv:
       readString(config.sessionIdEnv) ?? CONFIG_DEFAULTS.sessionIdEnv,
-    showUsagePrice: readBoolean(
-      config.showUsagePrice,
-      CONFIG_DEFAULTS.showUsagePrice
-    ),
     userAgent: readString(config.userAgent),
     usageBaseURL:
       readString(config.usageBaseURL) ?? CONFIG_DEFAULTS.usageBaseURL,
@@ -300,11 +291,6 @@ export const Config = z.object({
     .description(
       "Enrich and override gateway models list using canonical models.dev catalog."
     ),
-  showUsagePrice: z
-    .boolean()
-    .default(CONFIG_DEFAULTS.showUsagePrice)
-    .volatile()
-    .description("Display session spend and model pricing in usage meter."),
   usageBaseURL: z
     .string()
     .default(CONFIG_DEFAULTS.usageBaseURL)

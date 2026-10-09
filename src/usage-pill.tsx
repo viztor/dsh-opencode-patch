@@ -97,7 +97,6 @@ export interface UsagePillProps {
    */
   readUsage: (provider?: string, model?: string) => Promise<GoUsage>;
   /** Whether to show accumulated session spend and the active model's rate. */
-  showUsagePrice?: boolean;
   t: (key: string) => string;
 }
 
@@ -136,7 +135,6 @@ const ActiveUsage = ({
   model,
   provider,
   readUsage,
-  showUsagePrice = true,
   t,
 }: ActiveUsageProps): React.ReactElement | null => {
   const [snapshot, setSnapshot] = useState<{
@@ -384,7 +382,6 @@ const ActiveUsage = ({
         }}
         open={open}
         ringColor={ringColor}
-        showUsagePrice={showUsagePrice}
         strokeDasharray={strokeDasharray}
         t={t}
         tooltipLabel={tooltipLabel}
@@ -404,7 +401,6 @@ const ActiveUsage = ({
           retry={() => {
             retry.current();
           }}
-          showUsagePrice={showUsagePrice}
           t={t}
           title={title}
           updatedAt={current === null ? null : current.updatedAt}
