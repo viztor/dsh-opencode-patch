@@ -262,6 +262,15 @@ export const isLoaderHost = (ctx: unknown): ctx is LoaderHost => {
 export interface SessionMeta {
   cwd?: string;
   parentSession?: string;
+  /**
+   * The session's creation time in milliseconds.
+   *
+   * It sits on the RECORD, not in its `header` (the Host validates
+   * `record.createdAt`), and it is what lets a derived OpenCode session id
+   * carry a REAL creation time rather than hash bits — the vendor parses that
+   * field back out of the id.
+   */
+  createdAt?: number;
 }
 
 export type SessionMetaResolver = (
@@ -312,7 +321,15 @@ export const readSessionMetaResolver = (
       // holds in one place.
       const parentSession = readString(header.parentSession);
       const cwd = readString(header.cwd);
-      return { cwd, parentSession };
+      // A creation time is a non-negative safe integer or it is absent; a
+      // malformed one must not become a timestamp in the id.
+      const createdAt: number | undefined =
+        typeof session.createdAt === "number" &&
+        Number.isSafeInteger(session.createdAt) &&
+        session.createdAt >= 0
+          ? session.createdAt
+          : undefined;
+      return { createdAt, cwd, parentSession };
     } catch {
       return undefined;
     }

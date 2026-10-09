@@ -189,6 +189,21 @@ Cost of skipping the check, all paid for in one session: a hand-drawn 12px refre
 
 **And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
 
+### ascending vs descending: why the direction is not cosmetic (2026-10-09)
+
+The vendor's generator takes a direction, and `descending` is the **bitwise NOT** of the timestamp value:
+
+```ts
+let now = BigInt(currentTimestamp) * BigInt(0x1000) + BigInt(counter);
+now = direction === "descending" ? ~now : now;
+```
+
+So the same instant sorts to opposite ends of a lexicographic list: ascending is oldest-first, descending is newest-first. Three consequences, in order of severity:
+
+1. **Their own reader only works on one of them.** `id.ts` says so in the signature's comment: _"Extract timestamp from an ascending ID. Does not work with descending IDs."_ An id minted in the wrong direction does not merely sort oddly — `timestamp()` returns garbage for it, which is the same class of failure as the Crockford alphabet, reached from a different cause.
+2. **The id IS the sort key.** A session listed in the wrong direction lands at the wrong end of the vendor's own lists.
+3. **Direction is a per-TYPE choice, not a global one.** `msg_` and `prt_` may be descending (newest message first inside a thread) while `ses_` is ascending — which the exported reader implies, since it has to work on the ids people read times from. We mint only session ids, so we emit ascending: the plain `ms * 0x1000 + counter`, never the complement. The parity test pins it, because a complemented value cannot be recovered by their reader.
+
 ### The session id: I "fixed" it from a secondary source and broke it (2026-10-09)
 
 The owner: _"session id is changed to adapt to official protocol."_ Our derived id was `ses_<12hex><14base62>`. I read a third-party analysis saying OpenCode's ids are prefixed **ULIDs** in Crockford base32, changed ours to match — and that was wrong. Reading the vendor's own generator settled it:

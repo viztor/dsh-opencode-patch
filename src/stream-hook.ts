@@ -126,26 +126,31 @@ export const createStreamHook = (
       return ctx.llm.stream({ ...options, provider: redirect });
     }
     const sessionProp: unknown = options.sessionId;
+    // The session is looked up FIRST: its `createdAt` is what lets the derived
+    // id carry the conversation's real creation time instead of hash bits, and
+    // the derivation below is where that value goes.
+    const sessionMetaResolver = readSessionMetaResolver(ctx);
+    const sessionMeta =
+      typeof sessionProp === "string" && sessionMetaResolver !== undefined
+        ? sessionMetaResolver(sessionProp)
+        : undefined;
+
     let rawSession: string;
     let value: string;
     if (typeof sessionProp === "string" && sessionProp.length > 0) {
       rawSession = sessionProp;
       value =
-        headerValueFor(rawSession) ?? fallbackSessionId(config.sessionIdEnv);
+        headerValueFor(rawSession, sessionMeta?.createdAt) ??
+        fallbackSessionId(config.sessionIdEnv);
     } else if (typeof sessionProp === "number") {
       rawSession = String(sessionProp);
       value =
-        headerValueFor(rawSession) ?? fallbackSessionId(config.sessionIdEnv);
+        headerValueFor(rawSession, sessionMeta?.createdAt) ??
+        fallbackSessionId(config.sessionIdEnv);
     } else {
       rawSession = fallbackSessionId(config.sessionIdEnv);
       value = rawSession;
     }
-
-    const sessionMetaResolver = readSessionMetaResolver(ctx);
-    const sessionMeta =
-      typeof options.sessionId === "string" && sessionMetaResolver !== undefined
-        ? sessionMetaResolver(options.sessionId)
-        : undefined;
 
     const parentProp =
       options.parentSessionId ?? options.parentSession ?? options.parentId;
@@ -157,8 +162,14 @@ export const createStreamHook = (
     } else if (sessionMeta?.parentSession !== undefined) {
       rawParent = sessionMeta.parentSession;
     }
+    // The parent's own creation time, when the Host has that session too.
     const parentValue =
-      rawParent === undefined ? undefined : headerValueFor(rawParent);
+      rawParent === undefined
+        ? undefined
+        : headerValueFor(
+            rawParent,
+            sessionMetaResolver?.(rawParent)?.createdAt
+          );
 
     let project: string | undefined;
     if (sessionMeta?.cwd !== undefined) {
