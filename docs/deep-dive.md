@@ -30,9 +30,9 @@ The fetch patch satisfies every variant:
 
 | Header | Value | Purpose |
 | :-- | :-- | :-- |
-| `x-opencode-session` | `ses_<12hex><14base62>` | Vendor conversation affinity; enables KV-cache prompt routing |
-| `x-opencode-session-id` | `ses_<12hex><14base62>` | Required by OpenCode CLI v1.18+ gateways |
-| `x-session-affinity` | `ses_<12hex><14base62>` | Generic proxy/relay affinity (Cloudflare AI Gateway, LiteLLM, Portkey) |
+| `x-opencode-session` | `ses_<26 Crockford base32>` | Vendor conversation affinity; enables KV-cache prompt routing |
+| `x-opencode-session-id` | `ses_<26 Crockford base32>` | Required by OpenCode CLI v1.18+ gateways |
+| `x-session-affinity` | `ses_<26 Crockford base32>` | Generic proxy/relay affinity (Cloudflare AI Gateway, LiteLLM, Portkey) |
 | `x-opencode-parent-session-id` | `ses_<parent_hash>` | Hierarchical lineage for DSH subagents (`subagent`, `subagent_fork`) |
 | `x-parent-session-id` | `ses_<parent_hash>` | Generic proxy parent-session affinity |
 | `User-Agent` | `opencode/1.18.34 …` | Prevents Cloudflare WAF Error 1010 challenges |

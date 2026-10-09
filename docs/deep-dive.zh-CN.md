@@ -30,9 +30,9 @@ fetch 补丁满足每一种变体：
 
 | 请求头 | 值 | 用途 |
 | :-- | :-- | :-- |
-| `x-opencode-session` | `ses_<12hex><14base62>` | 厂商会话亲和；启用 KV 缓存提示路由 |
-| `x-opencode-session-id` | `ses_<12hex><14base62>` | OpenCode CLI v1.18+ 网关所要求 |
-| `x-session-affinity` | `ses_<12hex><14base62>` | 通用代理 / 中继亲和（Cloudflare AI Gateway、LiteLLM、Portkey） |
+| `x-opencode-session` | `ses_<26 Crockford base32>` | 厂商会话亲和；启用 KV 缓存提示路由 |
+| `x-opencode-session-id` | `ses_<26 Crockford base32>` | OpenCode CLI v1.18+ 网关所要求 |
+| `x-session-affinity` | `ses_<26 Crockford base32>` | 通用代理 / 中继亲和（Cloudflare AI Gateway、LiteLLM、Portkey） |
 | `x-opencode-parent-session-id` | `ses_<parent_hash>` | DSH 子代理的分层谱系（`subagent`、`subagent_fork`） |
 | `x-parent-session-id` | `ses_<parent_hash>` | 通用代理父会话亲和 |
 | `User-Agent` | `opencode/1.18.34 …` | 避免 Cloudflare WAF Error 1010 挑战 |
