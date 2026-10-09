@@ -1,5 +1,7 @@
 # Redirect planes: the specification
 
+> This is the specification; the implementation is in [`protocol-routing-and-merge.md`](./protocol-routing-and-merge.md).
+
 The authority for how this plugin sends a model to the endpoint that serves it. `protocol-routing-and-merge.md` describes what the code does today; **this document says what it must do**, and the tests below are how the two are held together. Measured 2026-10-09 against `models.dev`.
 
 ## 1. Planes

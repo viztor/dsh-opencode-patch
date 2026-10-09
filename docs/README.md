@@ -1,16 +1,16 @@
-Screenshots of the plugin UI, referenced from the README.
+# Documentation
 
-Regenerate with:
+One document per subject. Everything here is engineering material and written in English, except the meter's guide — that one is user-facing, so it exists in both languages, the same rule the READMEs follow.
 
-    scripts/capture-ui.sh "<dsh url with ?token=...>"
+| Document | Subject | Language |
+| :-- | :-- | :-- |
+| [`deep-dive.md`](./deep-dive.md) | the wire protocol: the header matrix, session lineage, workspace attribution, API tiers, and the catalog shims | English |
+| [`redirect-planes.md`](./redirect-planes.md) | the routing **specification**: planes, shapes, routes, the invariants a correct implementation satisfies, and the full path from the picker to the meter | English |
+| [`protocol-routing-and-merge.md`](./protocol-routing-and-merge.md) | the routing **implementation**: why routing exists, how the route is chosen, the catalog merge, and where the code lives | English |
+| [`engineering-notes.md`](./engineering-notes.md) | vendor findings, and the rules that came out of real failures | English |
+| [`quota-meter.md`](./quota-meter.md) | the composer meter, state by state: what it shows, what each row answers, and where the numbers come from | English |
+| [`quota-meter.zh-CN.md`](./quota-meter.zh-CN.md) | 同一份说明的中文版 | 中文 |
 
-The token is generated at runtime by `dsh web` and is not stored on disk, so it has to be passed in. Files land here as `composer-dock.png` and `meter-panel.png`.
+**Specification versus implementation is the one split worth knowing.** `redirect-planes.md` says what the code **must** do; `protocol-routing-and-merge.md` says what it **does**; the guards in the former are what holds the two together. When they disagree, one of them is wrong — that is the point of keeping both.
 
-## 说明文档
-
-- [`quota-meter.md`](./quota-meter.md) — the meter's per-state behaviour: the trigger's three states, both panels, what every row answers, where the numbers come from, and the three different kinds of "no number".
-- [`quota-meter.zh-CN.md`](./quota-meter.zh-CN.md) — 同一份说明的中文版。
-- [`protocol-routing-and-merge.md`](./protocol-routing-and-merge.md) — protocol routing, the catalog merge and the UI, at the technical level (English).
-- [`protocol-routing-and-merge.md`](./protocol-routing-and-merge.md) — 同一份内容的中文版：协议路由、目录合并与界面的技术说明。
-- [`deep-dive.md`](./deep-dive.md) — the protocol internals moved out of the README: header-injection matrix, session lineage, workspace attribution, API tiers, catalog shims (English).
-- [`deep-dive.md`](./deep-dive.md) — 同一份内容的中文版。
+Screenshots of the plugin UI land in this directory as `composer-dock.png` and `meter-panel.png`. [quota-meter.md §7](./quota-meter.md#7-screenshots) covers how to regenerate them.

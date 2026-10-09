@@ -4,7 +4,7 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. Measured 2026-10-05 across the 116 `opencode` models:
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Measured 2026-10-05:
 
 | API shape | Wire endpoint | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
@@ -86,23 +86,9 @@ Both generated files are checked in CI: `catalog:shim` and `limits:shim` exit no
 
 ## 4. The UI
 
-Two surfaces, one reading. Both are pure views fed by `settings-page.tsx`, which owns the store, the slot registration and the Host remote calls.
+Two surfaces, one reading, and the composer meter is the one with per-state behaviour worth documenting: the trigger's three states, both panels, what every row answers, where each number comes from, and the three different kinds of "no number". That is [`quota-meter.md`](./quota-meter.md), state by state.
 
-### The composer meter
-
-- `src/usage-pill.tsx` — state: gating by provider, the poll loop, hover/click dismissal, retry. It registers through `ctx.inject(['slots', 'modelDirectories'], …)`, the host's own idiom; reading those services off the root context fails **silently**, which is how the meter once shipped broken.
-- `src/usage-panel.tsx` — `UsageTrigger` (the ring) and `UsagePanel` (the rows), both pure functions of their props with no hooks, so tests invoke them and walk the tree.
-- `src/usage-ui.ts` — dependency-free logic and the stylesheet: window geometry, the affecting-window rule, `describeUsage` copy, `formatRelativeReset`.
-
-**Which window the trigger shows.** A window that is _out_ (rate-limited, or at its cap) wins, widest first — monthly, then weekly, then 5-hour — because a monthly cap explains a refusal the 5-hour window does not. Otherwise the 5-hour window, which resets soonest. The bottleneck is not the largest number; it is the smallest window that can still refuse you.
-
-**Two balances, never one.** A turn is attributed to the plane that _served_ it (`catalogPlaneForRoute`), and the accumulator keeps `costGo` / `costZen`. `attachSession` projects the reading's own plane onto the snapshot, so each panel answers for its own balance. A Zen route renders no Go figure at all: hollow ring, spend as the label, no Go-plan alert.
-
-### The settings card
-
-`src/settings-card.tsx` renders one control per `CARD_FIELDS` entry — a register, not JSX — and `src/settings-usage.tsx` adds the Go usage summary above them: one row per window with what is **left** on the right. "Left" is a percentage, never a dollar figure: `/usage` publishes a percent per window and no balance, and the plan tier is not discoverable. The ⓘ says so. A quota that cannot be read prints no numbers.
-
-The card's `inject()` hands in `readUsage` and `getLocale` the same way the meter receives them, so one service owns credential resolution and the endpoint.
+What belongs here is only the part that is a routing consequence: the meter is a pure view fed by `settings-page.tsx`, which owns the store, the slot registration and the Host remote calls. Nothing in it knows which route a turn took.
 
 ## 5. Where the code lives
 
