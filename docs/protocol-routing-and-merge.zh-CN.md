@@ -6,14 +6,19 @@
 
 ## 一、为什么需要路由
 
-OpenCode 的模型分布在**两个不同的 API** 上，而"某个模型在哪个 API 上"是**模型自己的属性**，不是账号的属性：
+OpenCode 的模型分布在**三种线路形状**上，而"某个模型在哪种形状上"是**模型自己的属性**，不是账号的属性。2026-10-05 对 116 个 `opencode` 模型实测：
 
-| API       | 线路格式                 | 官方客户端用的 SDK  |
-| :-------- | :----------------------- | :------------------ |
-| Responses | `POST /zen/v1/responses` | `@ai-sdk/openai`    |
-| Messages  | `POST /zen/v1/messages`  | `@ai-sdk/anthropic` |
+| 线路形状 | 端点 | 哪些模型 | 目录里的信号 |
+| :-- | :-- | :-- | :-- |
+| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **默认**——116 个里的 53 个 | 模型**不声明** SDK |
+| OpenAI **Responses** | `POST /zen/v1/responses` | 32 个 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /zen/v1/messages` | 23 个 | `@ai-sdk/anthropic` |
+
+**"OpenAI" 占了三种里的两种。** Chat Completions 与 Responses 是**两种不同的线路格式**，需要 Responses 的模型在 completions 端点上不工作。默认那种也不是 "OpenAI"——它是路由自己注册时用的那个 api，不声明 SDK 的模型说的就是它。
 
 DSH 按 provider 行上声明的协议选传输方式。如果这个协议不是该模型被服务的那一个，网关**不会回退**——它直接返回 `500`。所以插件的职责就是：把每个模型发到它自己的 SDK 所指的那个端点，并且**不需要用户配置任何东西**。
+
+还有第四个 SDK 是**故意不服务**的：8 个模型声明 `@ai-sdk/google`，而 `llm-pi-ai` 没有实现该协议——没有路由可以派发，于是它们继续在 completions 路由上失败，而不是被送到一个凭空发明的地方。
 
 ## 二、路由是怎么定下来的
 

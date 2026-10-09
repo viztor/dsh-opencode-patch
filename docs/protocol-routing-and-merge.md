@@ -4,14 +4,19 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **two different APIs**, and which one a model lives on is a property of the model, not of the account:
+OpenCode serves its models on **three different API shapes**, and which one a model lives on is a property of the model, not of the account. Measured 2026-10-05 across the 116 `opencode` models:
 
-| API       | Wire shape               | SDK the vendor's own client uses |
-| :-------- | :----------------------- | :------------------------------- |
-| Responses | `POST /zen/v1/responses` | `@ai-sdk/openai`                 |
-| Messages  | `POST /zen/v1/messages`  | `@ai-sdk/anthropic`              |
+| API shape | Wire endpoint | Which models | Signal in the catalog |
+| :-- | :-- | :-- | :-- |
+| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default** — 53 of 116 | the model names **no** SDK |
+| OpenAI **Responses** | `POST /zen/v1/responses` | 32 of 116 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /zen/v1/messages` | 23 of 116 | `@ai-sdk/anthropic` |
+
+**"OpenAI" is two of the three.** Chat Completions and Responses are different wire formats, and a model that needs Responses does not work on the completions endpoint. The default is not "OpenAI" either — it is whatever api the route itself was registered with, and a model that names no SDK speaks it.
 
 DSH picks a transport from the provider row's protocol. If that protocol is not the one the model is served on, the gateway does not fall back — it answers `500`. So the plugin's job is to send each model to the endpoint its own SDK names, without asking the user to configure anything.
+
+A fourth SDK is deliberately **not** served: 8 models name `@ai-sdk/google`, and `llm-pi-ai` implements no such protocol — so there is no route to dispatch them to, and they keep failing on the completions route rather than being sent somewhere invented.
 
 ## 2. How the route is chosen
 

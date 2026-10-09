@@ -142,7 +142,7 @@ Counts are the 80 **active** `opencode` models in `models.dev` as of 2026-10-05,
 
 The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 
-- **You keep choosing.** The picker shows exactly the models you listed. Selecting one is matched to the right protocol automatically, so adding any Responses or Messages model to your list is enough — no second route to declare by hand.
+- **You keep choosing.** The picker shows exactly the models you listed, and each one is matched to the right protocol automatically. OpenCode serves models on three shapes — OpenAI Chat Completions (the default), OpenAI Responses, and Anthropic Messages — and a model that needs one of the other two is dispatched to the route that speaks it. No second route to declare by hand.
 - **You are never offered a model that cannot work.** The 8 `@ai-sdk/google` models are dropped from the discovery list _and_ from what the `opencode` route reports, because DSH implements no such protocol and selecting one could only fail — with nothing in the row to say why.
 - **One credential.** Every routed model authenticates with the `opencode` key you already configured, resolved through the credentials service and never re-asked for.
 
