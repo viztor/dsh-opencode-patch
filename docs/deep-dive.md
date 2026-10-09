@@ -111,6 +111,10 @@ Because these calls omit `options.sessionId`, earlier plugin versions short-circ
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
+**Two endpoint levels, and two ways to authenticate.** The endpoints above are not pinned in the CLI's source: they come from the catalog (`models.dev`), which defines a **provider default** (`api` on the provider — `https://opencode.ai/zen/v1` for Zen, `https://opencode.ai/zen/go/v1` for Go) and a per-model **inference** endpoint (`model.api.url`) that overrides it. `provider.ts` resolves `model.api.url ?? provider default`, so every model inherits the default today — but the mechanism is two-level, and a model that sets its own URL is served from it.
+
+Authentication follows the **wire shape**, not the endpoint: the OpenAI planes (`/chat/completions`, `/responses`) send `Authorization: Bearer <key>`; the Anthropic plane (`/messages`) sends `x-api-key: <key>`. `extractApiKeyFromHeaders` reads `Authorization` first and falls back to `x-api-key` / `api-key`, which is what makes one credential usable no matter which plane the adapter routed the turn through.
+
 **Credential isolation (preventing `403 EntitlementError`).** Go keys (`sk-…`) carry the subscription entitlement and can query `https://opencode.ai/zen/go/v1/usage` for rolling, weekly and monthly windows. Zen keys (`oc_sk_…`) cannot — the Go endpoint answers:
 
 ```json

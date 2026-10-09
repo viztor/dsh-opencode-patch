@@ -111,6 +111,10 @@ async function classifyRisk(ctx, agent, exec, signal) {
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
+**两个层级的端点，两种认证方式。** 上面那些端点并不写死在 CLI 源码里：它们来自目录（`models.dev`），目录定义了 **provider 默认端点**（provider 上的 `api`——Zen 是 `https://opencode.ai/zen/v1`，Go 是 `https://opencode.ai/zen/go/v1`）以及**逐模型的推理端点**（`model.api.url`），后者会覆盖默认值。`provider.ts` 的取值顺序是 `model.api.url ?? provider 默认`，所以今天所有模型都继承默认值——但机制本身是两层的，设置了自有 URL 的模型就从那里被服务。
+
+认证跟随的是**线格式**，不是端点：OpenAI 那两个平面（`/chat/completions`、`/responses`）发 `Authorization: Bearer <key>`；Anthropic 平面（`/messages`）发 `x-api-key: <key>`。`extractApiKeyFromHeaders` 先读 `Authorization`，再回落到 `x-api-key` / `api-key`——这正是同一份凭据无论适配器把这一轮路由到哪个平面都能用的原因。
+
 **凭据隔离（防止 `403 EntitlementError`）。** Go 密钥（`sk-…`）携带订阅权益，可以查询 `https://opencode.ai/zen/go/v1/usage` 获取滚动、每周与每月窗口。Zen 密钥（`oc_sk_…`）做不到——Go 端点会这样回答：
 
 ```json
