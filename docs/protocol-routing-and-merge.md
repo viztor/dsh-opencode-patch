@@ -48,7 +48,7 @@ An earlier version kept a hand-written list of which models redirect. A hand-pat
 
 `test/e2e/protocol-routing.e2e.ts` asks the gateway which endpoint recognises each shipped model. The unit tests read the same mapping they verify, so they cannot catch a stale mapping — only the live gateway can. A wrong-endpoint cell answering `500` is what pins the route; a `403 FreeTierError` only proves the gateway parsed the model.
 
-### One list in the UI, four endpoints underneath
+### How we support API endpoints in different formats
 
 The user sees a single OpenCode provider and a single model list. Nothing in the interface names a route, a protocol or an endpoint, and there is no per-model setting to get wrong — **that consistency is the product**, and everything below it exists to keep it.
 
