@@ -31,6 +31,7 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
+      "opencode-mistral",
     ]);
     expect(resolved.debug).toBe(false);
     expect(resolved.debugFile).toBeUndefined();
@@ -85,12 +86,14 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
+      "opencode-mistral",
     ]);
     expect([...resolveConfig({ providers: [""] }).providers]).toEqual([
       "opencode",
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
+      "opencode-mistral",
     ]);
   });
 
@@ -115,6 +118,7 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
+      "opencode-mistral",
     ]);
 
     const custom = resolveConfig({
@@ -150,6 +154,7 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
+      "opencode-mistral",
     ]);
   });
 });
@@ -198,6 +203,7 @@ describe("Config schema", () => {
         "opencode-go",
         "opencode-responses",
         "opencode-anthropic",
+        "opencode-mistral",
       ]),
       sessionIdEnv: "OPENCODE_SESSION_ID",
       usageBaseURL: "https://opencode.ai/zen/go/v1",
@@ -245,6 +251,7 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
     "opencode-go",
     "opencode-responses",
     "opencode-anthropic",
+    "opencode-mistral",
   ]);
 
   it("identifies opencode.ai/zen endpoints", () => {

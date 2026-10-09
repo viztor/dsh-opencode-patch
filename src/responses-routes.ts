@@ -30,25 +30,35 @@ export const RESPONSES_SDK = "@ai-sdk/openai";
 /** The SDK whose presence means "this model is served on the Messages API". */
 export const ANTHROPIC_SDK = "@ai-sdk/anthropic";
 
+/** The SDK whose presence means "this model is served on Mistral's API". */
+export const MISTRAL_SDK = "@ai-sdk/mistral";
+
 /** Route serving the gateway's Responses-API models. */
 export const RESPONSES_ROUTE = "opencode-responses";
 
 /** Route serving the gateway's Messages-API models. */
 export const ANTHROPIC_ROUTE = "opencode-anthropic";
 
+/** Route serving the gateway's Mistral-API models. */
+export const MISTRAL_ROUTE = "opencode-mistral";
+
 /**
  * The pi-ai protocol each SDK a model may name corresponds to, when that
  * protocol is not the route's own. Keys are models.dev `provider.npm` values.
  *
- * Only protocols `llm-pi-ai` actually implements belong here — its
- * `supportedProtocols()` is `openai-completions`, `openai-responses` and
- * `anthropic-messages`. `@ai-sdk/google` is therefore absent: 8 models name it
- * and there is no route to dispatch them to, so they keep failing on the
- * completions route rather than being sent somewhere invented.
+ * Only protocols `llm-pi-ai` actually implements belong here. Its
+ * `supportedProtocols()` is `Object.keys(PROTOCOLS)`, which today includes
+ * `openai-completions`, `openai-responses`, `anthropic-messages` AND
+ * `mistral-conversations` — the last one carries its own compatibility gate
+ * (`supportsMidConvoSystemMessages: "withhold"`), so it is supported on
+ * purpose. `@ai-sdk/google` is absent because no Google protocol exists, and
+ * its models keep failing on the completions route rather than being sent
+ * somewhere invented.
  */
 export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
   [RESPONSES_SDK]: "openai-responses",
   [ANTHROPIC_SDK]: "anthropic-messages",
+  [MISTRAL_SDK]: "mistral-conversations",
 };
 
 /**
@@ -61,20 +71,20 @@ export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
  * how `mistral-large-4` went missing from the picker while every gate stayed
  * green. `catalog.test.ts` fails on that case and names the SDK.
  *
- * - `@ai-sdk/google` — no Google protocol exists.
- * - `@ai-sdk/mistral` — Mistral's own dialect. Its models carry a
- *   `mistral/`-namespaced canonical id and are served by Mistral's SDK, not by
- *   an OpenAI-compatible one; the three protocols we have do not speak it.
+ * - `@ai-sdk/google` — no Google protocol exists, in pi-ai or here.
+ *
+ * `@ai-sdk/mistral` used to be listed here, on the belief that pi-ai had no
+ * Mistral protocol. It does — `mistral-conversations`, with its own
+ * compatibility gate — so `mistral-large-4` is served instead, through a route
+ * of its own.
  */
-export const UNSERVED_SDKS: ReadonlySet<string> = new Set([
-  "@ai-sdk/google",
-  "@ai-sdk/mistral",
-]);
+export const UNSERVED_SDKS: ReadonlySet<string> = new Set(["@ai-sdk/google"]);
 
 /** The route each non-default protocol is served from. */
 export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> = {
   "openai-responses": RESPONSES_ROUTE,
   "anthropic-messages": ANTHROPIC_ROUTE,
+  "mistral-conversations": MISTRAL_ROUTE,
 };
 
 /** Every route this plugin registers for itself. */
