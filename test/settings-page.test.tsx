@@ -744,10 +744,12 @@ describe("settings-page: OpencodeCard rendering", () => {
     expect(boolFields.length + choiceFields.length + valueFields.length).toBe(
       CARD_FIELDS.length
     );
-    // The card shows only the decisions a user makes — 7 toggles and 1 enum.
+    // The card shows only the decisions a user makes — 6 toggles and 1 enum.
     // Every literal/marker override is config-only (see CONFIG_ONLY_FIELDS), so
     // no text or list field renders at all.
-    expect(boolFields.length).toBe(7);
+    // Six booleans: the meter's own switch is one, and there is no nested
+    // price switch inside it.
+    expect(boolFields.length).toBe(6);
     expect(choiceFields.length).toBe(1);
     expect(valueFields.length).toBe(0);
     const [choiceField] = choiceFields;
@@ -875,13 +877,12 @@ describe("settings-page: OpencodeCard rendering", () => {
     ]);
   });
 
-  it("renders the documented enrichModels and showUsagePrice switches", () => {
-    // Regression guard: both were declared in the spec register and translated
-    // (en + zh) but omitted from the card's hand-written JSX, so the switches
+  it("renders the documented enrichModels switch", () => {
+    // Regression guard: it was declared in the spec register and translated
+    // (en + zh) but omitted from the card's hand-written JSX, so the switch
     // documented in the README could not be reached from the UI.
     const ids = controlsInOrder(renderPage(mountCard())).map((f) => f.props.id);
     expect(ids).toContain("plugin-config-opencode-enrichModels");
-    expect(ids).toContain("plugin-config-opencode-showUsagePrice");
   });
 
   it("renders one heading per group, in register order", () => {
@@ -969,7 +970,6 @@ describe("settings-page: field specs", () => {
       "enrichModels",
       "injectCoreTools",
       "usageEnabled",
-      "showUsagePrice",
       "keySource",
     ]);
   });

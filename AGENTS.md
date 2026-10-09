@@ -189,6 +189,25 @@ Cost of skipping the check, all paid for in one session: a hand-drawn 12px refre
 
 **And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
 
+### A switch inside a switch is not a decision (2026-10-09)
+
+The owner, reading the settings card: _"这两个不应该是一样的吗，为什么要两个开关？"_ — and the honest answer was that they were not the same thing, but the second was **nested** inside the first:
+
+|  | `usageEnabled` | `showUsagePrice` (removed) |
+| --- | --- | --- |
+| scope | does the meter exist at all (the Host does not mount the service, so the client mounts nothing) | does the meter show MONEY (the Zen trigger's number, and the spend row) |
+| off means | the whole meter is absent | Go: the ring stays, the money goes. **Zen: the trigger's only number IS the money — so this deleted the meter's content and kept its frame** |
+
+Three reasons it went, and the third is the one that decided it:
+
+1. **A switch whose effect only exists inside another switch's surface is a state, not a decision.** The card shows the decisions a user makes; `showUsagePrice` had no effect whenever `usageEnabled` was off.
+2. **Minimal intrusion is measured in switches, not in pixels.** The meter is now one switch away from being gone.
+3. **On Zen it produced the empty shell** this file has already paid for twice — the meter that renders nothing, the row that disappears. A user who wants no money display turns the meter off, which is coherent: the meter IS the quota-and-money surface.
+
+It was safe to remove because unknown keys are tolerated: a stale `showUsagePrice: false` in someone's config is ignored rather than fatal (verified before deleting). The one consequence to state plainly: whoever had set it false now sees the spend row again, and their answer is the meter switch.
+
+The card went 8 fields to 7, and the counts in the tests moved with it — including a hardcoded `boolFields.length`, which is exactly the kind of assertion that should break when a field is removed.
+
 ### ascending vs descending: why the direction is not cosmetic (2026-10-09)
 
 The vendor's generator takes a direction, and `descending` is the **bitwise NOT** of the timestamp value:

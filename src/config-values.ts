@@ -40,7 +40,6 @@ export const DEFAULT_PROVIDERS = [
  * here because the host schema's default and the client pill's fallback gate
  * must agree on the same value.
  */
-export const DEFAULT_SHOW_USAGE_PRICE = true;
 
 /**
  * Which credential source wins when more than one resolves.

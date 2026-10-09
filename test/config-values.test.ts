@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   ALL_MODELS_MARKER,
-  DEFAULT_SHOW_USAGE_PRICE,
   DEFAULT_PROVIDERS,
   readBoolean,
   readString,
@@ -36,7 +35,6 @@ describe("config-values: shared defaults", () => {
       "opencode-responses",
       "opencode-anthropic",
     ]);
-    expect(DEFAULT_SHOW_USAGE_PRICE).toBe(true);
   });
 });
 

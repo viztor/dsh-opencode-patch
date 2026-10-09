@@ -14,12 +14,7 @@ import {
   type SettingsFormScope,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 
-import {
-  DEFAULT_PROVIDERS,
-  DEFAULT_SHOW_USAGE_PRICE,
-  readBoolean,
-  readStringList,
-} from "./config-values.ts";
+import { DEFAULT_PROVIDERS, readStringList } from "./config-values.ts";
 import { isRecord } from "./guards.ts";
 import { OpencodeCard } from "./settings-card.tsx";
 import { en, zh } from "./settings-copy.ts";
@@ -287,19 +282,12 @@ export const apply = (ctx: ClientContext): void => {
    * intercept carries no OpenCode headers, so it has no quota to report either —
    * which is why there is no separate "which routes show the meter" setting.
    */
-  const usageMarkers = (): {
-    meterProviders: string[];
-    showUsagePrice: boolean;
-  } => {
+  const usageMarkers = (): { meterProviders: string[] } => {
     const value: unknown = scope?.getSnapshot().value;
     const record = isRecord(value) ? value : {};
     const providers = readStringList(record.providers);
     return {
       meterProviders: providers.length > 0 ? providers : DEFAULT_PROVIDERS,
-      showUsagePrice: readBoolean(
-        record.showUsagePrice,
-        DEFAULT_SHOW_USAGE_PRICE
-      ),
     };
   };
 
