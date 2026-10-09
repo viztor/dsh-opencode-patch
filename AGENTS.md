@@ -14,6 +14,15 @@ aliases:
 
 > [!info] Summary DSH host plugin (`dsh-opencode-patch` on npm, published with the `@viztor/dsh-opencode-patch` and `@viztor/dsh-opencode` scoped aliases from the same tree; repo `viztor/dsh-opencode-patch`) that keeps OpenCode Zen free-tier models working inside DeepSeek Harness: deterministic `ses_…` session affinity, gateway origin-header restoration, `read`/`bash` tool-schema fallback, a models.dev-backed model catalog with SWR refresh, and a composer meter showing Go quota, Zen overflow, session spend and the active model's rate. Standards reference: [[OBSIDIAN]] (`~/dev/OBSIDIAN.md`).
 
+## HARD RULE: a local path never leaves the machine
+
+An absolute path from a development machine (`/Users/<name>/…`, `/home/<name>/…`, `C:\Users\…`) must never appear anywhere a third party can read: documentation, code comments, examples, test fixtures, commit messages, issue text, or a published artifact. It leaks a username, an operating system and a directory layout, and it is worthless to the reader anyway.
+
+- **In prose and examples, use a neutral placeholder** — `/home/you/projects/my-app`, `~/dev/my-app`, or just the folder name.
+- **Before publishing, grep the artifact for the home prefix** (`/Users/`, `/home/`, `C:\Users\`), not just the source tree.
+- **Generated outputs count.** Coverage reports, source maps and logs carry absolute paths; they must be gitignored, never committed.
+- **The check belongs before the commit.** Once it ships, removing it means rewriting content AND the history that carried it, plus force-pushing over every tag and invalidating published provenance links.
+
 ## How it works
 
 1. **Turn scope** — `apply()` hooks `llm/stream` for configured providers, derives a stable `ses_<12hex><14base62>` ID per DSH session (`openCodeSessionIdFor`, SHA-256), and carries it in `AsyncLocalStorage` across the streamed turn (`withStore`).
