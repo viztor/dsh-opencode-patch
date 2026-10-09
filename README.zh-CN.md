@@ -1,9 +1,9 @@
 <div align="center">
+  <p><a href="./README.md">English</a> &nbsp;·&nbsp; <b>简体中文</b></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />网关来源头 · 会话亲和 · 免费层工具回退 · 实时双模式额度计量</p>
-
-  <p>🇬🇧 <a href="./README.md">English</a> &nbsp;·&nbsp; 🇨🇳 <b>简体中文</b></p>
 
   <p>
     <a href="https://www.npmjs.com/package/dsh-opencode-patch"><img src="https://img.shields.io/npm/v/dsh-opencode-patch.svg" alt="npm version" /></a>
