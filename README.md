@@ -121,6 +121,10 @@ Done — the **OpenCode Patch** card appears under _Settings → Plugins_, and t
 
 ## 🧭 Supported Models & Multi-Protocol Routing
 
+**Both endpoints, and both credential shapes.** OpenCode's catalog defines an endpoint at two levels: a **provider default** — `https://opencode.ai/zen/v1` for Zen, `https://opencode.ai/zen/go/v1` for Go — and a per-model **inference** endpoint that overrides it when the catalog sets one (the CLI reads `model.api.url`, falling back to the provider default). The plugin pins neither: it matches the `opencode.ai/zen` marker, so a model served from the default and a model served from its own endpoint are both patched.
+
+Those endpoints authenticate in **two ways**, because they speak three wire shapes: the OpenAI planes send `Authorization: Bearer <key>`, the Anthropic plane sends `x-api-key: <key>`. The plugin reads **both** — `Authorization` first, then `x-api-key` / `api-key` — so a credential is captured whichever plane carried it, and the Go quota read still finds a key.
+
 The gateway serves four protocol families, and **OpenAI alone is two of them**: Chat Completions and Responses are different wire formats, not two names for one thing. A model that needs Responses does not work on the completions endpoint, and the gateway does not fall back — it answers `500`.
 
 DSH can speak three of the four families, so the patch routes those three and **deliberately does not offer the fourth** (Google Generative AI). See the table below.
