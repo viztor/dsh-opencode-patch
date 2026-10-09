@@ -167,11 +167,26 @@ describe.skipIf(!LIVE || !ZEN_KEY)(
 describe.skipIf(!LIVE || !GO_KEY)("live Go usage (OPENCODE_GO_API_KEY)", () => {
   it(
     "parses the real /usage payload the meter renders",
-    async () => {
+    async (context) => {
       const response = await fetch(`${GO_BASE}/usage`, {
         headers: { Authorization: `Bearer ${GO_KEY}` },
       });
-      expect(response.ok).toBe(true);
+      // An account fact is not a code fact. A lapsed plan, a rotated key or an
+      // exhausted quota all answer a refusal, and none of them says whether the
+      // plugin parses a payload correctly - so skip, and put the status in the
+      // message. The assertion this replaces said only "expected false to be
+      // true", which is not a diagnosis, and it turned the whole run red for a
+      // reason no one could act on from here.
+      if (!response.ok) {
+        const body = await response.text();
+        const refusal = [401, 402, 403, 429].includes(response.status);
+        const detail = `HTTP ${response.status} ${body.slice(0, 120)}`;
+        if (refusal) {
+          context.skip(`the gateway refused the credential: ${detail}`);
+          return;
+        }
+        throw new Error(`GET /usage answered ${detail}`);
+      }
 
       const usage: GoUsage = parseGoUsage(await response.json());
       for (const key of WINDOW_KEYS) {
