@@ -42,6 +42,46 @@ export const ANTHROPIC_ROUTE = "opencode-anthropic";
 /** Route serving the gateway's Mistral-API models. */
 export const MISTRAL_ROUTE = "opencode-mistral";
 
+/** Route serving the Go plane's Responses-API models. */
+export const GO_RESPONSES_ROUTE = "opencode-go-responses";
+
+/** Route serving the Go plane's Messages-API models. */
+export const GO_ANTHROPIC_ROUTE = "opencode-go-anthropic";
+
+/**
+ * The gateway planes: one base URL, one catalog and one credential each.
+ *
+ * A plane is a property of the ACCOUNT and the base URL, never of a model — the
+ * same model id can exist on both planes and be served on a different shape in
+ * each. Routes are keyed by (plane, protocol) for exactly that reason: an SDK
+ * says which shape a model needs, never which plane it belongs to.
+ */
+export const PLANES: Readonly<Record<string, string>> = {
+  opencode: "https://opencode.ai/zen/v1",
+  "opencode-go": "https://opencode.ai/zen/go/v1",
+};
+
+/**
+ * The route that serves each (plane, protocol) pair.
+ *
+ * The plane's own base route (`opencode`, `opencode-go`) is implicit: it is the
+ * one a model naming no SDK stays on, and it is not in this table because it is
+ * never a redirect target — a model already there has nowhere to go.
+ */
+export const ROUTE_FOR_PLANE_PROTOCOL: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  opencode: {
+    "openai-responses": RESPONSES_ROUTE,
+    "anthropic-messages": ANTHROPIC_ROUTE,
+    "mistral-conversations": MISTRAL_ROUTE,
+  },
+  "opencode-go": {
+    "openai-responses": GO_RESPONSES_ROUTE,
+    "anthropic-messages": GO_ANTHROPIC_ROUTE,
+  },
+};
+
 /**
  * The pi-ai protocol each SDK a model may name corresponds to, when that
  * protocol is not the route's own. Keys are models.dev `provider.npm` values.

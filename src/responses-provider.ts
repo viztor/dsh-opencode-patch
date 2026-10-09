@@ -282,11 +282,12 @@ export const modelsForSdk = (
 const providerProfile = (
   protocol: string,
   models: readonly ModelProfile[],
-  apiKeyEnv: string
+  apiKeyEnv: string,
+  baseURL: string
 ) => ({
   api: protocol,
   apiKeyEnv,
-  baseURL: DEFAULT_BASE_URL,
+  baseURL,
   headers: { authorization: KEY_SENTINEL },
   models: [...models],
 });
@@ -500,7 +501,12 @@ export const registerResponsesProvider = async (
     if (models.length === 0) {
       continue;
     }
-    providers[route] = providerProfile(protocol, models, apiKeyEnv);
+    providers[route] = providerProfile(
+      protocol,
+      models,
+      apiKeyEnv,
+      DEFAULT_BASE_URL
+    );
     mounted.push(`${route} (${protocol}) with ${models.length} model(s)`);
   }
   if (mounted.length === 0) {
