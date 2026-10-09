@@ -459,6 +459,22 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
     expect(parsed.status).not.toBe(500);
   });
 
+  it("probes the GO plane's OTHER shape too, so both are covered", async (context) => {
+    // One case per shape, not per plane: the Go plane serves two of them, and a
+    // route that is only ever probed on Responses would let a broken Messages
+    // route look covered. The auth convention differs between the two, which is
+    // exactly what a per-shape probe checks.
+    const model = "minimax-m3";
+    expect(servedProtocolForOn("go", model)).toBe("anthropic-messages");
+    if (GO_KEY === undefined || GO_KEY.length === 0) {
+      context.skip();
+      return;
+    }
+    const parsed = await probe("anthropic-messages", model, GO_KEY, GO_BASE);
+    expect(parsed.status).not.toBe(404);
+    expect(parsed.status).not.toBe(500);
+  });
+
   it("keeps every sampled model servable, so the cases above are not vacuous", () => {
     for (const model of [
       "grok-4.7",
