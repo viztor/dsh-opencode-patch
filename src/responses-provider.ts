@@ -37,6 +37,7 @@
  * @module dsh-opencode-patch/responses-provider
  */
 
+import { DEFAULT_USAGE_KEY_ENV } from "./config.ts";
 import type { CordisContext } from "./cordis-context.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 import {
@@ -44,7 +45,11 @@ import {
   getLiveGoCatalog,
   getLiveZenCatalog,
 } from "./models-catalog.ts";
-import { PROTOCOL_FOR_SDK, ROUTE_FOR_PROTOCOL } from "./responses-routes.ts";
+import {
+  PLANES,
+  PROTOCOL_FOR_SDK,
+  ROUTE_FOR_PLANE_PROTOCOL,
+} from "./responses-routes.ts";
 
 /** The host plugin whose `apply` this module mounts. */
 const PI_AI_PACKAGE = "@deepseek-ai/dsh-llm-pi-ai";
@@ -59,7 +64,6 @@ const HIDDEN_SERVICES: readonly string[] = ["authorization", "settings"];
 const DEFAULT_CREDENTIAL_REF = "OPENCODE_API_KEY";
 
 /** The gateway's endpoint. */
-const DEFAULT_BASE_URL = "https://opencode.ai/zen/v1";
 
 /**
  * The sentinel that makes the stored credential resolvable at all: pi-ai's
@@ -292,12 +296,24 @@ const providerProfile = (
   models: [...models],
 });
 
-/** The SDK a route serves, given its route id. */
-const sdkForRoute = (route: string): string | undefined =>
-  Object.keys(PROTOCOL_FOR_SDK).find((sdk) => {
-    const protocol = PROTOCOL_FOR_SDK[sdk];
-    return protocol !== undefined && ROUTE_FOR_PROTOCOL[protocol] === route;
-  });
+/** Every SDK that names one protocol — a protocol may be named by more than one. */
+const sdksForProtocol = (protocol: string): string[] =>
+  Object.keys(PROTOCOL_FOR_SDK).filter(
+    (sdk) => PROTOCOL_FOR_SDK[sdk] === protocol
+  );
+
+/**
+ * The catalog and credential of one plane.
+ *
+ * A route carries ONE plane: its base URL, its catalog and its credential all
+ * come from the same account. Mixing them resolves to "model not found" against
+ * the route's own endpoint, which is why the mount reads all three here rather
+ * than from a module constant.
+ */
+const planeSource = (plane: string, ctx: unknown) =>
+  plane === "opencode-go"
+    ? { apiKeyEnv: DEFAULT_USAGE_KEY_ENV, catalog: getLiveGoCatalog() }
+    : { apiKeyEnv: inheritedCredentialRef(ctx), catalog: getLiveZenCatalog() };
 
 /** The routes the host already serves, so a declared one is never overridden. */
 const declaredRoutes = (llm: CordisContext["llm"]): Set<unknown> => {
@@ -475,8 +491,11 @@ export const registerResponsesProvider = async (
   // hand-picks the models it serves, and mounting over that would take the choice
   // away. Deferring is the point — this module exists so a deployment that
   // declares NOTHING still works, not to override one that does.
-  const wanted = Object.entries(ROUTE_FOR_PROTOCOL).filter(
-    ([, route]) => !declared.has(route)
+  const wanted = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
+    ([plane, rows]) =>
+      Object.entries(rows)
+        .filter(([, route]) => !declared.has(route))
+        .map(([protocol, route]) => ({ plane, protocol, route }))
   );
   if (wanted.length === 0) {
     ctx.logger?.info?.(
@@ -491,23 +510,32 @@ export const registerResponsesProvider = async (
     );
     return undefined;
   }
-  const apiKeyEnv = inheritedCredentialRef(ctx);
-  const zen = getLiveZenCatalog();
   const providers: Record<string, unknown> = {};
   const mounted: string[] = [];
-  for (const [protocol, route] of wanted) {
-    const sdk = sdkForRoute(route);
-    const models = sdk === undefined ? [] : modelsForSdk(sdk, zen);
+  for (const { plane, protocol, route } of wanted) {
+    // A plane the table names but PLANES does not know is skipped rather than
+    // guessed at: sending a model to the wrong base URL is worse than not
+    // offering the route.
+    const baseURL = PLANES[plane];
+    if (baseURL === undefined) {
+      continue;
+    }
+    const source = planeSource(plane, ctx);
+    const models = sdksForProtocol(protocol).flatMap((sdk) =>
+      modelsForSdk(sdk, source.catalog)
+    );
     if (models.length === 0) {
       continue;
     }
     providers[route] = providerProfile(
       protocol,
       models,
-      apiKeyEnv,
-      DEFAULT_BASE_URL
+      source.apiKeyEnv,
+      baseURL
     );
-    mounted.push(`${route} (${protocol}) with ${models.length} model(s)`);
+    mounted.push(
+      `${route} (${plane} · ${protocol}) with ${models.length} model(s)`
+    );
   }
   if (mounted.length === 0) {
     ctx.logger?.info?.(

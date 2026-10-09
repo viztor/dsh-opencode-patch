@@ -34,6 +34,8 @@ export const DEFAULT_PROVIDERS = [
   "opencode-responses",
   "opencode-anthropic",
   "opencode-mistral",
+  "opencode-go-responses",
+  "opencode-go-anthropic",
 ];
 
 /**

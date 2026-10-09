@@ -45,6 +45,9 @@
           - opencode-go
           - opencode-responses
           - opencode-anthropic
+          - opencode-mistral
+          - opencode-go-responses
+          - opencode-go-anthropic
         injectUserAgent: true
         userAgent: ""
         injectOriginHeaders: true

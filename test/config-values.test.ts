@@ -35,6 +35,8 @@ describe("config-values: shared defaults", () => {
       "opencode-responses",
       "opencode-anthropic",
       "opencode-mistral",
+      "opencode-go-responses",
+      "opencode-go-anthropic",
     ]);
   });
 });

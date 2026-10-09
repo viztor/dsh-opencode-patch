@@ -732,12 +732,7 @@ describe("catalog · SDK coverage", () => {
  * A knowingly unserved SDK is skipped: that is a decision (I5), not a gap.
  */
 describe("catalog · plane and SDK coverage", () => {
-  // `it.fails` because the Go plane's non-completions models have no route yet:
-  // 7 responses and 6 messages are offered and cannot work. This test is the
-  // executable form of that gap - it passes only while the gap is real, and the
-  // moment the Go routes land it will FAIL, which is the signal to flip it to
-  // `it(...)`. See docs/redirect-planes.md, invariants I1 and I5.
-  it.fails("has a route for every (plane, SDK) pair the catalogs contain", () => {
+  it("has a route for every (plane, SDK) pair the catalogs contain", () => {
     const gaps: string[] = [];
     const planes = [
       ["opencode", OPENCODE_ZEN_CATALOG],

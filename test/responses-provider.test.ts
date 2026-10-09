@@ -24,13 +24,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  RESPONSES_SDK,
+  ROUTE_FOR_PLANE_PROTOCOL,
   inheritedCredentialRef,
   loadPiAi,
   modelsForSdk,
-  PROTOCOL_FOR_SDK,
   registerResponsesProvider,
-  RESPONSES_SDK,
-  ROUTE_FOR_PROTOCOL,
 } from "../src/index.ts";
 import type { CordisContext } from "../src/index.ts";
 
@@ -709,15 +708,13 @@ describe("responses-provider: the mount survives the host's own instance", () =>
     const { providers } = (config ?? {}) as {
       providers: Record<string, { models: unknown[] }>;
     };
-    // Derived, not hard-coded: a route with no catalog model is skipped rather
-    // than mounted empty, and the shim's coverage changes as it is refreshed.
-    const expected = Object.values(ROUTE_FOR_PROTOCOL).filter((route) => {
-      const sdk = Object.keys(PROTOCOL_FOR_SDK).find((key) => {
-        const protocol = PROTOCOL_FOR_SDK[key];
-        return protocol !== undefined && ROUTE_FOR_PROTOCOL[protocol] === route;
-      });
-      return sdk !== undefined && modelsForSdk(sdk).length > 0;
-    });
+    // Derived from the PLANE table, not hard-coded, and not from the Zen-only
+    // view: the mount walks (plane, protocol) pairs, so a route the table names
+    // is mounted whenever its own plane carries a model for its protocol.
+    const expected = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
+      ([, rows]) => Object.values(rows)
+    );
+
     expect(Object.keys(providers)).toEqual(expected);
     expect(Object.keys(providers)).toContain("opencode-responses");
     for (const profile of Object.values(providers)) {
@@ -872,9 +869,18 @@ describe("responses-provider: the credential is the user's, not ours", () => {
     const { providers } = (config ?? {}) as {
       providers: Record<string, { apiKeyEnv?: string }>;
     };
+    // Each plane carries its OWN credential. One reference for every route was
+    // the old design, and it would send a Zen key to the Go endpoint - the
+    // failure the plane split exists to make impossible.
     expect(Object.keys(providers).length).toBeGreaterThan(0);
-    for (const profile of Object.values(providers)) {
-      expect(profile.apiKeyEnv).toBe("MY_ZEN_KEY");
+    const goRoutes = new Set([
+      "opencode-go-responses",
+      "opencode-go-anthropic",
+    ]);
+    for (const [route, profile] of Object.entries(providers)) {
+      expect(profile.apiKeyEnv).toBe(
+        goRoutes.has(route) ? "OPENCODE_GO_API_KEY" : "MY_ZEN_KEY"
+      );
     }
   });
 });

@@ -121,18 +121,14 @@ export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
 export const UNSERVED_SDKS: ReadonlySet<string> = new Set(["@ai-sdk/google"]);
 
 /** The route each non-default protocol is served from. */
-export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> = {
-  "openai-responses": RESPONSES_ROUTE,
-  "anthropic-messages": ANTHROPIC_ROUTE,
-  "mistral-conversations": MISTRAL_ROUTE,
-};
+/** The Zen plane's rows of {@link ROUTE_FOR_PLANE_PROTOCOL}. */
+export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> =
+  ROUTE_FOR_PLANE_PROTOCOL.opencode ?? {};
 
 /** Every route this plugin registers for itself. */
-export const INTERNAL_ROUTES: readonly string[] =
-  Object.values(ROUTE_FOR_PROTOCOL);
-
-/** Route ids whose models are dispatched to an internal route. */
-const COMPLETIONS_ROUTES = new Set<string>(["opencode"]);
+export const INTERNAL_ROUTES: readonly string[] = Object.values(
+  ROUTE_FOR_PLANE_PROTOCOL
+).flatMap((rows) => Object.values(rows));
 
 /**
  * Whether a route id is one this plugin owns and keeps out of the UI.
@@ -177,12 +173,20 @@ export const internalRouteFor = (
   model: unknown,
   providerNpm?: unknown
 ): string | undefined => {
-  if (typeof provider !== "string" || !COMPLETIONS_ROUTES.has(provider)) {
+  if (
+    typeof provider !== "string" ||
+    typeof model !== "string" ||
+    typeof providerNpm !== "string"
+  ) {
     return undefined;
   }
-  if (typeof model !== "string" || typeof providerNpm !== "string") {
+  // The plane comes from the route the caller selected, and it must BE a plane:
+  // a redirected call arrives back here with `provider` already set to an
+  // internal route, which is not a key in this table, so it cannot recurse.
+  const rows = ROUTE_FOR_PLANE_PROTOCOL[provider];
+  if (rows === undefined) {
     return undefined;
   }
   const protocol = PROTOCOL_FOR_SDK[providerNpm];
-  return protocol === undefined ? undefined : ROUTE_FOR_PROTOCOL[protocol];
+  return protocol === undefined ? undefined : rows[protocol];
 };
