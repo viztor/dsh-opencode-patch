@@ -189,6 +189,24 @@ Cost of skipping the check, all paid for in one session: a hand-drawn 12px refre
 
 **And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
 
+### The two OpenCode endpoints live in the CATALOG, not in the CLI (2026-10-09)
+
+The owner asked for both OpenCode endpoints to be documented — "one is inference, the other is the old default endpoint". Finding them meant reading the vendor's code, and the answer was not where the question pointed:
+
+- **Not** in `provider.ts`. A 2,094-line file with `baseURL` in it 20 times, and not one of them is the OpenCode endpoint. Line 1812 is the tell: `options["baseURL"] = model.api.url ?? …`.
+- **In `models.dev`**, which is the same catalog this plugin already consumes:
+
+| provider | provider-level `api` (the default endpoint) | models | per-model overrides |
+| --- | --- | --- | --- |
+| `opencode` (Zen) | `https://opencode.ai/zen/v1` | 120 | **0** |
+| `opencode-go` (Go) | `https://opencode.ai/zen/go/v1` | 36 | **0** |
+
+So the two levels are the **provider default** and the per-model **inference** endpoint, and the CLI resolves `model.api.url ?? provider default`. Today every model inherits the default — but a model that sets its own URL is served from it, which is exactly why the plugin matches the `opencode.ai/zen` **marker** instead of pinning a base URL.
+
+**And the two auth methods follow the WIRE SHAPE, not the endpoint.** The OpenAI planes (`/chat/completions`, `/responses`) send `Authorization: Bearer <key>`; the Anthropic plane (`/messages`) sends `x-api-key: <key>`. That is why `extractApiKeyFromHeaders` reads `Authorization` first and falls back to `x-api-key`/`api-key` — not defensive coding, but the two SDK families the three shapes come from.
+
+The general rule, third time in this file: **when a question is "where is X defined", the answer is often one layer out** — here, out of the CLI and into the catalog it reads.
+
 ### A switch inside a switch is not a decision (2026-10-09)
 
 The owner, reading the settings card: _"这两个不应该是一样的吗，为什么要两个开关？"_ — and the honest answer was that they were not the same thing, but the second was **nested** inside the first:

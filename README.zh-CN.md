@@ -119,6 +119,10 @@ npm install dsh-opencode-patch
 
 ## 🧭 支持的模型与多协议路由
 
+**两种端点，两种凭据形状。** OpenCode 的目录在两个层级上定义端点：**provider 默认端点**——Zen 是 `https://opencode.ai/zen/v1`，Go 是 `https://opencode.ai/zen/go/v1`——以及**逐模型的推理端点**，目录里设置时会覆盖默认值（CLI 读 `model.api.url`，取不到就回落到 provider 默认）。插件**两个都不钉死**：它匹配的是 `opencode.ai/zen` 这个标记，所以走默认端点的模型和走自己端点的模型都会被补丁覆盖。
+
+这些端点的认证有**两种**，因为它们说三种线格式：OpenAI 那两个平面发 `Authorization: Bearer <key>`，Anthropic 平面发 `x-api-key: <key>`。插件**两种都读**——先 `Authorization`，再 `x-api-key` / `api-key`——所以凭据无论由哪个平面带过来都能被捕获，Go 额度查询也仍然找得到密钥。
+
 网关提供四种线路家族，而 **OpenAI 自己就占了两种**：Chat Completions 与 Responses 是**两种不同的线路格式**，不是同一个东西的两个名字。需要 Responses 的模型在 completions 端点上不工作，而网关**不会回退**——它直接返回 `500`。
 
 DSH 能说其中三种，所以插件路由这三种，**故意不提供第四种**（Google Generative AI）。见下表。
