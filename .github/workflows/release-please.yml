@@ -19,7 +19,7 @@ jobs:
       # token don't trigger downstream workflows, so the `release` job
       # would never fire. Secret: RELEASE_PLEASE_TOKEN, fine-grained PAT
       # with Contents + Pull requests read/write on this repo.
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           release-type: node
           # What the generated CHANGELOG shows, and in what order. Visible:
