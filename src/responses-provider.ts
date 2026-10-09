@@ -212,10 +212,10 @@ export const inheritedCredentialRef = (ctx: unknown): string => {
     if (!isRecord(entry) || !isRecord(entry.options)) {
       continue;
     }
+    // `options` is already known to be a record: the guard above rejected
+    // everything else. The repeat was unreachable, and a branch no input can
+    // take is a branch no test can cover.
     const { options } = entry;
-    if (!isRecord(options)) {
-      continue;
-    }
     const { config } = options;
     if (!isRecord(config) || !isRecord(config.providers)) {
       continue;
