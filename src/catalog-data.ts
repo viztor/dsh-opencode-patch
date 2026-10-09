@@ -686,6 +686,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     input_modalities: ["text", "image"],
     max_output_tokens: 262_144,
     name: "Mistral Large 4",
+    provider_npm: "@ai-sdk/mistral",
   },
   {
     context_window: 262_144,
