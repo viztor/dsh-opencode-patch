@@ -63,7 +63,7 @@ This lineage lets upstream servers optimize prompt caching across agent teams an
 
 OpenCode uses `x-opencode-project` to group token usage, requests and cost in the [OpenCode Console](https://opencode.ai/console).
 
-1. **Enabled (default):** the plugin reads the active session's working directory (`session.header.cwd`) and sends its folder name — `/home/you/projects/my-app` → `x-opencode-project: dsh-opencode`. Outside a project it falls back to `global`.
+1. **Enabled (default):** the plugin reads the active session's working directory (`session.header.cwd`) and sends its folder name — `/home/you/projects/my-app` → `x-opencode-project: my-app`. Outside a project it falls back to `global`.
 2. **Disabled:** the header is omitted entirely, matching OpenCode CLI's standalone behavior.
 3. **Zero configuration:** no project strings to type or manage — attribution follows your workspace naturally.
 

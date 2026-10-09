@@ -63,7 +63,7 @@ Outgoing subagent request:
 
 OpenCode 使用 `x-opencode-project`，在 [OpenCode 控制台](https://opencode.ai/console)中按项目归组 Token 用量、请求数与花费。
 
-1. **启用（默认）：** 插件读取当前会话的工作目录（`session.header.cwd`）并发送其文件夹名——`/home/you/projects/my-app` → `x-opencode-project: dsh-opencode`。在项目之外则回退为 `global`。
+1. **启用（默认）：** 插件读取当前会话的工作目录（`session.header.cwd`）并发送其文件夹名——`/home/you/projects/my-app` → `x-opencode-project: my-app`。在项目之外则回退为 `global`。
 2. **关闭：** 完全不发送该请求头，与 OpenCode CLI 的独立运行行为一致。
 3. **零配置：** 无需输入或维护任何项目字符串——归属自然跟随你的工作区。
 
