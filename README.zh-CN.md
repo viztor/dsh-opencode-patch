@@ -400,7 +400,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 ## 👥 署名与许可
 
-在 [@nobu121](https://github.com/nobu121) 的 [**`nobu121/dsh-opencode-session`**](https://github.com/nobu121/dsh-opencode-session) 基础上演进而来，该项目开创了 OpenCode on DSH 的会话 ID 处理。由 [@viztor](https://github.com/viztor) 扩展，以支持 Zen 免费层网关兼容、分层子代理谱系、动态工作区项目归属、实时双模式 Go 额度与 Zen 余额监控，以及原生 Web UI 集成。
+灵感来自 [@nobu121](https://github.com/nobu121) 的 [**`nobu121/dsh-opencode-session`**](https://github.com/nobu121/dsh-opencode-session)，该项目开创了 OpenCode on DSH 的会话 ID 处理。本插件由 [@viztor](https://github.com/viztor) **独立实现**：沿用了这个思路，其余部分都是重写的——Zen 免费层网关兼容、分层子代理谱系、动态工作区项目归属、实时双模式 Go 额度与 Zen 余额监控，以及原生 Web UI 集成。
 
 **链接：** [npm](https://www.npmjs.com/package/dsh-opencode-patch) · [仓库](https://github.com/viztor/dsh-opencode-patch) · [问题](https://github.com/viztor/dsh-opencode-patch/issues) · [更新日志](./CHANGELOG.md) · [贡献指南](./CONTRIBUTING.md) · [OpenCode](https://opencode.ai) · [models.dev](https://models.dev)
 

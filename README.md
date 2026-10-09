@@ -404,7 +404,7 @@ The header-injection matrix, session lineage, workspace attribution, API tiers a
 
 ## 👥 Attribution & License
 
-Evolved from [**`nobu121/dsh-opencode-session`**](https://github.com/nobu121/dsh-opencode-session) by [@nobu121](https://github.com/nobu121), which pioneered session ID handling for OpenCode on DSH. Extended by [@viztor](https://github.com/viztor) to support Zen free-tier gateway compatibility, hierarchical subagent lineage, dynamic workspace project attribution, live dual-mode Go quota and Zen credit monitoring, and native Web UI integration.
+Inspired by [**`nobu121/dsh-opencode-session`**](https://github.com/nobu121/dsh-opencode-session) by [@nobu121](https://github.com/nobu121), which pioneered session ID handling for OpenCode on DSH. This plugin is a **separate implementation** by [@viztor](https://github.com/viztor): it took the idea and wrote the rest — Zen free-tier gateway compatibility, hierarchical subagent lineage, dynamic workspace project attribution, live dual-mode Go quota and Zen credit monitoring, and native Web UI integration.
 
 **Links:** [npm](https://www.npmjs.com/package/dsh-opencode-patch) · [Repository](https://github.com/viztor/dsh-opencode-patch) · [Issues](https://github.com/viztor/dsh-opencode-patch/issues) · [Changelog](./CHANGELOG.md) · [Contributing](./CONTRIBUTING.md) · [OpenCode](https://opencode.ai) · [models.dev](https://models.dev)
 
