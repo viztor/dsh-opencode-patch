@@ -108,7 +108,10 @@ jobs:
       - name: propose the refresh (nightly only)
         if: github.event_name == 'schedule'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT, not GITHUB_TOKEN: a pull request opened with the built-in
+          # token does not trigger other workflows, so the refresh would arrive
+          # with no CI having run on it. Same secret release-please uses.
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           pnpm run catalog:shim -- --write
           pnpm run limits:shim -- --write
