@@ -168,20 +168,25 @@ for (const target of SCOPED_TARGETS) {
         `${forwarderPatch}\n`
       );
 
+      // The page leads with the CANONICAL name. A retired name may appear as the
+      // reason the reader is here — never as the package's own title, which is
+      // what made three npm pages look like three packages.
       const redirectReadme = [
-        "# @viztor/dsh-opencode (Renamed to dsh-opencode-patch)",
+        "# dsh-opencode-patch",
         "",
-        "> ⚠️ **Notice**: This package has been renamed to [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch).",
+        "> ⚠️ **This npm name is retired.** The package is `dsh-opencode-patch`,",
+        "> scoped as [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch).",
         "",
-        "This package is a **thin compatibility wrapper** that depends on and re-exports `dsh-opencode-patch`.",
+        "You are on the page for the old name `@viztor/dsh-opencode`. It is a **thin compatibility",
+        "wrapper**: it depends on and re-exports `dsh-opencode-patch` and ships no code of its own.",
         "",
-        "### How to migrate:",
+        "### How to migrate",
         "",
         "```sh",
-        '# Via DSH Web UI (Recommended): Settings → Plugins → Install Plugin → "@viztor/dsh-opencode-patch"',
+        '# DSH Web UI (recommended): Settings → Plugins → Install Plugin → "dsh-opencode-patch"',
         "",
-        "# Or via terminal in your profile directory:",
-        "npm install @viztor/dsh-opencode-patch",
+        "# Or from your profile directory:",
+        "npm install dsh-opencode-patch",
         "```",
       ].join("\n");
       writeFileSync(path.join(scratch, "README.md"), redirectReadme);
