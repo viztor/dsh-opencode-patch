@@ -182,6 +182,11 @@ describe.skipIf(!LIVE || !GO_KEY)("live Go usage (OPENCODE_GO_API_KEY)", () => {
         const refusal = [401, 402, 403, 429].includes(response.status);
         const detail = `HTTP ${response.status} ${body.slice(0, 120)}`;
         if (refusal) {
+          // `context.skip()` records the reason but vitest does not print it, so
+          // the log would show a skip with no explanation. Write it out as well:
+          // the status is the whole diagnosis, and CI is the only place this case
+          // ever runs.
+          process.stderr.write(`\n[go-usage] refused: ${detail}\n`);
           context.skip(`the gateway refused the credential: ${detail}`);
           return;
         }
