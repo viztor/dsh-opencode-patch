@@ -138,18 +138,17 @@ export const STYLES = `
    * target is still ~18px tall and ~48px wide, which is a comfortable hit area
    * — this trims the edge, it does not remove the target. */
   padding: 2px 7px;
-  /* --dsw-radius-md (12px), NOT 999px. The stadium IS a host idiom — it is what
-   * Tag, the Switch track, the kit's Pill and the close button all use — but
-   * every one of those is a FIXED-height chip, where a pill reads as a pill.
-   * On this trigger the radius clamps to half the box, so 999px turns it into
-   * the same stadium while the model selector beside it stays a rounded rect:
-   * two neighbouring controls, two different corner languages.
+  /* --dsw-radius-sm (8px), and the RATIO is the reason — not the token.
    *
-   * The reference is the host's own composer control, which pairs the two
-   * properties at issue: border-radius var(--dsw-radius-md) with background
-   * var(--dsw-alias-interactive-bg-hover) — the fill we already use, so the
-   * colour was never wrong and only the radius was. */
-  border-radius: var(--dsw-radius-md, 12px);
+   * The host's own controls (Button, Input, SegmentedControl) all declare
+   * --dsw-radius-md, and this trigger first copied them. That is right at their
+   * height: 12px on a ~28px control is 43% of it, which reads as a rounded
+   * rect. This trigger is ~20px tall, so the same 12px clamps to 10px — 50% of
+   * the box, which IS a stadium, and the owner read it as too round.
+   *
+   * Same host ladder, one step down: 8px on 20px restores the host's own
+   * ratio. The value comes from the theme; only the rung changes. */
+  border-radius: var(--dsw-radius-sm, 8px);
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
