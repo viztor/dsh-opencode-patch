@@ -113,7 +113,9 @@ npm install dsh-opencode-patch
 
 ## 🧭 支持的模型与多协议路由
 
-OpenCode 通过一个网关在多种上游协议上提供推理，本补丁覆盖全部四类协议。
+网关提供四种线路家族，而 **OpenAI 自己就占了两种**：Chat Completions 与 Responses 是**两种不同的线路格式**，不是同一个东西的两个名字。需要 Responses 的模型在 completions 端点上不工作，而网关**不会回退**——它直接返回 `500`。
+
+DSH 能说其中三种，所以插件路由这三种，**故意不提供第四种**（Google Generative AI）。见下表。
 
 ### 1. OpenCode Zen (`provider: opencode`) — 按量计费与免费额度
 
@@ -133,12 +135,12 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 | 服务自 |
 | :-- | --: | :-- | :-- |
-| _（缺失）_ | 26 | OpenAI Chat Completions | 你配置的路由 |
+| _（缺失）_ | 28 | OpenAI Chat Completions | 你配置的路由 |
 | `@ai-sdk/openai` | 30 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages | `opencode-anthropic` |
 | `@ai-sdk/google` | 7 | _（DSH 无此协议）_ | **不提供** |
 
-数量为 `models.dev` 中 `opencode` 的 80 个**在用**模型，统计于 2026-10-05 —— 列出的 116 个里其余 36 个已废弃或下架，补丁只内置网关仍在服务的部分。同样这 80 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
+数量为 `models.dev` 中 `opencode` 的 83 个**在用**模型，统计于 2026-10-05 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 83 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
