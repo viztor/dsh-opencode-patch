@@ -20,15 +20,9 @@ Two things follow, and both matter:
 
 A parity test runs the vendor's reader against ids we mint — including a case that fails if the alphabet is ever changed back to something that only _looks_ like an id.
 
-## Two endpoint levels, and two ways to authenticate
+## Endpoints and auth conventions
 
-OpenCode's endpoints are not pinned in its source: they come from the catalog (`models.dev`), which defines a **provider default** (`api` on the provider — `https://opencode.ai/zen/v1` for Zen, `https://opencode.ai/zen/go/v1` for Go) and a per-model **inference** endpoint (`model.api.url`) that overrides it. The CLI resolves `model.api.url ?? provider default`, which is exactly why this plugin matches the `opencode.ai/zen` **marker** instead of a base URL: a model served from the default and one served from its own endpoint are both patched.
-
-Authentication follows the **wire shape**, not the endpoint. The OpenAI planes (`/chat/completions`, `/responses`) send `Authorization: Bearer <key>`; the Anthropic plane (`/messages`) sends `x-api-key: <key>`. That is why the credential extractor reads `Authorization` first and falls back to `x-api-key` / `api-key` — not defensive coding, but the two SDK families the three shapes come from.
-
-## The free-tier gate
-
-The Zen gateway rejects free-tier `/responses` bodies that lack `read` and `bash` in `tools`, while DSH deliberately does not send them. The plugin rewrites the body to carry both schemas — **and only when they are genuinely missing**, so a body that already declares them passes through byte-identical. Detection is by model id (default marker `"free"`, `"*"` for every model), because a model row carries no capability flag.
+Covered in full in [deep-dive.md](./deep-dive.md): the two endpoint levels the catalog defines (a provider default plus a per-model `api.url` override) and the rule that authentication follows the **wire shape** rather than the endpoint — Bearer on the OpenAI planes, `x-api-key` on the Anthropic one. Not restated here, because a second copy of a fact is a second thing that can go stale.
 
 ## A credential prefix is not an entitlement
 
