@@ -33,7 +33,14 @@
 
 `dsh-opencode-patch` is a DeepSeek Harness host plugin that keeps **OpenCode Zen & Go** models working inside DSH. Connect `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3-contributor-free`, `qwen3.8-flash` and the rest of the OpenCode catalog without network rejections, Cloudflare challenges, entitlement mismatches, or invisible limits.
 
-**The problem.** OpenCode's gateways expect request traits DSH does not send by default: a valid `x-opencode-session` on every turn, official CLI origin proof (`User-Agent`, client/project headers, `ses_…`-shaped IDs), and `read`/`bash` tool definitions on free-tier requests. Subagents, background evaluations, and experimental modes like **Auto Review** also invoke the LLM in standalone sessions where `sessionId` is omitted or unlinked.
+**The default state.** Point DSH at OpenCode with no plugin and the models do not work at all — not on one shape, on any of them:
+
+- **The request is not recognised as coming from a coding agent.** DSH sends its own `User-Agent`, and no `x-opencode-client`, `x-opencode-project` or `x-opencode-session` at all, so the gateway sees an anonymous SDK call: free-tier models answer `403 FreeTierError`, and the traffic falls under the abuse rules the vendor documents for clients that do not identify themselves.
+- **A turn without a session id is rejected or left unlinked.** Every turn has to carry a stable `ses_…`-shaped id, and DSH omits `sessionId` entirely for subagents, background evaluations and modes like **Auto Review**.
+- **Free-tier `/responses` bodies are refused without `read` and `bash` in `tools`**, and DSH deliberately does not send them.
+- **The catalog is thin.** A bare `/models` listing carries ids and little else, so the picker shows unnamed rows with no prices and no context windows.
+
+**What is left once those work is a different problem, and it is not about the account.** OpenCode serves its models on **four different API shapes**, while DSH picks a transport from the provider row — one route can speak one shape. So a model served on Responses, Messages or Mistral answers `500` the moment the basics are restored, which is why this plugin routes per **model** rather than per provider.
 
 **What this does.** It restores every missing protocol element at the network layer — **strictly for OpenCode routes** (`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic` / `opencode-mistral`). All other traffic (DeepSeek, OpenAI, Anthropic, GitHub) passes through untouched.
 
@@ -109,7 +116,7 @@ Done — the **OpenCode Patch** card appears under _Settings → Plugins_, and t
 | Without the patch | With `dsh-opencode-patch` |
 | :-- | :-- |
 | Zen free models fail with `403 FreeTierError` | **Gateway origin headers & tool fallbacks** restored automatically |
-| A model served on Responses, Messages or Mistral is sent to the completions endpoint and answers `500` | **Per-model routing** — each model dispatched to the endpoint its own SDK names, read from the catalog |
+| Only one API shape can be served per route — the rest answer `500` once the basics work | **Per-model routing** — each model dispatched to the endpoint its own SDK names, read from the catalog |
 | Session IDs rejected with `400 MissingSessionID` | **Deterministic `ses_…` session hashing** and affinity across turns |
 | Subagents lose conversation context | **Parent session tracking** (`x-opencode-parent-session-id`, `x-parent-session-id`) |
 | Auto Review calls fail with `TRANSPORT: Connection error` | **Fallback session turn capture** preserving turn state across eval calls |
@@ -139,7 +146,9 @@ DSH can speak three of the four families, so the patch routes those three and **
 
 ### 2. OpenCode Go (`provider: opencode-go`) — subscription quota
 
-- **OpenAI Chat Completions** (`https://opencode.ai/zen/go/v1/chat/completions`): `deepseek-v4.1-flash`, `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `qwen3.8-flash`, `qwen3.8-max`, `qwen3.7-plus`, `kimi-k3`, `kimi-k2.7-code`, `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `grok-4.7`, `grok-4.6`, `minimax-m3`, `minimax-m2.7`, `mimo-v2.6-pro`, `mimo-v2.6-flash`, `gpt-5.6-luna`, `gpt-6-luna`
+- **OpenAI Chat Completions** (`https://opencode.ai/zen/go/v1/chat/completions`): `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `longcat-2.0`, `longcat-2.5-preview-free`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
+- **OpenAI Responses** (`https://opencode.ai/zen/go/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages** (`https://opencode.ai/zen/go/v1/messages`): `claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - Monitored by the live 3-window quota meter (5-hour rolling, weekly, monthly). The full set ships in the bundled catalog — see [Authoritative Model Catalogs](#7-authoritative-model-catalogs-dual-local-shims--real-time-swr-updates).
 
 ### 3. How a model's protocol is chosen — and why you configure nothing

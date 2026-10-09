@@ -33,7 +33,14 @@
 
 `dsh-opencode-patch` 是一个 DeepSeek Harness 宿主插件，让 **OpenCode Zen 与 Go** 模型在 DSH 内持续可用。无需遭遇网络拒绝、Cloudflare 挑战、权益不匹配或隐形限制，即可接入 `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3-contributor-free`、`qwen3.8-flash` 以及 OpenCode 目录中的其余模型。
 
-OpenCode 网关要求 DSH 默认不会发送的请求特征：每一轮都携带有效的 `x-opencode-session`、官方 CLI 的来源证明（`User-Agent`、client/project 请求头、`ses_…` 形式的 ID），以及免费层请求上的 `read`/`bash` 工具定义。DSH 子代理、后台评估以及 **Auto Review** 等实验模式，还会在 `sessionId` 缺失或未关联的独立会话中调用 LLM。而模型落在哪个端点是**模型自身的属性**：DSH 按 provider 行选择传输协议，所以走 Responses / Messages / Mistral 的模型被送到 completions 时会返回 **`500`**。
+**默认状态。** 把 DSH 直接指向 OpenCode、不装任何插件，模型是**完全不能用**的——不是某一种形状不能用，而是全部：
+
+- **请求不会被识别为"编码 agent"发出的。** DSH 发的是自己的 `User-Agent`，不带 `x-opencode-client`、`x-opencode-project`，也不带 `x-opencode-session`；网关看到的就是一次匿名 SDK 调用：免费层模型返回 `403 FreeTierError`，流量还要受厂商对"不表明身份的客户端"所设的滥用规则约束。
+- **没有会话 id 的一轮会被拒、或失去关联。** 每一轮都必须带一个稳定的 `ses_…` 形状的 id，而 DSH 在子代理、后台评估以及 **Auto Review** 这类模式下会完全省略 `sessionId`。
+- **免费层的 `/responses` 请求体缺少 `read` 与 `bash` 会被拒**，而 DSH 是刻意不发这两个工具的。
+- **目录很单薄。** 裸 `/models` 列表只有 id，几乎没有别的信息，所以选择器里是一堆没有名字、没有价格、没有上下文窗口的行。
+
+**这些能用之后剩下的**是另一个问题，而且与账号无关：OpenCode 的模型分布在**四种不同的 API 形状**上，而 DSH 是按 provider 行选择传输协议的——一条路由只能说一种形状。所以走 Responses / Messages / Mistral 的模型在基础问题解决之后就会返回 `500`。这正是插件**按模型而不是按 provider** 路由的原因。
 
 插件在网络层补齐所有缺失的协议要素——**且仅针对 OpenCode 路由**（`opencode` / `opencode-go` / `opencode-responses` / `opencode-anthropic` / `opencode-mistral`）。其余全部流量（DeepSeek、OpenAI、Anthropic、GitHub）原样通过。
 
@@ -107,7 +114,7 @@ npm install dsh-opencode-patch
 | 没有补丁时 | 使用 `dsh-opencode-patch` 后 |
 | :-- | :-- |
 | Zen 免费模型报 `403 FreeTierError` | 自动恢复**网关来源头与工具回退** |
-| 走 Responses / Messages / Mistral 的模型被送到 completions 端点，返回 `500` | **逐模型路由**——按目录里每个模型自己声明的 SDK 派发到对应端点 |
+| 一条路由只能说一种形状——基础问题解决后，其余模型返回 `500` | **逐模型路由**——按目录里每个模型自己声明的 SDK 派发到对应端点 |
 | 会话 ID 被拒并返回 `400 MissingSessionID` | **确定性的 `ses_…` 会话哈希**与跨轮次亲和 |
 | 子代理丢失对话上下文 | **父会话跟踪**（`x-opencode-parent-session-id`、`x-parent-session-id`） |
 | Auto Review 调用报 `TRANSPORT: Connection error` | **回退会话轮次捕获**，在评估调用之间保留轮次状态 |
@@ -137,7 +144,9 @@ DSH 能说其中三种，所以插件路由这三种，**故意不提供第四�
 
 ### 2. OpenCode Go (`provider: opencode-go`) — 订阅额度
 
-- **OpenAI Chat Completions** (`https://opencode.ai/zen/go/v1/chat/completions`)：`deepseek-v4.1-flash`、`deepseek-v4-pro`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`qwen3.8-flash`、`qwen3.8-max`、`qwen3.7-plus`、`kimi-k3`、`kimi-k2.7-code`、`glm-5.3`、`glm-5.3-flash`、`glm-5.2`、`grok-4.7`、`grok-4.6`、`minimax-m3`、`minimax-m2.7`、`mimo-v2.6-pro`、`mimo-v2.6-flash`、`gpt-5.6-luna`、`gpt-6-luna`
+- **OpenAI Chat Completions**（`https://opencode.ai/zen/go/v1/chat/completions`）：`deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `longcat-2.0`, `longcat-2.5-preview-free`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
+- **OpenAI Responses**（`https://opencode.ai/zen/go/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages**（`https://opencode.ai/zen/go/v1/messages`）：`claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
 
 ### 3. 模型的协议是怎么定的 —— 以及为什么你什么都不用配
