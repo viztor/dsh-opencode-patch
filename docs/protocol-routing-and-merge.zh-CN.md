@@ -13,6 +13,7 @@ OpenCode 的模型分布在**三种线路形状**上，而"某个模型在哪种
 | OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **默认**——116 个里的 53 个 | 模型**不声明** SDK |
 | OpenAI **Responses** | `POST /zen/v1/responses` | 32 个 | `@ai-sdk/openai` |
 | Anthropic **Messages** | `POST /zen/v1/messages` | 23 个 | `@ai-sdk/anthropic` |
+| Anthropic **Messages** | `POST /zen/v1/chat/completions` | 23 个 | `@ai-sdk/anthropic` |
 
 **"OpenAI" 占了三种里的两种。** Chat Completions 与 Responses 是**两种不同的线路格式**，需要 Responses 的模型在 completions 端点上不工作。默认那种也不是 "OpenAI"——它是路由自己注册时用的那个 api，不声明 SDK 的模型说的就是它。
 
@@ -31,10 +32,11 @@ DSH 按 provider 行上声明的协议选传输方式。如果这个协议不是
    const PROTOCOL_FOR_SDK = {
      "@ai-sdk/openai": "openai-responses",
      "@ai-sdk/anthropic": "anthropic-messages",
+     "@ai-sdk/mistral": "mistral-conversations",
    };
    ```
 
-3. **协议对应一个路由。** `internalRouteFor(provider, model, providerNpm)` 给出服务该模型的路由（`opencode-responses` / `opencode-anthropic`），且只对本插件声明接管的 `COMPLETIONS_ROUTES` 生效；其他一律返回 `undefined`，原样放行。
+3. **协议对应一个路由。** `internalRouteFor(provider, model, providerNpm)` 给出服务该模型的路由（`opencode-responses` / `opencode-anthropic`、`opencode-mistral`），且只对本插件声明接管的 `COMPLETIONS_ROUTES` 生效；其他一律返回 `undefined`，原样放行。
 
 随后 `src/responses-provider.ts` 在**隔离的认证作用域**下挂载宿主自己的 `llm-pi-ai` 来服务这些路由。这是全仓最难伺候的一块（要同时满足宿主四份契约），动它之前先读它的文件头注释。路由由插件注册，用户无需配置。
 
@@ -45,6 +47,22 @@ DSH 按 provider 行上声明的协议选传输方式。如果这个协议不是
 ### 只有端到端测试才是真的检验
 
 `test/e2e/protocol-routing.e2e.ts` 直接问网关：每个已发布的模型，哪个端点认得它。单元测试读的就是它们要验证的那张映射表，所以**抓不到映射过期**——只有真实网关能。真正钉住路由的是"错误端点返回 `500`"这一格；`403 FreeTierError` 只能证明网关解析了模型。
+
+### 前台一份列表，后台四个端点
+
+用户看到的是一个 OpenCode provider、一份模型列表。界面上没有任何地方出现路由、协议或端点的名字，也没有任何逐模型设置可以配错——**这份一致性本身就是产品**，下面的一切都是为了让它是这样。
+
+能做到这一点，是因为路由是**推导出来的，而不是存下来的**：
+
+- **只有一份列表**：合并（§三）把规范行追加到适配器返回的结果上。一个模型走哪条路由不属于用户选择的一部分，因此它不可能和选择器脱节。
+- **每轮即时计算**：从模型 id 出发——`provider_npm` → 协议 → 路由。没有任何地方缓存这个决定，所以目录刷新会改变路由，却不需要迁移、也不留下状态。
+- **由插件注册，不由 profile 注册**：`responses-provider.ts` 按协议各挂载一次宿主自己的 `llm-pi-ai`，每条路由有独立的认证作用域；所以 profile 里一条都不声明，也照样得到全部端点。
+- **请求头只在一个地方加**：`fetch-patch.ts` 为所有被声明的路由统一写入来源证明、会话 id 与项目归属，它们不会随协议而变。
+
+有两道闸守着这看不见的一半，因为**一个静默丢模型的机制，和一个"本来就没有这个模型"看起来一模一样**：
+
+- **`catalog.test.ts`**：生成物里出现既没有映射、也不在"明确不服务"名单里的 SDK 时，它会失败并**指名那个 SDK**。它防的是厂商新增的东西**以"少了一个模型"的形式**到达选择器——`mistral-large-4` 就这样消失过一次。
+- **`protocol-routing.e2e.ts`**：没有**真实发出过的**路径与认证约定，就不允许把一个协议称为"可路由"。把 `mistral-conversations` 加进表时，它比任何其他检查都先失败——这正是应有的顺序：**表格不能跑在证据前面**。
 
 ## 三、目录是怎么合并的
 

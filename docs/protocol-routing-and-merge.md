@@ -4,19 +4,22 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **three different API shapes**, and which one a model lives on is a property of the model, not of the account. Measured 2026-10-05 across the 116 `opencode` models:
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. Measured 2026-10-05 across the 116 `opencode` models:
 
 | API shape | Wire endpoint | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
 | OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default** — 53 of 116 | the model names **no** SDK |
 | OpenAI **Responses** | `POST /zen/v1/responses` | 32 of 116 | `@ai-sdk/openai` |
 | Anthropic **Messages** | `POST /zen/v1/messages` | 23 of 116 | `@ai-sdk/anthropic` |
+| Mistral **Conversations** | `POST /zen/v1/chat/completions` | `mistral-large-4` and whatever follows it | `@ai-sdk/mistral` |
 
 **"OpenAI" is two of the three.** Chat Completions and Responses are different wire formats, and a model that needs Responses does not work on the completions endpoint. The default is not "OpenAI" either — it is whatever api the route itself was registered with, and a model that names no SDK speaks it.
 
 DSH picks a transport from the provider row's protocol. If that protocol is not the one the model is served on, the gateway does not fall back — it answers `500`. So the plugin's job is to send each model to the endpoint its own SDK names, without asking the user to configure anything.
 
-A fourth SDK is deliberately **not** served: 8 models name `@ai-sdk/google`, and `llm-pi-ai` implements no such protocol — so there is no route to dispatch them to, and they keep failing on the completions route rather than being sent somewhere invented.
+One SDK is deliberately **not** served: 8 models name `@ai-sdk/google`, and no protocol exists for it — not in `llm-pi-ai`, not here — so there is no route to dispatch them to, and they keep failing on the completions route rather than being sent somewhere invented. Every other SDK the catalog names is either mapped to a protocol or is a gap the catalog test refuses to let pass.
+
+**Mistral shares the completions PATH but not its protocol.** `@ai-sdk/mistral` posts to `/chat/completions`, the same URL the completions models use, while speaking a different body and reading different responses. Path alone would therefore route it wrongly, which is why the route is chosen from the SDK and the protocol — and why the e2e probe has to send a real request before any of it counts as supported.
 
 ## 2. How the route is chosen
 
@@ -29,10 +32,11 @@ Three steps, all data-driven:
    const PROTOCOL_FOR_SDK = {
      "@ai-sdk/openai": "openai-responses",
      "@ai-sdk/anthropic": "anthropic-messages",
+     "@ai-sdk/mistral": "mistral-conversations",
    };
    ```
 
-3. **The protocol names a route.** `internalRouteFor(provider, model, providerNpm)` answers which route serves that model (`opencode-responses`, `opencode-anthropic`), and only for providers in `COMPLETIONS_ROUTES` — the routes this plugin claims. Anything else returns `undefined` and is left alone.
+3. **The protocol names a route.** `internalRouteFor(provider, model, providerNpm)` answers which route serves that model (`opencode-responses`, `opencode-anthropic`, `opencode-mistral`), and only for providers in `COMPLETIONS_ROUTES` — the routes this plugin claims. Anything else returns `undefined` and is left alone.
 
 `src/responses-provider.ts` then **mounts the host's own `llm-pi-ai`** under isolated auth scopes to serve those routes. That is the piece with four host contracts to survive; read its header before touching it. The plugin registers the routes, so the user configures nothing.
 
@@ -43,6 +47,22 @@ An earlier version kept a hand-written list of which models redirect. A hand-pat
 ### The end-to-end test is the only real check
 
 `test/e2e/protocol-routing.e2e.ts` asks the gateway which endpoint recognises each shipped model. The unit tests read the same mapping they verify, so they cannot catch a stale mapping — only the live gateway can. A wrong-endpoint cell answering `500` is what pins the route; a `403 FreeTierError` only proves the gateway parsed the model.
+
+### One list in the UI, four endpoints underneath
+
+The user sees a single OpenCode provider and a single model list. Nothing in the interface names a route, a protocol or an endpoint, and there is no per-model setting to get wrong — **that consistency is the product**, and everything below it exists to keep it.
+
+What makes it possible is that the routing is **derived, never stored**:
+
+- **One list** because the merge (§3) appends canonical rows to whatever the adapter returned. A model's route is not part of what the user picks, so it cannot fall out of sync with the picker.
+- **Computed per turn** from the model id — `provider_npm` → protocol → route. Nothing caches the decision, so a catalog refresh changes routing with no migration and no stored state.
+- **Registered by the plugin, not the profile.** `responses-provider.ts` mounts the host's own `llm-pi-ai` once per protocol under an isolated auth scope, so a profile that declares none of these routes still gets every endpoint.
+- **One place adds the headers.** `fetch-patch.ts` writes the origin proof, the session id and the project attribution for every claimed route, so those do not vary by protocol.
+
+Two guards keep the invisible half honest, because **a mechanism that silently drops a model looks exactly like a model that does not exist**:
+
+- **`catalog.test.ts`** fails, naming the SDK, when the generated catalog names one that is neither mapped nor listed as deliberately unserved. What it prevents is a vendor addition reaching the picker as a _missing_ model — which is how `mistral-large-4` disappeared once.
+- **`protocol-routing.e2e.ts`** refuses to call a protocol routable without a live probe: a path and an auth convention it really sends. Mapping `mistral-conversations` failed this test before it failed anything else, which is the intended order — the table cannot outrun the evidence.
 
 ## 3. The catalog merge
 
