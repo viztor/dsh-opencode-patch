@@ -16,7 +16,7 @@ aliases:
 
 ## How it works
 
-1. **Turn scope** — `apply()` hooks `llm/stream` for configured providers, derives a stable `ses_<12hex><14base62>` ID per DSH session (`openCodeSessionIdFor`, SHA-256), and carries it in `AsyncLocalStorage` across the streamed turn (`withStore`).
+1. **Turn scope** — `apply()` hooks `llm/stream` for configured providers, derives a stable `ses_<26 Crockford base32>` ID per DSH session (`openCodeSessionIdFor`, SHA-256), and carries it in `AsyncLocalStorage` across the streamed turn (`withStore`).
 2. **Fetch patch** — `patchFetch()` intercepts only OpenCode traffic (`isOpenCodeRequest`: `opencode.ai/zen` URL or matching provider in turn state). It always sets `x-opencode-session`, optionally restores `User-Agent` / `x-opencode-client` / `x-opencode-project`, and injects fallback `read`+`bash` schemas into free-tier `/responses` bodies. Non-OpenCode requests return via the original fetch untouched.
 3. **Settings UI** — `src/settings-page.tsx` builds `lib/client.js`, contributing the OpenCode Patch card under DSH Settings → Plugins: **8 fields in 3 sections** (Gateway Requests / Models & Free Tier / Quota Meter) — the behaviour toggles plus the `keySource` credential policy. The other 8 schema knobs are **config-only** (see `CONFIG_ONLY_FIELDS`), and the row config (`cordis.patch.yml`) is their reference.
 
@@ -112,7 +112,7 @@ Host bundle (`lib/index.mjs`) — a thin `apply` barrel over small modules:
 - `src/identity.ts` · `src/lifecycle.ts` — the component/package name constants, and the `apply()` composition: one installer per side effect (rename notice, usage service, fetch patch, stream hook, model discovery) in load-bearing order.
 - `src/config.ts` — schemastery `Config` schema + `resolveConfig`; every default lives once in `CONFIG_DEFAULTS`.
 - `src/config-values.ts` · `src/guards.ts` — dependency-free readers and type guards. **The only host modules the client bundle may import** (never `config.ts`/schemastery).
-- `src/session.ts` · `src/turn-store.ts` — `ses_<12hex><14base62>` hashing (`OPENCODE_SESSION_ID` override) and the ALS turn store.
+- `src/session.ts` · `src/turn-store.ts` — `ses_<26 Crockford base32>` hashing (`OPENCODE_SESSION_ID` override) and the ALS turn store.
 - `src/stream-hook.ts` · `src/fetch-patch.ts` · `src/tool-fallback.ts` — the `llm/stream` hook, the fetch interceptor, and the free-tier `read`/`bash` fallback.
 - `src/key-capture.ts` — what a credential _is_: header extraction, placeholder rejection, tier classification and the capture store. Split from `go-discovery.ts`, which keeps the plan side (endpoint, credential reference, and the policy ordering the two sources against each other).
 - `src/go-discovery.ts` · `src/usage.ts` · `src/usage-contract.ts` — credential/base-URL precedence, the usage Host service, and the shared `GoUsage` shape.
@@ -188,6 +188,14 @@ Token values live in `@deepseek-ai/dsh-client-ui-theme`'s `lib/client.js` (403 `
 Cost of skipping the check, all paid for in one session: a hand-drawn 12px refresh arrow (the code even claimed _the host kit ships no icon set_ — **it ships ~150 icons**, including `IconRefreshOutlineRegular`); a hand-rolled divider; a hand-rolled state dot; a hand-rolled pill. Every one of them is smaller, wrong, and unthemed next to the built-in.
 
 **And the corollary, which is the rule's real cost:** a claim in a comment about what the host does _not_ ship must be **verified against the kit before it is written**, because it freezes the decision. "The host kit ships no icon set" is why the arrow stayed hand-drawn. Naming a limitation you have not checked is the most expensive kind of comment in this repo.
+
+### The session id was the right LENGTH in the wrong alphabet (2026-10-09)
+
+The owner: _"session id is changed to adapt to official protocol."_ Our derived id was `ses_<12hex><14base62>` — 26 characters after the prefix, which is exactly a ULID's length, and the vendor's ids ARE ULIDs: `ses_`, `msg_` and `prt_` are prefixed ULIDs in **Crockford base32** (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, no I/L/O/U), where lexicographic order is chronological order ([source reading](https://zhuanlan.zhihu.com/p/2077006844288037866), [opencode#42589](https://github.com/anomalyco/opencode/issues/42589)). Base62 carries **lowercase**, which a ULID never does — so the shape was right and the alphabet was not.
+
+It now emits 26 Crockford characters, still a **pure function of the DSH session id**: affinity has to survive a host restart, and a real clock reading would mint a new id on every boot. 130 bits come from the top of SHA-256. Arithmetic only — `no-bitwise` forbids `<<` and `|`, and base 256 into base 32 needs just multiply and divide.
+
+The failing tests pointed at one shared fixture: the format regex lived in `test/test-helpers.ts`, not in the test files that use it.
 
 ### A prefix is not an entitlement (2026-10-08)
 
