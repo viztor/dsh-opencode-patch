@@ -35,6 +35,16 @@ v1 (`console login`) additionally reads `/api/user` and `/api/orgs`, stores the 
 - **The CLI's `auth.json`.** Reading it couples the plugin to another program's private file format; writing it collides with the program that owns it.
 - **Silent rotation.** Adding a credential changes nothing until the switch is on. This is the contract: zero configuration by default, opt-in by statement.
 
+## Reach: which routes a pool can actually serve
+
+Measured against the credential seam, and it narrows the design.
+
+The seam is layered: `resolve(ref)` answers "what is behind this environment-variable name" over the process environment, a provider-managed store, and `.env` files. The store's only write path is `modifyRecord(key, ...)`, and its key is `<scope>/<id>` — the OWNING plugin's key, such as `llm-pi-ai/opencode`. A record belongs to the plugin that registered the provider, and the seam reports its `writable` state rather than letting another plugin write it.
+
+So a pool can rotate credentials for the routes THIS plugin serves, because their resolution is the plugin's own `resolveApiKey`. It cannot rotate them for routes the wrapper serves — the internal protocol routes and the deployment's own declared routes — because their resolution is the wrapper's, reading a record this plugin does not own. Rotating there needs a seam upstream, or the route registration this plugin measured it cannot claim.
+
+That is the same wall as section 11 of `redirect-planes.md`, met from the other side: the wrapper owns its routes, and a later-loading plugin can neither take one over nor write behind it.
+
 ## Status
 
-The chain above is the design, measured end to end against OpenCode's own implementation. The code is not built yet; the bridge currently in flight (Google models through the plugin's own adapter) uses step 2 only and introduces no switch, because it needs none.
+The chain above is the design, measured end to end against OpenCode's own implementation. The code is not built yet, and the reach above says what building it buys today: rotation for the bridge route, and for any route a deployment points at this plugin's own adapter. The bridge itself uses step 2 only and introduces no switch, because it needs none.
