@@ -136,3 +136,36 @@ Measured 2026-10-10 by building one with pi's own protocol implementations and i
 **The session header reaches every protocol.** Wrapping each `api` before `createProvider` puts our `x-opencode-session`, `x-opencode-client` and `x-opencode-project` on all four, and pi's own session header defers when ours is already present.
 
 **One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.18.35 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
+
+## 10. A catalog route serves every protocol already
+
+Measured 2026-10-10 by reproducing what `reuseCatalogProvider` builds — the catalog provider's `stream`, our model list — and intercepting the request.
+
+A route that names a catalog provider and declares **neither `api` nor `baseURL`** keeps each model's own protocol and its own endpoint:
+
+| Model | Protocol resolved | URL |
+| :-- | :-- | :-- |
+| `gemini-3.8-flash` | `google-generative-ai` | `…/zen/v1/models/…:streamGenerateContent?alt=sse` |
+| `claude-opus-5` | `anthropic-messages` | `…/zen/v1/messages?beta=true` |
+| `gpt-5.4` | `openai-responses` | `…/zen/v1/responses` |
+| `big-pickle` | `openai-completions` | `…/zen/v1/chat/completions` |
+
+The resolution is three lines of the wrapper's own model materialization: `api` falls back `route.api` → the model's catalog entry → the route's shared protocol, and `baseURL` falls back the same way. Because the entry is spread rather than enumerated, the model also inherits pi's compatibility quirks, model headers and reasoning spellings.
+
+**So the fix is smaller than a takeover.** A route declaring an `api` pins every model on it to one protocol, which is why `@ai-sdk/google` had nowhere to go; leaving `api` and `baseURL` off the route lets each model speak for itself. One catalog route per plane covers every model pi knows, and the hand-declared routes are needed only for models the installed catalog does not describe.
+
+**Declaring `baseURL` on that route would break it.** It overrides every model's endpoint, and the Anthropic SDK appends its own `/v1/messages` — the route would send every Messages model to `…/v1/v1/messages`.
+
+## 11. Why the protocol table is narrow, and who unblocks Google
+
+Two constraints meet at `@ai-sdk/google`, and both are now measured.
+
+**A hand-declared route may only name a protocol in the wrapper's table.** That table holds three entries. Its own comment says why the rest are absent:
+
+> The remainder are absent for want of a consumer rather than a blocker: each is one line here once a deployment needs it. Catalog routes still reach every protocol through their own provider; only an explicit override is refused.
+
+The narrow part is deliberate and correct: Bedrock signs with SigV4, Vertex needs a project and a location, Azure needs an api-version, Codex authenticates through OAuth. None of those fit a route described by a key, an endpoint and headers. `google-generative-ai` is not in that group — it needs an API key and a base URL, both of which a route already carries, and its key travels in `x-goog-api-key`, which this plugin has measured end to end.
+
+**A catalog route reaches every protocol, but only under the catalog's own name.** `catalogProvider(provider)` is a map lookup by route key, so a route reusing the `opencode` catalog must itself be called `opencode`. That name is already taken by whatever the deployment declared, and `registerAdapter` refuses a second registration for a provider another registration owns. So a plugin loading after the wrapper cannot claim the name: it never sees that registration's handle, and `handle.replace` — the documented way to give a route back — needs the handle it never got.
+
+**So the unblock is upstream, and it is one line.** Adding `'google-generative-ai': googleGenerativeAIApi` to the wrapper's table is the change its own comment anticipates, and it makes the seven Google models servable through the hand-declared route mechanism this plugin already has. Until then they stay in `UNSERVED_SDKS`, which is a decision the code states rather than a model that silently disappears.
