@@ -1,3 +1,6 @@
+allowBuilds:
+  "@google/genai": set this to true or false
+  protobufjs: set this to true or false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.0.0
   vite-plus: 1.1.0
