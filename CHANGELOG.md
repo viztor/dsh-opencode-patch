@@ -6,6 +6,22 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.2.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.1.1...v1.2.0) (2026-10-10)
+
+
+### Features
+
+* **bridge:** serve the Gemini models through the plugin's own adapter ([cbf3641](https://github.com/viztor/dsh-opencode-patch/commit/cbf3641149f08032969c4f34103f389cda8b7752))
+* **provider:** build the gateway's providers from pi's protocols ([7c531ff](https://github.com/viztor/dsh-opencode-patch/commit/7c531ffdf37df899bbb7040f42a1809c8d838d0f))
+
+
+### Bug Fixes
+
+* **ci:** the build-script placeholders pnpm wrote into the workspace file ([492e4d7](https://github.com/viztor/dsh-opencode-patch/commit/492e4d7a42fda8930194d8466254636c44bd169c))
+* **routing:** mistral cannot be served, so it is no longer offered ([ebf32f4](https://github.com/viztor/dsh-opencode-patch/commit/ebf32f4f6adededa91b7d0a8a02bde1ff02089d4))
+* the constant my own control left behind ([d13df2f](https://github.com/viztor/dsh-opencode-patch/commit/d13df2f4cb48513b54933000631cc4102bd17005))
+* **ua:** the CLI version we claim, and a check that keeps it true ([0efbb64](https://github.com/viztor/dsh-opencode-patch/commit/0efbb64ee42b633d7c6cf407106c122fd5992426))
+
 ## [1.1.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.1.0...v1.1.1) (2026-10-09)
 
 
