@@ -31,7 +31,6 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
-      "opencode-mistral",
       "opencode-go-responses",
       "opencode-go-anthropic",
     ]);
@@ -88,7 +87,6 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
-      "opencode-mistral",
       "opencode-go-responses",
       "opencode-go-anthropic",
     ]);
@@ -97,7 +95,6 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
-      "opencode-mistral",
       "opencode-go-responses",
       "opencode-go-anthropic",
     ]);
@@ -124,7 +121,6 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
-      "opencode-mistral",
       "opencode-go-responses",
       "opencode-go-anthropic",
     ]);
@@ -162,7 +158,6 @@ describe("resolveConfig", () => {
       "opencode-go",
       "opencode-responses",
       "opencode-anthropic",
-      "opencode-mistral",
       "opencode-go-responses",
       "opencode-go-anthropic",
     ]);
@@ -213,7 +208,6 @@ describe("Config schema", () => {
         "opencode-go",
         "opencode-responses",
         "opencode-anthropic",
-        "opencode-mistral",
         "opencode-go-responses",
         "opencode-go-anthropic",
       ]),
@@ -263,7 +257,6 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
     "opencode-go",
     "opencode-responses",
     "opencode-anthropic",
-    "opencode-mistral",
     "opencode-go-responses",
     "opencode-go-anthropic",
   ]);

@@ -31,7 +31,6 @@ export const RESPONSES_SDK = "@ai-sdk/openai";
 export const ANTHROPIC_SDK = "@ai-sdk/anthropic";
 
 /** The SDK whose presence means "this model is served on Mistral's API". */
-export const MISTRAL_SDK = "@ai-sdk/mistral";
 
 /** Route serving the gateway's Responses-API models. */
 export const RESPONSES_ROUTE = "opencode-responses";
@@ -40,7 +39,6 @@ export const RESPONSES_ROUTE = "opencode-responses";
 export const ANTHROPIC_ROUTE = "opencode-anthropic";
 
 /** Route serving the gateway's Mistral-API models. */
-export const MISTRAL_ROUTE = "opencode-mistral";
 
 /** Route serving the Go plane's Responses-API models. */
 export const GO_RESPONSES_ROUTE = "opencode-go-responses";
@@ -76,7 +74,6 @@ export const ROUTE_FOR_PLANE_PROTOCOL: Readonly<
     routes: {
       "openai-responses": RESPONSES_ROUTE,
       "anthropic-messages": ANTHROPIC_ROUTE,
-      "mistral-conversations": MISTRAL_ROUTE,
     },
   },
   "opencode-go": {
@@ -104,7 +101,6 @@ export const ROUTE_FOR_PLANE_PROTOCOL: Readonly<
 export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
   [RESPONSES_SDK]: "openai-responses",
   [ANTHROPIC_SDK]: "anthropic-messages",
-  [MISTRAL_SDK]: "mistral-conversations",
 };
 
 /**
@@ -124,14 +120,16 @@ export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
  * compatibility gate — so `mistral-large-4` is served instead, through a route
  * of its own.
  */
-export const UNSERVED_SDKS: ReadonlySet<string> = new Set(["@ai-sdk/google"]);
+export const UNSERVED_SDKS: ReadonlySet<string> = new Set([
+  "@ai-sdk/google",
+  "@ai-sdk/mistral",
+]);
 
 /** The route each non-default protocol is served from. */
 /** The Zen plane's rows of {@link ROUTE_FOR_PLANE_PROTOCOL}. */
 export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> = {
   "openai-responses": RESPONSES_ROUTE,
   "anthropic-messages": ANTHROPIC_ROUTE,
-  "mistral-conversations": MISTRAL_ROUTE,
 };
 
 /** Every route this plugin registers for itself. */

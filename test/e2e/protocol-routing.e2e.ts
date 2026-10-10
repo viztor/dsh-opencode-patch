@@ -98,10 +98,6 @@ const PATH_FOR: Readonly<Record<string, string>> = {
   "anthropic-messages": "/messages",
   "openai-completions": "/chat/completions",
   "openai-responses": "/responses",
-  // Mistral's own API is chat-shaped, so the path matches the completions
-  // one while the protocol (and the body it accepts) does not. The probe is
-  // what proves it against the live gateway.
-  "mistral-conversations": "/chat/completions",
 };
 
 /**
@@ -121,7 +117,6 @@ const AUTH_FOR: Readonly<
   }),
   "openai-completions": (key) => ({ authorization: `Bearer ${key}` }),
   "openai-responses": (key) => ({ authorization: `Bearer ${key}` }),
-  "mistral-conversations": (key) => ({ authorization: `Bearer ${key}` }),
 };
 
 /** A body shaped for the protocol, so the gateway judges the MODEL, not the JSON. */
@@ -139,10 +134,6 @@ const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
     stream: false,
   },
   "openai-responses": { input: "hi", max_output_tokens: 16 },
-  "mistral-conversations": {
-    max_tokens: 8,
-    messages: [{ content: "hi", role: "user" }],
-  },
 };
 
 /** Headers the plugin injects, so a probe looks like the traffic we actually send. */

@@ -21,7 +21,7 @@ import { PROTOCOL_FOR_SDK, ROUTE_FOR_PLANE_PROTOCOL } from "../src/index.ts";
  * to make it a plain assertion.
  */
 describe("mount · the protocols the harness can build", () => {
-  it.fails("names only protocols dsh-llm-pi-ai supports", () => {
+  it("names only protocols dsh-llm-pi-ai supports", () => {
     const supported = new Set(supportedProtocols());
     const named = [
       ...new Set([

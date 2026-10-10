@@ -535,7 +535,6 @@ describe("responses-provider: registration is best-effort", () => {
           { id: "opencode" },
           { id: "opencode-responses" },
           { id: "opencode-anthropic" },
-          { id: "opencode-mistral" },
         ],
         registerAdapter: vi.fn(),
       },
