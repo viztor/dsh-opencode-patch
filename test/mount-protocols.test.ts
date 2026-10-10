@@ -2,7 +2,13 @@ import { supportedProtocols } from "@deepseek-ai/dsh-llm-pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 
-import { PROTOCOL_FOR_SDK, ROUTE_FOR_PLANE_PROTOCOL } from "../src/index.ts";
+import {
+  OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
+  PROTOCOL_FOR_SDK,
+  ROUTE_FOR_PLANE_PROTOCOL,
+  UNSERVED_SDKS,
+} from "../src/index.ts";
 
 /**
  * The protocols this plugin mounts must be ones the harness's own pi-ai layer
@@ -79,5 +85,60 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
       // protocols. A provider that spoke one protocol would need none of it.
       expect(apis.size).toBeGreaterThan(1);
     }
+  });
+});
+
+/**
+ * Every catalogued model, against the protocols its plane's provider implements.
+ *
+ * The per-model `api` in our catalog is the vendor's own SDK (`@ai-sdk/…`), and
+ * `PROTOCOL_FOR_SDK` turns it into a wire protocol. This walks the whole catalog
+ * rather than a sample, because the failure this catches is one model in a
+ * refreshed catalog naming an SDK nobody has a protocol for - and a picker that
+ * offers it looks exactly like a picker that does not.
+ *
+ * A model is fine when its plane's pi-ai provider has at least one model on the
+ * same protocol, since a provider only carries protocols it can speak. Models
+ * whose SDK is a recorded decision (`UNSERVED_SDKS`) are skipped: that is the
+ * plugin saying so, not a gap.
+ */
+describe("routing · every catalogued model has a protocol its plane can serve", () => {
+  const protocolsOf = (id: string): Set<string> =>
+    new Set(
+      (
+        builtinProviders()
+          .find((p) => p.id === id)
+          ?.getModels() ?? []
+      ).map((model) => model.api)
+    );
+
+  const planes = [
+    { catalog: OPENCODE_ZEN_CATALOG, id: "opencode" },
+    { catalog: OPENCODE_GO_CATALOG, id: "opencode-go" },
+  ];
+
+  it("names no protocol its plane's provider cannot speak", () => {
+    const unsupported: string[] = [];
+    let checked = 0;
+    for (const { catalog, id } of planes) {
+      const protocols = protocolsOf(id);
+      for (const model of catalog) {
+        const sdk = model.provider_npm;
+        // No SDK means the provider's own default, which is always servable.
+        if (sdk === undefined || UNSERVED_SDKS.has(sdk)) {
+          continue;
+        }
+        checked += 1;
+        const protocol = PROTOCOL_FOR_SDK[sdk];
+        if (protocol === undefined || !protocols.has(protocol)) {
+          unsupported.push(
+            `${id} ${model.id}: ${sdk} -> ${protocol ?? "no protocol"}`
+          );
+        }
+      }
+    }
+    // A check that read no models would otherwise pass by finding nothing.
+    expect(checked).toBeGreaterThan(0);
+    expect(unsupported).toEqual([]);
   });
 });
