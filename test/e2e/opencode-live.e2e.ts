@@ -180,7 +180,7 @@ describe.skipIf(!LIVE || !GO_KEY)("live Go usage (OPENCODE_GO_API_KEY)", () => {
       if (!response.ok) {
         const body = await response.text();
         const refusal = [401, 402, 403, 429].includes(response.status);
-        const detail = `HTTP ${response.status} ${body.slice(0, 120)}`;
+        const detail = `HTTP ${response.status} ${body.slice(0, 400)}`;
         if (refusal) {
           // `context.skip()` records the reason but vitest does not print it, so
           // the log would show a skip with no explanation. Write it out as well:
