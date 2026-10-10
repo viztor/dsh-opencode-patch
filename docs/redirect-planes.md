@@ -117,3 +117,22 @@ Read the table as a chain of guarantees. Steps 1–3 are why the front end is on
 | Step 10 without step 11 | The number is right and invisible, which is indistinguishable from not tracking it at all. |
 
 The whole design follows from one sentence: the user picks a _model_, and everything else (plane, protocol, endpoint, credential, headers) is derived from facts the vendor ships, so that no part of it can be configured into disagreement with another part.
+
+## 9. What a self-built provider must carry
+
+Measured 2026-10-10 by building one with pi's own protocol implementations and intercepting the request it produced. Four protocols, four URLs, no rewrite of any wire format:
+
+| Model's `api` | URL the gateway receives | Auth |
+| :-- | :-- | :-- |
+| `openai-responses` | `…/zen/v1/responses` | `Authorization: Bearer` |
+| `openai-completions` | `…/zen/v1/chat/completions` | `Authorization: Bearer` |
+| `anthropic-messages` | `…/zen/v1/messages?beta=true` | `x-api-key` |
+| `google-generative-ai` | `…/zen/v1/models/<id>:streamGenerateContent?alt=sse` | `x-goog-api-key` |
+
+**The base URL is per protocol, not per plane.** The Anthropic SDK appends its own `/v1/messages`, so its base is one level shorter than the others: `…/zen` and `…/zen/go` against `…/zen/v1` and `…/zen/go/v1`. That is not derivable from the protocol name; it is a property of each SDK, and pi's own `opencode` provider records it per model.
+
+**The Google path is the one a hand-declared route cannot reach.** Its protocol name is not in the wrapper's three-entry table, so no route may name it; a self-built provider dispatches to it without any special case.
+
+**The session header reaches every protocol.** Wrapping each `api` before `createProvider` puts our `x-opencode-session`, `x-opencode-client` and `x-opencode-project` on all four, and pi's own session header defers when ours is already present.
+
+**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.18.35 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
