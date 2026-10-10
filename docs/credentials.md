@@ -1,11 +1,13 @@
 # Credentials: the pool, the login, and the rotation
 
-The plugin's default is the deployment's own credential: whatever `apiKeyEnv` the profile already declares keeps resolving exactly as it does today. The pool described here is an OPT-IN layer over that, and the opt-in is a switch, not a side effect of adding an entry. A user who logs in with OAuth has taken an action; the plugin still does nothing different until they also say "use the plugin's credentials for these routes."
+The plugin's default is the deployment's own credential: whatever `apiKeyEnv` the profile already declares keeps resolving exactly as it does today. The pool is a SEPARATE credential the deployment opts into by pointing a route at it, and nothing about that happens as a side effect of adding an entry. A user who logs in with OAuth has taken an action; the plugin still resolves exactly what the profile names until the profile names the pool's reference.
 
 ## The resolution chain
 
-1. **The pool** — only when the user enabled it. Round-robin within the route's plane, skipping entries marked failed; an empty or fully-failed pool falls through rather than erroring.
-2. **The declared reference** — `apiKeyEnv` inherited from the profile's own route declaration, resolved through the credentials service with the launch environment as fallback. This is the zero-configuration default and the behavior when the switch is off.
+One reference resolves per route, and the pool only enters the picture when the route names the pool's reference:
+
+1. **The route's `apiKeyEnv`** — the reference the deployment declared, resolved through the credentials service with the launch environment as fallback. This is the zero-configuration default, and the whole behavior for a deployment that declares nothing else.
+2. **The pool's reference** — the same resolution, for a deployment that named `OPENCODE_POOL_KEY` or `OPENCODE_GO_POOL_KEY` instead. The value behind it is the pool's current key, which the plugin rotates; the wrapper and this plugin both read it per operation, so a rotation reaches the next call without a restart.
 3. **Nothing** — a named reference that misses fails loud. Never hand pi an `undefined` for a named ref: it would pick up an unrelated ambient key (`OPENAI_API_KEY` and friends) and bill another tenant.
 
 ## The pools are per plane
@@ -35,16 +37,18 @@ v1 (`console login`) additionally reads `/api/user` and `/api/orgs`, stores the 
 - **The CLI's `auth.json`.** Reading it couples the plugin to another program's private file format; writing it collides with the program that owns it.
 - **Silent rotation.** Adding a credential changes nothing until the switch is on. This is the contract: zero configuration by default, opt-in by statement.
 
-## Reach: which routes a pool can actually serve
+## The reference the pool owns
 
-Measured against the credential seam, and it narrows the design.
+The pool does not write behind anyone's key. Writing the user's own reference (`OPENCODE_API_KEY`) is dead on both sides: if nothing shadows it, the write replaces the credential the deployment declared, and if the environment satisfies it, the write is shadowed. The seam refuses that second case out loud — `set` "rejects while a read-only source shadows the reference", because the write would otherwise appear to succeed while resolution kept returning the shadowing value. So the failure is not merely impolite; it is already guarded.
 
-The seam is layered: `resolve(ref)` answers "what is behind this environment-variable name" over the process environment, a provider-managed store, and `.env` files. The store's only write path is `modifyRecord(key, ...)`, and its key is `<scope>/<id>` — the OWNING plugin's key, such as `llm-pi-ai/opencode`. A record belongs to the plugin that registered the provider, and the seam reports its `writable` state rather than letting another plugin write it.
+The pool owns a reference of its own instead:
 
-So a pool can rotate credentials for the routes THIS plugin serves, because their resolution is the plugin's own `resolveApiKey`. It cannot rotate them for routes the wrapper serves — the internal protocol routes and the deployment's own declared routes — because their resolution is the wrapper's, reading a record this plugin does not own. Rotating there needs a seam upstream, or the route registration this plugin measured it cannot claim.
+- A dedicated name per plane — `OPENCODE_POOL_KEY`, `OPENCODE_GO_POOL_KEY` — which nothing shadows, so it is writable.
+- Rotation writes the next key with `set(ref, value)`, and every route that names that reference resolves it on its next operation, because the seam resolves per call. That includes the routes the wrapper serves: it reads whatever reference the profile declares, so pointing a route at the pool's reference is the whole opt-in.
+- Opting in is therefore a configuration statement, which is what the contract in this file asks for. A deployment that leaves `apiKeyEnv` alone keeps the environment's credential and the pool never runs.
 
-That is the same wall as section 11 of `redirect-planes.md`, met from the other side: the wrapper owns its routes, and a later-loading plugin can neither take one over nor write behind it.
+What this does not need: a takeover, a record another plugin owns, or any write to a reference the deployment declared. It needs one fresh reference name and the seam's own write path.
 
 ## Status
 
-The chain above is the design, measured end to end against OpenCode's own implementation. The code is not built yet, and the reach above says what building it buys today: rotation for the bridge route, and for any route a deployment points at this plugin's own adapter. The bridge itself uses step 2 only and introduces no switch, because it needs none.
+The chain above is the design, measured end to end against OpenCode's own implementation and against the credential seam. The code is not built yet. The first piece worth building is the pool's own reference and the rotation behind it — the logins in the sections above are the second, and they are what fill the pool in the first place. The chain above is the design, measured end to end against OpenCode's own implementation. The code is not built yet, and the reach above says what building it buys today: rotation for the bridge route, and for any route a deployment points at this plugin's own adapter. The bridge itself uses step 2 only and introduces no switch, because it needs none.
