@@ -87,6 +87,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
     "@deepseek-ai/dsh-typert-protocol": "0.2.0-rc.2",
+    "@earendil-works/pi-ai": "0.87.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.4",

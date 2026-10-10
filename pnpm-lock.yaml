@@ -191,6 +191,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
+      '@earendil-works/pi-ai':
+        specifier: 0.87.1
+        version: 0.87.1(ws@8.22.0)(zod@4.6.5)
       '@testing-library/dom':
         specifier: ^10.4.2
         version: 10.4.2
