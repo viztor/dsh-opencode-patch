@@ -76,7 +76,8 @@
     "test:coverage": "vp test run --coverage",
     "test:e2e": "vp test --config vitest.e2e.config.ts",
     "token:refresh": "node --experimental-strip-types scripts/refresh-opencode-token.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cli:version": "node --experimental-strip-types scripts/check-vendor-version.ts"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.4"

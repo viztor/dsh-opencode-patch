@@ -105,6 +105,17 @@ jobs:
       # night, which trains everyone to ignore the signal. So the nightly path
       # regenerates and proposes a pull request; the gates above stay for pushes
       # to main, where a merge that forgot to regenerate must still fail.
+      # The User-Agent names the CLI version, and the vendor moves it every few
+      # days. On a push the tree must be current; on the nightly it only
+      # reports, because a vendor release is not a reason to go red at 04:37.
+      - name: the claimed CLI version is the published one
+        if: github.event_name != 'schedule'
+        run: pnpm run cli:version
+
+      - name: report a stale CLI version (nightly only)
+        if: github.event_name == 'schedule'
+        run: pnpm run cli:version || echo "::warning::the pinned opencode CLI version is not the published one"
+
       - name: propose the refresh (nightly only)
         if: github.event_name == 'schedule'
         env:

@@ -147,7 +147,7 @@ const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
 /** Headers the plugin injects, so a probe looks like the traffic we actually send. */
 const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "application/json",
-  "user-agent": "opencode/1.18.33 dsh-opencode-patch",
+  "user-agent": "opencode/1.18.35 dsh-opencode-patch",
   "x-opencode-client": "cli",
   "x-opencode-project": "global",
   "x-opencode-session": "ses_e2e0000000000abcdefghij",

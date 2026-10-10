@@ -48,7 +48,7 @@ import {
 } from "./usage-contract.ts";
 
 const USAGE_MAX_BYTES = 1024 * 1024;
-const USAGE_USER_AGENT = "opencode/1.18.33 dsh-opencode-patch";
+const USAGE_USER_AGENT = "opencode/1.18.35 dsh-opencode-patch";
 
 /** Stable failure code shared by every quota-fetch failure path. */
 const USAGE_UNAVAILABLE = "opencode-go/usage-unavailable";

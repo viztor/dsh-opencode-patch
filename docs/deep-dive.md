@@ -35,7 +35,7 @@ The fetch patch satisfies every variant:
 | `x-session-affinity` | `ses_<12hex><14base62>` | Generic proxy/relay affinity (Cloudflare AI Gateway, LiteLLM, Portkey) |
 | `x-opencode-parent-session-id` | `ses_<parent_hash>` | Hierarchical lineage for DSH subagents (`subagent`, `subagent_fork`) |
 | `x-parent-session-id` | `ses_<parent_hash>` | Generic proxy parent-session affinity |
-| `User-Agent` | `opencode/1.18.33 …` | Prevents Cloudflare WAF Error 1010 challenges. The constant lives in `session.ts`; the patch version tracks the CLI |
+| `User-Agent` | `opencode/1.18.35 …` | Prevents Cloudflare WAF Error 1010 challenges. The constant lives in `session.ts`; the patch version tracks the CLI |
 | `x-opencode-client` | `cli` (configurable) | Identifies the client tier to the Zen gateway |
 | `x-opencode-project` | dynamic / `global` | Workspace project attribution for the Console |
 

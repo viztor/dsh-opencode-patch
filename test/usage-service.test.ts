@@ -230,7 +230,7 @@ describe("GoUsageService endpoint", () => {
     expect(headerOf(capture.init, "authorization")).toBe("Bearer sk-live-key");
     expect(headerOf(capture.init, "accept")).toBe("application/json");
     expect(headerOf(capture.init, "user-agent")).toBe(
-      "opencode/1.18.33 dsh-opencode-patch"
+      "opencode/1.18.35 dsh-opencode-patch"
     );
     expect(headerOf(capture.init, "x-opencode-client")).toBe("cli");
     expect(headerOf(capture.init, "x-opencode-project")).toBe("global");

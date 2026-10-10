@@ -26,7 +26,7 @@ export const PARENT_SESSION_ALT_HEADER = "x-parent-session-id";
 
 /** Canonical OpenCode CLI User-Agent the DSH LLM adapter strips. */
 export const OPENCODE_UA =
-  "opencode/1.18.33 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
+  "opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
 
 /**
  * The vendor's own base62 alphabet, character for character (`randomBase62` in
