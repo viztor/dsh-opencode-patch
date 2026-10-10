@@ -113,6 +113,9 @@ export default defineConfig({
           "@deepseek-ai/cordis",
           "@deepseek-ai/dsh-typert-protocol",
           "@deepseek-ai/schemastery",
+          // The one runtime pi import lives in google-bridge.ts; bundling it
+          // would ship a second pi beside the one the wrapper loads.
+          "@earendil-works/pi-ai",
         ],
       },
       dts: true,

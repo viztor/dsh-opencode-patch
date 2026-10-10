@@ -39,6 +39,7 @@
 
 import { DEFAULT_USAGE_KEY_ENV } from "./config.ts";
 import type { CordisContext } from "./cordis-context.ts";
+import { registerGoogleBridge } from "./google-bridge.ts";
 import { isFunctionLike, isRecord } from "./guards.ts";
 import {
   type CatalogModelSpec,
@@ -46,8 +47,11 @@ import {
   getLiveZenCatalog,
 } from "./models-catalog.ts";
 import {
+  GOOGLE_INTERNAL_ROUTE,
+  GOOGLE_SDK,
   PROTOCOL_FOR_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
+  SELF_MOUNTED_ROUTES,
 } from "./responses-routes.ts";
 
 /** The host plugin whose `apply` this module mounts. */
@@ -486,6 +490,38 @@ export const registerResponsesProvider = async (
     return undefined;
   }
   const declared = declaredRoutes(llm);
+  // The bridge route first. It registers on the real service through this
+  // plugin's own adapter, so it needs nothing from the wrapper's mount below:
+  // a deployment that declares every protocol route in its profile still gets
+  // the Gemini models, which were the one protocol a declared route could
+  // never name. Its withdrawal joins the disposer this function returns, and
+  // every early exit below hands it back rather than leaking it.
+  const bridgeHandle = declared.has(GOOGLE_INTERNAL_ROUTE)
+    ? undefined
+    : registerGoogleBridge({
+        apiKeyRef: inheritedCredentialRef(ctx),
+        ctx,
+        host: loadPiAi(ctx),
+        // The bridge reads the RAW catalog, not the config-shaped profile:
+        // its pi models carry this catalog's cost, so pi's own usage
+        // accounting lands the right numbers without our meter's help.
+        llm: { registerAdapter: llm.registerAdapter },
+        specs: planeSource("opencode", ctx).catalog.filter(
+          (spec) => spec.provider_npm === GOOGLE_SDK
+        ),
+      });
+  if (bridgeHandle !== undefined) {
+    ctx.logger?.info?.(
+      "[dsh-opencode-patch] bridged the Gemini models to %s (own adapter)",
+      GOOGLE_INTERNAL_ROUTE
+    );
+  }
+  const bridgeDispose =
+    bridgeHandle === undefined
+      ? undefined
+      : () => {
+          releaseRegistration(bridgeHandle);
+        };
   // A deployment that already declares a route in its profile keeps it: the user
   // hand-picks the models it serves, and mounting over that would take the choice
   // away. Deferring is the point — this module exists so a deployment that
@@ -493,7 +529,12 @@ export const registerResponsesProvider = async (
   const wanted = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
     ([plane, entry]) =>
       Object.entries(entry.routes)
-        .filter(([, route]) => !declared.has(route))
+        // Self-mounted routes register through the plugin's own adapter, so
+        // handing their models to the wrapper's mount would only earn its
+        // protocol table's refusal.
+        .filter(
+          ([, route]) => !declared.has(route) && !SELF_MOUNTED_ROUTES.has(route)
+        )
         .map(([protocol, route]) => ({
           plane,
           protocol,
@@ -541,7 +582,7 @@ export const registerResponsesProvider = async (
     ctx.logger?.info?.(
       "[dsh-opencode-patch] no model needs an internal route; nothing to mount"
     );
-    return undefined;
+    return bridgeDispose;
   }
   const captured: unknown[] = [];
   const scope = mountScope(ctx, captured);
@@ -549,7 +590,7 @@ export const registerResponsesProvider = async (
     ctx.logger?.info?.(
       "[dsh-opencode-patch] this host exposes no isolate/plugin scope; internal routes stay unregistered"
     );
-    return undefined;
+    return bridgeDispose;
   }
   try {
     const fiber = scope.plugin(host, { providers });
@@ -564,10 +605,11 @@ export const registerResponsesProvider = async (
       ctx.logger?.info?.(
         "[dsh-opencode-patch] the mount registered no route; internal routes stay unregistered"
       );
-      return undefined;
+      return bridgeDispose;
     }
     ctx.logger?.info?.("[dsh-opencode-patch] mounted %s", mounted.join("; "));
     return () => {
+      bridgeDispose?.();
       for (const handle of captured) {
         releaseRegistration(handle);
       }
@@ -585,6 +627,6 @@ export const registerResponsesProvider = async (
       "[dsh-opencode-patch] internal routes stay unregistered (%s); routes declared in the profile are unaffected",
       error instanceof Error ? error.message : String(error)
     );
-    return undefined;
+    return bridgeDispose;
   }
 };

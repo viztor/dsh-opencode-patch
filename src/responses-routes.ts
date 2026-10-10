@@ -30,10 +30,10 @@ export const RESPONSES_SDK = "@ai-sdk/openai";
 /** The SDK whose presence means "this model is served on the Messages API". */
 export const ANTHROPIC_SDK = "@ai-sdk/anthropic";
 
-/** The SDK with no protocol anywhere: pi implements none for it. */
+/** The SDK whose models speak pi's `google-generative-ai` protocol. */
 export const GOOGLE_SDK = "@ai-sdk/google";
 
-/** The SDK whose protocol pi implements but this plugin does not yet serve. */
+/** The SDK whose models speak pi's `mistral-conversations` protocol. */
 export const MISTRAL_SDK = "@ai-sdk/mistral";
 
 /** The SDK whose presence means "this model is served on Mistral's API". */
@@ -51,6 +51,18 @@ export const GO_RESPONSES_ROUTE = "opencode-go-responses";
 
 /** Route serving the Go plane's Messages-API models. */
 export const GO_ANTHROPIC_ROUTE = "opencode-go-anthropic";
+
+/**
+ * Route this plugin registers through its own adapter for the gateway's Gemini
+ * models.
+ *
+ * Deliberately not `google`: that is a real provider id a deployment may
+ * configure for Google AI Studio, and registering it would take the name away
+ * from whoever configures it next. This one stays internal — the picker lists
+ * its models under the plane route, and the stream hook dispatches the call
+ * here, exactly as it does for the protocol routes above.
+ */
+export const GOOGLE_INTERNAL_ROUTE = "opencode-google";
 
 /**
  * The gateway planes: one base URL, one catalog and one credential each.
@@ -80,6 +92,7 @@ export const ROUTE_FOR_PLANE_PROTOCOL: Readonly<
     routes: {
       "openai-responses": RESPONSES_ROUTE,
       "anthropic-messages": ANTHROPIC_ROUTE,
+      "google-generative-ai": GOOGLE_INTERNAL_ROUTE,
     },
   },
   "opencode-go": {
@@ -95,23 +108,27 @@ export const ROUTE_FOR_PLANE_PROTOCOL: Readonly<
  * The pi-ai protocol each SDK a model may name corresponds to, when that
  * protocol is not the route's own. Keys are models.dev `provider.npm` values.
  *
- * Only protocols `llm-pi-ai` actually implements belong here. Its
- * `supportedProtocols()` is `Object.keys(PROTOCOLS)`, which today includes
- * `openai-completions`, `openai-responses`, `anthropic-messages` AND
- * `mistral-conversations` — the last one carries its own compatibility gate
- * (`supportsMidConvoSystemMessages: "withhold"`), so it is supported on
- * purpose. `@ai-sdk/google` is absent because no Google protocol exists, and
- * its models keep failing on the completions route rather than being sent
- * somewhere invented.
+ * Two mechanisms serve the protocols here, and the split is the point:
+ *
+ * - `openai-responses` and `anthropic-messages` name protocols the wrapper's
+ *   hand-declared route table implements, so their routes mount through the
+ *   wrapper like every other route this plugin registers for it.
+ * - `google-generative-ai` names a protocol that table does not carry, so its
+ *   route mounts through this plugin's own adapter instead. The seam cannot
+ *   express it — measured: a hand-declared route may only name a protocol in
+ *   the wrapper's three-entry table, and a catalog route may only be named
+ *   after the catalog provider it reuses, which a later-loading plugin cannot
+ *   claim. `google-bridge.ts` is that adapter, and it is the record of how.
+ *
  */
 export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
   [RESPONSES_SDK]: "openai-responses",
   [ANTHROPIC_SDK]: "anthropic-messages",
+  [GOOGLE_SDK]: "google-generative-ai",
 };
 
 /**
- * SDKs whose dialect no `llm-pi-ai` protocol implements, so their models are
- * deliberately not offered.
+ * SDKs whose models are deliberately not offered.
  *
  * Every entry here is a DECISION, not an omission — and the distinction is the
  * point. A model naming an SDK that is in neither this set nor
@@ -119,16 +136,21 @@ export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
  * how `mistral-large-4` went missing from the picker while every gate stayed
  * green. `catalog.test.ts` fails on that case and names the SDK.
  *
- * - `@ai-sdk/google` — no Google protocol exists, in pi-ai or here.
- *
- * `@ai-sdk/mistral` used to be listed here, on the belief that pi-ai had no
- * Mistral protocol. It does — `mistral-conversations`, with its own
- * compatibility gate — so `mistral-large-4` is served instead, through a route
- * of its own.
+ * - `@ai-sdk/mistral` — pi implements `mistral-conversations` and the bridge
+ *   pattern that would serve it is already built and measured for Google, but
+ *   this dialect at the gateway is unmeasured and no entitled key exists to
+ *   measure it. It moves to `PROTOCOL_FOR_SDK` the day that changes.
  */
-export const UNSERVED_SDKS: ReadonlySet<string> = new Set([
-  GOOGLE_SDK,
-  MISTRAL_SDK,
+export const UNSERVED_SDKS: ReadonlySet<string> = new Set([MISTRAL_SDK]);
+
+/**
+ * Routes this plugin registers through its own adapter rather than the
+ * wrapper's mount, because the wrapper's hand-declared table refuses their
+ * protocol. `registerResponsesProvider` skips these when building the wrapper's
+ * providers dict and mounts each one itself.
+ */
+export const SELF_MOUNTED_ROUTES: ReadonlySet<string> = new Set([
+  GOOGLE_INTERNAL_ROUTE,
 ]);
 
 /** The route each non-default protocol is served from. */
@@ -136,6 +158,7 @@ export const UNSERVED_SDKS: ReadonlySet<string> = new Set([
 export const ROUTE_FOR_PROTOCOL: Readonly<Record<string, string>> = {
   "openai-responses": RESPONSES_ROUTE,
   "anthropic-messages": ANTHROPIC_ROUTE,
+  "google-generative-ai": GOOGLE_INTERNAL_ROUTE,
 };
 
 /** Every route this plugin registers for itself. */

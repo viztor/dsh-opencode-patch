@@ -1,4 +1,5 @@
 import { supportedProtocols } from "@deepseek-ai/dsh-llm-pi-ai";
+import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +9,7 @@ import {
   PROTOCOL_FOR_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
   UNSERVED_SDKS,
+  SELF_MOUNTED_ROUTES,
 } from "../src/index.ts";
 
 /**
@@ -28,17 +30,39 @@ import {
  * to make it a plain assertion.
  */
 describe("mount · the protocols the harness can build", () => {
-  it("names only protocols dsh-llm-pi-ai supports", () => {
+  it("names only protocols dsh-llm-pi-ai supports, for the routes it mounts", () => {
+    // The wrapper's mount may only name a protocol in its own table, so the
+    // claim splits by mechanism: routes the wrapper mounts are claimed
+    // against its table, and routes the plugin mounts itself are claimed
+    // against pi directly, in the companion below.
     const supported = new Set(supportedProtocols());
     const named = [
-      ...new Set([
-        ...Object.values(PROTOCOL_FOR_SDK),
-        ...Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap((plane) =>
-          Object.keys(plane.routes)
-        ),
-      ]),
+      ...new Set(
+        Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap((plane) =>
+          Object.entries(plane.routes)
+            .filter(([, route]) => !SELF_MOUNTED_ROUTES.has(route))
+            .map(([protocol]) => protocol)
+        )
+      ),
     ];
     expect(named.filter((protocol) => !supported.has(protocol))).toEqual([]);
+  });
+
+  it("serves every self-mounted route a protocol pi itself implements", () => {
+    // The wrapper's table refuses to name these — that refusal is why the
+    // bridge exists — so the claim to verify is the different one: pi ships
+    // the implementation the bridge hands its adapter, with the two stream
+    // entry points the provider delegates to.
+    const api = googleGenerativeAIApi();
+    expect(typeof api.stream).toBe("function");
+    expect(typeof api.streamSimple).toBe("function");
+    const selfMounted = Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
+      (plane) =>
+        Object.entries(plane.routes)
+          .filter(([, route]) => SELF_MOUNTED_ROUTES.has(route))
+          .map(([protocol]) => protocol)
+    );
+    expect(selfMounted).toEqual(["google-generative-ai"]);
   });
 });
 

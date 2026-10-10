@@ -8,6 +8,7 @@ One document per subject. Everything here is engineering material and written in
 | [`redirect-planes.md`](./redirect-planes.md) | the routing **specification**: planes, shapes, routes, the invariants a correct implementation satisfies, and the full path from the picker to the meter | English |
 | [`protocol-routing-and-merge.md`](./protocol-routing-and-merge.md) | the routing **implementation**: why routing exists, how the route is chosen, the catalog merge, and where the code lives | English |
 | [`engineering-notes.md`](./engineering-notes.md) | vendor findings, and the rules that came out of real failures | English |
+| [`credentials.md`](./credentials.md) | the opt-in pool: per-plane rotation, both OAuth logins, refresh semantics, and the zero-configuration guarantee it must not break | English |
 | [`quota-meter.md`](./quota-meter.md) | the composer meter, state by state: what it shows, what each row answers, and where the numbers come from | English |
 | [`quota-meter.zh-CN.md`](./quota-meter.zh-CN.md) | 同一份说明的中文版 | 中文 |
 

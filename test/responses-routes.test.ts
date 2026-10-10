@@ -10,6 +10,9 @@ import { describe, expect, it } from "vitest";
 import {
   ANTHROPIC_ROUTE,
   ANTHROPIC_SDK,
+  GOOGLE_INTERNAL_ROUTE,
+  GOOGLE_SDK,
+  MISTRAL_SDK,
   catalogPlaneForRoute,
   findModelSpec,
   findModelSpecOn,
@@ -47,12 +50,17 @@ describe("responses-routes: the SDK mapping", () => {
   });
 
   it("knows which SDKs it cannot serve", () => {
-    // 8 opencode models name @ai-sdk/google and llm-pi-ai has no such protocol,
-    // so those must never reach a listing the user picks from.
+    // @ai-sdk/google names google-generative-ai: the wrapper's hand-declared
+    // table refuses that protocol, so the plugin serves it through its own
+    // adapter instead. Servable, because the bridge route exists.
     expect(isServableSdk()).toBe(true);
     expect(isServableSdk(RESPONSES_SDK)).toBe(true);
     expect(isServableSdk(ANTHROPIC_SDK)).toBe(true);
-    expect(isServableSdk("@ai-sdk/google")).toBe(false);
+    expect(isServableSdk(GOOGLE_SDK)).toBe(true);
+    // @ai-sdk/mistral is the decision, not the gap: the bridge pattern that
+    // would serve it is built and measured for Google, but this dialect at
+    // the gateway is unmeasured and no entitled key exists to measure it.
+    expect(isServableSdk(MISTRAL_SDK)).toBe(false);
   });
 
   it("leaves a model naming no SDK on its own route", () => {
@@ -61,12 +69,17 @@ describe("responses-routes: the SDK mapping", () => {
     expect(internalRouteFor("opencode", "space-bunny-free")).toBeUndefined();
   });
 
-  it("leaves an SDK it has no protocol for on its own route", () => {
-    // supportedProtocols() is openai-completions, openai-responses and
-    // anthropic-messages. There is no google route to dispatch to, so guessing
-    // one would be worse than the honest failure.
+  it("redirects a Google model to the route the plugin mounts itself", () => {
+    // The wrapper's table refuses google-generative-ai, so this dispatch
+    // lands on the bridge route — the one route this plugin registers
+    // through its own adapter rather than the wrapper's mount.
+    expect(internalRouteFor("opencode", "gemini-3-pro", GOOGLE_SDK)).toBe(
+      GOOGLE_INTERNAL_ROUTE
+    );
+    // The Go plane carries no Google models, so its table has no Google row
+    // and the dispatch honestly declines rather than guessing.
     expect(
-      internalRouteFor("opencode", "gemini-3-pro", "@ai-sdk/google")
+      internalRouteFor("opencode-go", "grok-4.7", GOOGLE_SDK)
     ).toBeUndefined();
   });
 

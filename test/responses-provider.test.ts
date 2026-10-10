@@ -31,6 +31,8 @@ import {
   loadPiAi,
   modelsForSdk,
   registerResponsesProvider,
+  GOOGLE_INTERNAL_ROUTE,
+  SELF_MOUNTED_ROUTES,
 } from "../src/index.ts";
 import type { CordisContext } from "../src/index.ts";
 
@@ -711,12 +713,18 @@ describe("responses-provider: the mount survives the host's own instance", () =>
     // Derived from the PLANE table, not hard-coded, and not from the Zen-only
     // view: the mount walks (plane, protocol) pairs, so a route the table names
     // is mounted whenever its own plane carries a model for its protocol.
+    // Self-mounted routes are NOT here: the wrapper's mount would only earn
+    // its protocol table's refusal, so the bridge registers them itself —
+    // which is the companion assertion.
     const expected = Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap((plane) =>
-      Object.values(plane.routes)
+      Object.values(plane.routes).filter(
+        (route) => !SELF_MOUNTED_ROUTES.has(route)
+      )
     );
 
     expect(Object.keys(providers)).toEqual(expected);
     expect(Object.keys(providers)).toContain("opencode-responses");
+    expect(Object.keys(providers)).not.toContain(GOOGLE_INTERNAL_ROUTE);
     for (const profile of Object.values(providers)) {
       expect(profile.models.length).toBeGreaterThan(0);
     }
