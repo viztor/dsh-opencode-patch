@@ -49,6 +49,20 @@ The pool owns a reference of its own instead:
 
 What this does not need: a takeover, a record another plugin owns, or any write to a reference the deployment declared. It needs one fresh reference name and the seam's own write path.
 
+## Verified, not assumed
+
+Run against the real `dsh-credentials-local` provider on a temporary document, so the measurement never touched a real `~/.dsh/.credentials.yaml`:
+
+| Claim | Result |
+| :-- | :-- |
+| a fresh reference is writable | `set` then `resolve` returns the value, `source=file`; `describe` reports `configured` and `writable` |
+| rotation reaches the next operation | a second `set` makes the next `resolve` return the NEW value, with no restart |
+| the deployment's own reference is protected | writing a name the launching environment supplies is REFUSED: "is supplied read-only by the launching environment, so set would be shadowed" |
+| `unset` returns to unconfigured | yes |
+| the store is the document the routes resolve from | the written file is `version: 1` with a `refs:` map — the same shape `~/.dsh/.credentials.yaml` already has |
+
+The third row is the one that matters most: the objection that a pool would overwrite the deployment's key is not merely avoided by this design, it is enforced by the implementation.
+
 ## Status
 
 The chain above is the design, measured end to end against OpenCode's own implementation and against the credential seam. The code is not built yet. The first piece worth building is the pool's own reference and the rotation behind it — the logins in the sections above are the second, and they are what fill the pool in the first place. The chain above is the design, measured end to end against OpenCode's own implementation. The code is not built yet, and the reach above says what building it buys today: rotation for the bridge route, and for any route a deployment points at this plugin's own adapter. The bridge itself uses step 2 only and introduces no switch, because it needs none.
