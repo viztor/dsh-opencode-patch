@@ -30,6 +30,12 @@ export const RESPONSES_SDK = "@ai-sdk/openai";
 /** The SDK whose presence means "this model is served on the Messages API". */
 export const ANTHROPIC_SDK = "@ai-sdk/anthropic";
 
+/** The SDK with no protocol anywhere: pi implements none for it. */
+export const GOOGLE_SDK = "@ai-sdk/google";
+
+/** The SDK whose protocol pi implements but this plugin does not yet serve. */
+export const MISTRAL_SDK = "@ai-sdk/mistral";
+
 /** The SDK whose presence means "this model is served on Mistral's API". */
 
 /** Route serving the gateway's Responses-API models. */
@@ -121,8 +127,8 @@ export const PROTOCOL_FOR_SDK: Readonly<Record<string, string>> = {
  * of its own.
  */
 export const UNSERVED_SDKS: ReadonlySet<string> = new Set([
-  "@ai-sdk/google",
-  "@ai-sdk/mistral",
+  GOOGLE_SDK,
+  MISTRAL_SDK,
 ]);
 
 /** The route each non-default protocol is served from. */
