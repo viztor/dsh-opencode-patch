@@ -1,6 +1,9 @@
+# Neither is used at runtime here. They arrive as dependencies of
+# @earendil-works/pi-ai, which this repo only imports in a test that reads its
+# protocol table, so their build scripts stay off rather than being approved.
 allowBuilds:
-  "@google/genai": set this to true or false
-  protobufjs: set this to true or false
+  "@google/genai": false
+  protobufjs: false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.0.0
   vite-plus: 1.1.0
