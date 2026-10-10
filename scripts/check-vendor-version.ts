@@ -3,52 +3,81 @@
  *
  * The User-Agent is origin proof: the gateway reads it to decide whether the
  * caller is the official CLI, so it has to name a version the CLI actually has.
- * It is a hand-copied constant, which means it drifts every time OpenCode
- * releases, and nothing notices: a stale patch version still looks like a
- * version, and the gateway does not announce which ones it accepts.
+ * It lives in one constant, `OPENCODE_CLI_VERSION`, and the docs cannot import
+ * that constant, so they carry a copy.
  *
- * This compares every copy in the tree against the vendor's published version,
- * so the drift is a build result rather than a surprise. Copies are checked for
- * agreement with each other too, because three hand-written strings are three
- * chances to disagree.
+ * Two things are checked, and they fail for different reasons:
+ *
+ *  1. the constant, read from `src/identity.ts`, against the published CLI;
+ *  2. every other literal `opencode/<version>` in the tree, against the
+ *     constant - a copy that drifts from the constant is stale even when the
+ *     constant is current.
+ *
+ * The first version of this script only scanned for literals, which meant it
+ * could not see the constant at all: the whole point was invisible to it. It
+ * passed while the constant said 1.18.33, and only a control run showed it.
  */
 
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
-/** Every file that names the CLI version, and what it is for. */
-const COPIES = [
-  ["src/session.ts", "the injected User-Agent"],
-  ["src/usage.ts", "the usage request"],
-  ["test/e2e/protocol-routing.e2e.ts", "the live probes"],
-  ["test/usage-service.test.ts", "the assertion on it"],
-  ["docs/deep-dive.md", "the header matrix"],
-] as const;
+/** Where a copy may appear. Extensions are listed because the scan is recursive. */
+const ROOTS = ["src", "test", "docs", "scripts", "README.md"];
+const EXTENSIONS = /\.(?:ts|tsx|md|json|ya?ml)$/;
 
-const VERSION = /\bopencode\/(\d+\.\d+\.\d+)\b/g;
+/** The constant every other copy must agree with. */
+const CONSTANT = /OPENCODE_CLI_VERSION\s*=\s*"(\d+\.\d+\.\d+)"/;
+const CONSTANT_FILE = "src/identity.ts";
+
+/** A literal that names the CLI. */
+const LITERAL = /\bopencode\/(\d+\.\d+\.\d+)\b/g;
+
+/** Every literal version found, and the files that say it. */
+const literals = async (): Promise<Map<string, string[]>> => {
+  const found = new Map<string, string[]>();
+  const record = (path: string, text: string): void => {
+    for (const match of text.matchAll(LITERAL)) {
+      const version = match[1] ?? "";
+      found.set(version, [...(found.get(version) ?? []), path]);
+    }
+  };
+  const visit = async (path: string): Promise<void> => {
+    try {
+      for (const entry of await readdir(path, { withFileTypes: true })) {
+        await visit(`${path}/${entry.name}`);
+      }
+    } catch {
+      // Not a directory, so read it as a file when it is one we scan.
+      if (EXTENSIONS.test(path)) {
+        record(path, await readFile(path, "utf8"));
+      }
+    }
+  };
+  for (const root of ROOTS) {
+    await visit(root);
+  }
+  return found;
+};
 
 const main = async (): Promise<void> => {
-  const found = new Map<string, string[]>();
-  for (const [file] of COPIES) {
-    const text = await readFile(file, "utf8");
-    for (const match of text.matchAll(VERSION)) {
-      const version = match[1] ?? "";
-      found.set(version, [...(found.get(version) ?? []), file]);
-    }
-  }
-
-  if (found.size === 0) {
+  const identity = await readFile(CONSTANT_FILE, "utf8");
+  const pinned = CONSTANT.exec(identity)?.[1];
+  if (pinned === undefined) {
     throw new Error(
-      `no opencode/<version> string found in ${COPIES.map(([f]) => f).join(", ")} - the check read nothing, which is not the same as passing`
+      `no OPENCODE_CLI_VERSION in ${CONSTANT_FILE} - the check read nothing, which is not the same as passing`
     );
   }
-  if (found.size > 1) {
-    const detail = [...found]
-      .map(([v, files]) => `  ${v}: ${files.join(", ")}`)
+
+  const copies = await literals();
+  const disagree = [...copies].filter(([version]) => version !== pinned);
+  if (disagree.length > 0) {
+    const detail = disagree
+      .map(([version, files]) => `  ${version} in ${files.join(", ")}`)
       .join("\n");
-    throw new Error(`the copies disagree about the CLI version:\n${detail}`);
+    throw new Error(
+      `these copies do not say ${pinned}, which is what ${CONSTANT_FILE} declares:\n${detail}`
+    );
   }
 
-  const [pinned] = [...found.keys()];
   const response = await fetch("https://registry.npmjs.org/opencode-ai/latest");
   if (!response.ok) {
     throw new Error(`the registry answered ${response.status} for opencode-ai`);
@@ -57,13 +86,14 @@ const main = async (): Promise<void> => {
   if (published === undefined) {
     throw new Error("the registry response carried no version");
   }
-
   if (pinned !== published) {
     throw new Error(
-      `pinned opencode/${pinned}, published opencode/${published} - bump ${COPIES.map(([f]) => f).join(", ")}`
+      `pinned opencode/${pinned}, published opencode/${published} - bump OPENCODE_CLI_VERSION, and the ${copies.size > 0 ? [...copies.values()].flat().join(", ") : "docs"}`
     );
   }
-  process.stdout.write(`ok   opencode/${pinned} is the published version\n`);
+  process.stdout.write(
+    `ok   opencode/${pinned} is the published version, and ${[...copies.values()].flat().length} copy/copies agree\n`
+  );
 };
 
 await main();

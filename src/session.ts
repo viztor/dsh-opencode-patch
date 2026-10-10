@@ -12,6 +12,8 @@
 
 import { createHash } from "node:crypto";
 
+import { OPENCODE_USER_AGENT } from "./identity.ts";
+
 /** Header carrying the derived OpenCode session id. */
 export const SESSION_HEADER = "x-opencode-session";
 
@@ -25,8 +27,7 @@ export const PARENT_SESSION_HEADER = "x-opencode-parent-session-id";
 export const PARENT_SESSION_ALT_HEADER = "x-parent-session-id";
 
 /** Canonical OpenCode CLI User-Agent the DSH LLM adapter strips. */
-export const OPENCODE_UA =
-  "opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
+export const OPENCODE_UA = OPENCODE_USER_AGENT;
 
 /**
  * The vendor's own base62 alphabet, character for character (`randomBase62` in

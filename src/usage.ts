@@ -27,6 +27,7 @@ import {
 } from "./go-discovery.ts";
 import { GO_MODEL_LIMITS } from "./go-limits-data.ts";
 import { isRecord } from "./guards.ts";
+import { OPENCODE_PATCH_USER_AGENT } from "./identity.ts";
 import {
   type CatalogModelSpec,
   type CatalogPlane,
@@ -48,7 +49,6 @@ import {
 } from "./usage-contract.ts";
 
 const USAGE_MAX_BYTES = 1024 * 1024;
-const USAGE_USER_AGENT = "opencode/1.18.35 dsh-opencode-patch";
 
 /** Stable failure code shared by every quota-fetch failure path. */
 const USAGE_UNAVAILABLE = "opencode-go/usage-unavailable";
@@ -323,7 +323,7 @@ export class GoUsageService extends TypertRemoteService {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${key}`,
-          "User-Agent": USAGE_USER_AGENT,
+          "User-Agent": OPENCODE_PATCH_USER_AGENT,
           "x-opencode-client": "cli",
           "x-opencode-project": "global",
         },

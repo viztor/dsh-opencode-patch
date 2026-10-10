@@ -53,11 +53,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  OPENCODE_PATCH_USER_AGENT,
+  PROTOCOL_FOR_SDK,
   findModelSpec,
   findModelSpecOn,
   internalRouteFor,
   isServableSdk,
-  PROTOCOL_FOR_SDK,
 } from "../../src/index.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
@@ -147,7 +148,7 @@ const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
 /** Headers the plugin injects, so a probe looks like the traffic we actually send. */
 const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "application/json",
-  "user-agent": "opencode/1.18.35 dsh-opencode-patch",
+  "user-agent": OPENCODE_PATCH_USER_AGENT,
   "x-opencode-client": "cli",
   "x-opencode-project": "global",
   "x-opencode-session": "ses_e2e0000000000abcdefghij",

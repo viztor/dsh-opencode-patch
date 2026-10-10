@@ -31,7 +31,15 @@
  */
 
 // ── identity & lifecycle ────────────────────────────────────────────────────
-export { inject, LEGACY_NAME, LEGACY_PKG, name } from "./identity.ts";
+export {
+  inject,
+  LEGACY_NAME,
+  LEGACY_PKG,
+  name,
+  OPENCODE_CLI_VERSION,
+  OPENCODE_PATCH_USER_AGENT,
+  OPENCODE_USER_AGENT,
+} from "./identity.ts";
 export { apply } from "./lifecycle.ts";
 
 // ── configuration ───────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   GoUsageService,
+  OPENCODE_PATCH_USER_AGENT,
   clearCapturedApiKeys,
   clearSessionUsageStore,
   recordCapturedApiKey,
@@ -230,7 +231,7 @@ describe("GoUsageService endpoint", () => {
     expect(headerOf(capture.init, "authorization")).toBe("Bearer sk-live-key");
     expect(headerOf(capture.init, "accept")).toBe("application/json");
     expect(headerOf(capture.init, "user-agent")).toBe(
-      "opencode/1.18.35 dsh-opencode-patch"
+      OPENCODE_PATCH_USER_AGENT
     );
     expect(headerOf(capture.init, "x-opencode-client")).toBe("cli");
     expect(headerOf(capture.init, "x-opencode-project")).toBe("global");
