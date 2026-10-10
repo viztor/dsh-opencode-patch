@@ -83,6 +83,15 @@ describe("responses-routes: the SDK mapping", () => {
     ).toBeUndefined();
   });
 
+  it("leaves an SDK with no protocol anywhere on its own route", () => {
+    // @ai-sdk/mistral names a protocol pi implements but this build does not
+    // serve, so it is in neither PROTOCOL_FOR_SDK nor a route: the dispatch
+    // declines rather than sending the model somewhere invented.
+    expect(
+      internalRouteFor("opencode", "mistral-large-4", MISTRAL_SDK)
+    ).toBeUndefined();
+  });
+
   it("does not redirect the redirected call again", () => {
     // The redirected call re-enters the same hook with the target route already
     // set. Redirecting that would recurse until the stack ran out.

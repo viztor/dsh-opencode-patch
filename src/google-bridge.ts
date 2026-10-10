@@ -95,7 +95,19 @@ const gatewayRetryPolicy = (): unknown =>
  * login-written credentials is never read for a stream call; an empty
  * implementation is the honest shape for that, not a stub hiding a miss.
  */
-const emptyCredentialStore = (): Record<string, unknown> => ({
+/** The credential-store surface pi's collection calls. */
+export interface BridgeCredentialStore {
+  delete: (providerId: string, options?: unknown) => Promise<void>;
+  list: (options?: unknown) => Promise<readonly unknown[]>;
+  modify: (
+    providerId: string,
+    fn: (current?: unknown) => Promise<unknown>,
+    options?: unknown
+  ) => Promise<unknown>;
+  read: (providerId: string, options?: unknown) => Promise<unknown>;
+}
+
+export const emptyCredentialStore = (): BridgeCredentialStore => ({
   // Nothing was ever stored, so every read is absent and nothing is ever
   // withdrawn: the route's key always arrives per request instead.
   delete: (): Promise<void> => Promise.resolve(),
@@ -114,7 +126,13 @@ const emptyCredentialStore = (): Record<string, unknown> => ({
  * exist to satisfy the collection's shape — the plugin's own resolution always
  * answers first.
  */
-const ambientAuthContext = (): Record<string, unknown> => ({
+/** The ambient-lookup surface a provider asks while resolving its own auth. */
+export interface BridgeAuthContext {
+  env: (name: string) => Promise<string | undefined>;
+  fileExists: (path: string) => Promise<boolean>;
+}
+
+export const ambientAuthContext = (): BridgeAuthContext => ({
   env: (name: string): Promise<string | undefined> =>
     Promise.resolve(process.env[name]),
   fileExists: (): Promise<boolean> => Promise.resolve(false),

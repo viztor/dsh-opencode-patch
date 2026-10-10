@@ -53,6 +53,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  GOOGLE_INTERNAL_ROUTE,
+  GOOGLE_SDK,
   OPENCODE_PATCH_USER_AGENT,
   PROTOCOL_FOR_SDK,
   findModelSpec,
@@ -96,6 +98,9 @@ const DEFAULT_PROTOCOL = "openai-completions";
 /** The path each protocol uses against the Zen base. */
 const PATH_FOR: Readonly<Record<string, string>> = {
   "anthropic-messages": "/messages",
+  // The Gemini path carries the MODEL in the URL, not the body, so the probe
+  // substitutes the `{model}` placeholder the same way the wire does.
+  "google-generative-ai": "/models/{model}:streamGenerateContent?alt=sse",
   "openai-completions": "/chat/completions",
   "openai-responses": "/responses",
 };
@@ -115,6 +120,7 @@ const AUTH_FOR: Readonly<
     "anthropic-version": "2023-06-01",
     "x-api-key": key,
   }),
+  "google-generative-ai": (key) => ({ "x-goog-api-key": key }),
   "openai-completions": (key) => ({ authorization: `Bearer ${key}` }),
   "openai-responses": (key) => ({ authorization: `Bearer ${key}` }),
 };
@@ -132,6 +138,13 @@ const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
     max_tokens: 8,
     messages: [{ content: "hi", role: "user" }],
     stream: false,
+  },
+  "google-generative-ai": {
+    // Measured: without `role` the upstream refuses with "Please use a valid
+    // role: user, model" — the gateway forwards it, which is itself proof the
+    // path and the x-goog-api-key convention are accepted.
+    contents: [{ parts: [{ text: "hi" }], role: "user" }],
+    generationConfig: { maxOutputTokens: 8 },
   },
   "openai-responses": { input: "hi", max_output_tokens: 16 },
 };
@@ -157,16 +170,22 @@ const probe = async (
   key?: string,
   base: string = ZEN_BASE
 ): Promise<Probe> => {
-  const path = PATH_FOR[protocol];
-  if (path === undefined) {
+  const template = PATH_FOR[protocol];
+  if (template === undefined) {
     throw new Error(`no live path is known for protocol ${protocol}`);
   }
+  const path = template.replace("{model}", model);
+  // A protocol whose path carries the model does not also want it in the body:
+  // the Gemini endpoints reject unknown fields rather than ignoring them.
+  const payload = template.includes("{model}")
+    ? BODY_FOR[protocol]
+    : { ...BODY_FOR[protocol], model };
   const auth =
     key === undefined || key.length === 0
       ? {}
       : (AUTH_FOR[protocol]?.(key) ?? {});
   const response = await fetch(`${base}${path}`, {
-    body: JSON.stringify({ ...BODY_FOR[protocol], model }),
+    body: JSON.stringify(payload),
     headers: { ...PLUGIN_HEADERS, ...auth },
     method: "POST",
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -428,6 +447,48 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
     // largest single group of models in the catalog.
     expect(Object.keys(PATH_FOR)).toContain(DEFAULT_PROTOCOL);
   });
+
+  it(
+    "serves a Gemini model from the path a hand-declared route cannot name",
+    async (context) => {
+      // The bridge's endpoint, against the real gateway. The protocol is
+      // google-generative-ai, the path carries the model, and the credential
+      // rides x-goog-api-key. Measured: 200 with real SSE here, and 400
+      // ModelProtocolUnsupported on the completions endpoint — the negative
+      // control is what makes the positive result mean the path matters.
+      const model = "gemini-3.8-flash";
+      expect(servedProtocolFor(model)).toBe("google-generative-ai");
+      // And the routing agrees: this is the one protocol whose dispatch lands
+      // on the route the plugin mounts itself.
+      expect(internalRouteFor("opencode", model, GOOGLE_SDK)).toBe(
+        GOOGLE_INTERNAL_ROUTE
+      );
+      if (ZEN_KEY === undefined || ZEN_KEY.length === 0) {
+        context.skip();
+        return;
+      }
+
+      const onGoogle = await probe("google-generative-ai", model, ZEN_KEY);
+      // An entitlement refusal is not this test's subject: the endpoint
+      // answered, the account just cannot spend on this model.
+      if (accessDisabled(onGoogle)) {
+        context.skip();
+        return;
+      }
+      expect(
+        onGoogle.status,
+        `${model} on the google path: ${onGoogle.summary}`
+      ).toBe(200);
+
+      const onCompletions = await probe("openai-completions", model, ZEN_KEY);
+      expect(
+        onCompletions.status,
+        `${model} on completions: ${onCompletions.summary}`
+      ).toBe(400);
+      expect(onCompletions.summary).toContain("ModelProtocolUnsupported");
+    },
+    FANOUT_BUDGET_MS
+  );
 
   it("probes a Go model on the GO base, where its own shapes are served", async (context) => {
     // The gap this closes: every case above talks to the Zen base, so the Go

@@ -20,6 +20,8 @@ import { describe, expect, it } from "vitest";
 
 import { OPENCODE_ZEN_CATALOG } from "../src/catalog-data.ts";
 import {
+  ambientAuthContext,
+  emptyCredentialStore,
   type GoogleBridgeInputs,
   googleProviderFor,
   registerGoogleBridge,
@@ -44,6 +46,11 @@ interface ModelLike {
 interface ProviderLike {
   getModels: () => ModelLike[];
   stream: (
+    model: ModelLike,
+    context: unknown,
+    options?: unknown
+  ) => AsyncIterable<unknown>;
+  streamSimple: (
     model: ModelLike,
     context: unknown,
     options?: unknown
@@ -149,6 +156,29 @@ describe("google-bridge · the provider it builds", () => {
         // the request-level key rides x-goog-api-key, not Authorization.
         expect(seen[0]?.headers["x-goog-api-key"]).toBe("oc_sk_resolved");
       }
+      // `streamSimple` is pi's normalization path into the same wire
+      // implementation, so it must reach the same endpoint.
+      seen.length = 0;
+      const [first] = provider.getModels();
+      if (first === undefined) {
+        throw new Error("the provider served no models to probe");
+      }
+      try {
+        const simple = provider.streamSimple(
+          first as ModelLike,
+          { messages: [{ role: "user", content: "hi" }] },
+          { apiKey: "oc_sk_resolved" }
+        );
+        for await (const _ of simple) {
+          // The capture refuses the call; nothing arrives.
+        }
+      } catch {
+        // Expected: the capture refuses the request.
+      }
+      expect(seen.length).toBe(1);
+      expect(seen[0]?.url).toBe(
+        `https://opencode.ai/zen/v1/models/${first.id}:streamGenerateContent?alt=sse`
+      );
     } finally {
       globalThis.fetch = real;
     }
@@ -195,6 +225,41 @@ describe("google-bridge · the adapter it registers", () => {
     });
     expect(handle).toBeUndefined();
     expect(registered.length).toBe(0);
+  });
+});
+
+describe("google-bridge · the auth injectables it hands the collection", () => {
+  it("answers every credential-store read as absent", async () => {
+    // The route's key always arrives per request, so this store is never the
+    // path a stream call reads — but it must still satisfy the collection's
+    // shape honestly rather than pretending to hold something.
+    const store = emptyCredentialStore();
+    await expect(store.read("opencode-google")).resolves.toBeUndefined();
+    await expect(store.list()).resolves.toEqual([]);
+    await expect(store.delete("opencode-google")).resolves.toBeUndefined();
+  });
+
+  it("passes a modify through with no current credential", async () => {
+    // pi's write path sees the current credential; an empty store's is
+    // absent, and the callback's answer is the store's answer.
+    const store = emptyCredentialStore();
+    const written = await store.modify("opencode-google", (current) =>
+      Promise.resolve({ current })
+    );
+    expect(written).toEqual({ current: undefined });
+  });
+
+  it("reads the ambient context from the process environment", async () => {
+    process.env.BRIDGE_AMBIENT_KEY = "ambient-value";
+    try {
+      const auth = ambientAuthContext();
+      await expect(auth.env("BRIDGE_AMBIENT_KEY")).resolves.toBe(
+        "ambient-value"
+      );
+      await expect(auth.fileExists("/nope")).resolves.toBe(false);
+    } finally {
+      process.env.BRIDGE_AMBIENT_KEY = "";
+    }
   });
 });
 

@@ -21,6 +21,7 @@
  * regression reintroduces a failure the test can name.
  */
 
+import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -463,7 +464,9 @@ const createHost = (options: { onPlugin?: (config: unknown) => void } = {}) => {
     return { providers: new ValidatedProviders(providers) };
   };
 
-  const piAi = { Config, apply, inject: undefined, name: PI_AI };
+  // The REAL adapter class, so the bridge registers through the same class
+  // the host would hand it — a stand-in here would test our stand-in.
+  const piAi = { Config, apply, inject: undefined, name: PI_AI, PiAiAdapter };
 
   /** The host's OWN instance: occupies the catalog, its namespace and the flows. */
   const mountHostInstance = (config: unknown) =>
