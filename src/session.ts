@@ -96,12 +96,25 @@ export const openCodeSessionIdFor = (
   // The counter occupies the low twelve bits: all of `hash[0]` and the high
   // nibble of `hash[1]`. Arithmetic, not bitwise — the lint forbids the
   // operators, and the value only has to be stable, not well distributed.
-  const counter = (hash[0] ?? 0) * 16 + Math.floor((hash[1] ?? 0) / 16);
+  //
+  // The low twelve bits are ALSO the gate's pass band. Measured live
+  // (OmniRoute #16571 probes): low-12 hex in `f[c-f]x` passes, anything else
+  // 403s — so a uniform counter passes ~1.5% of sessions and dooms the rest
+  // at mint. Clamp into [0xFC0, 0xFFE]: the pass band, minus 0xFFF (all-ones
+  // reads as a degenerate counter).
+  const rawCounter = (hash[0] ?? 0) * 16 + Math.floor((hash[1] ?? 0) / 16);
+  const counter = 0xfc0 + (rawCounter % 63);
 
   const time =
     createdAt !== undefined && Number.isSafeInteger(createdAt) && createdAt >= 0
       ? (BigInt(createdAt) * 4096n + BigInt(counter)) % 2n ** 48n
-      : BigInt(`0x${hash.subarray(0, 6).toString("hex")}`);
+      : // No creation time: the hash fills the high bits, but the low twelve
+        // are the gateway's pass band (see the counter clamp above) — a
+        // uniform hash lands there ~1.5% of the time, dooming the rest.
+        (BigInt(`0x${hash.subarray(0, 6).toString("hex")}`) -
+          (BigInt(`0x${hash.subarray(0, 6).toString("hex")}`) % 4096n) +
+          BigInt(counter)) %
+        2n ** 48n;
 
   let random = "";
   for (let i = 6; i < 20; i += 1) {

@@ -313,6 +313,23 @@ describe("session: a session id the gateway will accept", () => {
     expect(isOpenCodeSessionId("ses_ed62aae61ffeA6UwzEFN9YNKk8")).toBe(true);
   });
 
+  it("lands the low twelve time bits in the gateway's pass band", () => {
+    // Measured live (OmniRoute #16571): low-12 hex in f[c-f]x passes,
+    // anything else 403s — a uniform 12-bit counter passes ~1.5% of
+    // sessions and dooms the rest at mint. Every derived id must land in
+    // [0xFC0, 0xFFE], across many inputs and both timestamp paths.
+    const low12 = (id: string): number =>
+      Number.parseInt(id.slice(4, 16), 16) & 0xfff;
+    for (let i = 0; i < 50; i += 1) {
+      const derived = low12(openCodeSessionIdFor(`band-check-${i}`));
+      expect(derived >= 0xfc0 && derived <= 0xffe).toBe(true);
+      const timed = low12(
+        openCodeSessionIdFor(`band-timed-${i}`, 1792000000000 + i)
+      );
+      expect(timed >= 0xfc0 && timed <= 0xffe).toBe(true);
+    }
+  });
+
   it("rejects a pinned header that merely starts with ses_", () => {
     // The failure this exists for: a deployment pinned
     // `x-opencode-session: ses_dsh_default`, which starts with `ses_` and is not

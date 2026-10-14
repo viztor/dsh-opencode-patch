@@ -12,6 +12,7 @@
 
 import { ALL_MODELS_MARKER } from "./config-values.ts";
 import { isRecord, isUnknownArray } from "./guards.ts";
+import { findModelSpec } from "./models-catalog.ts";
 
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
@@ -198,6 +199,11 @@ const toolNames = (
 
 /** Whether `modelId` is in scope for the core-tool fallback. */
 export const isCoreToolModel = (modelId: string, marker: string): boolean => {
+  // The catalog's free-tier flag is the authority: it catches free models
+  // whose ids carry no marker (big-pickle), where a substring test goes blind.
+  if (findModelSpec(modelId)?.is_free === true) {
+    return true;
+  }
   if (marker === ALL_MODELS_MARKER) {
     return true;
   }
@@ -226,7 +232,12 @@ export const maybeInjectCoreTools = (
   if (!options.enabled) {
     return body;
   }
-  if (!url.includes(RESPONSES_PATH)) {
+  // Both JSON routes: the gateway checks read+bash on /responses AND
+  // /chat/completions (a toolless completions body 403s the same way).
+  const isResponses = url.includes(RESPONSES_PATH);
+  const isCompletions =
+    url.includes("/chat/completions") || url.includes("/completions");
+  if (!isResponses && !isCompletions) {
     return body;
   }
   if (body === undefined || body === null) {

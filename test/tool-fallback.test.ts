@@ -67,12 +67,11 @@ describe("isCoreToolModel", () => {
     expect(isCoreToolModel("", ALL_MODELS_MARKER)).toBe(true);
   });
 
-  it("admits no model under an empty marker", () => {
-    // `resolveConfig` normalises a blank `freeModelMarker` back to the default,
-    // so an empty marker only reaches this function from a direct caller. It
-    // has to mean "off": `"anything".includes("")` is always true, so treating
-    // it as a substring would rewrite every paid request on the gateway.
-    expect(isCoreToolModel(FREE_MODEL, "")).toBe(false);
+  it("admits catalog-free models even under an empty marker", () => {
+    // The catalog flag outranks the marker: an empty marker only gates the
+    // substring fallback. A catalog-free model is free regardless of what the
+    // marker says, so it stays in scope; a paid id stays out.
+    expect(isCoreToolModel(FREE_MODEL, "")).toBe(true);
     expect(isCoreToolModel("gpt-5.1", "")).toBe(false);
     expect(isCoreToolModel("", "")).toBe(false);
   });
@@ -83,9 +82,10 @@ describe("isCoreToolModel", () => {
     expect(isCoreToolModel("acct-preview-9", "preview")).toBe(true);
     // A model row carries no capability flag — the id is the only signal — so
     // the marker is a plain substring test, and it is case-sensitive because
-    // the vendor's ids are lower-case.
-    expect(isCoreToolModel("MUSE-SPARK-CONTRIBUTOR-FREE", "free")).toBe(false);
-    expect(isCoreToolModel(FREE_MODEL, "preview")).toBe(false);
+    // the vendor's ids are lower-case. (Catalog-free ids bypass this entirely
+    // via the is_free flag, whatever their case.)
+    expect(isCoreToolModel("ACCT-PREVIEW-9", "preview")).toBe(false);
+    expect(isCoreToolModel("gpt-5.1", "preview")).toBe(false);
     expect(isCoreToolModel("gpt-5.1", DEFAULT_FREE_MODEL_MARKER)).toBe(false);
   });
 });
@@ -106,20 +106,33 @@ describe("maybeInjectCoreTools: bodies it must not rewrite", () => {
     expect(headers.get("content-length")).toBeNull();
   });
 
-  it("returns the body untouched off the /responses path", () => {
+  it("returns the body untouched off the JSON routes", () => {
     const body = JSON.stringify({ input: "hi", model: FREE_MODEL });
 
-    // The gateway only rejects `/responses`. A completions body that already
-    // declares every tool the model needs must not gain two more the caller
-    // never offered, so the path check has to come before any parsing.
+    // The gateway checks read+bash on /responses AND /chat/completions — a
+    // toolless completions body 403s the same way. Only non-JSON routes
+    // (listings, config) pass through untouched.
     for (const url of [
-      "https://opencode.ai/zen/v1/chat/completions",
       "https://opencode.ai/zen/v1/models",
+      "https://opencode.ai/zen/v1/config",
     ]) {
       const headers = new Headers();
       expect(maybeInjectCoreTools(url, body, headers, options())).toBe(body);
       expect(headers.get("content-length")).toBeNull();
     }
+  });
+
+  it("injects on the completions route too", () => {
+    const body = JSON.stringify({ input: "hi", model: FREE_MODEL });
+    const headers = new Headers();
+    const out = maybeInjectCoreTools(
+      "https://opencode.ai/zen/v1/chat/completions",
+      body,
+      headers,
+      options()
+    );
+    expect(out).not.toBe(body);
+    expect(headers.get("content-length")).not.toBeNull();
   });
 
   it("returns an absent body as it found it", () => {
@@ -473,18 +486,21 @@ describe("maybeInjectCoreTools: marker scoping", () => {
     );
   });
 
-  it("injects for nothing under an empty marker", () => {
+  it("injects catalog-free models even under an empty marker", () => {
     const body = JSON.stringify({ input: "hi", model: FREE_MODEL });
     const headers = new Headers();
 
+    // The catalog flag outranks the marker: an empty marker only disables
+    // the substring fallback, never a model the catalog calls free.
     const out = maybeInjectCoreTools(RESPONSES_URL, body, headers, options(""));
-    expect(out).toBe(body);
-    expect(headers.get("content-length")).toBeNull();
+    expect(out).not.toBe(body);
+    expect(headers.get("content-length")).not.toBeNull();
   });
 
-  it("injects only for the models carrying a custom marker", () => {
+  it("injects for the custom marker, and always for catalog-free models", () => {
     const hit = JSON.stringify({ input: "hi", model: "acct-preview-9" });
-    const miss = JSON.stringify({ input: "hi", model: FREE_MODEL });
+    const miss = JSON.stringify({ input: "hi", model: "gpt-5.1" });
+    const catalogFree = JSON.stringify({ input: "hi", model: FREE_MODEL });
 
     // A relabelled free tier still has to be injectable: the marker is
     // user-configured precisely because the vendor renames ids.
@@ -498,6 +514,7 @@ describe("maybeInjectCoreTools: marker scoping", () => {
       "read",
       "bash",
     ]);
+    // A paid id without the marker stays untouched...
     expect(
       maybeInjectCoreTools(
         RESPONSES_URL,
@@ -506,5 +523,17 @@ describe("maybeInjectCoreTools: marker scoping", () => {
         options("preview")
       )
     ).toBe(miss);
+    // ...but a catalog-free id injects under ANY marker, because the flag
+    // is checked first and the vendor's renames must never re-break it.
+    const freeOut = maybeInjectCoreTools(
+      RESPONSES_URL,
+      catalogFree,
+      new Headers(),
+      options("preview")
+    );
+    expect(toolNamesOf(parseJsonBody(bodyText(freeOut)))).toEqual([
+      "read",
+      "bash",
+    ]);
   });
 });
