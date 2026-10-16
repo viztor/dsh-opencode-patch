@@ -872,6 +872,151 @@ describe("patchFetch", () => {
     expect(toolNamesOf(parseJsonBody(fullCap.init?.body))).toHaveLength(2);
   });
 
+  it("names the tools a request carries for the debug entry, in either nesting", async () => {
+    // The debug entry answers "which tools did the interceptor see?", because
+    // the gateway's refusal on a free-tier body is about exactly that. DSH
+    // sends both nestings - `{ name }` at the top level and `{ function:
+    // { name } }` - and a body the parser cannot read must be absence, not a
+    // throw and not a guess.
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const entries: Record<string, unknown>[] = [];
+    const answering = vi.fn(async () => Response.json({ ok: true }));
+    const patched = patchFetch(
+      answering as unknown as typeof fetch,
+      als,
+      resolveConfig(),
+      {
+        debug: (entry) => {
+          entries.push(entry);
+        },
+      }
+    );
+    const named = async (body: RequestInit["body"]) => {
+      await patched("https://opencode.ai/zen/v1/responses", {
+        body,
+        method: "POST",
+      });
+      return entries.at(-1)?.toolNames;
+    };
+
+    // Both nestings, in one list, in order.
+    expect(
+      await named(
+        JSON.stringify({
+          input: "hi",
+          model: "gpt-5-paid",
+          tools: [{ name: "read" }, { function: { name: "bash" } }],
+        })
+      )
+    ).toBe("read,bash");
+
+    // Unusable entries are skipped by shape, never invented.
+    expect(
+      await named(
+        JSON.stringify({
+          input: "hi",
+          model: "gpt-5-paid",
+          tools: [
+            "junk",
+            7,
+            null,
+            { name: 5 },
+            { function: null },
+            { function: { name: 6 } },
+          ],
+        })
+      )
+    ).toBe("");
+
+    // Bodies that are not JSON objects (or not strings at all) are absence too.
+    expect(await named("42")).toBe("");
+    expect(await named("null")).toBe("");
+    expect(await named("{not-json")).toBe("");
+    expect(await named(Buffer.from("{}", "utf-8"))).toBe("");
+    expect(await named("")).toBe("");
+  });
+
+  it("sends a Request whose body is already spent, unread and unrebuilt", async () => {
+    // A caller can hand over a Request it has already read; clone() throws on
+    // a disturbed stream, and the interceptor must fall back to sending the
+    // request as it stands - not with a guessed body, and not a dropped one.
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const seen: unknown[] = [];
+    const entries: Record<string, unknown>[] = [];
+    const mockFetch = async (input: RequestInfo | URL): Promise<Response> => {
+      seen.push(input);
+      return new Response("{}", { status: 200 });
+    };
+    const patched = patchFetch(mockFetch, als, resolveConfig(), {
+      debug: (entry) => {
+        entries.push(entry);
+      },
+    });
+    const request = new Request("https://opencode.ai/zen/v1/responses", {
+      body: JSON.stringify({ model: "muse-spark-1.3-contributor-free" }),
+      method: "POST",
+    });
+    await request.text();
+
+    await patched(request);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0], "the same object went out, untouched").toBe(request);
+    expect(entries.at(-1)?.bodySource).toBe("none");
+  });
+
+  it("injects into a Request input by rebuilding it with the same method", async () => {
+    // The body source the bug was about: DSH sends inference as
+    // fetch(new Request(url, { body })). Injection has to produce a NEW
+    // Request - a Request's body cannot be swapped in place - and the patch's
+    // headers must still ride along in the init.
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const testSession = openCodeSessionIdFor("request-rebuild");
+    const seen: unknown[] = [];
+    let sentInit: RequestInit | undefined;
+    const entries: Record<string, unknown>[] = [];
+    const mockFetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      seen.push(input);
+      sentInit = init;
+      return new Response("{}", { status: 200 });
+    };
+    const patched = patchFetch(mockFetch, als, resolveConfig(), {
+      debug: (entry) => {
+        entries.push(entry);
+      },
+    });
+    const request = new Request("https://opencode.ai/zen/v1/responses", {
+      body: JSON.stringify({
+        input: "hi",
+        model: "muse-spark-1.3-contributor-free",
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+
+    await als.run({ provider: "opencode", value: testSession }, async () => {
+      await patched(request);
+    });
+
+    expect(seen[0]).not.toBe(request);
+    expect(seen[0]).toBeInstanceOf(Request);
+    const wire = seen[0] as Request;
+    expect(wire.method).toBe("POST");
+    expect(wire.headers.get("content-type")).toBe("application/json");
+    expect(toolNamesOf(parseJsonBody(await wire.text()))).toEqual([
+      DUMMY_READ_TOOL.name,
+      DUMMY_BASH_TOOL.name,
+    ]);
+    expect(headerOf(sentInit, SESSION_HEADER)).toBe(testSession);
+    expect(entries.at(-1)?.bodySource).toBe("request");
+    expect(entries.at(-1)?.toolNames).toBe(
+      [DUMMY_READ_TOOL.name, DUMMY_BASH_TOOL.name].join(",")
+    );
+  });
+
   it("resolves a credential for the Zen free model that gets redirected to /responses", async () => {
     // The reported symptom: a Go-plane free model works, Zen free models do not.
     // `muse-spark-1.3-contributor-free` is the ONE Zen free model naming
