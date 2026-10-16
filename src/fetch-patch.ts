@@ -62,6 +62,43 @@ const gatewayPlaneFor = (url: string): string => {
 };
 
 /** The credential header the request's protocol actually reads. */
+const toolNamesOf = (body: RequestInit["body"]): string => {
+  if (typeof body !== "string" || body.length === 0) {
+    return "";
+  }
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed !== "object" || parsed === null) {
+      return "";
+    }
+    const tools: unknown = (parsed as Record<string, unknown>).tools;
+    if (!Array.isArray(tools)) {
+      return "";
+    }
+    const names: string[] = [];
+    for (const tool of tools) {
+      if (typeof tool !== "object" || tool === null) {
+        continue;
+      }
+      const rec = tool as Record<string, unknown>;
+      const direct = rec.name;
+      if (typeof direct === "string") {
+        names.push(direct);
+        continue;
+      }
+      const fn = rec.function;
+      if (typeof fn === "object" && fn !== null) {
+        const fname = (fn as Record<string, unknown>).name;
+        if (typeof fname === "string") {
+          names.push(fname);
+        }
+      }
+    }
+    return names.join(",");
+  } catch {
+    return "";
+  }
+};
 const authHeaderFor = (url: string): string => {
   const path = new URL(url).pathname;
   if (path.endsWith("/messages")) {
@@ -451,14 +488,39 @@ export const patchFetch = (
 
     const newInit: RequestInit = { ...init, headers };
 
-    // 4. Core tool schema fallback for free-tier /responses models
-    if (init?.body !== undefined) {
-      const newBody = maybeInjectCoreTools(url, init.body, headers, {
+    // 4. Core tool schema fallback for free-tier /responses models.
+    //
+    // DSH sends inference as fetch(new Request(url, { body })) — so init.body
+    // is undefined and the old `init?.body !== undefined` guard skipped the
+    // whole block: Agent Team turns left with no bash and the gateway 403s
+    // the body as non-OpenCode. Read the body off whichever half carries it.
+    let bodySource: "request" | "init" | "none" = "none";
+    let bodyToPatch: RequestInit["body"] = init?.body;
+    if (bodyToPatch !== undefined) {
+      bodySource = "init";
+    } else if (input instanceof Request) {
+      try {
+        bodyToPatch = await input.clone().text();
+        bodySource = "request";
+      } catch {
+        bodyToPatch = undefined;
+      }
+    }
+    let finalBody = bodyToPatch;
+    if (bodyToPatch !== undefined) {
+      const newBody = maybeInjectCoreTools(url, bodyToPatch, headers, {
         enabled: config.injectCoreTools,
         modelMarker: config.freeModelMarker,
       });
-      if (newBody !== init.body) {
-        newInit.body = newBody;
+      if (newBody !== bodyToPatch) {
+        finalBody = newBody;
+        if (bodySource === "request") {
+          // The input Request already owns the old body — clone() so the
+          // caller's stream is never consumed, and send a new Request.
+          input = new Request(input, { body: newBody as BodyInit });
+        } else {
+          newInit.body = newBody;
+        }
       }
     }
 
@@ -470,12 +532,14 @@ export const patchFetch = (
     // the credential itself has no business in a log.
     hooks.debug?.({
       auth: extractApiKeyFromHeaders(headers) !== undefined,
+      bodySource,
       claimed: true,
       org: headers.get("x-opencode-org-id") ?? null,
       plane: gatewayPlaneFor(url),
       session: headers.get(SESSION_HEADER) ?? null,
       sessionFormat: isOpenCodeSessionId(headers.get(SESSION_HEADER)),
       status: response.status,
+      toolNames: toolNamesOf(finalBody),
       url,
       userAgent: headers.get("User-Agent") ?? null,
     });

@@ -94,8 +94,17 @@ export const toolNamesOf = (body: unknown): string[] | undefined => {
   }
   const names: string[] = [];
   for (const tool of tools) {
-    if (isRecord(tool) && typeof tool.name === "string") {
+    if (!isRecord(tool)) {
+      continue;
+    }
+    if (typeof tool.name === "string") {
       names.push(tool.name);
+      continue;
+    }
+    // OpenAI-compatible nesting: { type: "function", function: { name } }.
+    const fn: unknown = tool.function;
+    if (isRecord(fn) && typeof fn.name === "string") {
+      names.push(fn.name);
     }
   }
   return names;

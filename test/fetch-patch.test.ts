@@ -469,12 +469,20 @@ describe("patchFetch", () => {
       return capture.init?.body;
     };
 
-    // Custom marker: only models carrying it fall back.
+    // Custom marker: only models carrying it fall back — plus any model the
+    // catalog calls free, which bypasses the marker entirely.
     const customHit = await runWith("acct-preview-9", {
       freeModelMarker: "preview",
     });
     expect(toolNamesOf(parseJsonBody(customHit))).toEqual(["read", "bash"]);
-    const customMiss = await runWith("muse-spark-1.3-contributor-free", {
+    const customCatalogFree = await runWith("muse-spark-1.3-contributor-free", {
+      freeModelMarker: "preview",
+    });
+    expect(toolNamesOf(parseJsonBody(customCatalogFree))).toEqual([
+      "read",
+      "bash",
+    ]);
+    const customMiss = await runWith("gpt-5-paid", {
       freeModelMarker: "preview",
     });
     expect(toolNamesOf(parseJsonBody(customMiss))).toBeUndefined();
@@ -769,7 +777,10 @@ describe("patchFetch", () => {
       "https://opencode.ai/zen/v1/chat/completions",
       JSON.stringify({ input: "hi", model: "muse-spark-1.3-contributor-free" })
     );
-    expect(toolNamesOf(parseJsonBody(chat))).toBeUndefined();
+    // The gateway checks read+bash on completions too, so a free completions
+    // body gains both; a non-JSON route stays untouched (covered below by the
+    // models-listing case in tool-fallback tests).
+    expect(toolNamesOf(parseJsonBody(chat))).toEqual(["read", "bash"]);
 
     const invalid = await run(
       "https://opencode.ai/zen/v1/responses",
