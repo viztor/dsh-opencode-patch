@@ -144,9 +144,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Grok 4.7",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_000_000,
@@ -161,7 +159,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "LongCat 2.5 Preview Free",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 1_048_576,
@@ -176,7 +174,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 4 Argon Contributor",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -190,7 +188,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.3-Flash",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -206,11 +204,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Qwen3.8 Max",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "medium", "xhigh"] },
-      { type: "budget_tokens" },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","medium","xhigh"]}, {"type":"budget_tokens"}],
   },
   {
     context_window: 1_048_576,
@@ -224,7 +218,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Kimi K3",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["max"] }],
+    reasoning_options: [{"type":"effort","values":["max"]}],
   },
   {
     context_window: 1_000_000,
@@ -238,7 +232,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 384_000,
     name: "DeepSeek V4.1 Flash",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -252,7 +246,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 65_536,
     name: "Step 5 Preview",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -266,7 +260,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "LongCat-2.0",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 1_048_576,
@@ -281,9 +275,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Cat Jam Free",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -298,9 +290,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 524_288,
     name: "Space Bunny",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -341,7 +331,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "MiniMax-M3",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 1_050_000,
@@ -357,12 +347,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.6 Luna",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -378,11 +363,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Qwen3.8 Flash",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "medium", "xhigh"] },
-      { type: "budget_tokens" },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","medium","xhigh"]}, {"type":"budget_tokens"}],
   },
   {
     context_window: 1_000_000,
@@ -396,7 +377,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.2",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["high","max"]}],
   },
   {
     context_window: 256_000,
@@ -410,7 +391,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 128_000,
     name: "Hy3",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["none", "low", "high"] }],
+    reasoning_options: [{"type":"effort","values":["none","low","high"]}],
   },
   {
     context_window: 1_048_576,
@@ -425,9 +406,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Muse Spark 1.2 Contributor",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_000_000,
@@ -443,10 +422,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Haiku 5.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_050_000,
@@ -462,12 +438,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-6 Luna",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -481,7 +452,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 384_000,
     name: "DeepSeek V4 Pro (New)",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["high","max"]}],
   },
   {
     context_window: 1_024_000,
@@ -495,7 +466,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 64_000,
     name: "Hy4 preview",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["none", "high"] }],
+    reasoning_options: [{"type":"effort","values":["none","high"]}],
   },
   {
     context_window: 1_048_576,
@@ -510,9 +481,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Muse Spark 1.3 Contributor",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_000_000,
@@ -527,7 +496,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 65_536,
     name: "Step 5 Preview Free",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -541,7 +510,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.3",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 262_144,
@@ -570,7 +539,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Qwen3.7 Plus",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }, { type: "budget_tokens" }],
+    reasoning_options: [{"type":"toggle"}, {"type":"budget_tokens"}],
   },
 ];
 
@@ -589,9 +558,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.4",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh"]}],
   },
   {
     context_window: 200_000,
@@ -607,7 +574,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Haiku 4.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ min: 1024, type: "budget_tokens" }],
+    reasoning_options: [{"min":1024,"type":"budget_tokens"}],
   },
   {
     context_window: 1_050_000,
@@ -622,9 +589,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.4 Pro",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["medium","high","xhigh"]}],
   },
   {
     context_window: 1_048_576,
@@ -639,9 +604,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Muse Spark 1.3",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_050_000,
@@ -656,9 +619,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.5 Pro",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["medium","high","xhigh"]}],
   },
   {
     context_window: 500_000,
@@ -673,9 +634,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Grok 4.7",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_000_000,
@@ -690,7 +649,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "LongCat 2.5 Preview Free",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 400_000,
@@ -705,9 +664,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.4 Nano",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh"]}],
   },
   {
     context_window: 400_000,
@@ -722,9 +679,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.2 Codex",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh"]}],
   },
   {
     context_window: 400_000,
@@ -739,7 +694,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.1 Codex",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -753,7 +708,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.3-Flash",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 262_144,
@@ -768,7 +723,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Qwen3.8 Max",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 1_048_576,
@@ -782,7 +737,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Kimi K3",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["max"] }],
+    reasoning_options: [{"type":"effort","values":["max"]}],
   },
   {
     context_window: 400_000,
@@ -797,7 +752,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5 Codex",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 524_288,
@@ -812,7 +767,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Mistral Large 4",
     provider_npm: "@ai-sdk/mistral",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["none", "high"] }],
+    reasoning_options: [{"type":"effort","values":["none","high"]}],
   },
   {
     context_window: 262_144,
@@ -828,7 +783,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Qwen3.5 Plus",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }, { type: "budget_tokens" }],
+    reasoning_options: [{"type":"toggle"}, {"type":"budget_tokens"}],
   },
   {
     context_window: 200_000,
@@ -844,10 +799,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Opus 4.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high"] },
-      { min: 1024, type: "budget_tokens" },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}, {"min":1024,"type":"budget_tokens"}],
   },
   {
     context_window: 204_800,
@@ -861,7 +813,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 1_000_000,
@@ -875,7 +827,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 384_000,
     name: "DeepSeek V4.1 Flash",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 400_000,
@@ -890,9 +842,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.3 Codex",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh"]}],
   },
   {
     context_window: 204_800,
@@ -920,9 +870,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5 Nano",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -936,10 +884,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 384_000,
     name: "DeepSeek V4 Flash Vision Exp",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "high", "max"] },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 262_144,
@@ -953,7 +898,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 65_536,
     name: "Kimi K2.6",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 1_000_000,
@@ -969,7 +914,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Sonnet 4.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ min: 1024, type: "budget_tokens" }],
+    reasoning_options: [{"min":1024,"type":"budget_tokens"}],
   },
   {
     context_window: 1_000_000,
@@ -985,9 +930,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Opus 5.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1003,9 +946,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Fable 5.1",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -1020,9 +961,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3.6 Flash",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high"]}],
   },
   {
     context_window: 1_048_576,
@@ -1037,9 +976,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Cat Jam Free",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 128_000,
@@ -1054,9 +991,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.3 Codex Spark",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_050_000,
@@ -1072,9 +1007,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-6.1 Sol",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -1089,9 +1022,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3.5 Flash Lite",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high"]}],
   },
   {
     context_window: 1_050_000,
@@ -1107,9 +1038,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-6 Astra",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 500_000,
@@ -1124,7 +1053,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Grok 4.5",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 262_144,
@@ -1138,7 +1067,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 65_536,
     name: "Kimi K2.5",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 400_000,
@@ -1153,9 +1082,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.1",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -1171,9 +1098,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Opus 5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -1188,9 +1113,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3 Flash",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high"]}],
   },
   {
     context_window: 204_800,
@@ -1218,9 +1141,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3.5 Flash",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high"]}],
   },
   {
     context_window: 1_048_576,
@@ -1236,9 +1157,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 524_288,
     name: "Space Bunny Free",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 262_144,
@@ -1253,9 +1172,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 65_536,
     name: "LL Alpha Free",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1271,9 +1188,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Fable 5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 200_000,
@@ -1317,7 +1232,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Sonnet 4",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ min: 1024, type: "budget_tokens" }],
+    reasoning_options: [{"min":1024,"type":"budget_tokens"}],
   },
   {
     context_window: 400_000,
@@ -1332,9 +1247,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.4 Mini",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh"]}],
   },
   {
     context_window: 512_000,
@@ -1363,12 +1276,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.6 Luna",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1384,11 +1292,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Qwen3.8 Flash",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "medium", "xhigh"] },
-      { type: "budget_tokens" },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","medium","xhigh"]}, {"type":"budget_tokens"}],
   },
   {
     context_window: 400_000,
@@ -1403,9 +1307,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.1 Codex Max",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh"]}],
   },
   {
     context_window: 400_000,
@@ -1420,9 +1322,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.2",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_000_000,
@@ -1438,9 +1338,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Opus 4.8",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_050_000,
@@ -1455,9 +1353,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.5",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh"]}],
   },
   {
     context_window: 200_000,
@@ -1472,7 +1368,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 32_000,
     name: "GLM-5.3-Flash Free",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1488,9 +1384,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Sonnet 5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 262_144,
@@ -1520,10 +1414,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Opus 4.6",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "max"] },
-      { min: 1024, type: "budget_tokens" },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","max"]}, {"min":1024,"type":"budget_tokens"}],
   },
   {
     context_window: 1_048_576,
@@ -1538,7 +1429,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3.7 Flash",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -1552,7 +1443,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.2",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["high","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -1567,12 +1458,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "Nemotron 3.5 Super VL Free",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "minimal", "low", "medium", "high", "xhigh"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","minimal","low","medium","high","xhigh"]}],
   },
   {
     context_window: 204_800,
@@ -1586,7 +1472,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.1",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }],
+    reasoning_options: [{"type":"toggle"}],
   },
   {
     context_window: 256_000,
@@ -1615,7 +1501,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 32_000,
     name: "DeepSeek V4.1 Flash Free",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1631,10 +1517,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Haiku 5.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -1649,7 +1532,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3.8 Flash",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_050_000,
@@ -1665,12 +1548,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-6 Luna",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1684,10 +1562,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 384_000,
     name: "DeepSeek V4 Pro",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["high", "max"] },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["high","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1703,10 +1578,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Sonnet 4.6",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "max"] },
-      { min: 1024, type: "budget_tokens" },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","max"]}, {"min":1024,"type":"budget_tokens"}],
   },
   {
     context_window: 200_000,
@@ -1737,9 +1609,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Sonnet 5.5",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 262_144,
@@ -1755,7 +1625,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Qwen3.6 Plus",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [{ type: "toggle" }, { type: "budget_tokens" }],
+    reasoning_options: [{"type":"toggle"}, {"type":"budget_tokens"}],
   },
   {
     context_window: 1_050_000,
@@ -1771,12 +1641,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.6 Terra",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 400_000,
@@ -1791,7 +1656,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.1 Codex Mini",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -1806,7 +1671,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 65_536,
     name: "Step 5 Preview Free",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_000_000,
@@ -1820,7 +1685,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 131_072,
     name: "GLM-5.3",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+    reasoning_options: [{"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 1_000_000,
@@ -1836,9 +1701,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Claude Opus 4.7",
     provider_npm: "@ai-sdk/anthropic",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 262_144,
@@ -1866,9 +1729,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high"]}],
   },
   {
     context_window: 500_000,
@@ -1883,9 +1744,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Grok 4.6",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_048_576,
@@ -1900,7 +1759,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 3.1 Pro Preview",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_050_000,
@@ -1916,12 +1775,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-5.6 Sol",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
   {
     context_window: 1_048_576,
@@ -1936,7 +1790,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Gemini 4 Argon",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+    reasoning_options: [{"type":"effort","values":["low","medium","high"]}],
   },
   {
     context_window: 1_048_576,
@@ -1952,9 +1806,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Muse Spark 1.3 Free",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      { type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] },
-    ],
+    reasoning_options: [{"type":"effort","values":["minimal","low","medium","high","xhigh"]}],
   },
   {
     context_window: 1_000_000,
@@ -1968,10 +1820,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     max_output_tokens: 384_000,
     name: "DeepSeek V4 Flash",
     reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "high", "max"] },
-    ],
+    reasoning_options: [{"type":"toggle"}, {"type":"effort","values":["low","high","max"]}],
   },
   {
     context_window: 1_050_000,
@@ -1987,11 +1836,6 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "GPT-6 Sol",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["none", "low", "medium", "high", "xhigh", "max"],
-      },
-    ],
+    reasoning_options: [{"type":"effort","values":["none","low","medium","high","xhigh","max"]}],
   },
 ];
