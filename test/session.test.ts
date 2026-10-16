@@ -319,7 +319,7 @@ describe("session: a session id the gateway will accept", () => {
     // sessions and dooms the rest at mint. Every derived id must land in
     // [0xFC0, 0xFFE], across many inputs and both timestamp paths.
     const low12 = (id: string): number =>
-      Number.parseInt(id.slice(4, 16), 16) & 0xfff;
+      Number.parseInt(id.slice(4, 16), 16) % 0x1000;
     for (let i = 0; i < 50; i += 1) {
       const derived = low12(openCodeSessionIdFor(`band-check-${i}`));
       expect(derived >= 0xfc0 && derived <= 0xffe).toBe(true);

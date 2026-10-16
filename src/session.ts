@@ -103,7 +103,7 @@ export const openCodeSessionIdFor = (
   // at mint. Clamp into [0xFC0, 0xFFE]: the pass band, minus 0xFFF (all-ones
   // reads as a degenerate counter).
   const rawCounter = (hash[0] ?? 0) * 16 + Math.floor((hash[1] ?? 0) / 16);
-  const counter = 0xfc0 + (rawCounter % 63);
+  const counter = 0xf_c0 + (rawCounter % 63);
 
   const time =
     createdAt !== undefined && Number.isSafeInteger(createdAt) && createdAt >= 0

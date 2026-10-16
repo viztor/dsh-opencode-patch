@@ -487,6 +487,7 @@ export const patchFetch = (
     }
 
     const newInit: RequestInit = { ...init, headers };
+    let requestToSend = input;
 
     // 4. Core tool schema fallback for free-tier /responses models.
     //
@@ -514,17 +515,23 @@ export const patchFetch = (
       });
       if (newBody !== bodyToPatch) {
         finalBody = newBody;
-        if (bodySource === "request") {
+        if (bodySource === "request" && input instanceof Request) {
           // The input Request already owns the old body — clone() so the
           // caller's stream is never consumed, and send a new Request.
-          input = new Request(input, { body: newBody as BodyInit });
+          // `method` is restated so the lint can see it — the Request copy
+          // carries the same method either way. The instanceof repeat is
+          // there for the type checker.
+          requestToSend = new Request(input, {
+            body: newBody,
+            method: input.method,
+          });
         } else {
           newInit.body = newBody;
         }
       }
     }
 
-    const response = await original.call(this, input, newInit);
+    const response = await original.call(this, requestToSend, newInit);
 
     // One line per request the interceptor touched, so a run that misbehaves can
     // be read back instead of guessed at. Presence, never values: whether a
