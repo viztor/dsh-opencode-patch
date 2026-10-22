@@ -25,7 +25,11 @@ import {
   type ResolvedPluginConfig,
   resolveConfig,
 } from "./config.ts";
-import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
+import {
+  type CordisContext,
+  readCredentialsResolver,
+  readEntryOptions,
+} from "./cordis-context.ts";
 import { recordDebug } from "./debug.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
@@ -46,7 +50,10 @@ import {
 import { STORE_NAMESPACE } from "./opencode-store-contract.ts";
 import { OpencodeStoreService } from "./opencode-store-service.ts";
 import { ModelPurgeService } from "./purge-service.ts";
-import { registerResponsesProvider } from "./responses-provider.ts";
+import {
+  inheritedCredentialRef,
+  registerResponsesProvider,
+} from "./responses-provider.ts";
 import { isServableSdk } from "./responses-routes.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
@@ -396,7 +403,7 @@ const installFetchPatch = (
     // Told which planes are keyless, so the picker can offer only what such a
     // deployment can actually call (the official client's rule).
     const stopCatalogHiding = hideResponsesRoute(ctx, config, {
-      hasCredential: hasPlaneCredential,
+      hasCredential: createPlaneCredentialCheck(ctx),
     });
     // Own the Responses route from here, so the user configures nothing: they
     // keep the `opencode` provider and key they already have. Best-effort — a
@@ -520,30 +527,61 @@ const installModelDiscovery = (
  * @param rawConfig - the row config, if any.
  */
 /**
- * Whether this plane holds a credential the gateway would accept.
+ * Check credentials on each listing so stored keys work before the first request
+ * and additions or removals in DSH Credentials take effect immediately.
  *
- * Deliberately synchronous and deliberately generous: a declared env key, a key
- * captured from a live request, or an org written by a completed login. The
- * SQLite store is not consulted because it is opt-in and off by default, and
- * calling a deployment "keyless" when it does hold a credential would hide models
- * it can actually use.
- *
- * @param plane - the gateway plane.
- * @returns whether any credential is known for it.
+ * Credentials and Loader remain optional, independently scoped services: a host
+ * without Loader can still resolve the default reference, and a host without
+ * Credentials can still use environment or captured keys.
  */
-const hasPlaneCredential = (plane: string): boolean => {
-  const declared =
-    plane === "opencode-go"
-      ? process.env.OPENCODE_GO_API_KEY
-      : process.env.OPENCODE_API_KEY;
-  if (
-    typeof declared === "string" &&
-    declared.length > 0 &&
-    !isPlaceholderApiKey(declared)
-  ) {
-    return true;
+const createPlaneCredentialCheck = (ctx: CordisContext) => {
+  const scopes: Record<string, unknown> = { credentials: ctx, loader: ctx };
+  for (const dependency of ["credentials", "loader"]) {
+    ctx.inject?.([dependency], (scope) => {
+      if (!isRecord(scope) || typeof scope.effect !== "function") {
+        return;
+      }
+      Reflect.apply(scope.effect, scope, [
+        () => {
+          scopes[dependency] = scope;
+          return () => {
+            if (scopes[dependency] === scope) {
+              scopes[dependency] = ctx;
+            }
+          };
+        },
+      ]);
+    });
   }
-  return getCapturedApiKey(plane) !== undefined;
+
+  return async (plane: string): Promise<boolean> => {
+    const route = plane === "opencode-go" ? "opencode-go" : "opencode";
+    const declared =
+      route === "opencode-go"
+        ? process.env.OPENCODE_GO_API_KEY
+        : process.env.OPENCODE_API_KEY;
+    if (
+      typeof declared === "string" &&
+      declared.trim().length > 0 &&
+      !isPlaceholderApiKey(declared)
+    ) {
+      return true;
+    }
+    if (getCapturedApiKey(plane) !== undefined) {
+      return true;
+    }
+
+    const ref = inheritedCredentialRef(scopes.loader, route);
+    const resolve = readCredentialsResolver(scopes.credentials);
+    const hit = await resolve?.(ref);
+    const stored = hit?.value;
+    return [stored, process.env[ref]].some(
+      (value) =>
+        typeof value === "string" &&
+        value.trim().length > 0 &&
+        !isPlaceholderApiKey(value)
+    );
+  };
 };
 
 export const apply = (
