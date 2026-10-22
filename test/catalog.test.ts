@@ -137,6 +137,21 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(isGoModelsListingUrl("https://opencode.ai/zen/v1/models")).toBe(
       false
     );
+    // **The modern family's Go path.** The Go plane's base is the `inference`
+    // family now, and that path carries no `/models` of its own — the gateway
+    // answers 404 there and this enrichment is what fills it. Reading the plane
+    // by substring put it in the ZEN bucket, and the Go plane was then answered
+    // with the Zen catalog: every Zen model, and none of the Go plane's own.
+    expect(
+      isGoModelsListingUrl("https://opencode.ai/inference/go/openai/v1/models")
+    ).toBe(true);
+    expect(
+      isGoModelsListingUrl("https://opencode.ai/inference/openai/v1/models")
+    ).toBe(false);
+    // And the Zen google family is not the Go plane, though it starts the same.
+    expect(
+      isGoModelsListingUrl("https://opencode.ai/inference/google/v1beta/models")
+    ).toBe(false);
     expect(
       isModelsListingUrl("https://opencode.ai/zen/v1/chat/completions")
     ).toBe(false);
@@ -336,6 +351,35 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     };
     expect(zenJson.data.length).toBe(getLiveZenCatalog().length);
     expect(zenJson.data.some((m) => m.id === "beam-free")).toBe(true);
+  });
+
+  it("answers the modern Go listing with the Go catalog, not the Zen one", async () => {
+    // **This is the bug the Go plane's endpoint change exposed.** The Go plane's
+    // base is the `inference` family, and the adapter lists its models at
+    // `${base}/models` — a path the gateway does not serve, so the answer comes
+    // from here. The plane of that URL used to be read by substring, which knew
+    // neither `/inference/go` nor the boundary that separates it from
+    // `/inference/google`: the Go plane was answered with the ZEN catalog, and
+    // its own models — the Gemini contributor, the Muse contributor — were not
+    // in the answer at all.
+    const goResponse = await enrichModelsResponse(
+      "https://opencode.ai/inference/go/openai/v1/models",
+      // What the gateway actually answers there: a 404's body.
+      Response.json({ error: { message: "not found" } }, { status: 404 })
+    );
+    const goJson = (await goResponse.json()) as {
+      data: Array<{ id: string }>;
+    };
+    // The GO catalog's own rows are in it…
+    expect(goJson.data.some((m) => m.id === "gemini-4-argon-contributor")).toBe(
+      true
+    );
+    expect(goJson.data.some((m) => m.id === "muse-spark-1.3-contributor")).toBe(
+      true
+    );
+    // …and the Zen catalog's are not.
+    expect(goJson.data.some((m) => m.id === "claude-opus-4-6")).toBe(false);
+    expect(goJson.data.length).toBe(getLiveGoCatalog().length);
   });
 
   it("keeps the Muse 1.2 rows the zen plane actually serves", async () => {

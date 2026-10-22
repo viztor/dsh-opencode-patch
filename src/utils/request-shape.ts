@@ -18,6 +18,65 @@
 import { isRecord } from "./guards.ts";
 
 /**
+ * The PATH of a gateway URL, whether it is absolute or a bare path.
+ *
+ * A relative path is still a path — `"/zen/go/v1/models"` is what a caller with
+ * no origin passes, and the plane is a property of the path. Anything else that
+ * does not parse answers `""`, because guessing from a malformed string is how a
+ * rotation lands on the wrong credential.
+ */
+const pathOf = (url: string): string => {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url.startsWith("/") ? (url.split("?")[0] ?? "") : "";
+  }
+};
+
+/**
+ * The Go plane's paths, in both endpoint families.
+ *
+ * The vendor serves the Go plane under `/zen/go` on the older family and under
+ * `/inference/go` on the newer one, and a relay may use its own `/go/v1`.
+ *
+ * **The segment boundary is load-bearing.** `/inference/go` is a PREFIX of
+ * `/inference/google`, which is the ZEN google family — a plain `includes`
+ * reads it as the Go plane, and a captured key then belongs to the wrong
+ * account. So the segment must END there: `/inference/go` followed by a
+ * separator or the end of the path, never by more letters.
+ */
+const GO_PLANE_PATH =
+  /\/zen\/go(?:\/|$)|\/inference\/go(?:\/|$)|\/go\/v1(?:\/|$)/u;
+
+/** The Zen plane's paths, in both endpoint families. */
+const ZEN_PLANE_PATH = /\/zen(?:\/|$)|\/inference(?:\/|$)/u;
+
+/**
+ * Whether a URL is on the GO plane.
+ *
+ * **One answer for every caller.** Three places ask this question — the model
+ * listing's plane, a discovery request's plane, and the tier a captured key
+ * belongs to — and they had three answers, because the newer `inference`
+ * family was added to each of them separately and each addition was partial:
+ *
+ * | path | the old substring checks said |
+ * | :-- | :-- |
+ * | `/inference/go/openai/v1` | zen (the Go path was unknown to two of them) |
+ * | `/inference/google/v1beta` | **go** (`/inference/go` is a prefix of it) |
+ * | `/inference/openai/v1` | unknown (`/inference/v1` is not in it) |
+ *
+ * The middle row is a credential filed under the wrong account; the third is a
+ * credential filed under no account at all, which is the "my key is invalid"
+ * report. Both are the same mistake: a plane is a property of the PATH, and
+ * the path has to be read as a path.
+ *
+ * @param url - a request URL or a bare path.
+ * @returns whether this URL belongs to the Go plane.
+ */
+export const isGoPlaneUrl = (url: string): boolean =>
+  GO_PLANE_PATH.test(pathOf(url));
+
+/**
  * Which gateway plane a URL belongs to.
  *
  * From the URL alone, because the observer is called with nothing else and a
@@ -30,20 +89,16 @@ import { isRecord } from "./guards.ts";
  * @returns `opencode-go`, `opencode`, or `""` when the URL is not a gateway URL.
  */
 export const gatewayPlaneFor = (url: string): string => {
-  let path: string;
-  try {
-    path = new URL(url).pathname;
-  } catch {
-    // An unparseable URL is not a gateway URL, and guessing a plane from a
-    // malformed string is how a rotation lands on the wrong credential.
+  const path = pathOf(url);
+  if (path === "") {
     return "";
   }
   // Both endpoint families, because a credential's format decides which one a
   // request belongs on and the plane is the same either way.
-  if (/\/zen\/go\/|\/inference\/go\//u.test(path)) {
+  if (GO_PLANE_PATH.test(path)) {
     return "opencode-go";
   }
-  if (/\/zen\/|\/inference\//u.test(path)) {
+  if (ZEN_PLANE_PATH.test(path)) {
     return "opencode";
   }
   return "";

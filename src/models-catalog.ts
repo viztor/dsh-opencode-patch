@@ -22,6 +22,7 @@ import {
 import { DEFAULT_GATEWAY_URLS } from "./config.ts";
 import type { ModelCostRate } from "./session-cost.ts";
 import { isRecord } from "./utils/guards.ts";
+import { isGoPlaneUrl } from "./utils/request-shape.ts";
 
 // The catalog data is part of this module's public surface (and of the
 // package's, via `index.ts`), so re-export it rather than making callers
@@ -658,13 +659,19 @@ export const isModelsListingUrl = (
  * The plane is a property of the PATH, never of the host: a custom gateway's Go
  * route is still `/go/v1`, so this reads the same way for a relay as for
  * opencode.ai — which is exactly why the marker above had to be lifted out.
+ *
+ * **Both endpoint families, and the newer one is the one that matters here.**
+ * The Go plane's base is the `inference` family (`…/inference/go/openai/v1`),
+ * and that path carries no `/models` of its own — the listing lives on the
+ * older `zen/go` route, so the answer the gateway gives is a 404 and this
+ * enrichment is what fills it. Reading the plane by substring instead put the
+ * modern Go path in the ZEN bucket, and the Go plane was then answered with the
+ * ZEN catalog: every Zen model, and none of the Go plane's own.
  */
 export const isGoModelsListingUrl = (
   url: string,
   gatewayUrls?: readonly string[]
-): boolean =>
-  isModelsListingUrl(url, gatewayUrls) &&
-  (url.includes("/zen/go") || url.includes("/go/v1"));
+): boolean => isModelsListingUrl(url, gatewayUrls) && isGoPlaneUrl(url);
 
 /**
  * Merge and enrich a gateway `/models` response with the complete OpenCode Go or Zen catalog.

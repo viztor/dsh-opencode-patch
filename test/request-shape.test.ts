@@ -14,10 +14,60 @@ import {
   authHeaderFor,
   gatewayPlaneFor,
   headerSourceOf,
+  isGoPlaneUrl,
   modelIdOf,
   requestUrlOf,
   toolNamesOf,
 } from "../src/utils/request-shape.ts";
+
+describe("request-shape · the plane of a path", () => {
+  it("reads the Go plane out of both endpoint families", () => {
+    // The Go plane moved to the `inference` family, and three places ask this
+    // question — the model listing's plane, a discovery request's plane, and
+    // the tier a captured key belongs to. Each had its own answer, and each
+    // answer was partial, so the question is asked once here.
+    expect(isGoPlaneUrl("https://opencode.ai/zen/go/v1/models")).toBe(true);
+    expect(
+      isGoPlaneUrl("https://opencode.ai/inference/go/openai/v1/models")
+    ).toBe(true);
+    expect(
+      isGoPlaneUrl("https://opencode.ai/inference/go/google/v1beta/models")
+    ).toBe(true);
+    // A relay's own Go route, under someone else's host.
+    expect(
+      isGoPlaneUrl("https://relay.example.com/go/v1/chat/completions")
+    ).toBe(true);
+  });
+
+  it("does not read the Zen google family as the Go plane", () => {
+    // `/inference/go` is a PREFIX of `/inference/google`. A substring check
+    // therefore files a Zen google request under the Go account, and the key
+    // captured from it is then used for Go requests — the wrong credential,
+    // which is worse than no credential: it fails somewhere else.
+    expect(
+      isGoPlaneUrl("https://opencode.ai/inference/google/v1beta/models")
+    ).toBe(false);
+    expect(isGoPlaneUrl("https://opencode.ai/inference/google/v1beta")).toBe(
+      false
+    );
+    expect(
+      gatewayPlaneFor("https://opencode.ai/inference/google/v1beta/models")
+    ).toBe("opencode");
+    expect(isGoPlaneUrl("https://opencode.ai/inference/openai/v1/chat")).toBe(
+      false
+    );
+  });
+
+  it("answers for a bare path as well as for a URL", () => {
+    // A caller with no origin passes the path, and the plane is a property of
+    // the path.
+    expect(isGoPlaneUrl("/zen/go/v1/models")).toBe(true);
+    expect(isGoPlaneUrl("/inference/go/openai/v1/models")).toBe(true);
+    expect(isGoPlaneUrl("/inference/openai/v1/models")).toBe(false);
+    // And a string that is neither a URL nor a path is not guessed at.
+    expect(isGoPlaneUrl("not a url")).toBe(false);
+  });
+});
 
 describe("request-shape · gatewayPlaneFor", () => {
   it("attributes each endpoint family to its plane", () => {

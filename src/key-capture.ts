@@ -16,6 +16,7 @@
  */
 
 import { isRecord } from "./utils/guards.ts";
+import { gatewayPlaneFor } from "./utils/request-shape.ts";
 
 /** Account tiers a captured credential can belong to. */
 export type KeyTier = "go" | "zen" | "unknown";
@@ -87,14 +88,19 @@ export const tierForRequest = (
     // `inference` family as `unknown`, which made a captured, working key
     // invisible to the resolver and sent the adapter's `Bearer unused`
     // placeholder instead — a 401 the user reads as an invalid API key.
-    if (
-      url.includes("/zen/go") ||
-      url.includes("/inference/go") ||
-      url.includes("/go/v1")
-    ) {
+    //
+    // **The path is read as a path**, by the one predicate that answers for
+    // every caller. The substring checks this replaces each got a piece of the
+    // newer family wrong: `/inference/go` is a PREFIX of `/inference/google`,
+    // so the ZEN google family was filed as a Go key, and `/inference/v1` is
+    // not in `/inference/openai/v1`, so the ZEN openai family was filed under
+    // no account at all. A key filed under the wrong account is worse than one
+    // filed under none: it is used, and it is the wrong one.
+    const plane = gatewayPlaneFor(url);
+    if (plane === "opencode-go") {
       return "go";
     }
-    if (url.includes("/zen/v1") || url.includes("/inference/v1")) {
+    if (plane === "opencode") {
       return "zen";
     }
   }

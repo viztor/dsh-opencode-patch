@@ -488,6 +488,40 @@ describe("OpenCode Go Usage", () => {
       );
     });
 
+    it("files a key captured on the newer family under the right account", () => {
+      // The newer family has three paths of its own, and the substring checks
+      // this replaces each got one of them wrong: `/inference/go` is a PREFIX of
+      // `/inference/google`, so the ZEN google family was filed as a Go key —
+      // a credential used on the wrong account, which fails further away than a
+      // missing one — and `/inference/v1` is not inside `/inference/openai/v1`,
+      // so the ZEN openai family was filed under no account at all, which is
+      // the "my key is invalid" report on a key that was fine.
+      expect(
+        tierForRequest(
+          "https://opencode.ai/inference/openai/v1/chat/completions"
+        )
+      ).toBe("zen");
+      expect(
+        tierForRequest("https://opencode.ai/inference/anthropic/v1/messages")
+      ).toBe("zen");
+      expect(
+        tierForRequest(
+          "https://opencode.ai/inference/google/v1beta/models/x:generateContent"
+        )
+      ).toBe("zen");
+      // And the Go side of the newer family is still the Go side.
+      expect(
+        tierForRequest(
+          "https://opencode.ai/inference/go/openai/v1/chat/completions"
+        )
+      ).toBe("go");
+      expect(
+        tierForRequest(
+          "https://opencode.ai/inference/go/google/v1beta/models/x:generateContent"
+        )
+      ).toBe("go");
+    });
+
     it("uses the provider id only when nothing else identifies the tier", () => {
       expect(tierForRequest(undefined, "opencode-go")).toBe("go");
       expect(tierForRequest(undefined, "opencode")).toBe("zen");

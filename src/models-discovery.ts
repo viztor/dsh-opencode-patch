@@ -43,6 +43,7 @@ import {
   UNSERVED_PLANE_SDKS,
 } from "./responses-routes.ts";
 import { isRecord } from "./utils/guards.ts";
+import { isGoPlaneUrl } from "./utils/request-shape.ts";
 
 export interface DiscoveryCandidate {
   contextWindow?: number;
@@ -117,10 +118,11 @@ export const resolveDiscoveryProvider = (
   if (!isGateway || baseURL === undefined) {
     return undefined;
   }
-  return normalizedBaseURL.includes("/zen/go") ||
-    normalizedBaseURL.includes("/go/v1")
-    ? "go"
-    : "zen";
+  // The plane is a property of the path, and the path is read as a path: the
+  // Go plane's base is the `inference` family (`…/inference/go/openai/v1`), and
+  // a substring check that does not know that path attributes a Go discovery
+  // request to the ZEN catalog.
+  return isGoPlaneUrl(baseURL) ? "go" : "zen";
 };
 
 /**
