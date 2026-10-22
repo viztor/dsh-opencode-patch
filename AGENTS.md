@@ -134,3 +134,11 @@ node --experimental-strip-types scripts/check.ts   # bundle gate
 Releases are cut by release-please from Conventional Commit subjects, and published to npm by `.github/workflows/release.yml` through OIDC trusted publishing (no stored token). **`CHANGELOG.md` is owned by release-please — never hand-edit it**; clarity comes from commit subjects and the `changelog-sections` mapping in the release-please workflow.
 
 **Let release-please drive the release.** Its version anchor is the latest GitHub **Release**, not the latest tag, so a manual cut (`npm version` + `git tag` + push) creates a tag it cannot see. It then keeps computing from the last release it knows: it re-proposes a version that is already published, that pull request _regresses_ `package.json`, and its next run fails with `already_exists` when it tries to create the release a second time. If a manual cut is ever necessary, create the GitHub Release as part of it (`gh release create <tag> --generate-notes`).
+
+## Merging: squash
+
+Pull requests are merged with **squash**, so one pull request is one commit on `main`.
+
+The reason is the changelog, and it is mechanical rather than stylistic: release-please resolves a **merge commit** to the _pull request's title_, so under a merge-commit history every pull request appears in `CHANGELOG.md` once for its title and once for each commit inside it. The 1.4.0 notes listed nine entries for four changes, and a reader cannot tell a real second change from a repeated one. A squashed commit carries the pull request's title and nothing else, so each change is exactly one line.
+
+**The pull request's title is therefore the release signal**, and it must be a Conventional Commit — `feat:`, `fix:`, `chore:` — because the version bump and the changelog section are read from it. The commits inside the branch keep their own subjects, which is where the detail lives for the review; they do not reach the changelog.
