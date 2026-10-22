@@ -313,6 +313,24 @@ https://opencode.ai/inference/go/openai/v1/usage    404
 
 401 is "the route is there, bring a credential"; 404 is "no such route". The middle one is the URL the meter used to ask, so every quota read was a 404 — an unavailable meter with nothing on screen to explain it.
 
+### 3.7.1 The vendor's own client never calls it — VERIFIED
+
+Reading the source for the answer to "which endpoint does OpenCode use for usage" turns up something the plugin should record, because it changes what the endpoint _is_.
+
+**Nothing in the vendor's client fetches it.** A full-text sweep of the 1.19.4 tree for `usage` finds exactly one reference to the path, and it is the SERVER side:
+
+```
+packages/console/app/src/routes/zen/go/v1/usage.ts:18   "GET /zen/go/v1/usage": "/go/v1/usage"
+```
+
+The console's dashboard does not go through the gateway for this number either — it reads its own tables (`LiteTable.rollingUsage` / `weeklyUsage` / `monthlyUsage` plus `BillingTable`) with a **session cookie**, in `packages/console/app/src/routes/workspace/[id]/go/lite-section.tsx`. The CLI and TUI have no usage fetch at all; `packages/opencode/src/acp/usage.ts` is about a session's token count, not the plan's quota.
+
+So the route is not "how the client asks for usage". It is a **key-facing** endpoint: the route authenticates with `authorization: Bearer <key>`, looks the key up in the key table, and answers `403 EntitlementError` ("OpenCode Go subscription required.") when its workspace has no Go subscription. That is exactly the shape this plugin uses — a key in hand, the windows in hand — and it is why the endpoint is so sparse: it exists for key holders, not for the dashboard.
+
+The two versions differ in where the number comes from, and the shape does not change: 1.19.4 tries the inference proxy first and falls back to its own database when the proxy is unavailable (`.catch(inferenceUnavailable)`), while 2.0.32 forwards the request outright (`return proxyInference(input.request)`).
+
+The answer, in one line: **`GET https://opencode.ai/zen/go/v1/usage`**, and it is the only such endpoint on the gateway — the Zen plane has no counterpart, because the Zen plan's credits are a console concept and the dashboard reads them with a cookie.
+
 ## 3.8 Probing the gateway: 401/403 means SERVED, 400 means GONE — MEASURED
 
 `POST /zen/v1/chat/completions` with one token and no credential answers distinctly enough to classify every id:
