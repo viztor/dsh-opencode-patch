@@ -6,6 +6,18 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.4.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.0...v1.4.1) (2026-10-22)
+
+
+### Fixes
+
+* **discovery:** read the plane from the path, in both endpoint families ([#100](https://github.com/viztor/dsh-opencode-patch/issues/100)) ([36a6489](https://github.com/viztor/dsh-opencode-patch/commit/36a6489e152eed3203bbd8a7c36b2240a38c5926))
+
+
+### Documentation
+
+* **upstream:** the vendor's own client never calls the usage endpoint ([#102](https://github.com/viztor/dsh-opencode-patch/issues/102)) ([e093dd5](https://github.com/viztor/dsh-opencode-patch/commit/e093dd5908b397181d9388cf2e8b2e85d1ce4ff6))
+
 ## [1.4.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.3.0...v1.4.0) (2026-10-22)
 
 
