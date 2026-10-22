@@ -100,16 +100,16 @@ export const OPENCODE_FAMILY_API: Readonly<
   Record<"go" | "zen", Readonly<Record<string, string>>>
 > = {
   go: {
+    "": "https://opencode.ai/inference/go/openai/v1",
     "@ai-sdk/anthropic": "https://opencode.ai/inference/go/anthropic/v1",
     "@ai-sdk/openai": "https://opencode.ai/inference/go/openai/v1",
-    "": "https://opencode.ai/inference/go/openai/v1",
     "@ai-sdk/google": "https://opencode.ai/inference/go/google/v1beta",
   },
   zen: {
-    "": "https://opencode.ai/inference/openai/v1",
-    "@ai-sdk/openai": "https://opencode.ai/inference/openai/v1",
     "@ai-sdk/anthropic": "https://opencode.ai/inference/anthropic/v1",
+    "": "https://opencode.ai/inference/openai/v1",
     "@ai-sdk/google": "https://opencode.ai/inference/google/v1beta",
+    "@ai-sdk/openai": "https://opencode.ai/inference/openai/v1",
     "@ai-sdk/mistral": "https://opencode.ai/inference/openai/v1",
   },
 };
