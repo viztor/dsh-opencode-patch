@@ -100,6 +100,14 @@ export interface RouteClaim {
   >;
   /** The settings namespace pi-ai's row is described under. */
   readonly piAiNamespace: () => string;
+  /**
+   * Whether the claim has neither stood down (the host's modules could not be
+   * read) nor torn down. True from install, so before `mounted` settles the
+   * plane routes may still be pi-ai's: a plane save is already validated by
+   * the plugin, and a fetch complemented in that window assumes the claim goes
+   * live, which it does unless the modules are unavailable.
+   */
+  readonly claiming: () => boolean;
   /** Settles once the claim is mounted; never rejects. */
   readonly mounted: Promise<void>;
 }
@@ -220,6 +228,7 @@ export const installRouteClaim = (
       `the plane routes stay pi-ai's: this composition offers no ${missing.join(", ")}`
     );
     return {
+      claiming: () => false,
       committedEntries: () => ({}),
       mounted: Promise.resolve(),
       piAiNamespace: () => PI_AI_RUNTIME,
@@ -805,6 +814,7 @@ export const installRouteClaim = (
   })();
 
   return {
+    claiming: () => state.active,
     committedEntries: () => (state.active ? state.normalized : {}),
     mounted,
     piAiNamespace: () => livePiAi()?.entry?.options?.id ?? PI_AI_RUNTIME,

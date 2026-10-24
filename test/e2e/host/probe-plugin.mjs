@@ -4,9 +4,11 @@
  * A bundle plugin with one job: once the published `dsh` binary has booted a
  * profile holding this plugin and `dsh-opencode-patch`, ask the host what it
  * now serves — the registry, the listings, the validation verdicts, where one
- * turn per model is sent, what the settings page reads, and whether a
- * catalog-unknown id can be saved — write that as JSON to `PROBE_OUT`, and exit
- * the process. `test/e2e/host-binary.e2e.ts` reads the file.
+ * turn per model is sent, what the settings page reads, what Settings →
+ * Models → Fetch offers on each plane (through the gateway's Remote face), and
+ * whether a catalog-unknown id can be saved — write that as JSON to
+ * `PROBE_OUT`, and exit the process. `test/e2e/host-binary.e2e.ts` reads the
+ * file.
  *
  * It never reaches the network: `fetch` is replaced at module load, so every
  * request to `opencode.ai` or `models.opencode.ai` is recorded (URL and model
@@ -308,12 +310,45 @@ const measure = async (ctx) => {
     registryRoutes: [...registry().keys()],
   };
   const asked = await askAbout(llm, ids);
-  const zenNs = registered.configurable.find(
-    (entry) => entry.provider === "opencode"
-  )?.settingsNs;
-  const discovered = await settle(() =>
-    llm.discoverModels(zenNs, { provider: "opencode" })
-  );
+  // Settings → Models → Fetch, as the Models page reaches it: the gateway
+  // reads the service from a fresh view and calls the descriptor's
+  // implementation, `remoteDiscoverModels` (the in-process contract pins that
+  // name), which reads `this.discoverModels` per call. Ids and field names
+  // only, never a value beyond the ids.
+  const llmView = ctx.extend({}).get("llm");
+  const remote = Reflect.get(llmView, "remoteDiscoverModels");
+  const discovery = {};
+  for (const plane of PLANES) {
+    const settingsNs = registered.configurable.find(
+      (entry) => entry.provider === plane
+    )?.settingsNs;
+    const answered = await settle(() =>
+      Reflect.apply(remote, llmView, [
+        settingsNs,
+        { provider: plane },
+        AbortSignal.timeout(15_000),
+      ])
+    );
+    discovery[plane] = answered.ok
+      ? {
+          fields: [
+            ...new Set(answered.ok.flatMap((row) => Object.keys(row))),
+          ].toSorted((a, b) => a.localeCompare(b)),
+          ids: answered.ok.map((row) => row.id),
+          // A key present with no value is a shape the Remote's codec hides,
+          // so the record names it: the whitelist must never emit one.
+          undefinedFields: [
+            ...new Set(
+              answered.ok.flatMap((row) =>
+                Object.entries(row)
+                  .filter(([, value]) => value === undefined)
+                  .map(([key]) => key)
+              )
+            ),
+          ].toSorted((a, b) => a.localeCompare(b)),
+        }
+      : answered;
+  }
   const dispatch = {};
   for (const [route, models] of Object.entries(ids)) {
     for (const model of models) {
@@ -385,7 +420,7 @@ const measure = async (ctx) => {
             value: Object.keys(piDescriptor.value?.providers ?? {}),
           },
     describeEntries,
-    discovery: discovered.ok ? { count: discovered.ok.length } : discovered,
+    discovery,
     dispatch,
     modelsJoin,
     listModelsAfter,

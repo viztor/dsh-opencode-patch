@@ -88,7 +88,7 @@ The report was `400 ModelProtocolUnsupported` from a session, and it is reproduc
 
 All three were listed on the same route, which declares `api: openai-completions`. The last two do not speak that protocol, so choosing either one cannot work — and the routing this plugin exists to do is what would have moved them to a route that does.
 
-**It cannot, because those routes are not registered.** Measured against a real deployment's config: `opencode-responses` is present, `opencode-anthropic` and `opencode-google` are not. The plugin registers model discovery for `opencode` and `opencode-go` only, so the two routes the extra protocols need are the deployment's to write — which is the thing the core model says a user should never have to do.
+**It cannot, because those routes are not registered.** Measured against a real deployment's config: `opencode-responses` is present, `opencode-anthropic` and `opencode-google` are not. At the time the plugin registered model discovery for `opencode` and `opencode-go` only (P3 removed those registrations; Settings' fetch now goes through pi-ai's namespace and the plugin's wrapper), so the two routes the extra protocols needed were the deployment's to write — which is the thing the core model says a user should never have to do.
 
 So the fix belongs here rather than in anyone's profile: the routes for the other protocols have to come from the plugin, the way the completions route already does. Until they do, a model that names an SDK other than completions is offered on a route that cannot serve it, and the answer is the `400` above.
 

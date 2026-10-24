@@ -15,15 +15,17 @@
  * cannot drift apart unnoticed. Since P-R1 the plugin owns both plane routes
  * (D13): no row depends on which of pi-ai and the plugin applies first, so the
  * per-model rows are `S0_TODAY.rows` in either order, and the listing and save
- * rows no longer depend on which ids pi describes.
+ * rows no longer depend on which ids pi describes. The Settings fetch rows (P3)
+ * are checked against this checkout's servable shim catalog, and against pi's
+ * own list in the pinned cell.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
  * directory whose `node_modules/@deepseek-ai/dsh` is the installed host.
  * `DSH_HOST_PI_CELL=pinned` (the default) also requires the pi
  * `host-versions.ts` names, with the harness patch, and asserts every row;
  * `floating` accepts whatever pi the host resolved, and skips the per-model
- * rows (a newer pi's own entry can move a model's metadata); its probe JSON is
- * the record.
+ * rows (a newer pi's own entry can move a model's metadata) and the Settings
+ * fetch's order (pi's list first); its probe JSON is the record.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -48,6 +50,7 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { HOST_VERSIONS } from "../support/host-versions.ts";
@@ -55,11 +58,17 @@ import {
   CHARACTERIZED_MODELS,
   CHARACTERIZED_PROFILE,
   PI_AI_PACKAGE,
+  type Plane,
   PLANES,
   S0_TODAY,
   SAVE_CANDIDATE,
   ZEN_UNDESCRIBED,
 } from "../support/host.ts";
+import {
+  isServableSdk,
+  OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
+} from "../support/src.ts";
 
 const ENABLED = process.env.DSH_HOST_E2E === "1";
 const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
@@ -117,7 +126,42 @@ interface ProbeOutput {
     dispatch: { sent: string[]; finish: string };
     listed: unknown;
   };
+  /** Settings → Models → Fetch per plane, through the gateway's Remote face. */
+  readonly discovery: Record<
+    string,
+    | { ids: string[]; fields: string[]; undefinedFields: string[] }
+    | { error: { code?: string; message: string } }
+  >;
 }
+
+/** The Remote's five `LlmDiscoveredModel` fields. */
+const REMOTE_FIELDS = [
+  "contextWindow",
+  "id",
+  "inputModalities",
+  "maxTokens",
+  "name",
+];
+
+/** The plane's servable catalog ids, in catalog order, from this checkout. */
+const servable = (plane: Plane): string[] =>
+  (plane === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG)
+    .filter((spec) => isServableSdk(spec.provider_npm))
+    .map((spec) => spec.id);
+
+/** pi's own ids for a plane, once each, from the checkout's (pinned) pi. */
+const piIds = (plane: Plane): string[] => [
+  ...new Set(
+    getBuiltinModels(plane as never).map((model: { id: string }) => model.id)
+  ),
+];
+
+/** The ids Settings' fetch offered on a plane; fails by name on an error. */
+const fetchedIds = (plane: Plane): string[] => {
+  const answered = out.discovery[plane];
+  expect(answered, plane).toHaveProperty("ids");
+  return answered !== undefined && "ids" in answered ? answered.ids : [];
+};
 
 /** The entries of a directory, or none when it cannot be read. */
 const entriesOf = (dir: string): string[] => {
@@ -510,4 +554,42 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
       sent: ["https://opencode.ai/inference/openai/v1/chat/completions"],
     });
   });
+
+  it("[BASELINE] Settings' fetch on each plane offers the whole servable catalog, each id once, in the Remote's row shape (D3)", () => {
+    for (const plane of PLANES) {
+      const ids = fetchedIds(plane);
+      expect(new Set(ids).size, plane).toBe(ids.length);
+      expect(ids, plane).toEqual(expect.arrayContaining(servable(plane)));
+      const answered = out.discovery[plane];
+      const fields =
+        answered !== undefined && "fields" in answered ? answered.fields : [];
+      expect(fields, plane).toContain("id");
+      expect(REMOTE_FIELDS, plane).toEqual(expect.arrayContaining(fields));
+      // No key is present with an `undefined` value: the codec would hide it.
+      expect(
+        answered !== undefined && "undefinedFields" in answered
+          ? answered.undefinedFields
+          : undefined,
+        plane
+      ).toEqual([]);
+    }
+    expect(fetchedIds("opencode")).toContain("gpt-5.3-codex-spark");
+    expect(fetchedIds("opencode-go")).toContain("minimax-m3.1-flash");
+    expect(fetchedIds("opencode-go")).toContain("gemini-4-argon-contributor");
+  });
+
+  // A newer pi lists gap ids itself and orders its own list differently, so
+  // only the pinned cell pins the order.
+  it.skipIf(!PINNED)(
+    "[BASELINE] Settings' fetch answers pi's own list first, then the catalog models pi lacks (pinned pi)",
+    () => {
+      for (const plane of PLANES) {
+        const pi = piIds(plane);
+        expect(fetchedIds(plane), plane).toEqual([
+          ...pi,
+          ...servable(plane).filter((id) => !pi.includes(id)),
+        ]);
+      }
+    }
+  );
 });

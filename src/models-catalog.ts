@@ -786,12 +786,14 @@ export const enrichModelsResponse = async (
   const catalogById = new Map(catalog.map((m) => [m.id, m]));
   const merged = new Map<string, Record<string, unknown>>();
 
-  // **This is the CATALOG surface, so it is the one place that seeds.**
-  // `discoverModels` in `dsh-llm-pi-ai` returns its installed catalog for a
-  // provider it ships and only fetches an endpoint for one it does not — so a
-  // `/models` answer is "what this endpoint offers", the list a user browses, not
-  // the list a picker shows. Widening is right here and wrong anywhere that
-  // decides what a deployment may pick.
+  // **This is a CATALOG surface, so it seeds.** So does Settings' fetch on a
+  // plane the plugin serves (`complementDiscoveredModels`): both offer
+  // candidates to browse or adopt. `discoverModels` in `dsh-llm-pi-ai` returns
+  // its installed catalog for a provider it ships and only fetches an endpoint
+  // for one it does not — so a `/models` answer is "what this endpoint offers",
+  // the list a user browses, not the list a picker shows. Widening is wrong
+  // anywhere that decides what a deployment may pick: the composer lists the
+  // declared models alone.
   //
   // The seed also covers the ordinary case of a gateway answering with a subset:
   // the vendor's own listing is narrower than its catalog.

@@ -170,7 +170,7 @@ Counts are the **82** active `opencode` models in `models.opencode.ai` as of 202
 
 Four properties follow:
 
-- **You keep choosing.** Each plane serves exactly the models its `llm-pi-ai` entry lists — and the whole catalog when the entry lists none. Any id you save is accepted and served: one neither the catalog nor pi describes is sent as Chat Completions, unless the plane's entry names a route-level `api`, which applies to exactly those ids.
+- **You keep choosing.** Each plane serves exactly the models its `llm-pi-ai` entry lists — and the whole catalog when the entry lists none. Settings → Models → Fetch offers the whole catalog: pi's own list, plus every servable, non-retired model the catalog has that pi does not list. One adopted from it saves like any other id and is served by the plugin. Any id you save is accepted and served: one neither the catalog nor pi describes is sent as Chat Completions, unless the plane's entry names a route-level `api`, which applies to exactly those ids.
 - **Your row wins.** A model's name, context window, output limit and input modalities come from your own model row first, then the catalog, then pi's installed data. Its reasoning efforts come from your row's `reasoningEfforts`, then the catalog. Its cost and its protocol are not row fields: the cost comes from the catalog, then pi, and the protocol from the catalog's SDK, then pi's entry.
 - **A model whose reasoning is only on or off is offered as Off / On.** Off appears only where the model's protocol can actually turn reasoning off; a model with a real effort list offers exactly its levels.
 - **One credential, by the host's own rule.** A plane authenticates the way `llm-pi-ai` would: the entry's `apiKeyEnv` through the credentials service (or the launch environment when no credentials service is mounted), a Sign-in record stored under `llm-pi-ai/opencode`, and otherwise pi's own `OPENCODE_API_KEY` lookup. The installation's own OpenCode store is consulted only when no reference is named and the deployment opted in. A plane whose key does not resolve still lists its models, and the turn fails with `MISSING_CREDENTIAL` before any request is sent.
@@ -197,7 +197,7 @@ The model list is assembled from four sources, each answering a different questi
 | Bundled shim | what can be offered before any network call — cold start, offline |
 | `models.opencode.ai` | the canonical spec, price and display name |
 | The gateway's `/models` | what **this account** actually has |
-| Discovery decoration | what `discoverModels` should answer |
+| Settings' fetch (`discoverModels`) | on `opencode`/`opencode-go`: pi's own list, then every catalog model pi lacks |
 
 Merging is **additive**: adapter rows are kept, canonical rows are appended when a model is missing, and a row is dropped only when the registry marks it `status: "deprecated"` — a fact, not a guess. Display names and prices come from the catalog (`models.opencode.ai`), because a gateway listing carries ids and little else.
 
@@ -228,7 +228,7 @@ Nine controls in four sections — the decisions a user actually makes. Everythi
 | **Gateway Requests** | Inject User-Agent | `on` | Restores the official OpenCode CLI `User-Agent` so Cloudflare WAF checks pass |
 | **Gateway Requests** | Inject Origin Headers | `on` | Injects `x-opencode-client` (and the origin header set) on gateway traffic |
 | **Gateway Requests** | Attach Workspace Project | `on` | Tags `x-opencode-project` with the active folder name; off omits the header |
-| **Models & Free Tier** | Enrich listings from the OpenCode catalog | `on` | Lets the gateway `/models` listing carry the full catalog, and offers it to Settings' model discovery. Does **not** add models to the picker — the picker shows declared models only; use the card's **Check catalog** row to declare more. A declared model's own info (context, modalities, thinking levels) follows your row and the catalog whatever this says |
+| **Models & Free Tier** | Enrich listings from the OpenCode catalog | `on` | Lets the gateway `/models` listing carry the full catalog, and offers it to Settings' model discovery. Does **not** add models to the picker by itself — the picker shows declared models only. To declare more, use **Settings → Models → Fetch** on an OpenCode plane: it offers pi's list plus the catalog's models pi lacks, and adopting a row and saving declares it. A declared model's own info (context, modalities, thinking levels) follows your row and the catalog whatever this says |
 | **Models & Free Tier** | Inject Core Tools | `on` | Adds the `read` + `bash` schemas free-tier `/responses` bodies require |
 | **Quota Meter** | Enable Composer Usage Meter | `on` | Mounts the live meter in the composer dock — the Go quota ring, or the Zen session spend |
 | **Account & Endpoint** | API Endpoint | `auto` | Which endpoint family requests go to: **Automatic** (same as Modern) · **Legacy** (`zen/v1`, `zen/go/v1`) · **Modern** (per-protocol `inference/{openai,anthropic,google}/…`, `inference/go/…` on Go) |
@@ -393,7 +393,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with nothing to clean up first: the plane entries were never moved out of its `providers` block.
 
 - **`llm-pi-ai` serves the ids it knows again**, on its own adapter, endpoint family and reasoning rules.
-- **Ids it cannot serve drop out of the composer.** That is an id its installed catalog does not describe — a catalog-unknown id, or a newer model than its pi carries.
+- **Ids it cannot serve drop out of the composer.** That is an id its installed catalog does not describe — a catalog-unknown id, or a newer model than its pi carries — including a model adopted from Settings' fetch that pi does not list.
 - **The next Settings edit of that plane is refused until they are removed**, because `llm-pi-ai` validates the whole plane entry on every save. Delete those ids from the plane's model list, and the edit goes through.
 
 ## 🛠 Troubleshooting
@@ -404,7 +404,7 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 | `400 MissingSessionID` | No session header attached | Ensure `dsh-opencode-patch` is listed in the profile's `dsh.profile.bundles` |
 | Auto Review fails with `TRANSPORT: Connection error` | Host process not restarted since the update | Stop and restart `dsh web` so the new `lib/index.mjs` loads |
 | Quota ring never appears for a Go model | **Restart `dsh web`, then read the browser console** — the plugin is loaded through a `link:`, so `lib/index.mjs` is read once at process start and a page reload alone keeps the old host code; the meter reports which of its paths returned nothing | The console names the cause: `no remote to mount on`, `did not mount` with the exception, `still waiting for remote.opencodeGoUsage`, `no opencodeGoUsage service on the remote` with the keys it does expose, or `the answer is not a usage shape` with what came back. A missing or unroutable credential is one cause of several, not the only one |
-| A catalog model is missing from Settings → Fetch, or a retired one persists | Stale host module, enrichment off, or the adapter answered from its packaged catalog | `pnpm run build`, restart `dsh web`, keep **Enrich listings from the OpenCode catalog** on, fetch from the matching route, search the exact id (e.g. `space-bunny-free`) |
+| A catalog model is missing from Settings → Fetch, or a retired one persists | Stale host module, enrichment off, or the route is not a plane the plugin serves (only `opencode`/`opencode-go` on the served `llm-pi-ai` row are complemented) | `pnpm run build`, restart `dsh web`, keep **Enrich listings from the OpenCode catalog** on, fetch from the matching route, search the exact id (e.g. `space-bunny-free`) |
 | Popover shows “Limit reached” in red | 100% of a rolling/monthly window reached | Open the [OpenCode Console](https://opencode.ai/console) and enable _Use balance_ to overflow into Zen credits |
 | Non-OpenCode models misbehaving | Unrelated to this patch | Traffic to other providers passes through untouched |
 
@@ -422,6 +422,7 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 - **`modelOverrides`, `maxContextWindow` and `modelRoutes` were removed** (and the documented `hiddenModels`, which nothing ever read). A model's own row in the plane's entry carries its name, context window, output limit, input modalities and reasoning efforts, and the catalog fills the rest; a row's `contextWindow` is the stand-in for `maxContextWindow`. A row that still carries the removed keys validates, and the keys are ignored.
 - **No per-model protocol pin.** `modelRoutes` could send one model on a protocol of your choosing; nothing replaces that. A model the catalog or pi describes always speaks the protocol they name; the plane entry's route-level `api` applies only to ids neither describes, and `baseURL` is route-level only. Cost is not a row field either: it comes from the catalog, then pi.
 - **Disabling or reloading the plugin restores the host methods it wrapped.** Model discovery and the Settings graft come off on a disable, and a live reload replaces them instead of stacking another layer. The planes go back to `llm-pi-ai` — see [Removing or disabling the plugin](#removing-or-disabling-the-plugin).
+- **Settings → Models → Fetch offers the catalog's models pi does not list.** On both planes it answers pi's list first, then every servable, non-retired catalog model pi lacks (e.g. Zen `gpt-5.3-codex-spark`, Go `minimax-m3.1-flash`). While `llm-pi-ai` restarts it answers the catalog alone instead of an error. It used to answer pi's list only.
 - **`@viztor/dsh-opencode` is no longer published.** Its last version's "Renamed to @viztor/dsh-opencode-patch" deprecation stands as the final message; install `dsh-opencode-patch` or `@viztor/dsh-opencode-patch` instead.
 
 ## 📜 Compatibility & Verification

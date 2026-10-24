@@ -27,7 +27,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P-H   | `refactor:` one way to patch a host method    | in review |
 | P-R1  | `feat:` the plugin owns the plane routes      | in review |
 | P-R2  | `test:` the endpoint families, measured       | in review |
-| P3    | `feat:` Settings complements pi's list        | planned   |
+| P3    | `feat:` Settings complements pi's list        | in review |
 | P-T2  | `test:` suite structure                       | planned   |
 | P-T3  | `ci:` CI and scripts                          | planned   |
 | P5    | `refactor:` installers                        | planned   |
@@ -88,7 +88,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
     - the SDK server (`sdk/server/src/server.ts:423`);
     - the translator (`experimental/translator/src/deepseek.ts:69`).
   - With no hidden routes (P-R1), **no listing patch is needed**; today's exists only to hide them from these readers. (Instance patches do reach Remote calls, because the gateway resolves methods with `Reflect.get` at call time — `api/gateway/src/index.ts:841-843` — which the `discoverModels` wrapper relies on.)
-- **Settings discovery is keyed by the pi-ai entry id** (`llm-pi-ai/src/index.ts:138,156`; `ProviderEditor.tsx:254`; `ModelListEditor.tsx:167,244`). The plugin's own `registerModelDiscovery` namespaces are never asked.
+- **Settings discovery is keyed by the pi-ai entry id** (`llm-pi-ai/src/index.ts:138,156`; `ProviderEditor.tsx:254`; `ModelListEditor.tsx:167,244`). The plugin's own `registerModelDiscovery` namespaces were never asked; P3 deleted them.
   - The host's normalization runs inside the original `discoverModels` (`index.ts:618-631`), so the wrapper must dedupe and whitelist the fields itself.
   - `LlmDiscoveredModel` carries only id, name, contextWindow, maxTokens and inputModalities, with no reasoning field.
 - **D1 representation.** Effort ids must be pi levels (`adapter.ts:170-181`), and two vocabularies mean opposite things by `null`:
@@ -147,6 +147,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | F18 | **`PiAiAdapter.listModels` answers `[]` on `MISSING_CREDENTIAL`.** | `llm-pi-ai/src/adapter.ts:295-311` |
 | F19 | **`PiAiAdapterOptions.auth` is required.** pi-ai does not export its credential-store or auth-context builders; it does export `PiAiAdapter`, `Config` and `recordKeyFor`. | `llm-pi-ai/src/adapter.ts:98-106`; `index.ts:77-92` |
 | F20 | **The Settings page reads pi-ai's resolved config.** `describe()` builds `value` from `fiber.config`, so once the claim strips the planes they read as unconfigured. The gateway resolves service methods per call (`Reflect.get`), so an instance wrapper on `describe` is seen by `settingsController.describe` and by `write()`. | `settings/settings/src/index.ts:319`; `api/gateway/src/index.ts:841-843`; `api/settings-controller/src/index.ts:98-103,217` |
+| F21 | **A pi-ai restart withdraws its discovery.** Between UNLOADING and the reload, `discoverModels(piNs, …)` answers `NO_DISCOVERY`. The Remote face is `remoteDiscoverModels`, which reads `this.discoverModels` per call. | `llm/src/index.ts:569-661`; measured in tier B (`test/host-discovery.test.ts`, the pi-ai restart case) |
 
 Three corrections to the facts above:
 
@@ -229,10 +230,10 @@ Three corrections to the facts above:
 
 #### `src/host/patch-method.ts`: the two host wrappers that remain
 
-`patch-method.ts` restores a wrapper only if it is still the current one, deletes it when the original was inherited, and re-wraps on `llm/adapters-updated`. It installs two wrappers:
+`patch-method.ts` restores a wrapper only if it is still the current one, deletes it when the original was inherited, and can re-wrap on `llm/adapters-updated` (no site needs it yet). It installs two wrappers:
 
 - **`settings.describe` (D18, F20).** It runs inside `ctx.inject(["settings"])`, and touches only the `llm-pi-ai` descriptor. When `value.providers[plane]` is missing, it sets it to the interpolated, `Config`-normalized committed entry; `base`, `user` and the revision are untouched. A contract test pins that no node under `providers` in pi-ai's `Config` carries `role("secret")`. Today only `apiKeyEnv` has a role, and it is `credential-ref`.
-- **`discoverModels` (P3).** It answers pi's rows plus the catalog's missing ones, deduped and whitelisted. A `NO_DISCOVERY` while pi-ai restarts yields catalog-only rows.
+- **`discoverModels` (P3).** It answers pi's rows plus the catalog's missing ones, deduped and whitelisted. A `NO_DISCOVERY` while pi-ai restarts yields catalog-only rows. Landed as: the complement applies only to a plane route asked on the namespace of the pi-ai row the claim serves, and only while the claim is live (`RouteClaim.claiming()`); every other request the wrapper classifies (another pi-ai row's planes, a custom relay, a gateway-URL draft) keeps the enrich-only merge, now whitelisted, since pi-ai serves those and refuses an id it does not list. No `rewrapOnAdaptersUpdated`: the `ctx.inject(["llm"])` scope already follows the service, and a pi-ai restart never touches the `llm` instance.
 
 #### Deleted
 
@@ -289,8 +290,9 @@ src/
   lifecycle.ts         apply(): installers only
   host/
     patch-method.ts    wrap a host method: restore only if still current; delete when the original
-                       was inherited; re-wrap on llm/adapters-updated (settings.describe, discoverModels)
-    discovery.ts       discoverModels: pi's answer + the catalog's missing models (D3, D8)
+                       was inherited; can re-wrap on llm/adapters-updated (no site needs it yet)
+    discovery.ts       discoverModels: pi's answer + the catalog's missing models (D3, D8);
+                       in src/models-discovery.ts until P10a
     route-claim.ts     prepended internal/config filter: pi-ai never claims the planes; reconcile on
                        commit; mount and teardown ordering (F14-F17)
     plane-provider.ts  PlaneAdapter (extends the host's PiAiAdapter), registered as the declared planes
@@ -400,10 +402,10 @@ What stays private is pinned by contract tests against the real host packages:
    - **Decided:** `endpoint: legacy` is recorded, not guarded, on the live gateway (`LEGACY_DISPATCH`, marked `†`): its keyless answers must be readable, like every legacy cell, but its path-gone is asserted nowhere live; its mapping is guarded by the unit pins.
    - **The flip rule.** A keyed modern cell that answers path-gone, wrong-protocol or auth-refused with the CI key turns the job red, and only that is flip evidence: the evidence for a later `fix:` that flips `AUTO_ENDPOINT_FAMILY`, with the copy, `TODAY_DISPATCH` and the re-tagged wire facets. The job also fails when a default cell answers nothing readable (`other`, a redirect, a refused session, `transport-error`, `no-model`), which is not flip evidence, and skips a plane none of whose default cells was served (a busy upstream — a 503, a 529 or a 5xx naming an overload — skips like a rate limit; a 500 or 502 stays `other`).
    - **Measured results** live in `docs/redirect-planes.md` §13, pending the first CI run.
-9. **P3 `feat:` Settings complements pi's list.**
-   - The `discoverModels` wrapper answers servable, non-deprecated models, deduped and whitelisted.
-   - Delete `installModelDiscovery` and `toDiscovered`.
-   - Rewrite the "adds nothing" tests, and the docs that say the same.
+9. **P3 `feat:` Settings complements pi's list.** In review. Landed as:
+   - the `discoverModels` wrapper (`src/models-discovery.ts`, through `host/patch-method.ts`): on a plane the plugin serves, pi's rows first in pi's order (retired ids dropped, missing fields filled from the catalog), then every servable, non-deprecated catalog model pi lacks (`complementDiscoveredModels`), each id once and whitelisted to `LlmDiscoveredModel`'s five fields; `NO_DISCOVERY` from pi-ai's namespace answers the catalog alone (F21);
+   - `installModelDiscovery`, `toDiscovered`, the `registerModelDiscovery` namespaces and their lifecycle tests deleted;
+   - the "adds nothing" tests and docs rewritten; `test/host-discovery.test.ts` carries the real-host and contract rows, and the binary e2e the Settings fetch row. Refinements: the `RouteClaim.claiming()` seam, so gap rows are offered only while the claim is live and only on the served row's namespace; the whitelist omits a field nobody supplied, unknown modalities included (absent means unknown in the Remote's schema), rather than defaulting it, and narrows a supplied modality list to text/image, omitting the field when nothing survives (as the composer's `catalogInput` does); and `verify-catalog` check 3 retargeted from `mergeDiscoveredModels` to `planeProfileFor`, the composer's own source.
 10. **P-T2 `test:` suite structure.**
     - Move the mock-booting unit files into `test/mock/`.
     - Retire the ad-hoc contexts, `createMockContext` and `HarnessSimulator`.
@@ -593,7 +595,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 **Cells:**
 
 - (a) pi 1.1.0, pinned and patched, on PRs, nightly and on dispatch; it asserts every row;
-- (b) whatever npm installs, nightly and on dispatch. Since P-R1 it skips only the per-model rows (a newer pi's own entry can move a model's metadata); the listings before and after a turn, the save rows and the row that the plane provider is built from the host prefix's own pi are asserted in both cells, since none of them depends on which ids pi describes. Its probe JSON is the record.
+- (b) whatever npm installs, nightly and on dispatch. Since P-R1 it skips the per-model rows (a newer pi's own entry can move a model's metadata) and, since P3, the Settings fetch's order (pi's list first); the listings before and after a turn, the save rows, the row that the plane provider is built from the host prefix's own pi, and (since P3) the Settings fetch row — the whole servable catalog, each id once, in the Remote's five fields — are asserted in both cells, since none of them depends on which ids pi describes. Its probe JSON is the record.
 
 ### The live gateway job (`OPENCODE_API_KEY` / `OPENCODE_GO_API_KEY`)
 

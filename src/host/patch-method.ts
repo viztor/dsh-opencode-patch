@@ -1,9 +1,9 @@
 /**
  * The one way this plugin wraps a method on a host object.
  *
- * Every instance patch in `src/` goes through {@link patchMethod}: the listing,
- * discovery and model-info wrappers on the `llm` service and the plane adapters'
- * `resolveModel`, `prepareCall` and `modelOf` (all in `models-discovery.ts`).
+ * Every instance patch in `src/` goes through {@link patchMethod}; today two
+ * sites: model discovery (`models-discovery.ts`) and the `settings.describe`
+ * graft (`host/describe-graft.ts`).
  * Wrapping an INSTANCE is enough because the host resolves a service method per
  * call (F20: the gateway reads it with `Reflect.get` at dispatch), so a wrapper
  * set on the instance is what every later caller runs.
