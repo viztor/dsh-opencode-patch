@@ -6,7 +6,7 @@
  * OpenCode's own Go documentation; `pnpm run limits:shim` reports staleness and
  * `--write` rewrites this file.
  *
- * 27 models.
+ * 28 models.
  */
 
 import type { ModelAllowance } from "./go-limits.ts";
@@ -81,6 +81,11 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     go: 15,
     goPlus: 60,
     name: "Kimi K3",
+  },
+  "kimi-k3.1-pro": {
+    go: 15,
+    goPlus: 60,
+    name: "Kimi K3.1 Pro",
   },
   "longcat-2.0": {
     go: 60,
