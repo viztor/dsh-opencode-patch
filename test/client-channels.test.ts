@@ -15,8 +15,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { opencodeDatabaseFile, opencodeRoots } from "../src/opencode-paths.ts";
-import { readOpencodeCredentials } from "../src/opencode-store.ts";
+import {
+  opencodeDatabaseFile,
+  opencodeRoots,
+  readOpencodeCredentials,
+} from "./support/src.ts";
 
 describe("OpenCode Client Channels & Database File Resolution", () => {
   it.each([

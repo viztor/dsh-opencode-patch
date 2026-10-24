@@ -22,7 +22,6 @@ import {
   vi,
 } from "vitest";
 
-import { clearCapturedApiKeys } from "../src/key-capture.ts";
 import type {
   CatalogListingPayload,
   GatewayErrorPayload,
@@ -32,6 +31,7 @@ import {
   MOCK_SESSION,
   ZEN_KEY,
 } from "./mock/testing-kit.ts";
+import { clearCapturedApiKeys } from "./support/src.ts";
 
 let runner: GatewayTestRunner;
 

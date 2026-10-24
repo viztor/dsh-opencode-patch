@@ -8,10 +8,10 @@ import {
   OPENCODE_ZEN_CATALOG,
   PROTOCOL_FOR_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
-  UNSERVED_SDKS,
   SELF_MOUNTED_ROUTES,
-} from "../src/index.ts";
-import { UNSERVED_PLANE_SDKS } from "../src/responses-routes.ts";
+  UNSERVED_PLANE_SDKS,
+  UNSERVED_SDKS,
+} from "./support/src.ts";
 
 /**
  * The protocols this plugin mounts must be ones the harness's own pi-ai layer

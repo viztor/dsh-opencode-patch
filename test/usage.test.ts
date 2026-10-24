@@ -10,22 +10,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   GoUsageService,
+  KEY_SOURCE_POLICIES,
   clearCapturedApiKeys,
   clearSessionUsageStore,
   discoverGoConfig,
   extractApiKeyFromHeaders,
   getCapturedApiKey,
   isPlaceholderApiKey,
-  KEY_SOURCE_POLICIES,
   parseGoUsage,
   parseUsageQuery,
   recordCapturedApiKey,
   recordTurnUsage,
   resolveGoApiKey,
-  resolveRoutedKey,
   resolveZenCreditInfo,
   tierForRequest,
-} from "../src/index.ts";
+} from "./support/src.ts";
 import { createMockContext } from "./test-helpers.ts";
 
 afterEach(() => {
@@ -622,29 +621,6 @@ describe("OpenCode Go Usage", () => {
           await resolveGoApiKey(withoutDeclarations, undefined, policy)
         ).toBe("sk-captured-key");
       }
-    });
-
-    it("resolveRoutedKey honours the same order", async () => {
-      process.env.OPENCODE_GO_API_KEY = "sk-env-key";
-      captureGoKey();
-      const automatic = await resolveRoutedKey(
-        withoutDeclarations,
-        "opencode-go",
-        "auto"
-      );
-      expect(automatic.key).toBe("sk-captured-key");
-      const requested = await resolveRoutedKey(
-        withoutDeclarations,
-        "opencode-go",
-        "request"
-      );
-      const declared = await resolveRoutedKey(
-        withoutDeclarations,
-        "opencode-go",
-        "configured"
-      );
-      expect(requested.key).toBe("sk-captured-key");
-      expect(declared.key).toBe("sk-env-key");
     });
   });
 });

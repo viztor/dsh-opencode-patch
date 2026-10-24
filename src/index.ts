@@ -1,215 +1,25 @@
 /**
  * `dsh-opencode-patch` — host plugin entry (public barrel).
  *
- * This module is intentionally thin: it re-exports identity, the `apply()`
- * lifecycle, and the public surface of every module. Each concern lives in
- * the module that owns it:
+ * This is the package's contract with the host and nothing more: `apply`,
+ * `Config`, `inject` and `name` — the four names a cordis host reads off a
+ * plugin — and the config types a user of `Config` needs to name. Every other
+ * module is internal; `test/public-api.test.ts` pins this list, so widening it
+ * is a reviewed change rather than a side effect.
  *
- * | module             | concern                                          |
- * | ------------------ | ------------------------------------------------ |
- * | `identity.ts`      | component/package name constants + `inject`      |
- * | `lifecycle.ts`     | `apply()` and its per-side-effect installers     |
- * | `guards.ts`        | structural `unknown` predicates                  |
- * | `config-values.ts` | host/client-shared config coercion readers       |
- * | `config.ts`        | defaults, types, resolver, settings schema       |
- * | `session.ts`       | deterministic `ses_…` session identity           |
- * | `turn-store.ts`    | ALS turn state carried across a streamed turn    |
- * | `tool-fallback.ts` | free-tier `/responses` read+bash schema fallback |
- * | `fetch-patch.ts`   | gateway request recognition + header fixes       |
- * | `stream-hook.ts`   | `llm/stream` turn capture                        |
- * | `cordis-context.ts`| structural view of the Cordis host context       |
- * | `go-discovery.ts`  | Go credential/gateway discovery + resolution     |
- * | `usage.ts`         | Go quota service + typert remote registration    |
- * | `usage-contract.ts`| remote shapes, validation, typert descriptor     |
- * | `session-cost.ts`  | per-turn token/dollar accounting                 |
- * | `catalog-data.ts`  | the static Go/Zen model catalog (pure data)      |
- * | `models-catalog.ts`| catalog parsing, SWR refresh, `/models` enrich   |
- * | `models-discovery.ts` | provider-aware model-discovery decoration     |
- * | `debug.ts`         | JSONL stream-debug append log                    |
+ * Tests reach the internals through `test/support/src.ts`, which re-exports
+ * each name from the module that defines it, never through this file.
  *
  * @module dsh-opencode-patch
  */
 
-// ── identity & lifecycle ────────────────────────────────────────────────────
-export {
-  inject,
-  LEGACY_NAME,
-  LEGACY_PKG,
-  name,
-  OPENCODE_CLI_VERSION,
-  OPENCODE_PATCH_USER_AGENT,
-  OPENCODE_USER_AGENT,
-} from "./identity.ts";
+export { inject, name } from "./identity.ts";
 export { apply } from "./lifecycle.ts";
-
-// ── configuration ───────────────────────────────────────────────────────────
 export {
-  CONFIG_DEFAULTS,
   Config,
-  DEFAULT_ENDPOINT_FAMILY,
-  DEFAULT_FREE_MODEL_MARKER,
-  DEFAULT_GATEWAY_URLS,
-  DEFAULT_INJECT_PROJECT,
-  DEFAULT_KEY_SOURCE,
-  DEFAULT_ORIGIN_CLIENT,
-  DEFAULT_PROVIDERS,
-  DEFAULT_SESSION_ID_ENV,
-  DEFAULT_USAGE_BASE_URL,
-  DEFAULT_USAGE_KEY_ENV,
-  ENDPOINT_FAMILIES,
-  KEY_SOURCE_POLICIES,
-  resolveConfig,
-  type EndpointFamily,
-  type KeySourcePolicy,
   type ModelOverrideConfig,
+  type ModelRouteConfig,
   type PluginConfig,
   type ResolvedPluginConfig,
 } from "./config.ts";
-export {
-  ALL_MODELS_MARKER,
-  readBoolean,
-  readString,
-  readStringList,
-  unwrapNode,
-} from "./config-values.ts";
-
-// ── session identity & turn state ───────────────────────────────────────────
-export {
-  fallbackSessionId,
-  isOpenCodeMessageId,
-  isOpenCodeSessionId,
-  headerValueFor,
-  newOpenCodeMessageId,
-  openCodeSessionIdFor,
-  OPENCODE_UA,
-  pinnedSessionId,
-  sessionIdForRequest,
-  PARENT_SESSION_ALT_HEADER,
-  PARENT_SESSION_HEADER,
-  SESSION_AFFINITY_HEADER,
-  SESSION_HEADER,
-} from "./session.ts";
-export { type ActiveTurnState, withStore } from "./turn-store.ts";
-
-// ── request patching ────────────────────────────────────────────────────────
-export {
-  DUMMY_BASH_TOOL,
-  DUMMY_READ_TOOL,
-  isCoreToolModel,
-  maybeInjectCoreTools,
-  RESPONSES_PATH,
-} from "./tool-fallback.ts";
-export {
-  hasSessionHeader,
-  isOpenCodeRequest,
-  patchFetch,
-} from "./fetch-patch.ts";
-export { type CordisContext } from "./cordis-context.ts";
-
-// ── Go discovery & quota ────────────────────────────────────────────────────
-export {
-  clearCapturedApiKeys,
-  extractApiKeyFromHeaders,
-  getCapturedApiKey,
-  isPlaceholderApiKey,
-  recordCapturedApiKey,
-  tierForRequest,
-} from "./key-capture.ts";
-export {
-  discoverGoConfig,
-  effectiveGoKeyRef,
-  resolveGoApiKey,
-  resolveGoBaseURL,
-  resolveOpencodeStoreKey,
-  resolveRoutedKey,
-  resolveZenCreditInfo,
-  toGoBaseURL,
-  type RoutedKeyDetails,
-} from "./go-discovery.ts";
-export { GoUsageService } from "./usage.ts";
-export {
-  parseGoUsage,
-  parseUsageQuery,
-  type GoUsage,
-  type UsageQuery,
-  type UsageWindow,
-} from "./usage-contract.ts";
-export {
-  calculateTurnCost,
-  clearSessionUsageStore,
-  describeModel,
-  formatModelRate,
-  formatUsd,
-  getSessionUsage,
-  recordTurnUsage,
-  type ModelCostRate,
-  type SessionUsageSnapshot,
-} from "./session-cost.ts";
-
-// ── model catalog & discovery ───────────────────────────────────────────────
-export {
-  CATALOG_REVALIDATION_TTL_MS,
-  DSH_SUPPORTED_MODALITIES,
-  MODELS_DEV_TIMEOUT_MS,
-  MODELS_DEV_URL,
-  MODELS_OPENCODE_URL,
-  OPENCODE_GO_CATALOG,
-  OPENCODE_ZEN_CATALOG,
-  enrichModelsResponse,
-  catalogPlaneForRoute,
-  findModelSpec,
-  findModelSpecOn,
-  getLiveCatalog,
-  getLiveGoCatalog,
-  getLiveZenCatalog,
-  isDeprecatedModelOn,
-  isGoModelsListingUrl,
-  isModelsListingUrl,
-  parseModelsDevCatalog,
-  refreshCatalog,
-  sanitizeModalities,
-  type CatalogModelSpec,
-  type CatalogProvider,
-  type ParsedCatalogs,
-} from "./models-catalog.ts";
-export {
-  decorateModelDiscovery,
-  decorateModelInfo,
-  decoratePlaneAdapters,
-  hideResponsesRoute,
-  isRouteRegistered,
-  mergeDiscoveredModels,
-  resolveDiscoveryProvider,
-  resolveEffectiveContextWindow,
-  type DiscoveryCandidate,
-} from "./models-discovery.ts";
-export {
-  ANTHROPIC_ROUTE,
-  ANTHROPIC_SDK,
-  GOOGLE_INTERNAL_ROUTE,
-  GOOGLE_SDK,
-  MISTRAL_SDK,
-  SELF_MOUNTED_ROUTES,
-  INTERNAL_ROUTES,
-  PLANES,
-  PROTOCOL_FOR_SDK,
-  RESPONSES_ROUTE,
-  RESPONSES_SDK,
-  GO_RESPONSES_ROUTE,
-  GO_ANTHROPIC_ROUTE,
-  ROUTE_FOR_PLANE_PROTOCOL,
-  ROUTE_FOR_PROTOCOL,
-  UNSERVED_SDKS,
-  internalRouteFor,
-  isInternalRoute,
-  isServableSdk,
-} from "./responses-routes.ts";
-export {
-  inheritedCredentialRef,
-  loadPiAi,
-  modelsForSdk,
-  narrowToDeclared,
-  undescribedDeclaredModels,
-  unroutedDeclaredModels,
-  registerResponsesProvider,
-} from "./responses-provider.ts";
+export { type EndpointFamily, type KeySourcePolicy } from "./config-values.ts";

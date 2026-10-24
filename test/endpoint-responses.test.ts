@@ -29,7 +29,6 @@ import {
   vi,
 } from "vitest";
 
-import { clearCapturedApiKeys } from "../src/key-capture.ts";
 import type { V2ResponsesUnaryPayload } from "./mock/protocols/index.ts";
 import {
   GatewayTestRunner,
@@ -37,6 +36,7 @@ import {
   MOCK_TEXT,
   ZEN_KEY,
 } from "./mock/testing-kit.ts";
+import { clearCapturedApiKeys } from "./support/src.ts";
 
 let runner: GatewayTestRunner;
 

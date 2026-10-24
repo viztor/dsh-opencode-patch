@@ -18,6 +18,8 @@ import { join, posix } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { blankCommentLines } from "./support/strip-comments.ts";
+
 const SRC_DIR = join(import.meta.dirname, "..", "src");
 const UTILS_DIR = join(SRC_DIR, "utils");
 
@@ -46,12 +48,14 @@ const filesUnder = (dir: string): string[] => {
 /** Every utility, at any depth under `src/utils/`. */
 const utilityFiles = (): string[] => filesUnder(UTILS_DIR);
 
-/** The source with `//` and block comments removed, keeping line structure. */
+/**
+ * The source with its comments blanked, keeping line structure: comment lines
+ * through {@link blankCommentLines}, which only ever errs loudly, then a
+ * trailing `// …` after code. The trailing strip needs a space before the
+ * `//`, so a `"https://…"` string is not cut short.
+ */
 const stripComments = (source: string): string =>
-  source
-    .replaceAll(/\/\*[\s\S]*?\*\//gu, "")
-    .replaceAll(/^\s*\/\/.*$/gmu, "")
-    .replaceAll(/\/\/.*$/gmu, "");
+  blankCommentLines(source).replaceAll(/(?<=\s)\/\/.*$/gmu, "");
 
 /**
  * Runtime imports of one file. A type-only import is erased by the compiler,
@@ -272,6 +276,20 @@ describe("architecture · utils/ holds only pure functions", () => {
     expect(utilityFiles().length).toBeGreaterThan(0);
   });
 
+  it("strips comments without cutting code short, keeping the line count", () => {
+    // Stripping only ever removes text and every gate asserts an empty list,
+    // so over-stripping can never fail a gate; these answers pin the rule.
+    expect(stripComments('const u = "https://x"; process.env.A')).toContain(
+      "process.env.A"
+    );
+    expect(stripComments("f(); // process.env")).not.toMatch(/process\.env/u);
+    expect(
+      stripComments("/**\n * process.env\n */\nconst a = 1;").split("\n")
+    ).toEqual(["", "", "", "const a = 1;"]);
+    expect(stripComments("/* a */ fetch(x)")).toContain("fetch(");
+    expect(stripComments("f(/* process.env */ 1)")).toContain("process.env");
+  });
+
   it("imports nothing host-only, and nothing outside utils/", () => {
     const violations: string[] = [];
     for (const file of utilityFiles()) {
@@ -354,12 +372,7 @@ describe("architecture · utils/ holds only pure functions", () => {
     for (const file of utilityFiles()) {
       // Block comments are blanked rather than removed, so a line number in a
       // violation is the line in the file.
-      const source = stripComments(
-        readFileSync(join(UTILS_DIR, file), "utf8").replaceAll(
-          /\/\*[\s\S]*?\*\//gu,
-          (comment) => comment.replaceAll(/[^\n]/gu, "")
-        )
-      );
+      const source = stripComments(readFileSync(join(UTILS_DIR, file), "utf8"));
       for (const [index, line] of source.split("\n").entries()) {
         const match = AMBIENT_EFFECT.exec(line);
         if (match !== null) {
@@ -560,10 +573,10 @@ describe("architecture · tests reach src through one door", () => {
   });
 
   it("test/support/src.ts re-exports each name from the module that declares it", () => {
-    // Re-exporting through `src/index.ts` would tie every test to the barrel
-    // P2 shrinks, which is the coupling this file exists to remove; and a name
-    // taken from a module that only passes it on breaks when P10a moves the
-    // module that really defines it.
+    // Re-exporting through `src/index.ts` would tie every test to the barrel,
+    // which carries only the host's contract, and that coupling is what this
+    // file exists to remove; and a name taken from a module that only passes
+    // it on breaks when P10a moves the module that really defines it.
     const source = readFileSync(SUPPORT, "utf8");
     expect(source).not.toMatch(/src\/index\.ts/u);
     const blocks = reExportBlocks(source);
@@ -584,5 +597,162 @@ describe("architecture · tests reach src through one door", () => {
         .map((name) => `${name} is not declared in src/${target}`);
     });
     expect(notDeclared).toEqual([]);
+  });
+});
+
+describe("architecture · every test reaches src through one door", () => {
+  const TEST_DIR = import.meta.dirname;
+
+  /**
+   * A static `import`/`export … from "(../)+src/…"`, multi-line blocks
+   * included, and a side-effect `import "(../)+src/…";`. A
+   * `vi.mock("../src/x.ts")` target and its `importOriginal<typeof import(…)>`
+   * type are not statements of this shape: module identity is their subject,
+   * so they keep their paths.
+   */
+  const STATIC_SRC_IMPORT =
+    /^(?:(?:import|export)\b[^;]*?\bfrom\s+|import\s+)"(?:\.\.\/)+src\/[^"]+"/gmu;
+
+  /**
+   * A dynamic `import("(../)+src/…")` that is not a `typeof import(…)` type.
+   * It is allowed only as a fresh re-import, so only in a file that calls
+   * `vi.resetModules(`; anywhere else it is the door bypassed at runtime.
+   */
+  const DYNAMIC_SRC_IMPORT =
+    /(?<!typeof\s)\bimport\(\s*"(?:\.\.\/)+src\/[^"]+"\s*\)/gu;
+
+  /**
+   * Whether vitest would run `source` under jsdom. vitest's docblock reader
+   * (`detectCodeBlock`) matches the whole file, comments or not, and takes
+   * the environment the FIRST pragma names; so does this. A file whose first
+   * pragma names another environment runs there, whatever its prose says
+   * later. Written as a pattern rather than the literal pragma, because the
+   * literal anywhere in THIS file would move the gate itself into jsdom.
+   */
+  const isClientTest = (source: string): boolean =>
+    /@(?:vitest|jest)-environment\s+([\w-]+)\b/u.exec(source)?.[1] === "jsdom";
+
+  /**
+   * Files whose subject is the `src` layout or the barrel, the door itself,
+   * and the setup file that imports `src` directly — a setup file that loaded
+   * the door would pull the host graph into every jsdom test. Every other
+   * `support/` file is walked like a test.
+   */
+  const exempt = (file: string): boolean =>
+    file === "support/src.ts" ||
+    file === "support/reset-process-state.ts" ||
+    file === "architecture.test.ts" ||
+    file === "public-api.test.ts";
+
+  /** A value import of the door: a client test must not load the host graph. */
+  const DOOR_VALUE_IMPORT =
+    /^import\s+(?!type\b)[^;]*?\bfrom\s+"(?:\.\.\/)*(?:\.\/)?support\/src\.ts"/gmu;
+
+  /**
+   * Comments blanked out with their line breaks kept, so `file:line` is true.
+   * Line by line, so a `/*` inside a string cannot open a fake block that
+   * hides the code after it (see `support/strip-comments.ts`).
+   */
+  const blankComments = blankCommentLines;
+
+  /** The test tree the gate walks: every `.ts`/`.tsx` not exempt by name. */
+  const walked = (): string[] => filesUnder(TEST_DIR).filter((f) => !exempt(f));
+
+  it("knows a static import from a mock target or a fresh re-import", () => {
+    const matches = (line: string): boolean =>
+      new RegExp(STATIC_SRC_IMPORT.source, "mu").test(line);
+    expect(matches('import { a } from "../src/a.ts";')).toBe(true);
+    expect(matches('import type { A } from "../../src/a.ts";')).toBe(true);
+    expect(matches('import {\n  a,\n  b,\n} from "../src/a.ts";')).toBe(true);
+    expect(
+      matches('vi.mock("../src/a.ts", async (importOriginal) => ({}));')
+    ).toBe(false);
+    expect(matches('importOriginal<typeof import("../src/a.ts")>()')).toBe(
+      false
+    );
+    expect(matches('const m = await import("../src/a.ts");')).toBe(false);
+    // A side-effect import loads the module just the same.
+    expect(matches('import "../src/a.ts";')).toBe(true);
+    const dynamic = (text: string): boolean =>
+      new RegExp(DYNAMIC_SRC_IMPORT.source, "u").test(text);
+    expect(dynamic('const m = await import("../src/a.ts");')).toBe(true);
+    expect(dynamic('importOriginal<typeof import("../src/a.ts")>()')).toBe(
+      false
+    );
+    // The pragma as vitest reads it, built so this file stays a node test.
+    const pragma = ["@vitest", "environment jsdom"].join("-");
+    expect(isClientTest(`// ${pragma}\n`)).toBe(true);
+    expect(isClientTest(`/** ${pragma} */\n`)).toBe(true);
+    expect(isClientTest("// a node test\n")).toBe(false);
+    expect(isClientTest(readFileSync(import.meta.filename, "utf8"))).toBe(
+      false
+    );
+    // The first pragma decides, as in vitest, and its name is read whole.
+    const nodePragma = ["@vitest", "environment node"].join("-");
+    expect(
+      isClientTest(`// ${nodePragma}\n// unlike the ${pragma} tests\n`)
+    ).toBe(false);
+    expect(
+      isClientTest(`// ${pragma}\n// unlike the ${nodePragma} tests\n`)
+    ).toBe(true);
+    expect(isClientTest(`// ${pragma}-global\n`)).toBe(false);
+    // A `/*` inside a string opens no comment: the import after it is seen.
+    const tricky = 'x("a/*b");\nimport "../src/x.ts";\n// c */\n';
+    expect(
+      new RegExp(STATIC_SRC_IMPORT.source, "mu").test(blankComments(tricky))
+    ).toBe(true);
+    const trickyDynamic =
+      'x("a/*b");\nconst m = await import("../src/x.ts");\n// c */\n';
+    expect(
+      new RegExp(DYNAMIC_SRC_IMPORT.source, "u").test(
+        blankComments(trickyDynamic)
+      )
+    ).toBe(true);
+    const door = (text: string): boolean =>
+      new RegExp(DOOR_VALUE_IMPORT.source, "mu").test(text);
+    expect(door('import { a } from "./support/src.ts";')).toBe(true);
+    expect(door('import { a } from "../support/src.ts";')).toBe(true);
+    expect(door('import type { A } from "./support/src.ts";')).toBe(false);
+    // The walk is real: it reaches the suites, the mocks and the e2e tree,
+    // and leaves the door itself out.
+    const files = walked();
+    expect(files).toContain("catalog.test.ts");
+    expect(files).toContain("mock/helpers.ts");
+    expect(files).toContain("e2e/protocol-routing.e2e.ts");
+    expect(files).not.toContain("support/src.ts");
+    expect(files).toContain("support/catalog-fixture.ts");
+  });
+
+  it("no static src import outside the exemptions", () => {
+    // A test that names a `src` path breaks on every module move; the door,
+    // test/support/src.ts, is the one file that knows where names live.
+    const offenders = walked().flatMap((file) => {
+      const raw = readFileSync(join(TEST_DIR, file), "utf8");
+      const source = blankComments(raw);
+      const at = (match: RegExpExecArray, why: string): string => {
+        const end = (match.index ?? 0) + match[0].length;
+        const line = source.slice(0, end).split("\n").length;
+        return `${file}:${String(line)} ${why}`;
+      };
+      if (isClientTest(raw)) {
+        // A client test may name its own `src` module; what it must not do
+        // is load the door, which reaches the whole host graph.
+        return [...source.matchAll(DOOR_VALUE_IMPORT)].map((match) =>
+          at(match, "jsdom test loads the door")
+        );
+      }
+      const dynamic = source.includes("vi.resetModules(")
+        ? []
+        : [...source.matchAll(DYNAMIC_SRC_IMPORT)].map((match) =>
+            at(match, "dynamic src import without vi.resetModules()")
+          );
+      return [
+        ...[...source.matchAll(STATIC_SRC_IMPORT)].map((match) =>
+          at(match, "static src import")
+        ),
+        ...dynamic,
+      ];
+    });
+    expect(offenders).toEqual([]);
   });
 });

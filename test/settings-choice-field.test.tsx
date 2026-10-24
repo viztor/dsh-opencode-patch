@@ -10,10 +10,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type ChoiceFieldProps,
-  SettingsChoiceField,
-} from "../src/settings-choice-field.tsx";
+import { type ChoiceFieldProps, SettingsChoiceField } from "./support/src.ts";
 import { findAll, firstOf } from "./test-helpers.ts";
 
 const OPTIONS = [

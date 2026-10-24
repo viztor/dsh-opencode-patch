@@ -47,8 +47,6 @@
 #   maxContextWindow: number    optional ceiling clamping model context windows (e.g. 131072).
 #   modelOverrides: object      per-model overrides for contextWindow, maxTokens and metadata (default {}).
 #   modelRoutes: object         per-model wire routing: { <id>: { api, baseURL } } (default {}).
-#   internalRoutes: boolean     mount the internal per-protocol routes; off for a deployment that
-#                               declares its own providers for the other protocols (default true).
 #   debug: true|false           log every streamed call that receives the header.
 #   debugFile: path             optional append target for stream debug JSONL; written only while debug is on.
 - insert:

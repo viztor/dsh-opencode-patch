@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseModelsDevCatalog } from "../src/models-catalog.ts";
+import { parseModelsDevCatalog } from "./support/src.ts";
 
 describe("the family map", () => {
   it("reads the same whatever order the vendor lists its models in", () => {

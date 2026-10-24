@@ -29,33 +29,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  DEFAULT_USAGE_BASE_URL,
-  DEFAULT_USAGE_KEY_ENV,
-  KEY_SOURCE_POLICIES,
-} from "../src/config.ts";
-import {
-  declaredProviderModels,
-  discoverGoConfig,
-  effectiveGoKeyRef,
-  resolveGoApiKey,
-  resolveGoBaseURL,
-  resolveGoKeyForRef,
-  resolveRoutedKey,
-  resolveZenCreditInfo,
-  toGoBaseURL,
-  type DiscoveredGoConfig,
-} from "../src/go-discovery.ts";
-import {
-  clearCapturedApiKeys,
-  getCapturedApiKey,
-  isPlaceholderApiKey,
-  recordCapturedApiKey,
-} from "../src/key-capture.ts";
-import {
   createOpencodeStore,
   type FixtureCredential,
   type FixtureStore,
 } from "./support/opencode-store-fixture.ts";
+import {
+  DEFAULT_USAGE_BASE_URL,
+  DEFAULT_USAGE_KEY_ENV,
+  type DiscoveredGoConfig,
+  KEY_SOURCE_POLICIES,
+  clearCapturedApiKeys,
+  declaredProviderModels,
+  discoverGoConfig,
+  effectiveGoKeyRef,
+  getCapturedApiKey,
+  isPlaceholderApiKey,
+  recordCapturedApiKey,
+  resolveGoApiKey,
+  resolveGoBaseURL,
+  resolveGoKeyForRef,
+  resolveOpencodeStoreKey,
+  resolveZenCreditInfo,
+  toGoBaseURL,
+} from "./support/src.ts";
 import { createMockContext } from "./test-helpers.ts";
 
 /** The Zen plane, which discovery rewrites onto the Go plane. */
@@ -935,125 +931,6 @@ describe("resolveZenCreditInfo", () => {
   });
 });
 
-describe("resolveRoutedKey", () => {
-  it("calls the Go route Go whatever the resolved key looks like", async () => {
-    // The routed provider is authoritative for the tier: a key that is a
-    // shared or vendored token still authenticates the Go plane when the route
-    // in use *is* the Go route.
-    process.env.OPENCODE_GO_API_KEY = "vendor-token-1234";
-    const routed = await resolveRoutedKey(composition(), "opencode-go");
-    expect(routed.key).toBe("vendor-token-1234");
-    expect(routed.tier).toBe("go");
-    expect(routed.provider).toBe("opencode-go");
-  });
-
-  it("does not classify a renamed route by the key's prefix", async () => {
-    // The route decides, and a renamed route names no plane. The prefix used to
-    // decide instead, and it is not OpenCode's: `oc_sk_` is issued for Go keys
-    // too, and `sk-` is every OpenAI key.
-    for (const key of ["sk-rotated-key", "oc_sk_zen-key", "opaque-token"]) {
-      clearCapturedApiKeys();
-      recordCapturedApiKey(key, "my-relay", "https://relay.test/v1");
-      const routed = await resolveRoutedKey(composition(), "my-relay");
-      expect(routed.key).toBe(key);
-      expect(routed.tier).toBe("unknown");
-    }
-  });
-
-  it("accepts a Zen key for a route that legitimately owns one", async () => {
-    // Unlike `resolveGoApiKey`, this lookup never rejects a Zen key: here the
-    // Zen tier is the target rather than a mistake.
-    process.env.OPENCODE_API_KEY = "oc_sk_zen-only";
-    const routed = await resolveRoutedKey(composition(), "opencode");
-    expect(routed.key).toBe("oc_sk_zen-only");
-    expect(routed.tier).toBe("zen");
-    expect(
-      await resolveGoKeyForRef(composition(), "OPENCODE_API_KEY")
-    ).toBeUndefined();
-  });
-
-  it("reports the tier of the route it was asked about", async () => {
-    // A non-Go route is not tier-filtered, so a key captured elsewhere can
-    // answer for it; the tier reported is still the route's, never a guess
-    // from the key's shape.
-    recordCapturedApiKey("sk-go-key-value", "opencode-go", GO_REQUEST);
-    const routed = await resolveRoutedKey(composition(), "opencode");
-    expect(routed.key).toBe("sk-go-key-value");
-    expect(routed.tier).toBe("zen");
-  });
-
-  it("uses the route's own declared reference, defaulting each plane differently", async () => {
-    // The default reference differs by plane on purpose: a Go route must never
-    // silently fall back to the Zen reference.
-    const goProbe = withCredentials({});
-    await resolveRoutedKey(goProbe.context, "opencode-go");
-    expect(goProbe.asked).toEqual([DEFAULT_USAGE_KEY_ENV]);
-
-    const zenProbe = withCredentials({});
-    await resolveRoutedKey(zenProbe.context, "opencode");
-    expect(zenProbe.asked).toEqual(["OPENCODE_API_KEY"]);
-
-    const declaredProbe = withCredentials({}, [
-      registryEntry("opencode-go", { apiKeyEnv: "DSH_TEST_GO_KEY" }),
-    ]);
-    await resolveRoutedKey(declaredProbe.context, "opencode-go", "configured");
-    expect(declaredProbe.asked).toEqual(["DSH_TEST_GO_KEY"]);
-  });
-
-  it("reports a ten-character prefix, and none below it", async () => {
-    // The prefix identifies the account without disclosing it. The floor is the
-    // SAME ten characters as the slice: it used to be 8, so an 8- or 9-character
-    // key was reported WHOLE — a "prefix" that leaked the entire secret,
-    // precisely the length it was meant to withhold.
-    recordCapturedApiKey("sk-abcdefghijkl", "opencode-go", GO_REQUEST);
-    const long = await resolveRoutedKey(composition(), "opencode-go");
-    expect(long.keyPrefix).toBe("sk-abcdefg");
-    clearCapturedApiKeys();
-    recordCapturedApiKey("sk-1234567890", "opencode-go", GO_REQUEST);
-    const atFloor = await resolveRoutedKey(composition(), "opencode-go");
-    expect(atFloor.key).toBe("sk-1234567890");
-    // Exactly ten characters, so the ninth and tenth digits stay hidden.
-    expect(atFloor.keyPrefix).toBe("sk-1234567");
-    clearCapturedApiKeys();
-    recordCapturedApiKey("sk-12345", "opencode-go", GO_REQUEST);
-    const belowFloor = await resolveRoutedKey(composition(), "opencode-go");
-    // The key is still returned — only the derived prefix is withheld.
-    expect(belowFloor.key).toBe("sk-12345");
-    expect(belowFloor.keyPrefix).toBeUndefined();
-  });
-
-  it("carries both optional fields even when nothing resolved", async () => {
-    // Consumers destructure `key`/`keyPrefix`, so the fields must be present
-    // rather than absent — an absent field is a different shape to narrow.
-    const routed = await resolveRoutedKey(composition(), "opencode-go");
-    expect(routed.key).toBeUndefined();
-    expect(routed.keyPrefix).toBeUndefined();
-    expect(Object.hasOwn(routed, "key")).toBe(true);
-    expect(Object.hasOwn(routed, "keyPrefix")).toBe(true);
-  });
-
-  it("applies the row's keySource policy exactly as the meter does", async () => {
-    // Both consumers share `KEY_SOURCE_ORDER`, so a policy that changed the
-    // meter's credential would change what every routed request is signed
-    // with; the two must not be able to drift.
-    const context = composition([
-      registryEntry("opencode-go", { apiKey: "sk-literal" }),
-    ]);
-    process.env.OPENCODE_GO_API_KEY = "sk-env";
-    recordCapturedApiKey("sk-captured", "opencode-go", GO_REQUEST);
-    const automatic = await resolveRoutedKey(context, "opencode-go", "auto");
-    const requested = await resolveRoutedKey(context, "opencode-go", "request");
-    const declared = await resolveRoutedKey(
-      context,
-      "opencode-go",
-      "configured"
-    );
-    expect(automatic.key).toBe("sk-literal");
-    expect(requested.key).toBe("sk-captured");
-    expect(declared.key).toBe("sk-literal");
-  });
-});
-
 describe("gaps characterised while pinning the policy", () => {
   it("never lets a placeholder become the credential the meter sends", async () => {
     // This repo's README tells users to write exactly `authorization: Bearer
@@ -1090,8 +967,6 @@ describe("gaps characterised while pinning the policy", () => {
     expect(await resolveGoApiKey(context, "opencode-go", "request")).toBe(
       "sk-real-captured"
     );
-    const routed = await resolveRoutedKey(context, "opencode-go", "request");
-    expect(routed.key).toBe("sk-real-captured");
   });
 
   it("treats the gateway's keyless sentinel as not a credential", async () => {
@@ -1349,16 +1224,10 @@ describe("go-discovery: the installation's own store, and where it sits", () => 
     await expect(
       resolveGoApiKey(composition(), undefined, "auto", true)
     ).resolves.toBeUndefined();
-    // ...while the Zen route resolves that same row. The plane is what the
-    // store is keyed by, and a reader that took the first row would hand the Go
-    // endpoint a Zen credential.
-    const routed = await resolveRoutedKey(
-      composition(),
-      "opencode",
-      "auto",
-      true
-    );
-    expect(routed.key).toBe("oc_sk_fixture_zen");
+    // ...while the Zen integration resolves that same row. The plane is what
+    // the store is keyed by, and a reader that took the first row would hand
+    // the Go endpoint a Zen credential.
+    expect(resolveOpencodeStoreKey("opencode", true)).toBe("oc_sk_fixture_zen");
   });
 
   it("answers undefined for a store that holds nothing", async () => {

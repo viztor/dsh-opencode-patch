@@ -14,8 +14,7 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { Config } from "../src/config.ts";
-import { en, zh } from "../src/settings-copy.ts";
+import { Config, en, zh } from "./support/src.ts";
 
 /** The first line of a file that contains `marker`, or fail loudly. */
 const lineOf = async (file: string, marker: string): Promise<string> => {

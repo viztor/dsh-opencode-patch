@@ -63,7 +63,7 @@ import {
   findModelSpecOn,
   internalRouteFor,
   isServableSdk,
-} from "../../src/index.ts";
+} from "../support/src.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 const ZEN_KEY = process.env.OPENCODE_API_KEY;

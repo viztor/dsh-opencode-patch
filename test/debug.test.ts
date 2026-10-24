@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { recordDebug } from "../src/debug.ts";
+import { recordDebug } from "./support/src.ts";
 
 // The write path catches whatever appendFile throws, and one of its branches
 // only exists for a rejection that is not an Error — which a real filesystem

@@ -26,8 +26,7 @@
 import { Context } from "@deepseek-ai/cordis";
 import { describe, expect, it } from "vitest";
 
-import { apply, inject } from "../src/index.ts";
-import type { CordisContext } from "../src/index.ts";
+import { type CordisContext, apply, inject } from "./support/src.ts";
 
 /** The one service the plugin declares, shaped as the plugin reads it. */
 const llmService = () => ({

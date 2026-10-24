@@ -4,7 +4,7 @@ import {
   googleHistoryFor,
   googleReplayFor,
   googleReplayStream,
-} from "../src/utils/google-replay.ts";
+} from "./support/src.ts";
 
 describe("Google replay route boundary", () => {
   it("leaves error chunks JSON-serializable and does not invent missing replay", async () => {

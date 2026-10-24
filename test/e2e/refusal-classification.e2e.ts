@@ -36,7 +36,7 @@ import {
   type ActiveTurnState,
   patchFetch,
   resolveConfig,
-} from "../../src/index.ts";
+} from "../support/src.ts";
 
 const ENABLED = process.env.OPENCODE_E2E === "1";
 

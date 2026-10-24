@@ -24,19 +24,19 @@ import {
   vi,
 } from "vitest";
 
-import { clearCapturedApiKeys } from "../src/key-capture.ts";
-import {
-  PARENT_SESSION_ALT_HEADER,
-  PARENT_SESSION_HEADER,
-  SESSION_AFFINITY_HEADER,
-  SESSION_HEADER,
-} from "../src/session.ts";
 import {
   ClientSimulator,
   GatewayTestRunner,
   MOCK_SESSION,
   ZEN_KEY,
 } from "./mock/testing-kit.ts";
+import {
+  PARENT_SESSION_ALT_HEADER,
+  PARENT_SESSION_HEADER,
+  SESSION_AFFINITY_HEADER,
+  SESSION_HEADER,
+  clearCapturedApiKeys,
+} from "./support/src.ts";
 
 let runner: GatewayTestRunner;
 

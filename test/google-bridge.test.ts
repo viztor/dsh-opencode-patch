@@ -20,18 +20,19 @@ import {
 } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 
-import { OPENCODE_ZEN_CATALOG } from "../src/catalog-data.ts";
 import {
+  GOOGLE_INTERNAL_ROUTE,
+  GOOGLE_SDK,
+  type GoogleBridgeInputs,
+  OPENCODE_ZEN_CATALOG,
+  type PiRuntime,
   ambientAuthContext,
   emptyCredentialStore,
-  type GoogleBridgeInputs,
-  type PiRuntime,
   googleProviderFor,
   loadHostPi,
   registerGoogleBridge,
   resolveGatewayKey,
-} from "../src/google-bridge.ts";
-import { GOOGLE_INTERNAL_ROUTE, GOOGLE_SDK } from "../src/responses-routes.ts";
+} from "./support/src.ts";
 
 /** The Gemini models of the Zen plane, straight from the generated catalog. */
 const geminiSpecs = OPENCODE_ZEN_CATALOG.filter(

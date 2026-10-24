@@ -212,9 +212,9 @@ export const recordCapturedApiKey = (
   if (key.length === 0 || isPlaceholderApiKey(key)) {
     return;
   }
-  // Deliberately NOT `resolveRoutedKey`'s precedence: a key seen on a live
-  // request is classified by the request that carried it, not by the route the
-  // user named. See `tierForRequest`.
+  // Deliberately NOT the meter's route-first precedence (`resolveGoApiKey`): a
+  // key seen on a live request is classified by the request that carried it,
+  // not by the route the user named. See `tierForRequest`.
   const tier = tierForRequest(url, provider);
 
   if (typeof provider === "string" && provider.length > 0) {

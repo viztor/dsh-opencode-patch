@@ -1,19 +1,27 @@
 /**
  * The single indirection through which tests reach `src`.
  *
- * P2 shrinks the public barrel to `apply`, `Config`, `inject`, `name` and the
- * config types, and P10a moves modules into subject folders. A test that names
- * a `src` path breaks on every such move, so this file is the one place that
- * knows where things live: each name is re-exported from the module that
- * DEFINES it, never through the public barrel, so shrinking the barrel does not
- * touch a test.
+ * The package's public barrel is the host's contract — `apply`, `Config`,
+ * `inject`, `name` and the config types — and nothing else, and P10a
+ * moves modules into subject folders. A test that names a `src` path breaks on
+ * every such move, so this file is the one place that knows where things live:
+ * each name is re-exported from the module that DEFINES it, never through the
+ * public barrel. `test/architecture.test.ts` enforces both halves.
  *
- * Three kinds of import keep their direct paths: a `vi.mock("../src/x.ts")`
- * target (vitest mocks by module id), and the architecture tests, which are
- * about the `src` layout itself — for both, the path is their subject; and the
- * jsdom (client) tests, which import the defining module directly, because this
- * file re-exports the host graph (`node:sqlite`, pi, `lifecycle.ts`) and that
- * must stay out of a client test.
+ * What keeps its direct path, because the path is its subject or the door
+ * would load too much:
+ *
+ * - a `vi.mock("../src/x.ts")` target and its `importOriginal<typeof
+ *   import(…)>` type (vitest mocks by module id);
+ * - a fresh-module re-import after `vi.resetModules()` (`purge-service.test.ts`);
+ * - the architecture and public-API tests, which are about the `src` layout
+ *   and the barrel themselves;
+ * - the jsdom (client) tests, because this file re-exports the host graph
+ *   (`node:sqlite`, pi, `lifecycle.ts`) and that must stay out of a client
+ *   test;
+ * - the setup file `test/support/reset-process-state.ts`, which runs before
+ *   every test, jsdom ones included, for the same reason; the other setup
+ *   file, `offline.ts`, touches no `src` module and is walked like any test.
  *
  * Importing this file loads the whole `src` graph, host and client, so a module
  * that fails to load fails every test that comes through here, not only its own.
@@ -97,7 +105,7 @@ export {
   resolveGoApiKey,
   resolveGoBaseURL,
   resolveGoKeyForRef,
-  resolveRoutedKey,
+  resolveOpencodeStoreKey,
   resolveZenCreditInfo,
   toGoBaseURL,
 } from "../../src/go-discovery.ts";

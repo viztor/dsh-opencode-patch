@@ -14,19 +14,19 @@ import {
   GOOGLE_SDK,
   GO_RESPONSES_ROUTE,
   MISTRAL_SDK,
+  OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
+  RESPONSES_ROUTE,
+  RESPONSES_SDK,
+  ROUTE_FOR_PLANE_PROTOCOL,
   catalogPlaneForRoute,
   findModelSpec,
   findModelSpecOn,
   internalRouteFor,
+  isServableModel,
   isServableSdk,
-  OPENCODE_GO_CATALOG,
-  OPENCODE_ZEN_CATALOG,
   parseModelsDevCatalog,
-  RESPONSES_ROUTE,
-  RESPONSES_SDK,
-  ROUTE_FOR_PLANE_PROTOCOL,
-} from "../src/index.ts";
-import { isServableModel } from "../src/models-discovery.ts";
+} from "./support/src.ts";
 
 const MUSE = "muse-spark-1.2";
 

@@ -18,7 +18,7 @@ import {
   opencodeDatabaseFile,
   opencodeDatabasePath,
   opencodeRoots,
-} from "../src/opencode-paths.ts";
+} from "./support/src.ts";
 
 const HOME = "/home/you"; // the placeholder the hard-rule test prescribes
 const environment = (
