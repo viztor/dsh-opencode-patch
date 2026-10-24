@@ -8,7 +8,7 @@ import { render, waitFor } from "@testing-library/react";
  */
 import type { ReactNode } from "react";
 import React from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { zh } from "../src/settings-copy.ts";
 // @vitest-environment jsdom
@@ -386,5 +386,41 @@ describe("settings-usage: reading until the remote answers", () => {
       await readUntilAnswered(read, 5, noSleep, () => alive)
     ).toBeUndefined();
     expect(calls).toBe(1);
+  });
+
+  it("waits 300 ms on the real timer when no sleep is supplied", async () => {
+    // The production card passes no `sleep`, so this is the clock it runs on.
+    // A timer that never fired would leave the card refreshing for good.
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const read = () => {
+        calls += 1;
+        return Promise.resolve(calls < 2 ? undefined : answered);
+      };
+      const pending = readUntilAnswered(read, 2);
+      await vi.advanceTimersByTimeAsync(299);
+      expect(calls).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toBe(2);
+      expect(await pending).toBe(answered);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports on the console when every attempt fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const read = () => Promise.reject(new Error("repeated outage"));
+      expect(await readUntilAnswered(read, 2, noSleep)).toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "[dsh-opencode-patch] retry: all attempts failed",
+        expect.any(Error)
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

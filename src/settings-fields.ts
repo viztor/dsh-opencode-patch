@@ -57,6 +57,12 @@ export const CONFIG_ONLY_FIELDS: readonly {
     reason: "diagnostic JSONL logging, not a behaviour a user tunes in the UI",
   },
   {
+    field: "debugFile",
+    reason:
+      "the JSONL path the debug switch appends to; written only while debug " +
+      "is on, and a server-side path is a deployment fact rather than a card control",
+  },
+  {
     field: "userAgent",
     reason:
       "literal User-Agent override; the default is the canonical CLI string",

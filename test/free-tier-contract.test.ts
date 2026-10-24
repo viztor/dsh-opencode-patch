@@ -13,9 +13,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { OPENCODE_ZEN_CATALOG } from "../src/catalog-data.ts";
-import { findModelSpec } from "../src/models-catalog.ts";
-import { maybeInjectCoreTools } from "../src/tool-fallback.ts";
+import {
+  findModelSpecOn,
+  maybeInjectCoreTools,
+  OPENCODE_ZEN_CATALOG,
+} from "./support/src.ts";
 
 const ROUTES = [
   "https://opencode.ai/zen/v1/chat/completions",
@@ -29,14 +31,16 @@ const freeModelIds = (): string[] => {
       ids.add(spec.id);
     }
   }
-  // findModelSpec covers ids the live map keys differently (prefixes).
+  // The live map keys some ids differently (prefixes). The lookup reads the
+  // Zen plane, the plane every route below posts to and the one the injector
+  // reads with no route, so the set and the injector agree on what is free.
   for (const id of [
     "mimo-v2.6-flash-free",
     "big-pickle",
     "beam-free",
     "muse-spark-1.2-contributor-free",
   ]) {
-    if (findModelSpec(id)?.is_free === true) {
+    if (findModelSpecOn("zen", id)?.is_free === true) {
       ids.add(id);
     }
   }
@@ -123,6 +127,6 @@ describe("free-tier contract", () => {
     }
   }
   it("big-pickle is free by catalog flag, not by marker", () => {
-    expect(findModelSpec("big-pickle")?.is_free).toBe(true);
+    expect(findModelSpecOn("zen", "big-pickle")?.is_free).toBe(true);
   });
 });

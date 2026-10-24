@@ -428,6 +428,9 @@ export const patchFetch = (
       const newBody = maybeInjectCoreTools(url, bodyToPatch, headers, {
         enabled: config.injectCoreTools,
         modelMarker: config.freeModelMarker,
+        // The plane is the gateway the request goes to, with the turn's route
+        // as the fallback off a gateway URL — the credential rule's order.
+        route: plane.length > 0 ? plane : state?.provider,
       });
       if (newBody !== bodyToPatch) {
         finalBody = newBody;

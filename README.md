@@ -369,7 +369,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 | `userAgent` | empty (= canonical CLI UA) | Literal override; the default is what the gateway expects |
 | `originClient` | `cli` | Literal `x-opencode-client` value |
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | Names an env var only a caller-supplied session id uses |
-| `freeModelMarker` | `free` | Model-id substring; `*` forces the fallback, `''` disables it |
+| `freeModelMarker` | `free` | Model-id substring; `*` forces the fallback; a blank value inherits the default; catalog-free models always qualify |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | Endpoint override; auto-discovered from the composition |
 | `credentialOrg` | — | The org id an account credential belongs to, when the deployment supplies one out of band |
 | `debug` / `debugFile` | `false` / — | Diagnostic JSONL logging, not a behaviour anyone tunes in the UI; the file is written only while `debug` is on |

@@ -13,18 +13,38 @@
  *
  * @module test/architecture.test
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, posix } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const UTILS_DIR = join(import.meta.dirname, "..", "src", "utils");
+const SRC_DIR = join(import.meta.dirname, "..", "src");
+const UTILS_DIR = join(SRC_DIR, "utils");
 
-/** Every `.ts` file directly inside `src/utils/`. */
-const utilityFiles = (): string[] =>
-  readdirSync(UTILS_DIR)
-    .filter((name) => name.endsWith(".ts"))
-    .toSorted();
+/**
+ * Every `.ts`/`.tsx` file under `dir`, at any depth, relative to `dir`.
+ *
+ * Recursive on purpose: a utility in a subfolder is still a utility, and a walk
+ * that read one level would let `utils/nested/` hold anything at all.
+ */
+const filesUnder = (dir: string): string[] => {
+  const files: string[] = [];
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.tsx?$/u.test(entry.name)) {
+        files.push(full.slice(dir.length + 1).replaceAll("\\", "/"));
+      }
+    }
+  };
+  walk(dir);
+  return files.toSorted();
+};
+
+/** Every utility, at any depth under `src/utils/`. */
+const utilityFiles = (): string[] => filesUnder(UTILS_DIR);
 
 /** The source with `//` and block comments removed, keeping line structure. */
 const stripComments = (source: string): string =>
@@ -32,6 +52,44 @@ const stripComments = (source: string): string =>
     .replaceAll(/\/\*[\s\S]*?\*\//gu, "")
     .replaceAll(/^\s*\/\/.*$/gmu, "")
     .replaceAll(/\/\/.*$/gmu, "");
+
+/**
+ * Runtime imports of one file. A type-only import is erased by the compiler,
+ * so it is no edge in the bundle and is skipped; a mixed one is a real edge.
+ */
+const runtimeImportsOf = (source: string): string[] => {
+  const specifiers: string[] = [];
+  for (const match of source.matchAll(
+    /\b(?:import|export)\s+(type\s+)?(?:[^;"']*?\sfrom\s+)?"([^"]+)"/gu
+  )) {
+    if (match[1] === undefined && match[2] !== undefined) {
+      specifiers.push(match[2]);
+    }
+  }
+  return specifiers;
+};
+
+/**
+ * Every `src/` file `entry` reaches at runtime, entry included, mapped to its
+ * source with comments stripped.
+ */
+const runtimeGraph = (entry: string): Map<string, string> => {
+  const seen = new Map<string, string>();
+  const visit = (file: string): void => {
+    if (seen.has(file)) {
+      return;
+    }
+    const source = stripComments(readFileSync(join(SRC_DIR, file), "utf8"));
+    seen.set(file, source);
+    for (const specifier of runtimeImportsOf(source)) {
+      if (specifier.startsWith("./") || specifier.startsWith("../")) {
+        visit(join(file, "..", specifier).replaceAll("\\", "/"));
+      }
+    }
+  };
+  visit(entry);
+  return seen;
+};
 
 /** The module specifiers one file imports. */
 const importsOf = (source: string): string[] => {
@@ -63,12 +121,28 @@ const FORBIDDEN: readonly {
       "a cordis context is the world: a utility takes its inputs as arguments instead",
     matches: (s) => s.startsWith("@deepseek-ai/cordis"),
   },
-  {
-    because:
-      "only guards.ts and other utilities may be imported; anything else is an effect module",
-    matches: (s) => s.startsWith("../") || s.startsWith("./../"),
-  },
 ];
+
+/**
+ * Why a relative import from the utility at `file` (a path relative to
+ * `src/utils/`) leaves the folder, or `undefined` when it stays inside.
+ *
+ * The specifier is resolved against the importing file's own directory, so a
+ * nested utility's `../guards.ts` is a sibling, not an escape. Comparing the raw
+ * specifier would flag every `../` — which, once the walk is recursive, rejects
+ * exactly the nested utilities the recursion admits.
+ */
+const escapesUtils = (file: string, specifier: string): string | undefined => {
+  if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
+    return undefined;
+  }
+  // Resolved under a root named for the folder, so a path that leaves and
+  // re-enters it (`../../utils/guards.ts`) is judged by where it lands.
+  const target = posix.join("/utils", posix.dirname(file), specifier);
+  return target.startsWith("/utils/")
+    ? undefined
+    : "only guards.ts and other utilities may be imported; anything else is an effect module";
+};
 
 describe("architecture · a property read is a declared dependency", () => {
   const SRC = join(import.meta.dirname, "..", "src");
@@ -133,21 +207,7 @@ describe("architecture · a property read is a declared dependency", () => {
     return [...names];
   };
 
-  const sourceFiles = (): string[] => {
-    const files: string[] = [];
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(full);
-        } else if (/\.tsx?$/u.test(entry.name)) {
-          files.push(full.slice(SRC.length + 1));
-        }
-      }
-    };
-    walk(SRC);
-    return files;
-  };
+  const sourceFiles = (): string[] => filesUnder(SRC);
 
   it("reads no host service as a property except the declared `llm`", () => {
     // Cordis THROWS `cannot get property "X" without inject` for an undeclared
@@ -170,7 +230,7 @@ describe("architecture · a property read is a declared dependency", () => {
   });
 
   it("declares `llm`, the one service the plugin cannot work without", async () => {
-    const { inject } = await import("../src/identity.ts");
+    const { inject } = await import("./support/src.ts");
     expect(inject).toContain("llm");
   });
 });
@@ -217,19 +277,36 @@ describe("architecture · utils/ holds only pure functions", () => {
     for (const file of utilityFiles()) {
       const source = readFileSync(join(UTILS_DIR, file), "utf8");
       for (const specifier of importsOf(source)) {
-        // `guards.ts` is dependency-free by construction and is the one
-        // non-utility a utility may share.
-        if (specifier === "./guards.ts") {
-          continue;
-        }
         for (const rule of FORBIDDEN) {
           if (rule.matches(specifier)) {
             violations.push(`${file} imports "${specifier}" — ${rule.because}`);
           }
         }
+        // `guards.ts` lives in utils/ and is dependency-free by construction,
+        // so it resolves inside the folder like any other utility.
+        const escape = escapesUtils(file, specifier);
+        if (escape !== undefined) {
+          violations.push(`${file} imports "${specifier}" — ${escape}`);
+        }
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it("resolves an import from the importing file's folder, at any depth", () => {
+    // Known answers, so the rule is seen to allow and to reject.
+    expect(escapesUtils("retry.ts", "./guards.ts")).toBeUndefined();
+    expect(escapesUtils("nested/a.ts", "../guards.ts")).toBeUndefined();
+    expect(escapesUtils("nested/a.ts", "./b.ts")).toBeUndefined();
+    expect(escapesUtils("nested/a.ts", "../retry.ts")).toBeUndefined();
+    expect(escapesUtils("retry.ts", "../config.ts")).toBeDefined();
+    expect(escapesUtils("retry.ts", "./../config.ts")).toBeDefined();
+    expect(escapesUtils("nested/a.ts", "../../config.ts")).toBeDefined();
+    expect(
+      escapesUtils("nested/a.ts", "../../utils/guards.ts")
+    ).toBeUndefined();
+    expect(escapesUtils("retry.ts", "../utils/guards.ts")).toBeUndefined();
+    expect(escapesUtils("nested/a.ts", "../../utilsx/a.ts")).toBeDefined();
   });
 
   it("never reads process.env, a global the arguments could have carried", () => {
@@ -253,47 +330,88 @@ describe("architecture · utils/ holds only pure functions", () => {
     });
     expect(violations).toEqual([]);
   });
+
+  /**
+   * A reference to the console or to a global timer, outside a comment — not
+   * only a call: `timer = setTimeout` as a default parameter, `backoffOver(setTimeout)`
+   * and `const log = console.warn` reach the global just as surely, and so do
+   * the four spellings of the global object (`globalThis.`, `window.`,
+   * `global.`, `self.`). A member of something else (`options.timer(`,
+   * `x.setTimeout(`) is not the global.
+   *
+   * A tripwire for the honest spelling, not a sandbox: an alias
+   * (`const g = globalThis; g.setTimeout(…)`) or bracket access on the global
+   * object gets past it, and catching those is a type-aware lint's job.
+   */
+  const AMBIENT_EFFECT =
+    /(?<![.\w$])(?:globalThis\.|window\.|global\.|self\.)?(?:console|setTimeout|setInterval|setImmediate|clearTimeout|clearInterval|clearImmediate)\b/u;
+
+  it("never touches console or a global timer, which are effects the caller owns", () => {
+    // A log line is output and a timer is a clock: both are the world, and a
+    // utility that needs one takes it as a parameter, the way `retry.ts` takes
+    // its `sleep` and its `warn` and leaves the timer to the caller.
+    const violations: string[] = [];
+    for (const file of utilityFiles()) {
+      // Block comments are blanked rather than removed, so a line number in a
+      // violation is the line in the file.
+      const source = stripComments(
+        readFileSync(join(UTILS_DIR, file), "utf8").replaceAll(
+          /\/\*[\s\S]*?\*\//gu,
+          (comment) => comment.replaceAll(/[^\n]/gu, "")
+        )
+      );
+      for (const [index, line] of source.split("\n").entries()) {
+        const match = AMBIENT_EFFECT.exec(line);
+        if (match !== null) {
+          violations.push(
+            `${file}:${index + 1} — ${match[0].trim()} is an effect the caller owns`
+          );
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("knows a console call and a timer when it sees one, and walks every level", () => {
+    // Known answers, so an empty violation list means the rule ran.
+    expect(AMBIENT_EFFECT.test('console.warn("x")')).toBe(true);
+    expect(AMBIENT_EFFECT.test("setTimeout(f, 1)")).toBe(true);
+    expect(AMBIENT_EFFECT.test("globalThis.setInterval(f, 1)")).toBe(true);
+    expect(AMBIENT_EFFECT.test("global.setTimeout(f, 1)")).toBe(true);
+    expect(AMBIENT_EFFECT.test("self.console.warn(x)")).toBe(true);
+    expect(AMBIENT_EFFECT.test("setImmediate(f)")).toBe(true);
+    expect(AMBIENT_EFFECT.test("clearTimeout(handle)")).toBe(true);
+    expect(
+      AMBIENT_EFFECT.test("(timer: RetryTimer = setTimeout, baseMs = 300) =>")
+    ).toBe(true);
+    expect(AMBIENT_EFFECT.test("const sleep = backoffOver(setTimeout);")).toBe(
+      true
+    );
+    expect(AMBIENT_EFFECT.test("const log = console.warn;")).toBe(true);
+    expect(AMBIENT_EFFECT.test("const { warn } = console;")).toBe(true);
+    expect(AMBIENT_EFFECT.test('console["warn"](x)')).toBe(true);
+    expect(AMBIENT_EFFECT.test("(options.warn ?? console.warn)(m, e)")).toBe(
+      true
+    );
+    expect(AMBIENT_EFFECT.test("options.timer(resolve, ms)")).toBe(false);
+    expect(AMBIENT_EFFECT.test("x.setTimeout(f, 1)")).toBe(false);
+    expect(AMBIENT_EFFECT.test("const consoleLike = 1;")).toBe(false);
+    expect(
+      AMBIENT_EFFECT.test(
+        "type RetryTimer = (callback: () => void, delayMs: number) => unknown"
+      )
+    ).toBe(false);
+    expect(utilityFiles()).toContain("retry.ts");
+    expect(filesUnder(SRC_DIR)).toContain("utils/retry.ts");
+  });
 });
 
 describe("architecture · the client bundle reaches nothing host-only", () => {
-  const SRC = join(import.meta.dirname, "..", "src");
   /** The client bundle's entry, as `vite.config.ts` names it. */
   const ENTRY = "settings-page.tsx";
 
-  /**
-   * Runtime imports of one file. A type-only import is erased by the compiler,
-   * so it is no edge in the bundle and is skipped; a mixed one is a real edge.
-   */
-  const runtimeImportsOf = (source: string): string[] => {
-    const specifiers: string[] = [];
-    for (const match of source.matchAll(
-      /\b(?:import|export)\s+(type\s+)?(?:[^;"']*?\sfrom\s+)?"([^"]+)"/gu
-    )) {
-      if (match[1] === undefined && match[2] !== undefined) {
-        specifiers.push(match[2]);
-      }
-    }
-    return specifiers;
-  };
-
   /** Every `src/` file the entry reaches at runtime, entry included. */
-  const clientGraph = (): Map<string, string> => {
-    const seen = new Map<string, string>();
-    const visit = (file: string): void => {
-      if (seen.has(file)) {
-        return;
-      }
-      const source = stripComments(readFileSync(join(SRC, file), "utf8"));
-      seen.set(file, source);
-      for (const specifier of runtimeImportsOf(source)) {
-        if (specifier.startsWith("./") || specifier.startsWith("../")) {
-          visit(join(file, "..", specifier).replaceAll("\\", "/"));
-        }
-      }
-    };
-    visit(ENTRY);
-    return seen;
-  };
+  const clientGraph = (): Map<string, string> => runtimeGraph(ENTRY);
 
   /** What a client module may not import, each with the reason it is host-only. */
   const HOST_ONLY: readonly {
@@ -355,5 +473,116 @@ describe("architecture · the client bundle reaches nothing host-only", () => {
       'import { readFileSync } from "node:fs";\nimport type { X } from "node:os";';
     expect(runtimeImportsOf(planted)).toEqual(["node:fs"]);
     expect(HOST_ONLY.some((rule) => rule.matches("node:fs"))).toBe(true);
+  });
+});
+
+describe("architecture · the host bundle mutates no registry it does not own", () => {
+  /** The host half's composition root: everything `apply()` can run. */
+  const ENTRY = "lifecycle.ts";
+
+  /** A write to an `adapters` map: the llm registry's private table. */
+  const REGISTRY_WRITE = /\badapters\??\.(?:delete|set|clear)\s*\(/u;
+
+  it("walks a graph that actually contains the host modules", () => {
+    const graph = runtimeGraph(ENTRY);
+    expect(graph.has("stream-hook.ts")).toBe(true);
+    expect(graph.has("responses-provider.ts")).toBe(true);
+    expect(graph.has("settings-page.tsx")).toBe(false);
+    expect(REGISTRY_WRITE.test('llm.adapters.delete("opencode")')).toBe(true);
+    expect(REGISTRY_WRITE.test('llm.adapters?.delete("opencode")')).toBe(true);
+    expect(REGISTRY_WRITE.test("this.adapters.get(route)")).toBe(false);
+  });
+
+  it("nothing reachable from lifecycle.ts deletes or sets an llm adapters entry", () => {
+    // `registerAdapter` is all-or-nothing and only the owner's handle moves a
+    // registration's routes. An entry deleted from outside leaves the owner
+    // believing it holds the route, and its next dispose deletes ours. The
+    // plugin keeps pi-ai off the planes through the config waterfall instead
+    // (docs/engineering-notes.md, "Replacing another plugin's adapter
+    // registration is not an API").
+    const violations = [...runtimeGraph(ENTRY)]
+      .filter(([, source]) => REGISTRY_WRITE.test(source))
+      .map(([file]) => file);
+    expect(violations).toEqual([]);
+  });
+});
+
+describe("architecture · tests reach src through one door", () => {
+  const SUPPORT = join(import.meta.dirname, "support", "src.ts");
+
+  /**
+   * Whether `source` DECLARES `name` — an `export const|function|class|…`
+   * of it — rather than passing it on with `export { name } from "…"`.
+   */
+  const declares = (source: string, name: string): boolean =>
+    new RegExp(
+      String.raw`export (?:declare )?(?:abstract )?(?:async )?(?:const|let|function\*?|class|interface|type|enum) ${name}\b`,
+      "u"
+    ).test(source);
+
+  /** Each `export { names } from "../../src/<target>"` block, names unaliased. */
+  const reExportBlocks = (
+    source: string
+  ): { readonly target: string; readonly names: readonly string[] }[] =>
+    [
+      ...source.matchAll(
+        /^export (?:type )?\{([^}]*)\} from "\.\.\/\.\.\/src\/([^"]+)"/gmu
+      ),
+    ].map((match) => ({
+      names: (match[1] ?? "")
+        .split(",")
+        .map((entry) =>
+          entry
+            .trim()
+            .replace(/^type\s+/u, "")
+            .replace(/\s+as\s+[\w$]+$/u, "")
+        )
+        .filter((entry) => entry !== ""),
+      target: match[2] ?? "",
+    }));
+
+  it("knows a declaration from a pass-through when it sees one", () => {
+    // Known answers, so an empty miss list means the rule ran.
+    const config = readFileSync(join(SRC_DIR, "config.ts"), "utf8");
+    expect(declares(config, "Config")).toBe(true);
+    expect(declares('export { Config } from "./config.ts";', "Config")).toBe(
+      false
+    );
+    expect(declares("export type ConfigLike = 1;", "Config")).toBe(false);
+    expect(
+      reExportBlocks(
+        'export { a, type B, c as d } from "../../src/x.ts";\nexport type { E } from "../../src/y.ts";'
+      )
+    ).toEqual([
+      { names: ["a", "B", "c"], target: "x.ts" },
+      { names: ["E"], target: "y.ts" },
+    ]);
+  });
+
+  it("test/support/src.ts re-exports each name from the module that declares it", () => {
+    // Re-exporting through `src/index.ts` would tie every test to the barrel
+    // P2 shrinks, which is the coupling this file exists to remove; and a name
+    // taken from a module that only passes it on breaks when P10a moves the
+    // module that really defines it.
+    const source = readFileSync(SUPPORT, "utf8");
+    expect(source).not.toMatch(/src\/index\.ts/u);
+    const blocks = reExportBlocks(source);
+    // Every `from "../../src/…"` in the file is one of the parsed blocks, and
+    // there is one block per module, so the walk below is not vacuous.
+    expect(blocks.length).toBe(
+      source.match(/from "\.\.\/\.\.\/src\//gu)?.length ?? 0
+    );
+    expect(blocks.length).toBeGreaterThanOrEqual(40);
+    const missing = blocks
+      .map(({ target }) => target)
+      .filter((target) => !existsSync(join(SRC_DIR, target)));
+    expect(missing).toEqual([]);
+    const notDeclared = blocks.flatMap(({ names, target }) => {
+      const defining = readFileSync(join(SRC_DIR, target), "utf8");
+      return names
+        .filter((name) => !declares(defining, name))
+        .map((name) => `${name} is not declared in src/${target}`);
+    });
+    expect(notDeclared).toEqual([]);
   });
 });

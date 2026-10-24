@@ -11,60 +11,11 @@
  */
 
 import { ALL_MODELS_MARKER } from "./config-values.ts";
-import { findModelSpec } from "./models-catalog.ts";
+import { catalogPlaneForRoute, findModelSpecOn } from "./models-catalog.ts";
 import { isRecord, isUnknownArray } from "./utils/guards.ts";
 
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
-
-/** Placeholder `read` schema formatted for Anthropic-compatible /messages. */
-export const DUMMY_READ_TOOL_ANTHROPIC = {
-  description: "Read a file or directory from the local filesystem.",
-  input_schema: {
-    properties: {
-      filePath: {
-        description: "The absolute path to the file or directory to read",
-        type: "string",
-      },
-      offset: {
-        description: "The line number to start reading from (1-indexed)",
-        type: "number",
-      },
-      limit: {
-        description: "The maximum number of lines to read (defaults to 2000)",
-        type: "number",
-      },
-    },
-    required: ["filePath"],
-    type: "object",
-  },
-  name: "read",
-} as const;
-
-/** Placeholder `bash` schema formatted for Anthropic-compatible /messages. */
-export const DUMMY_BASH_TOOL_ANTHROPIC = {
-  description: "Execute a bash command.",
-  input_schema: {
-    properties: {
-      command: {
-        description: "The command to execute",
-        type: "string",
-      },
-      workdir: {
-        description:
-          "The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.",
-        type: "string",
-      },
-      timeout: {
-        description: "Optional timeout in milliseconds",
-        type: "number",
-      },
-    },
-    required: ["command"],
-    type: "object",
-  },
-  name: "bash",
-} as const;
 
 /** Placeholder `read` schema the gateway's validator accepts. */
 export const DUMMY_READ_TOOL = {
@@ -197,11 +148,25 @@ const toolNames = (
   return { hasBash, hasRead, isOpenAiFormat };
 };
 
-/** Whether `modelId` is in scope for the core-tool fallback. */
-export const isCoreToolModel = (modelId: string, marker: string): boolean => {
+/**
+ * Whether `modelId` is in scope for the core-tool fallback.
+ *
+ * @param modelId - the request body's model id.
+ * @param marker - the configured model-id marker.
+ * @param route - a route id naming the plane the request is on: the turn's
+ * provider or the URL's plane id. Go iff it is `opencode-go` or starts with
+ * `opencode-go-`; anything else, and no route at all, is Zen.
+ */
+export const isCoreToolModel = (
+  modelId: string,
+  marker: string,
+  route?: string
+): boolean => {
   // The catalog's free-tier flag is the authority: it catches free models
   // whose ids carry no marker (big-pickle), where a substring test goes blind.
-  if (findModelSpec(modelId)?.is_free === true) {
+  // It is read from the request's own plane: the two planes price the same id
+  // independently, so a Go-first lookup answered a Zen question with Go data.
+  if (findModelSpecOn(catalogPlaneForRoute(route), modelId)?.is_free === true) {
     return true;
   }
   if (marker === ALL_MODELS_MARKER) {
@@ -220,20 +185,23 @@ export const isCoreToolModel = (modelId: string, marker: string): boolean => {
  * @param body - the outgoing request body.
  * @param headers - the mutable header bag whose `content-length` must track a
  * rewritten body.
- * @param options - whether injection is enabled and which model marker scopes it.
+ * @param options - whether injection is enabled, which model marker scopes it,
+ * and the route id whose plane's catalog decides whether the model is free.
  * @returns the (possibly rewritten) body; the original reference when untouched.
  */
 export const maybeInjectCoreTools = (
   url: string,
   body: RequestInit["body"],
   headers: Headers,
-  options: { enabled: boolean; modelMarker: string }
+  options: { enabled: boolean; modelMarker: string; route?: string }
 ): RequestInit["body"] => {
   if (!options.enabled) {
     return body;
   }
   // Both JSON routes: the gateway checks read+bash on /responses AND
-  // /chat/completions (a toolless completions body 403s the same way).
+  // /chat/completions (a toolless completions body 403s the same way). An
+  // Anthropic `/messages` URL names neither, so it never gets this far — which
+  // is why there are no Anthropic-dialect schemas below.
   const isResponses = url.includes(RESPONSES_PATH);
   const isCompletions =
     url.includes("/chat/completions") || url.includes("/completions");
@@ -267,7 +235,7 @@ export const maybeInjectCoreTools = (
   if (typeof modelProp !== "string") {
     return body;
   }
-  if (!isCoreToolModel(modelProp, options.modelMarker)) {
+  if (!isCoreToolModel(modelProp, options.modelMarker, options.route)) {
     return body;
   }
   const toolsProp: unknown = parsed.tools;
@@ -282,36 +250,15 @@ export const maybeInjectCoreTools = (
     tools = [];
   }
   const { hasBash, hasRead, isOpenAiFormat } = toolNames(tools);
-  const isAnthropic = url.includes("/messages");
-  const useOpenAi =
-    isOpenAiFormat ||
-    url.includes("/chat/completions") ||
-    url.includes("/completions");
-
-  const getReadTool = () => {
-    if (isAnthropic) {
-      return DUMMY_READ_TOOL_ANTHROPIC;
-    }
-    if (useOpenAi) {
-      return DUMMY_READ_TOOL_FUNCTION;
-    }
-    return DUMMY_READ_TOOL;
-  };
-  const getBashTool = () => {
-    if (isAnthropic) {
-      return DUMMY_BASH_TOOL_ANTHROPIC;
-    }
-    if (useOpenAi) {
-      return DUMMY_BASH_TOOL_FUNCTION;
-    }
-    return DUMMY_BASH_TOOL;
-  };
+  const useOpenAi = isOpenAiFormat || isCompletions;
+  const readTool = useOpenAi ? DUMMY_READ_TOOL_FUNCTION : DUMMY_READ_TOOL;
+  const bashTool = useOpenAi ? DUMMY_BASH_TOOL_FUNCTION : DUMMY_BASH_TOOL;
 
   if (!hasRead) {
-    tools.push(getReadTool());
+    tools.push(readTool);
   }
   if (!hasBash) {
-    tools.push(getBashTool());
+    tools.push(bashTool);
   }
   parsed.tools = tools;
   const newBodyStr = JSON.stringify(parsed);

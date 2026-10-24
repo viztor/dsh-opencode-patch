@@ -32,7 +32,7 @@ import {
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import { formatRelativeReset, getWindowState, resetLabel } from "./usage-ui.ts";
 import { isRecord } from "./utils/guards.ts";
-import { retryUntilAnswered } from "./utils/retry.ts";
+import { backoffOver, retryUntilAnswered } from "./utils/retry.ts";
 
 /** The three windows, in the order the panel lists them. */
 const WINDOWS = [
@@ -356,13 +356,32 @@ export interface UsageSummaryProps {
  * Extracted from the component so the retry is a behaviour a test can perform rather
  * than a branch inside a React effect.
  *
+ * The browser's timer and console are supplied here, at the edge, so
+ * `utils/retry.ts` stays a function of its arguments.
+ *
  * @param read - the read to attempt.
  * @param attempts - how many times to try before giving up.
- * @param sleep - the wait between attempts, called with the attempt number.
+ * @param sleep - the wait between attempts, called with the attempt number;
+ * omitted, a linear backoff on the browser's timer.
  * @param live - asked before each attempt; `false` abandons the loop.
  * @returns the first defined answer, or `undefined`.
  */
-export const readUntilAnswered = retryUntilAnswered;
+export const readUntilAnswered = <T,>(
+  read: () => Promise<T | undefined>,
+  attempts = 5,
+  sleep?: (attempt: number) => Promise<void>,
+  live: () => boolean = () => true
+): Promise<T | undefined> =>
+  retryUntilAnswered(read, {
+    attempts,
+    live,
+    sleep:
+      sleep ??
+      backoffOver((callback, delayMs) => setTimeout(callback, delayMs)),
+    warn: (message, error) => {
+      console.warn(message, error);
+    },
+  });
 
 /** The container: reads once when the card appears, on window focus, or via manual refresh. */
 export const UsageSummary: React.FC<UsageSummaryProps> = ({

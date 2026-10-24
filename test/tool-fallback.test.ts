@@ -17,18 +17,22 @@
 
 import { describe, expect, it } from "vitest";
 
-import { ALL_MODELS_MARKER, DEFAULT_FREE_MODEL_MARKER } from "../src/index.ts";
 import {
+  GO_FREE_PROBE,
+  seedDivergentCatalog,
+  ZEN_FREE_PROBE,
+} from "./support/catalog-fixture.ts";
+import {
+  ALL_MODELS_MARKER,
+  DEFAULT_FREE_MODEL_MARKER,
   DUMMY_BASH_TOOL,
-  DUMMY_BASH_TOOL_ANTHROPIC,
   DUMMY_BASH_TOOL_FUNCTION,
   DUMMY_READ_TOOL,
-  DUMMY_READ_TOOL_ANTHROPIC,
   DUMMY_READ_TOOL_FUNCTION,
   RESPONSES_PATH,
   isCoreToolModel,
   maybeInjectCoreTools,
-} from "../src/tool-fallback.ts";
+} from "./support/src.ts";
 import { parseJsonBody, toolNamesOf } from "./test-helpers.ts";
 
 const RESPONSES_URL = `https://opencode.ai/zen/v1${RESPONSES_PATH}`;
@@ -120,6 +124,23 @@ describe("maybeInjectCoreTools: bodies it must not rewrite", () => {
       expect(maybeInjectCoreTools(url, body, headers, options())).toBe(body);
       expect(headers.get("content-length")).toBeNull();
     }
+  });
+
+  it("leaves an Anthropic /messages body alone", () => {
+    // The gate admits only URLs naming `/responses` or `/completions`, and a
+    // gateway `/messages` URL names neither, so an Anthropic body never reaches
+    // the injector — which is why it carries no Anthropic schemas at all.
+    const headers = new Headers();
+    const body = JSON.stringify({ model: FREE_MODEL });
+
+    const out = maybeInjectCoreTools(
+      "https://opencode.ai/inference/anthropic/v1/messages",
+      body,
+      headers,
+      options()
+    );
+    expect(out).toBe(body);
+    expect(headers.get("content-length")).toBeNull();
   });
 
   it("injects on the completions route too", () => {
@@ -443,28 +464,6 @@ describe("maybeInjectCoreTools: injection", () => {
       tools: [null, "bash", 7, declaredRead, DUMMY_BASH_TOOL],
     });
   });
-
-  it("prefers the Anthropic schemas when the URL names /messages", () => {
-    // Both path segments in one URL is not a route this plugin documents:
-    // `RESPONSES_PATH` gates first, so a plain `/messages` URL never reaches
-    // the injector. The case pins the precedence between the two dialects
-    // (Anthropic wins over the OpenAI function form) and keeps the Anthropic
-    // schemas from rotting untested.
-    const url = "https://relay.internal/v1/messages?upstream=/responses";
-    const headers = new Headers();
-    const body = JSON.stringify({ model: FREE_MODEL });
-
-    const out = maybeInjectCoreTools(url, body, headers, options());
-
-    expect(parseJsonBody(bodyText(out))).toEqual({
-      model: FREE_MODEL,
-      tools: [DUMMY_READ_TOOL_ANTHROPIC, DUMMY_BASH_TOOL_ANTHROPIC],
-    });
-    // `input_schema`, not `parameters`: the two dialects are not
-    // interchangeable, and mixing them is the failure the fallback avoids.
-    expect(DUMMY_READ_TOOL_ANTHROPIC).toHaveProperty("input_schema");
-    expect(DUMMY_READ_TOOL_FUNCTION).toHaveProperty("function");
-  });
 });
 
 describe("maybeInjectCoreTools: marker scoping", () => {
@@ -535,5 +534,67 @@ describe("maybeInjectCoreTools: marker scoping", () => {
       "read",
       "bash",
     ]);
+  });
+});
+
+describe("isCoreToolModel: the plane comes from the route", () => {
+  // The catalog's free flag is read from the plane the request is on. No id
+  // the shipped shim lists on both planes disagrees on it, so these cases seed a live
+  // catalog that does: a Go-first lookup reads the paid Go row for a model Zen
+  // serves free, and the free Go row for a model Zen charges for.
+  it("admits a model the request's plane calls free, whatever the other plane says", async () => {
+    await seedDivergentCatalog();
+
+    expect(isCoreToolModel(ZEN_FREE_PROBE, "", "opencode")).toBe(true);
+    expect(isCoreToolModel(ZEN_FREE_PROBE, "", "opencode-go")).toBe(false);
+    // A derived Go route is on the Go plane: the rule is the prefix.
+    expect(isCoreToolModel(GO_FREE_PROBE, "", "opencode-go-google")).toBe(true);
+    expect(isCoreToolModel(GO_FREE_PROBE, "", "opencode")).toBe(false);
+    // No route is the rule's default plane, which is Zen.
+    expect(isCoreToolModel(ZEN_FREE_PROBE, "")).toBe(true);
+    expect(isCoreToolModel(GO_FREE_PROBE, "")).toBe(false);
+  });
+
+  it("no longer admits a Zen-only free id with no marker on the Go plane", () => {
+    // An intended change on shipped data, recorded so it is not rediscovered:
+    // `big-pickle` is free on Zen and absent from the Go catalog. The old
+    // Go-first lookup fell back to Zen and admitted it on a Go request; the
+    // plane rule reads the Go plane, which does not serve it, and the default
+    // marker does not match the id. No seeding: this is the shipped shim.
+    expect(
+      isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "opencode")
+    ).toBe(true);
+    expect(isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER)).toBe(true);
+    expect(
+      isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "opencode-go")
+    ).toBe(false);
+  });
+
+  it("maybeInjectCoreTools reads the plane from options.route", async () => {
+    await seedDivergentCatalog();
+    const body = JSON.stringify({ model: ZEN_FREE_PROBE });
+
+    const zenHeaders = new Headers();
+    const zen = maybeInjectCoreTools(RESPONSES_URL, body, zenHeaders, {
+      enabled: true,
+      modelMarker: "none",
+      route: "opencode",
+    });
+    expect(parseJsonBody(bodyText(zen))).toEqual({
+      model: ZEN_FREE_PROBE,
+      tools: [DUMMY_READ_TOOL, DUMMY_BASH_TOOL],
+    });
+    expect(zenHeaders.get("content-length")).toBe(
+      String(Buffer.byteLength(bodyText(zen)))
+    );
+
+    const goHeaders = new Headers();
+    const go = maybeInjectCoreTools(RESPONSES_URL, body, goHeaders, {
+      enabled: true,
+      modelMarker: "none",
+      route: "opencode-go",
+    });
+    expect(go).toBe(body);
+    expect(goHeaders.get("content-length")).toBeNull();
   });
 });

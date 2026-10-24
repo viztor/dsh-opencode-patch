@@ -18,8 +18,12 @@ import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { recordDebug } from "../src/debug.ts";
-import { projectNameFrom } from "../src/stream-hook.ts";
+import {
+  GO_GOOGLE_INTERNAL_ROUTE,
+  projectNameFrom,
+  recordDebug,
+  RESPONSES_ROUTE,
+} from "./support/src.ts";
 import { collectUnknown, createMockStream } from "./test-helpers.ts";
 
 // The debug sink is observed rather than written: a negative assertion over a
@@ -125,9 +129,9 @@ describe("stream-hook · the pass-through guards", () => {
     providers: string[],
     overrides: Record<string, unknown> = {}
   ) => {
-    const { createStreamHook } = await import("../src/stream-hook.ts");
+    const { createStreamHook, resolveConfig } =
+      await import("./support/src.ts");
     const { AsyncLocalStorage } = await import("node:async_hooks");
-    const { resolveConfig } = await import("../src/config.ts");
     return createStreamHook(
       { logger: { info: () => {} } } as never,
       resolveConfig({ providers, usageEnabled: false, ...overrides } as never),
@@ -172,6 +176,138 @@ describe("stream-hook · the pass-through guards", () => {
   });
 });
 
+describe("stream-hook · the redirect forwards the caller's request", () => {
+  /**
+   * A model the plane serves on another protocol is handed to the route that
+   * speaks it. The caller's request goes with it whole: only `provider` changes
+   * (and, for Go-Google, the history is replayed into Google's shape).
+   *
+   * `toEqual` deliberately: it ignores a key whose value is `undefined`, so the
+   * pin holds whether or not the spread carries one.
+   */
+  const hookFor = async (
+    providers: string[],
+    api: string,
+    route: string,
+    stream: (options: unknown) => unknown
+  ) => {
+    const { createStreamHook, resolveConfig } =
+      await import("./support/src.ts");
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    return createStreamHook(
+      {
+        llm: { adapters: new Map([[route, {}]]), stream },
+        logger: { info: () => {} },
+      } as never,
+      resolveConfig({
+        modelRoutes: { "probe-model": { api } },
+        providers,
+        usageEnabled: false,
+      } as never),
+      new AsyncLocalStorage()
+    );
+  };
+
+  let warn: { mockRestore: () => void } | undefined;
+
+  beforeEach(() => {
+    // The probe id is in no catalog, so the hook warns once that the picker
+    // would not offer it. That line is not what these cases are about.
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn?.mockRestore();
+  });
+
+  it("hands the whole request to the protocol route with only provider replaced", async () => {
+    const stream = vi.fn((_options: unknown) => "redirected");
+    const hook = await hookFor(
+      ["opencode"],
+      "openai-responses",
+      RESPONSES_ROUTE,
+      stream
+    );
+    const options = {
+      messages: [],
+      model: "probe-model",
+      provider: "opencode",
+      sessionId: "s",
+    };
+    const next = vi.fn(() => "next-result");
+
+    expect(hook(options, next)).toBe("redirected");
+    expect(next).not.toHaveBeenCalled();
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(stream.mock.calls[0]?.[0]).toEqual({
+      ...options,
+      provider: RESPONSES_ROUTE,
+    });
+  });
+
+  it("hands a Go-Google request over with its history in Google's shape", async () => {
+    const sentinel = { notIterable: true };
+    const stream = vi.fn((_options: unknown) => sentinel);
+    const hook = await hookFor(
+      ["opencode-go"],
+      "google-generative-ai",
+      GO_GOOGLE_INTERNAL_ROUTE,
+      stream
+    );
+    // The user message is the control: only an assistant turn the Go plane's
+    // Google adapter answered carries a replay identity to translate.
+    const user = { content: "hi", role: "user" };
+    const replayState = {
+      response: {
+        api: "google-generative-ai",
+        kind: "pi-ai",
+        provider: "opencode-go",
+      },
+      signature: "sig",
+    };
+    const assistant = {
+      content: "hello",
+      role: "assistant",
+      source: { provider: "opencode-go", replayState },
+    };
+    const options = {
+      messages: [user, assistant],
+      model: "probe-model",
+      provider: "opencode-go",
+      sessionId: "s",
+    };
+    const next = vi.fn(() => "next-result");
+
+    expect(hook(options, next)).toBe(sentinel);
+    expect(next).not.toHaveBeenCalled();
+    expect(stream).toHaveBeenCalledTimes(1);
+    // A literal expectation, not one re-derived through the function under
+    // test: forwarding the history raw must fail here.
+    expect(stream.mock.calls[0]?.[0]).toEqual({
+      ...options,
+      messages: [
+        user,
+        {
+          content: "hello",
+          role: "assistant",
+          source: {
+            provider: GO_GOOGLE_INTERNAL_ROUTE,
+            replayState: {
+              response: {
+                api: "google-generative-ai",
+                kind: "pi-ai",
+                provider: GO_GOOGLE_INTERNAL_ROUTE,
+              },
+              signature: "sig",
+            },
+          },
+        },
+      ],
+      provider: GO_GOOGLE_INTERNAL_ROUTE,
+    });
+  });
+});
+
 describe("stream-hook · the debug gate", () => {
   /**
    * `debug` is the switch and `debugFile` is only where the switch writes. The
@@ -186,9 +322,9 @@ describe("stream-hook · the debug gate", () => {
     file: string | undefined,
     info: (...args: unknown[]) => void
   ) => {
-    const { createStreamHook } = await import("../src/stream-hook.ts");
+    const { createStreamHook, resolveConfig } =
+      await import("./support/src.ts");
     const { AsyncLocalStorage } = await import("node:async_hooks");
-    const { resolveConfig } = await import("../src/config.ts");
     return createStreamHook(
       { logger: { info } } as never,
       resolveConfig({
