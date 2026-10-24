@@ -340,6 +340,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     context_window: 1_048_576,
     cost: {
       cache_read: 0.3,
+      cache_write: 3,
       input: 3,
       output: 15,
     },
@@ -349,6 +350,21 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     name: "Kimi K3",
     reasoning: true,
     reasoning_options: [{ type: "effort", values: ["max"] }],
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0.2,
+      cache_write: 2,
+      input: 2,
+      output: 10,
+    },
+    id: "kimi-k3.1-pro",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 131_072,
+    name: "Kimi K3.1 Pro",
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
   },
   {
     context_window: 1_000_000,
@@ -1670,6 +1686,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     context_window: 1_048_576,
     cost: {
       cache_read: 0.3,
+      cache_write: 3,
       input: 3,
       output: 15,
     },
