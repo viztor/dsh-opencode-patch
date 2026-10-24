@@ -1,6 +1,8 @@
-# Neither is used at runtime here. They arrive as dependencies of
-# @earendil-works/pi-ai, which this repo only imports in a test that reads its
-# protocol table, so their build scripts stay off rather than being approved.
+# Both arrive as dependencies of @earendil-works/pi-ai, which this repo pins to
+# the harness's own copy (the overrides/patchedDependencies below); the bridge
+# loads it at runtime from the host and the suite imports it directly. Neither
+# package's build script is needed, so their builds stay off rather than being
+# approved.
 allowBuilds:
   "@google/genai": false
   protobufjs: false
@@ -8,30 +10,27 @@ catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.2.0
   vite-plus: 1.2.0
 # pnpm refuses any version published inside the last 24h (its default
-# `minimumReleaseAge`), and the pi seam this repo follows rides fresh cuts:
-# the 0.2.1-alpha.5 cluster is hours old. These are the exact versions that
-# window is lifted for — the wrapper the bridge's pin has to satisfy and the
-# harness packages it pulls — pinned, not wildcards, so the next alpha bump
-# has to make its own case. What proves them is `pnpm run release:gate`, not
-# their age.
-minimumReleaseAgeExclude:
-  - "@deepseek-ai/dsh-brand@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-llm-pi-ai@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-util-values@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-attachment@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-authorization@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-credentials@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-fs@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-launch-environment@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-llm@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-sandbox@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-scope@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-session@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-timeout@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-typert-protocol@0.2.1-alpha.5"
-  - "@deepseek-ai/dsh-util-crypto@0.2.1-alpha.5"
+# `minimumReleaseAge`). Nothing pinned here currently needs that window lifted:
+# every exact version this repo installs is older than it. When a future exact
+# version is refused for age, it goes in a `minimumReleaseAgeExclude:` list
+# here, as `name@version` rather than a wildcard, so each bump makes its own
+# case. What proves a version is `pnpm run release:gate`, not its age.
+#
+# The harness's own lockfile pins `@earendil-works/pi-ai` at 1.1.0 and patches
+# it (D14). The override is the one statement that reaches every copy in the
+# tree, whatever a dependent's range asks for. Today the exact root
+# devDependency alone already pulls `dsh-llm-pi-ai`'s `^1.1.0` onto 1.1.0 (pnpm
+# prefers a version a direct dependency pins); the override is what still holds
+# when a dependent's range stops admitting 1.1.0 or a new one asks for another
+# pi. (A registry install of the published host has no such pin, and npm floats
+# the wrapper's range to the newest 1.x.) The patch is the harness's file,
+# verbatim, and pnpm records its hash in the lockfile;
+# `test/host-versions.test.ts` checks both.
 overrides:
+  "@earendil-works/pi-ai": "1.1.0"
   vite@*: "catalog:"
+patchedDependencies:
+  "@earendil-works/pi-ai@1.1.0": patches/@earendil-works__pi-ai@1.1.0.patch
 peerDependencyRules:
   allowAny:
     - vite

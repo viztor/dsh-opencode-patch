@@ -24,12 +24,14 @@ import { CARD_FIELDS } from "./support/src.ts";
 const ROOT = new URL("..", import.meta.url).pathname;
 
 /** Directories a third party can read: the tree, plus the build output. */
-const SCANNED = ["src", "test", "docs", "scripts", "lib"];
+const SCANNED = ["src", "test", "docs", "scripts", "lib", "patches"];
 const SCANNED_FILES = [
   "AGENTS.md",
+  "CONTRIBUTING.md",
   "README.md",
   "package.json",
   "cordis.patch.yml",
+  "pnpm-workspace.yaml",
 ];
 
 /** A home prefix followed by a name that is not the rule's placeholder. */
@@ -53,7 +55,7 @@ const walk = async (dir: string): Promise<string[]> => {
     const info = await stat(full);
     if (info.isDirectory()) {
       found.push(...(await walk(full)));
-    } else if (/\.(?:ts|tsx|js|mjs|md|json|ya?ml)$/u.test(entry)) {
+    } else if (/\.(?:ts|tsx|js|mjs|md|json|ya?ml|patch)$/u.test(entry)) {
       found.push(full);
     }
   }

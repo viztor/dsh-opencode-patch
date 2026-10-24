@@ -22,7 +22,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P1a   | `fix:` shipped breakage                       | in review |
 | P1b   | `chore:` hygiene                              | in review |
 | P2    | `feat:` a smaller public API                  | in review |
-| P-T1a | `build:` pin the host                         | planned   |
+| P-T1a | `build:` pin the host                         | in review |
 | P-T1b | `test:` a harness that is the real host       | planned   |
 | P-H   | `refactor:` one way to patch a host method    | planned   |
 | P-R1  | `feat:` the plugin owns the plane routes      | planned   |

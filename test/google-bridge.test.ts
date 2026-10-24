@@ -63,12 +63,13 @@ interface ProviderLike {
 }
 
 /**
- * The pi runtime the bridge consumes, built from THIS repo's devDependency.
+ * The pi runtime the bridge consumes, built from the root pi the suite imports.
  *
  * A deployment gets the harness's own pi (`loadHostPi` finds it through
- * `dsh-llm-pi-ai`), and the shape is identical either way — these tests exercise
- * the contract, not a version. `pi-runtime.test.ts` proves the loader finds the
- * host's copy in the real tree.
+ * `dsh-llm-pi-ai`). Under the pin (`test/support/host-versions.ts`) the root pi
+ * and the wrapper's are one copy, and these tests exercise the contract, not a
+ * version. `host-versions.test.ts` (its first two cases) proves the loader
+ * finds the host's copy in the real tree and that it is this same module.
  */
 const testPi = (): PiRuntime => ({
   getBuiltinModels: (plane) =>
@@ -457,9 +458,11 @@ describe("google-bridge · the pi copy it loads", () => {
   it("declares no pi of its own at runtime, and loads the host's", async () => {
     // The rule this replaced a version pin with: the plugin must NOT ship a pi.
     // The wrapper (`dsh-llm-pi-ai`) already depends on `@earendil-works/pi-ai`
-    // with a range, so the host installs the pi its own release was tested
-    // against. A second copy here would put two versions in one tree and turn
-    // every harness bump into a version-skew bug.
+    // with a range (`^1.1.0`): the harness's own lockfile pins that to 1.1.0
+    // plus its patch, a registry install of the published host floats it to the
+    // newest 1.x, and this repo's dev install pins 1.1.0. A second copy here
+    // would put two versions in one tree and turn every harness bump into a
+    // version-skew bug.
     const ours = JSON.parse(readFileSync("package.json", "utf8")) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;

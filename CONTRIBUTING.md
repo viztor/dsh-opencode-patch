@@ -3,6 +3,7 @@
 ## Prerequisites
 
 - Node.js `>= 24` (CI runs the version in `.node-version`, and the floor in a job of its own), `pnpm` (v12). The suite refuses to start below the floor and names both versions: below it, `node:sqlite`, `Intl.DurationFormat` and the ICU strings the tests pin differ, and the failures read like regressions.
+- The host versions the suite runs against (pi, the `@deepseek-ai` cluster, cordis and its loader) are named once, in `test/support/host-versions.ts`. `pnpm install` pins pi for every copy in the tree and applies the harness's own patch from `patches/` — that is what the `overrides` and `patchedDependencies` in `pnpm-workspace.yaml` do.
 - A checkout of this repo; for live testing, a DeepSeek Harness profile (see README for the `link:` setup)
 
 ## Commands
