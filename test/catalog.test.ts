@@ -35,7 +35,7 @@ import {
   sanitizeModalities,
   type ActiveTurnState,
 } from "../src/index.ts";
-import { findModelSpec } from "../src/models-catalog.ts";
+import { findModelSpec, resetCatalogState } from "../src/models-catalog.ts";
 import { UNSERVED_PLANE_SDKS } from "../src/responses-routes.ts";
 import { createCaptureFetch, headerOf, SESSION_RE } from "./test-helpers.ts";
 
@@ -91,7 +91,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("ships only active, priced models in the bundled Go shim", () => {
-    expect(OPENCODE_GO_CATALOG.length).toBe(28);
+    expect(OPENCODE_GO_CATALOG.length).toBe(29);
     for (const model of OPENCODE_GO_CATALOG) {
       expect(model.id.length).toBeGreaterThan(0);
       expect(model.name.length).toBeGreaterThan(0);
@@ -721,6 +721,29 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toBe("https://models.opencode.ai/api.json");
     expect(seen[0]).not.toContain("models.dev");
+  });
+
+  it("resetCatalogState puts a refreshed catalog back to the bundled shim", async () => {
+    // The per-test reset in `test/support/` relies on this, and a reset that
+    // restored nothing would let every catalog count depend on run order again.
+    await refreshCatalog(
+      (async () =>
+        Response.json({
+          "opencode-go": {
+            models: { "reset-probe-model": { name: "Reset Probe" } },
+          },
+        })) as unknown as typeof fetch,
+      true
+    );
+    expect(getLiveGoCatalog().some((m) => m.id === "reset-probe-model")).toBe(
+      true
+    );
+    resetCatalogState();
+    expect(getLiveGoCatalog().some((m) => m.id === "reset-probe-model")).toBe(
+      false
+    );
+    expect(getLiveGoCatalog()).toHaveLength(OPENCODE_GO_CATALOG.length);
+    expect(getLiveZenCatalog()).toHaveLength(OPENCODE_ZEN_CATALOG.length);
   });
 
   it("refreshCatalog degrades gracefully on network errors without throwing", async () => {

@@ -141,7 +141,8 @@ describe("usage-pill: helper functions & calculations", () => {
         formatRelativeReset(isoAt(ms), locale).text;
       expect(at(ahead((2 * 86400 + 4 * 3600) * 1000), "en")).toBe("2d 4h");
       expect(at(ahead((2 * 86400 + 4 * 3600) * 1000), "zh")).toBe("2天4小时");
-      expect(at(30 * 60 * 1000 + 500, "zh")).toBe("30分");
+      expect(at(30 * 60 * 1000 + 500, "zh")).toBe("30分钟");
+      expect(at(ahead((3 * 3600 + 15 * 60) * 1000), "zh")).toBe("3小时15分钟");
       expect(at(ahead(2 * 86400 * 1000), "en")).toBe("2d");
       expect(at(ahead(45 * 60 * 1000), "en")).toBe("45m");
     } finally {
@@ -149,9 +150,10 @@ describe("usage-pill: helper functions & calculations", () => {
         Reflect.set(Intl, "DurationFormat", original);
       }
     }
-    // Read through `Reflect`: this project's `lib` is ES2024, which predates
-    // the constructor, so `Intl.DurationFormat` is not a typed property.
-    expect(typeof Reflect.get(Intl, "DurationFormat")).toBe("function");
+    // The engine is left as it was found: restored when it shipped the
+    // constructor, still absent when it did not. Asserting `"function"` here
+    // instead would test the engine, not the cleanup.
+    expect(Reflect.get(Intl, "DurationFormat")).toBe(original);
   });
 
   it("renders an absolute reset in Chinese with 点/分, not HH:mm", () => {
@@ -187,13 +189,18 @@ describe("usage-pill: helper functions & calculations", () => {
         "45m"
       );
       expect(formatRelativeReset(isoAt(ahead(45 * 60 * 1000)), "zh").text).toBe(
-        "45分"
+        "45分钟"
       );
     } finally {
+      // Restored either way: on an engine without the constructor, leaving the
+      // stand-in installed would make every later case run against it.
       if (had) {
         Reflect.set(Intl, "DurationFormat", original);
+      } else {
+        Reflect.deleteProperty(Intl, "DurationFormat");
       }
     }
+    expect(Reflect.get(Intl, "DurationFormat")).toBe(original);
   });
 
   it("localizes the duration units, not just the label", () => {

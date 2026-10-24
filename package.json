@@ -78,6 +78,7 @@
     "test:coverage": "vp test run --coverage",
     "test:e2e": "vp test --config vitest.e2e.config.ts",
     "test:mock": "vp test --config vitest.mock.config.ts",
+    "test:shuffle": "vp test run --sequence.shuffle",
     "typecheck": "tsc --noEmit",
     "cli:version": "node --experimental-strip-types scripts/check-vendor-version.ts",
     "version:patch": "vp pm version patch --no-git-checks",

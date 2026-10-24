@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js `>= 24`, `pnpm` (v12)
+- Node.js `>= 24` (CI runs the version in `.node-version`, and the floor in a job of its own), `pnpm` (v12). The suite refuses to start below the floor and names both versions: below it, `node:sqlite`, `Intl.DurationFormat` and the ICU strings the tests pin differ, and the failures read like regressions.
 - A checkout of this repo; for live testing, a DeepSeek Harness profile (see README for the `link:` setup)
 
 ## Commands
@@ -14,6 +14,8 @@ pnpm install     # install dependencies
 pnpm run check   # format + lint + types; must be zero *errors* (warnings are reported, not gating)
 pnpm run test    # Vitest suite, must be fully green and deterministic
 pnpm run test:coverage   # the same run, with the coverage ratchet enforced
+pnpm run test:shuffle    # the same run in a random order; reproduce a failure with --sequence.seed=<n>
+pnpm run test:mock       # gateway mock suite: offline, loopback only, runs in CI
 pnpm run build   # vp pack + client rename -> lib/index.mjs, lib/index.d.mts, lib/client.js
 pnpm run test:e2e   # opt-in end-to-end suite; talks to the real OpenCode gateway
 pnpm run catalog:shim   # regenerate src/catalog-data.ts from models.dev
@@ -59,6 +61,10 @@ The web profile wires this checkout with `link:`, so builds are picked up like t
 - **Deterministic only.** No `Math.random()`, no fixed `sleep()` waits. Async file assertions poll with a deadline (`waitForFileContent`).
 - **No secret fixtures.** Session IDs are derived at runtime (`openCodeSessionIdFor`) or read from `OPENCODE_SESSION_ID`; never hardcode `ses_…` or API keys. `lib/` and `*.log` stay gitignored.
 - **Restore globals.** Tests that touch `globalThis.fetch` or `process.env` must restore them in `afterEach` (`vi.unstubAllGlobals()`, `delete process.env.…`).
+- **Offline by construction.** `test/support/offline.ts` refuses every non-loopback request in the unit and mock suites. The catalog's background revalidation used to reach `models.opencode.ai` dozens of times per run, so a networked runner's results could depend on the vendor's live catalog. A case that means to fetch stubs `fetch` itself.
+- **No order dependence.** `test/support/reset-process-state.ts` clears the plugin's module-level stores (captured keys, session spend, the live catalog) after every test. A new module-level store gets a reset next to its siblings. `pnpm run test:shuffle` is how to check, and CI runs it.
+- **Host-only fixtures stay out of shared helpers.** `test/test-helpers.ts` is imported by the jsdom (client) tests, so anything that needs `node:sqlite` or the filesystem belongs in `test/support/`, as `opencode-store-fixture.ts` does.
+- **A test for a fix fails without it.** Before committing a regression test, revert the fix locally and watch it fail.
 - **Meaningful coverage.** Every config field in the `SPECS` register (`src/settings-fields.ts`) needs both the on and off path where it has one; every passthrough claim needs a non-OpenCode URL test proving headers are untouched; helper functions exported from `usage-ui.ts` are asserted directly, not re-derived in the test.
 - **A component with hooks needs a real mount.** Calling `Component(props)` returns an element and runs none of its state, so a hook-bearing component can have twenty passing cases and still be untested — `usage-pill.tsx` sat at 9% exactly that way, with the poll loop, retry and dismissal all uncovered. `test/usage-pill-mount.test.tsx` is the answer: a `// @vitest-environment jsdom` pragma scoped to that one file, so the rest of the suite keeps the fast node environment and the zero-dependency element-tree style.
 

@@ -198,6 +198,25 @@ export const patchFetch = (
 
     const headers = new Headers(headerSourceOf(input, init));
 
+    // The body, read once, off whichever half carries it. DSH sends inference as
+    // fetch(new Request(url, { body })) — so init.body is undefined, and two
+    // things read it: the free-model check on the credential path below and the
+    // core-tool fallback after it. The free-model check used to read
+    // `init.body` alone, so for every DSH turn it answered "not free" and a
+    // keyless free model was reported as a missing credential.
+    let bodySource: "request" | "init" | "none" = "none";
+    let bodyToPatch: RequestInit["body"] = init?.body;
+    if (bodyToPatch !== undefined) {
+      bodySource = "init";
+    } else if (input instanceof Request) {
+      try {
+        bodyToPatch = await input.clone().text();
+        bodySource = "request";
+      } catch {
+        bodyToPatch = undefined;
+      }
+    }
+
     // Capture the API key from the request headers so that quota monitoring,
     // usage display, and key resolution don't have to rely purely on static env vars.
     const extracted = extractApiKeyFromHeaders(headers);
@@ -291,11 +310,9 @@ export const patchFetch = (
         // an anonymous request anyway, so stripping it here would change nothing
         // but would also deprive a keyless-but-paid model of a header to fill.
         //
-        // `init.body` is read, not the `Request`: the tool-injection block below
-        // resolves a `Request`-carried body, and this check runs before it. A
-        // body the switch cannot see answers "not free", which is the safe
+        // A body the check cannot read answers "not free", which is the safe
         // side - the warning is the status quo, not a new failure.
-        !isFreeModelBody(init?.body)
+        !isFreeModelBody(bodyToPatch)
       ) {
         warnedNoCredential.add(plane);
         const sources: string[] = [
@@ -312,7 +329,7 @@ export const patchFetch = (
         ];
         console.warn(
           `[dsh-opencode-patch] no credential resolved for ${plane}; sending the adapter's placeholder, which the gateway answers with 401. Consulted: ${sources.join("; ")}.`,
-          "set a key on the route or its env var, or sign in through the settings card"
+          "set a key on the route or its env var, or turn on readOpencodeStore to use the key an OpenCode installation already holds"
         );
       }
     }
@@ -404,24 +421,8 @@ export const patchFetch = (
     const newInit: RequestInit = { ...init, headers };
     let requestToSend = input;
 
-    // 4. Core tool schema fallback for free-tier /responses models.
-    //
-    // DSH sends inference as fetch(new Request(url, { body })) — so init.body
-    // is undefined and the old `init?.body !== undefined` guard skipped the
-    // whole block: Agent Team turns left with no bash and the gateway 403s
-    // the body as non-OpenCode. Read the body off whichever half carries it.
-    let bodySource: "request" | "init" | "none" = "none";
-    let bodyToPatch: RequestInit["body"] = init?.body;
-    if (bodyToPatch !== undefined) {
-      bodySource = "init";
-    } else if (input instanceof Request) {
-      try {
-        bodyToPatch = await input.clone().text();
-        bodySource = "request";
-      } catch {
-        bodyToPatch = undefined;
-      }
-    }
+    // 4. Core tool schema fallback for free-tier /responses models, over the
+    // body read above.
     let finalBody = bodyToPatch;
     if (bodyToPatch !== undefined) {
       const newBody = maybeInjectCoreTools(url, bodyToPatch, headers, {

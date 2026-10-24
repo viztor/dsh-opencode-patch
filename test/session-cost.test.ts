@@ -261,6 +261,16 @@ describe("getSessionUsage", () => {
     expect(getSessionUsage("nope")?.totalTokens).toBe(9);
   });
 
+  it("falls back to the session that ran a turn most recently, not the newest one", () => {
+    // The meter asks with no id, so this fallback IS its reading. Ordered by
+    // creation, a turn in an older session kept showing the newer one's spend.
+    recordTurnUsage("a", { inputTokens: 1, totalTokens: 1 }, GO_FLASH, "m");
+    recordTurnUsage("b", { inputTokens: 9, totalTokens: 9 }, GO_FLASH, "m");
+    expect(getSessionUsage()?.totalTokens).toBe(9);
+    recordTurnUsage("a", { inputTokens: 1, totalTokens: 1 }, GO_FLASH, "m");
+    expect(getSessionUsage()?.totalTokens).toBe(2);
+  });
+
   it("returns a copy that cannot mutate stored state", () => {
     recordTurnUsage("a", { inputTokens: 1, totalTokens: 1 }, GO_FLASH, "m");
     const first = getSessionUsage("a");

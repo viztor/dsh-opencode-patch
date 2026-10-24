@@ -24,6 +24,7 @@ import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { describe, expect, it, vi } from "vitest";
 
 import { OPENCODE_PLANE_API } from "../src/catalog-data.ts";
+import { resolveConfig } from "../src/config.ts";
 import {
   RESPONSES_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
@@ -1806,6 +1807,73 @@ describe("Go Google bridge mounting", () => {
     stop?.();
     expect(host.adapters.has("opencode-google")).toBe(false);
     expect(host.adapters.has("opencode-go-google")).toBe(false);
+  });
+
+  it("hands back the bridges' disposer when the internal routes are off", async () => {
+    // The bridge mounts before the switch is read, so an exit that answered
+    // `undefined` here left both Google routes registered with nothing able to
+    // withdraw them — and the next reload's bridge then failed DUPLICATE_ADAPTER.
+    const host = createHost();
+    const stop = await registerResponsesProvider(
+      host.ctx,
+      resolveConfig({ internalRoutes: false })
+    );
+    expect(host.adapters.has("opencode-google")).toBe(true);
+    expect(stop).toBeTypeOf("function");
+    stop?.();
+    expect(host.adapters.has("opencode-google")).toBe(false);
+    expect(host.adapters.has("opencode-go-google")).toBe(false);
+    // And a second activation can mount them again, which is what a reload does.
+    const again = await registerResponsesProvider(
+      host.ctx,
+      resolveConfig({ internalRoutes: false })
+    );
+    expect(host.adapters.has("opencode-google")).toBe(true);
+    again?.();
+  });
+
+  it("withdraws routes and disposes the fiber when the mount fails to start", async () => {
+    // A route the mounted plugin registered before its startup error is live on
+    // the host. The failure path used to log "internal routes stay unregistered"
+    // and leave both the route and the fiber behind.
+    const host = createHost();
+    const disposed = vi.fn();
+    type Ctx = NonNullable<typeof host.ctx>;
+    const wrap = (ctx: Ctx): Ctx => {
+      const isolate = ctx.isolate as (name: string) => Ctx;
+      const plugin = ctx.plugin as (
+        subject: unknown,
+        config?: unknown
+      ) => unknown;
+      Object.assign(ctx, {
+        isolate(this: Ctx, name: string) {
+          return wrap(isolate.call(this, name));
+        },
+        plugin(this: Ctx, subject: unknown, config?: unknown) {
+          plugin.call(this, subject, config);
+          return {
+            await: () => Promise.reject(new Error("startup failed")),
+            dispose: disposed,
+          };
+        },
+      });
+      return ctx;
+    };
+    wrap(host.ctx);
+    const stop = await registerResponsesProvider(host.ctx);
+    // Fiber disposal is fire-and-forget; let it run.
+    await Promise.resolve();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    // Only the two bridges remain; every route the failed mount took is gone.
+    expect(
+      (
+        (host.ctx.llm?.listProviders?.() ?? []) as readonly { id: string }[]
+      ).map((provider) => provider.id)
+    ).toEqual(["opencode-google", "opencode-go-google"]);
+    // The bridges did mount, and the disposer handed back still withdraws them.
+    expect(host.adapters.has("opencode-google")).toBe(true);
+    stop?.();
+    expect(host.adapters.has("opencode-google")).toBe(false);
   });
 
   it("withdraws the first bridge if mounting the second fails", async () => {

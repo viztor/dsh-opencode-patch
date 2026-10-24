@@ -60,6 +60,29 @@ jobs:
           path: coverage
           retention-days: 7
 
+  # `engines.node` promises >=24 and every other job runs 26, so the floor was a
+  # claim nothing exercised. The suites that depend on the engine (node:sqlite,
+  # Intl.DurationFormat and its ICU strings) are exactly the ones that differ
+  # between majors, so the floor gets its own offline run of the unit and mock
+  # suites. Raise this together with `engines.node`.
+  engine-floor:
+    name: test · node 24 (engines floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Shuffled here, and in order in the main job: the two runs together show a
+      # case that passes only because of what an earlier case left behind. The
+      # seed is printed, so a failure reproduces with `--sequence.seed=<n>`.
+      - run: pnpm run test:shuffle
+      - run: pnpm run test:mock
+
   # The bundled catalog is generated from models.dev, and the one field that went
   # stale before (`provider_npm`) put nine models on an endpoint that cannot
   # serve them — a WRONG answer rather than a missing one, and invisible to the

@@ -96,12 +96,6 @@ const logRenameNotice = (ctx: CordisContext): void => {
 };
 
 /**
- * Register the Go quota service and its Typert remote face.
- *
- * Runs before the fetch patch so a composition without `globalThis.fetch`
- * still gets a working meter.
- */
-/**
  * Publish a service through `ctx.provide`, when `ctx.plugin` is not available.
  *
  * The fallback exists because a service the client cannot reach has no way to say
@@ -149,6 +143,12 @@ const mountByProvide = (
  */
 const usageMountedOn = new WeakSet<object>();
 
+/**
+ * Register the Go quota service and its Typert remote face.
+ *
+ * Runs before the fetch patch so a composition without `globalThis.fetch`
+ * still gets a working meter.
+ */
 const installUsageService = (
   ctx: CordisContext,
   config: ResolvedPluginConfig
@@ -275,14 +275,6 @@ const verifyUsageService = (ctx: CordisContext): void => {
 };
 
 /**
- * Wrap `globalThis.fetch` so claimed OpenCode traffic carries session affinity
- * and the gateway headers, restoring both on dispose.
- *
- * @returns `false` when there is no fetch to wrap. The caller then stops: the
- * stream hook and discovery must not attach, or turns would run without the
- * session affinity this plugin exists to provide.
- */
-/**
  * Roots that already carry the purge service, for the same reason the usage
  * service keeps its own set: `apply` runs once per live reload, and a service
  * tied to the activation fiber dies with it while a second registration is
@@ -336,6 +328,14 @@ const installStoreService = (ctx: CordisContext): void => {
   }
 };
 
+/**
+ * Wrap `globalThis.fetch` so claimed OpenCode traffic carries session affinity
+ * and the gateway headers, restoring both on dispose.
+ *
+ * @returns `false` when there is no fetch to wrap. The caller then stops: the
+ * stream hook and discovery must not attach, or turns would run without the
+ * session affinity this plugin exists to provide.
+ */
 const installFetchPatch = (
   ctx: CordisContext,
   config: ResolvedPluginConfig,
@@ -401,31 +401,7 @@ const installFetchPatch = (
     // Own the Responses route from here, so the user configures nothing: they
     // keep the `opencode` provider and key they already have. Best-effort — a
     // route declared in the profile still works if this cannot register.
-    // The registration is async (it reads `llm-pi-ai` off the loader), so the
-    // disposer cannot live in a local the effect body fills in later: an effect
-    // that re-runs before the mount settles would find `undefined` here, release
-    // nothing, and leave the previous mount's routes registered — and the mount
-    // that then arrives would be an orphan owned by a disposed effect. So the
-    // effect owns the WITHDRAWAL, not the mount: a mount that completes after
-    // disposal is released on the spot, and one that completes before it is
-    // released by the disposer below.
-    let stopResponsesProvider: (() => void) | undefined;
-    let released = false;
-    const releaseResponsesProvider = (): void => {
-      released = true;
-      stopResponsesProvider?.();
-      stopResponsesProvider = undefined;
-    };
-    void (async () => {
-      // The resolved config rides in: the mount reads the endpoint family and
-      // the installation-store switch from it.
-      const stop = await registerResponsesProvider(ctx, config);
-      if (released) {
-        stop?.();
-        return;
-      }
-      stopResponsesProvider = stop;
-    })();
+    const releaseResponsesProvider = mountInternalRoutes(ctx, config);
     return () => {
       releaseResponsesProvider();
       stopCatalogHiding?.();
@@ -451,79 +427,139 @@ const installStreamHook = (
 };
 
 /**
+ * The settings the LATEST activation on a root resolved, which is what every
+ * discovery callback answers from.
+ *
+ * Keyed on the root for the same reason the services are: `apply` runs once per
+ * live reload, and the host refuses a second registration under a namespace that
+ * is still held. The registrations therefore belong to the process, and only the
+ * settings they read move with each activation.
+ */
+const discoveryConfigOn = new WeakMap<object, ResolvedPluginConfig>();
+
+/** The namespaces this plugin publishes, and the catalog each one answers with. */
+const DISCOVERY_NAMESPACES: readonly {
+  readonly ns: string;
+  readonly catalog: () => readonly CatalogModelSpec[];
+}[] = [
+  { catalog: () => [...getLiveGoCatalog(), ...getLiveZenCatalog()], ns: name },
+  { catalog: getLiveGoCatalog, ns: "opencode-go" },
+  { catalog: getLiveZenCatalog, ns: "opencode" },
+];
+
+/**
  * Publish the canonical Go/Zen catalog to DSH's model discovery.
  *
  * Model discovery is part of the same "canonical catalog" feature as the
  * gateway listing enrichment, so both sit behind the one `enrichModels`
  * toggle: turning it off leaves DSH's own catalog and the raw gateway
  * listings untouched.
+ *
+ * Registered once per root and never withdrawn, like the usage service. The
+ * earlier shape registered on every activation and swallowed the host's
+ * duplicate refusal, so the FIRST activation's settings answered forever: a
+ * reload that changed `modelOverrides`, `maxContextWindow` or `enrichModels`
+ * changed nothing the picker saw. Each namespace is registered on its own, so
+ * one refusal no longer skips the others.
  */
 const installModelDiscovery = (
   ctx: CordisContext,
   config: ResolvedPluginConfig
 ): void => {
-  if (!config.enrichModels) {
+  const root: CordisContext = ctx.root ?? ctx;
+  const registered = discoveryConfigOn.has(root);
+  if (!registered && !config.enrichModels) {
     return;
   }
-  try {
-    const { llm } = ctx;
-    if (typeof llm?.registerModelDiscovery !== "function") {
-      return;
+  discoveryConfigOn.set(root, config);
+  if (registered) {
+    return;
+  }
+  const { llm } = ctx;
+  if (typeof llm?.registerModelDiscovery !== "function") {
+    return;
+  }
+  const current = (): ResolvedPluginConfig =>
+    discoveryConfigOn.get(root) ?? config;
+  for (const { ns, catalog } of DISCOVERY_NAMESPACES) {
+    try {
+      llm.registerModelDiscovery(ns, () => {
+        const settings = current();
+        return Promise.resolve(
+          settings.enrichModels
+            ? toDiscovered(
+                catalog(),
+                settings.maxContextWindow,
+                settings.modelOverrides
+              )
+            : []
+        );
+      });
+    } catch (error) {
+      // Non-fatal, and said: a picker missing a plane is otherwise a silence.
+      ctx.logger?.warn?.(
+        `[dsh-opencode-patch] model discovery for ${ns} did not register`,
+        error
+      );
     }
-    llm.registerModelDiscovery(name, () =>
-      Promise.resolve(
-        toDiscovered(
-          [...getLiveGoCatalog(), ...getLiveZenCatalog()],
-          config.maxContextWindow,
-          config.modelOverrides
-        )
-      )
-    );
-    llm.registerModelDiscovery("opencode-go", () =>
-      Promise.resolve(
-        toDiscovered(
-          getLiveGoCatalog(),
-          config.maxContextWindow,
-          config.modelOverrides
-        )
-      )
-    );
-    llm.registerModelDiscovery("opencode", () =>
-      Promise.resolve(
-        toDiscovered(
-          getLiveZenCatalog(),
-          config.maxContextWindow,
-          config.modelOverrides
-        )
-      )
-    );
-  } catch {
-    // Model discovery registration is non-fatal
   }
 };
 
 /**
- * Plugin entry: register the quota service, patch `fetch` for OpenCode
- * traffic, and capture turn state for configured providers.
+ * Mount the internal protocol routes for one activation, and own their withdrawal.
  *
- * Order matters:
- * 1. the rename notice, so it is the first thing a legacy row logs;
- * 2. the quota service, before the fetch patch, so a composition without
- *    `globalThis.fetch` still gets a working meter;
- * 3. the fetch patch, which bails out (warning) when there is nothing to
- *    wrap — `on` must not be attached in that case, or turns would run
- *    without session affinity;
- * 4. the stream hook and model discovery, which only make sense once the
- *    request path is patched.
+ * The registration is async (it reads `llm-pi-ai` off the loader), so the
+ * disposer cannot live in a local the effect body fills in later: an effect
+ * that re-runs before the mount settles would find `undefined`, release nothing,
+ * and leave the previous mount's routes registered. So this owns the
+ * WITHDRAWAL, not the mount: a mount that completes after release is withdrawn
+ * on the spot, and one that completes before it is withdrawn by the release.
  *
- * @param ctx - the Cordis host context.
- * @param rawConfig - the row config, if any.
+ * A REJECTED mount is reported and contained. It used to escape as an unhandled
+ * rejection from a `void` IIFE — which Node's default mode turns into a process
+ * exit — whenever the Google bridge failed to register.
+ *
+ * @param ctx - the host context.
+ * @param config - the resolved settings the mount reads.
+ * @param register - the mount itself; a parameter so its failure is testable.
+ * @returns the release, safe to call at any point and more than once.
  */
+export const mountInternalRoutes = (
+  ctx: CordisContext,
+  config: ResolvedPluginConfig,
+  register: typeof registerResponsesProvider = registerResponsesProvider
+): (() => void) => {
+  let stop: (() => void) | undefined;
+  let released = false;
+  void (async () => {
+    let next: (() => void) | undefined;
+    try {
+      next = await register(ctx, config);
+    } catch (error) {
+      ctx.logger?.warn?.(
+        "[dsh-opencode-patch] the internal routes did not mount; routes declared in the profile are unaffected",
+        error
+      );
+      return;
+    }
+    if (released) {
+      next?.();
+      return;
+    }
+    stop = next;
+  })();
+  return () => {
+    released = true;
+    stop?.();
+    stop = undefined;
+  };
+};
+
 /**
  * Whether this plane holds a credential the gateway would accept.
  *
- * Deliberately synchronous and deliberately generous: a declared env key, a key
- * captured from a live request, or an org written by a completed login. The
+ * Deliberately synchronous and deliberately generous: a declared env key or a
+ * key captured from a live request. The
  * SQLite store is not consulted because it is opt-in and off by default, and
  * calling a deployment "keyless" when it does hold a credential would hide models
  * it can actually use.
@@ -546,6 +582,23 @@ const hasPlaneCredential = (plane: string): boolean => {
   return getCapturedApiKey(plane) !== undefined;
 };
 
+/**
+ * Plugin entry: register the quota service, patch `fetch` for OpenCode
+ * traffic, and capture turn state for configured providers.
+ *
+ * Order matters:
+ * 1. the rename notice, so it is the first thing a legacy row logs;
+ * 2. the quota service, before the fetch patch, so a composition without
+ *    `globalThis.fetch` still gets a working meter;
+ * 3. the fetch patch, which bails out (warning) when there is nothing to
+ *    wrap — `on` must not be attached in that case, or turns would run
+ *    without session affinity;
+ * 4. the stream hook and model discovery, which only make sense once the
+ *    request path is patched.
+ *
+ * @param ctx - the Cordis host context.
+ * @param rawConfig - the row config, if any.
+ */
 export const apply = (
   ctx: CordisContext,
   rawConfig: PluginConfig = {}

@@ -125,6 +125,25 @@ describe("opencode-store: credentials", () => {
     expect(found?.[0]?.value).toBe("oc_sk_fixture_new");
   });
 
+  it("falls back to legacy rows per integration, not across the table", () => {
+    // A flagged Go row is the Go selection only. Read across the table, it hid
+    // the legacy Zen row and the reader answered with no Zen key at all.
+    const path = database((db) => {
+      schema(db);
+      addCredential(db, "go", "opencode-go", "oc_sk_fixture_go", 1);
+      db.prepare(
+        "INSERT INTO credential (id, integration_id, label, value, active, time_updated) VALUES (?, ?, ?, ?, NULL, ?)"
+      ).run("legacy", "opencode", "Zen", "oc_sk_fixture_zen_legacy", 100);
+    });
+    const found = readOpencodeCredentials(path);
+    expect(
+      found?.map((row) => `${row.integrationId}=${row.value}`).toSorted()
+    ).toEqual([
+      "opencode-go=oc_sk_fixture_go",
+      "opencode=oc_sk_fixture_zen_legacy",
+    ]);
+  });
+
   it("extracts the key from the JSON every real row carries", () => {
     // Measured against a live installation: EVERY value is a JSON document, not a
     // bare key. Returning the document puts JSON in the Bearer header, and the

@@ -349,7 +349,14 @@ export const createStreamHook = (
     }
     const modelProp: unknown = options.model;
     const modelName = typeof modelProp === "string" ? modelProp : "unknown";
-    const spec = findModelSpec(modelName);
+    // The ROUTE's plane first, as the dispatch lookup above does: the two planes
+    // price some shared ids differently (deepseek-v4-pro is 0.66/1.98 on Go and
+    // 1.74/3.48 on Zen), and a Go-first lookup recorded every Zen turn on those
+    // at the Go rate. The Go-first lookup is the fallback for a model neither
+    // route's plane carries.
+    const spec =
+      findModelSpecOn(catalogPlaneForRoute(providerKey), modelName) ??
+      findModelSpec(modelName);
 
     const wrappedStream = async function* wrappedStream() {
       for await (const chunk of downstream) {

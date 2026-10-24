@@ -12,6 +12,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { resolveConfig } from "../src/config.ts";
 import {
   apply,
   type CordisContext,
@@ -19,6 +20,8 @@ import {
   clearSessionUsageStore,
   RESPONSES_ROUTE,
 } from "../src/index.ts";
+import { mountInternalRoutes } from "../src/lifecycle.ts";
+import { findModelSpecOn } from "../src/models-catalog.ts";
 import {
   collectUnknown,
   createMockStream,
@@ -257,6 +260,73 @@ describe("apply (plugin lifecycle)", () => {
       )
     ).not.toThrow();
     expect(warned.join(" ")).toContain("neither ctx.plugin nor ctx.provide");
+  });
+
+  it("answers discovery from the LATEST activation's settings after a reload", async () => {
+    // The host refuses a namespace that is still held, the way cordis does. The
+    // earlier shape re-registered on every apply, swallowed that refusal, and so
+    // kept answering with the first activation's settings for the process's life.
+    const discover = new Map<string, () => Promise<unknown>>();
+    const ctx = {
+      effect: () => {},
+      llm: {
+        registerModelDiscovery: (ns: string, fn: () => Promise<unknown>) => {
+          if (discover.has(ns)) {
+            throw new Error(`DUPLICATE_DISCOVERY: ${ns}`);
+          }
+          discover.set(ns, fn);
+          return () => discover.delete(ns);
+        },
+      },
+      on: () => {},
+    } as unknown as CordisContext;
+    const contextOf = async (id: string): Promise<number | undefined> => {
+      const rows = (await discover.get("opencode")!()) as {
+        id: string;
+        contextWindow: number;
+      }[];
+      return rows.find((row) => row.id === id)?.contextWindow;
+    };
+
+    apply(ctx, { maxContextWindow: 262_144 });
+    expect(await contextOf("claude-sonnet-4-5")).toBe(262_144);
+
+    apply(ctx, { maxContextWindow: 65_536 });
+    expect(await contextOf("claude-sonnet-4-5")).toBe(65_536);
+
+    // Turning the feature off on a reload empties the answer rather than
+    // leaving the old catalog published.
+    apply(ctx, { enrichModels: false });
+    expect(await discover.get("opencode")!()).toEqual([]);
+    expect([...discover.keys()].toSorted()).toEqual(
+      ["dsh-opencode-patch", "opencode", "opencode-go"].toSorted()
+    );
+  });
+
+  it("registers each discovery namespace on its own, and says which one failed", () => {
+    // One `try` around all three meant a refusal of the first skipped the rest.
+    const registered: string[] = [];
+    const warn = vi.fn();
+    const ctx = {
+      effect: () => {},
+      llm: {
+        registerModelDiscovery: (ns: string) => {
+          if (ns === "dsh-opencode-patch") {
+            throw new Error("refused");
+          }
+          registered.push(ns);
+        },
+      },
+      logger: { info: () => {}, warn },
+      on: () => {},
+    } as unknown as CordisContext;
+
+    apply(ctx);
+    expect(registered.toSorted()).toEqual(["opencode", "opencode-go"]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("model discovery for dsh-opencode-patch"),
+      expect.any(Error)
+    );
   });
 
   it("registers no model discovery when enrichModels is off", () => {
@@ -784,6 +854,58 @@ describe("apply (plugin lifecycle)", () => {
     expect(recorded?.costUsd).toBeGreaterThan(0);
   });
 
+  it("prices a turn at the rate of the plane its route belongs to", async () => {
+    // The planes price some shared ids differently. A Go-first lookup billed
+    // every Zen turn on those at the Go rate, so each plane is checked here
+    // against its own catalog row rather than against a hardcoded number.
+    clearSessionUsageStore();
+    let streamHandler:
+      | ((options: unknown, next: () => unknown) => unknown)
+      | undefined;
+    const ctx: CordisContext = {
+      effect: () => {},
+      on: (
+        _event: string,
+        handler: (options: unknown, next: () => unknown) => unknown
+      ) => {
+        streamHandler = handler;
+      },
+    };
+    apply(ctx);
+    const model = "deepseek-v4-pro";
+    const go = findModelSpecOn("go", model)?.cost?.input;
+    const zen = findModelSpecOn("zen", model)?.cost?.input;
+    // The case only means something while the planes disagree.
+    expect(go).toBeTypeOf("number");
+    expect(zen).toBeTypeOf("number");
+    expect(go).not.toBe(zen);
+
+    const runTurn = async (provider: string, sessionId: string) => {
+      const down = async function* down() {
+        yield {
+          type: "usage",
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            totalTokens: 1_000_000,
+          },
+        };
+      };
+      const result: unknown = streamHandler?.(
+        { model, provider, sessionId },
+        () => down()
+      );
+      if (!isAsyncIterableLike(result)) {
+        throw new Error("expected async iterable downstream");
+      }
+      await collectUnknown(result);
+      return getSessionUsage(sessionId)?.costUsd;
+    };
+
+    expect(await runTurn("opencode-go", "plane-go")).toBeCloseTo(go ?? 0, 6);
+    expect(await runTurn("opencode", "plane-zen")).toBeCloseTo(zen ?? 0, 6);
+  });
+
   it("ignores non-opencode providers and invalid session IDs", () => {
     let streamHandler:
       | ((options: unknown, next: () => unknown) => unknown)
@@ -1082,5 +1204,61 @@ describe("apply (plugin lifecycle)", () => {
       throw new Error("expected async iterable downstream");
     }
     expect(await collectUnknown(result)).toEqual(["subagent-chunk"]);
+  });
+});
+
+describe("mountInternalRoutes", () => {
+  const config = resolveConfig({});
+  const settle = async (): Promise<void> => {
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+  };
+
+  it("contains a rejected mount instead of leaking an unhandled rejection", async () => {
+    // A `void` IIFE with no catch turned any bridge failure into an unhandled
+    // rejection, which Node's default mode answers by exiting the process.
+    const warn = vi.fn();
+    const ctx = { logger: { warn } } as unknown as CordisContext;
+    const release = mountInternalRoutes(ctx, config, () =>
+      Promise.reject(new Error("DUPLICATE_ADAPTER"))
+    );
+    await settle();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("internal routes did not mount"),
+      expect.objectContaining({ message: "DUPLICATE_ADAPTER" })
+    );
+    expect(() => {
+      release();
+    }).not.toThrow();
+  });
+
+  it("withdraws a mount that settles after its release", async () => {
+    let resolveMount: (stop: () => void) => void = () => {};
+    const stop = vi.fn<() => void>();
+    const release = mountInternalRoutes(
+      {} as CordisContext,
+      config,
+      () =>
+        new Promise((resolve) => {
+          resolveMount = resolve;
+        })
+    );
+    release();
+    resolveMount(stop);
+    await settle();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("withdraws a settled mount once, however often it is released", async () => {
+    const stop = vi.fn();
+    const release = mountInternalRoutes({} as CordisContext, config, () =>
+      Promise.resolve(stop)
+    );
+    await settle();
+    expect(stop).not.toHaveBeenCalled();
+    release();
+    release();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });
