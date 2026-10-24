@@ -26,7 +26,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P-T1b | `test:` a harness that is the real host       | in review |
 | P-H   | `refactor:` one way to patch a host method    | in review |
 | P-R1  | `feat:` the plugin owns the plane routes      | in review |
-| P-R2  | `fix:` the endpoint family, measured          | planned   |
+| P-R2  | `test:` the endpoint families, measured       | in review |
 | P3    | `feat:` Settings complements pi's list        | planned   |
 | P-T2  | `test:` suite structure                       | planned   |
 | P-T3  | `ci:` CI and scripts                          | planned   |
@@ -317,13 +317,13 @@ What stays private is pinned by contract tests against the real host packages:
 
 **How each phase opens:**
 
-- **Behaviour phases open with a red test:** P1a, P1b's fixes, P2, P-R1, P-R2, P3, P6 and P10b.
-- **Pinning phases open with a green pin**, which the PR shows unchanged: P-T1a/b, P-H, P5, P7, P8, P9, P10a and P-T2. P-H's exceptions are red on the base by design: its reload test (the defect the phase removes) and the five cases in `test/models-discovery.test.ts` marked "a deliberate change in P-H" (a refused listing define, a reinstall's `registeredRoutes`, a frozen adapter, a refused adapter method, and an inherited adapter method left with no own property after dispose).
+- **Behaviour phases open with a red test:** P1a, P1b's fixes, P2, P-R1, P3, P6 and P10b.
+- **Pinning phases open with a green pin**, which the PR shows unchanged: P-T1a/b, P-H, P-R2, P5, P7, P8, P9, P10a and P-T2. P-H's exceptions are red on the base by design: its reload test (the defect the phase removes) and the five cases in `test/models-discovery.test.ts` marked "a deliberate change in P-H" (a refused listing define, a reinstall's `registeredRoutes`, a frozen adapter, a refused adapter method, and an inherited adapter method left with no own property after dispose). P-R2 opens with the default's and legacy's bases pinned (the first and third describes of `test/endpoint-family.test.ts`, written against `baseUrlFor` and green on the base); the constant and the dispatch-set cases land with the names they test (`AUTO_ENDPOINT_FAMILY`, `LEGACY_DISPATCH`, `MATRIX_FAMILIES`), and a measured flip of the default would be a later `fix:`.
 - **P-T3 and P12 are exempt.**
 
 **Characterization rows are tagged when they are recorded**, so a later phase flips named rows. The authoritative per-facet table is `S0_TODAY` in `test/support/host.ts` (each model's info, call-config verdict and wire carry their own tag); a phase's PR body cites the rows it flips from there. The three tags:
 
-- `BASELINE`: right today and must survive every phase. No phase may move a `BASELINE` facet, except that P-R2's measured family flip, if it happens, may move the endpoint-family part of a wire facet; it re-tags each one it moves and names it in its PR body.
+- `BASELINE`: right today and must survive every phase. No phase may move a `BASELINE` facet, except that the `fix:` that flips `AUTO_ENDPOINT_FAMILY` on P-R2's measured evidence (`docs/redirect-planes.md` §13) may move the endpoint-family part of a wire facet; it re-tags each one it moves and names it in its PR body.
 - `KNOWN_DEFECT`, wrong today and a phase fixes it, for example:
   - Go Gemini answers `INVALID_CONFIG` — in the published host's apply order (`plugin-first`); with pi-ai applying first it validates, so the row is order-dependent (`todayRowsFor`);
   - an unknown id is rejected;
@@ -390,9 +390,16 @@ What stays private is pinned by contract tests against the real host packages:
    - **Re-wrap built, not wired.** `rewrapOnAdaptersUpdated` is tested but used by no site: on `decoratePlaneAdapters` it would wrap pi-ai's adapter in the plugin-first order and flip the `[KNOWN_DEFECT]` rows, and P-R1 deletes that site.
    - **Left for P6:** the global `fetch` patch in `lifecycle.ts` stacks the same way (A, B, dispose A, dispose B leaves A's patched fetch installed), but it is a global, not a host service method.
 7. **P-R1 `feat:` the plugin owns the plane routes.** In review. Landed as the design above (D1, D3, D5, D8, D13, D15-D21): `src/host/route-claim.ts`, `src/host/plane-provider.ts`, `src/host/describe-graft.ts` and `src/host/host-modules.ts` over the pure `src/utils/protocols.ts`, `model-metadata.ts`, `plane-model.ts` and `plane-profile.ts`, with `inject: []` at the root. Deleted: `responses-provider.ts`, `responses-routes.ts`, `google-bridge.ts`, `pi-provider.ts`, `utils/google-replay.ts` (a mock-gateway replay showed one provider label), the listing hide, the stream redirect, the model-info and plane-adapter decorations, and the D19 settings. Nine deliberate refinements of the text above: the describe wrapper is its own module on `patchMethod`; the host-module seam sits in `cordis-context.ts` with the loaders in `host/host-modules.ts`, and pi-ai's module is taken from its own loader entry during its commit run; the libraries (`loadHostPi`'s pi, dsh-llm, the loader) are found from the wrapper the loader resolves from the context's base URL, never from the plugin's own install, so a `link:`ed checkout runs on the host's copies too (the binary e2e asserts the pi root is the host prefix's); D20 mirrors pi-ai's exact rule (the launch environment only when no credentials service is mounted); `legacy` takes pi's own base only when pi files the model under the same protocol on a `/zen` root; cost is catalog > pi > zero, because pi-ai's model row has no `cost` (D17's table puts it under the user's row), and nothing replaces `modelRoutes`' per-model protocol pin — the route-level `api` covers only ids neither the catalog nor pi describes; only one pi-ai row's planes are stripped and served — the served row is sticky while it is live and declares a plane, and otherwise the first live row whose raw config declares one, else the first live row, so a re-enabled row that cordis appends to the end of the registry is still the one served, and the served row never moves between two live declaring rows, which would leave the one left behind stripped with nobody serving its planes — and another pi-ai row keeps and serves its own, reported once; when the served row changes (it was disposed or stopped declaring), what was built from the previous one is released and a new served row that already holds a plane is restarted once, as the mount does; the teardown and the stand-down wait for a LOADING pi-ai to settle and restart it if it resolved without a plane it declares (the text said "with pi-ai ACTIVE"), and the stand-down releases the plugin's handle first and happens whether or not a plane is declared, so a plane a later Settings save adds goes to pi-ai's own save check rather than to a refusal no retry can clear; and the characterization's fixture-sanity case derives `info` as D17 does, so `INFO_NOT_FROM_CATALOG` stays empty. The profiles' memo key holds the catalog's generation and a landed refresh re-runs the reconcile, so the live catalog reaches the profiles after boot without a plane edit. The PR body names every tagged row it flips.
-8. **P-R2 `fix:` the endpoint family, measured.**
-   - Probe 3 URL shapes × 4 protocols × 2 planes, keyless, plus keyed probes per family with the CI keys.
-   - Set the default family and pin it with a test. If a `modern` cell fails, flip the default; `endpoint: legacy` still maps every protocol except Go's Google, which stays on `/inference/go/google/v1beta` under every family (`GO_GOOGLE_BASE_URL`). Decide here whether `endpoint: legacy` is a guarded configuration: the keyless matrix records its Responses and Messages cells and Zen's Google cell but does not assert them.
+8. **P-R2 `test:` the endpoint families, measured.** In review. Landed as:
+   - **The default in one constant.** `AUTO_ENDPOINT_FAMILY` (`src/utils/plane-model.ts`) is the family `auto` resolves to, `modern`, and `test/endpoint-family.test.ts` pins it, the default's base for every plane × protocol, `endpoint: legacy`'s mapping of every protocol on both planes (Go's Google on `GO_GOOGLE_BASE_URL`), and the matrix cells a turn reaches under each setting. A naming refactor: no behaviour changes and no characterization row flips.
+   - **Keyless:** 3 URL shapes (legacy `/zen(/go)/v1`, the provider-level root `/inference(/go)/v1`, modern `/inference(/go)/{openai,anthropic,google}/…`) × 4 protocols × 2 planes, 24 cells, plus one keyless free-model probe on `/inference/openai/v1/chat/completions`. The root shape is recorded only: nothing dispatches there.
+   - **Keyed:** one minimal probe per plane × protocol × shape with the plane's own key and the identity headers the fetch patch puts on a turn, its user agent included (`test/e2e/keyed-probes.e2e.ts`), deciding each plane from the cells the default dispatches to alone (`planeOutcome`).
+   - **Pure classifiers and decisions** for each kind of answer and each pass, skip or fail (`test/support/keyless-matrix.ts`, `test/support/keyed-probes.ts`: the verdict of a retried probe, the unreadable and gone rows, the free probe's outcome, a keyed plane's outcome), unit-tested offline; the keyed cells also go through the offline gateway mock's judge.
+   - **Tiers.** `OPENCODE_E2E_KEYED` is `none`, `probes` or `full` (unset is `full`); the full keyed suites read their keys through `armedKey(tier, "full", …)`.
+   - **The record.** Both live suites write a dated table (`test/support/endpoint-record.ts`), rewritten after every cell so a job killed at its time limit keeps what it measured, that CI publishes to the run summary and the `endpoint-families` artifact. No probe follows a redirect; a redirected cell records the path it pointed at.
+   - **Decided:** `endpoint: legacy` is recorded, not guarded, on the live gateway (`LEGACY_DISPATCH`, marked `†`): its keyless answers must be readable, like every legacy cell, but its path-gone is asserted nowhere live; its mapping is guarded by the unit pins.
+   - **The flip rule.** A keyed modern cell that answers path-gone, wrong-protocol or auth-refused with the CI key turns the job red, and only that is flip evidence: the evidence for a later `fix:` that flips `AUTO_ENDPOINT_FAMILY`, with the copy, `TODAY_DISPATCH` and the re-tagged wire facets. The job also fails when a default cell answers nothing readable (`other`, a redirect, a refused session, `transport-error`, `no-model`), which is not flip evidence, and skips a plane none of whose default cells was served (a busy upstream — a 503, a 529 or a 5xx naming an overload — skips like a rate limit; a 500 or 502 stays `other`).
+   - **Measured results** live in `docs/redirect-planes.md` §13, pending the first CI run.
 9. **P3 `feat:` Settings complements pi's list.**
    - The `discoverModels` wrapper answers servable, non-deprecated models, deduped and whitelisted.
    - Delete `installModelDiscovery` and `toDiscovered`.
@@ -546,8 +553,14 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 **P-R2**
 
-- **Live e2e:** the keyless matrix, keyed probes per family, and one keyless free-model probe.
-- **Unit:** the default family.
+- **Unit:**
+  - the default family: `AUTO_ENDPOINT_FAMILY` is `modern`, `auto` follows it, and the default's base per plane × protocol;
+  - `endpoint: legacy` maps every protocol on both planes, and the cells each setting reaches (`TODAY_DISPATCH`, `LEGACY_DISPATCH`);
+  - the 24-cell table, the free probe's cells, every classifier, the tiers, the keyed cells against the plugin's own `authHeaderFor`, the record formatter, §13's shape and the CI wiring.
+- **Live e2e:**
+  - keyless, every tier: the 24-cell matrix and the free-model probe;
+  - `probes`: one keyed probe per plane × protocol × shape;
+  - `full`: the full keyed suites.
 
 **P3**
 
@@ -584,9 +597,19 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 ### The live gateway job (`OPENCODE_API_KEY` / `OPENCODE_GO_API_KEY`)
 
-- **Every PR:** the keyless matrix. A 404 means the path is gone; a 400 "Model is unavailable" or a 410 means the model is gone. It asserts that every cell has a model and was sent, and that no cell the plugin dispatches to with the default endpoint (`auto`, an alias of `modern`: since P-R1, all four protocols on the modern family) answers 404; the legacy verdicts are P-R2's record. `endpoint: legacy` users dispatch completions, Responses and Messages on both planes, and Zen's Google, to the legacy cells, which are recorded for P-R2, not asserted; Go's Google stays on `/inference/go/google/v1beta` under every family (`GO_GOOGLE_BASE_URL`), the modern cell already asserted.
-- **PRs that touch `src/host/**`, and nightly:** minimal keyed probes, one per plane × protocol, with a small `max_tokens`.
-- **Nightly and on dispatch:** the full keyed suites.
+What spends a key is a tier, `OPENCODE_E2E_KEYED`, which a step of the `e2e` job sets per event; the keys are passed only when it is not `none`:
+
+| Run | Tier | What runs |
+| :-- | :-- | :-- |
+| a PR | `none` | the keyless cases only, no key spent: the matrix, the free probe, and the keyless cases of protocol-routing and opencode-live |
+| a PR touching `src/host/**`, `src/utils/protocols.ts`, `src/utils/plane-model.ts`, `src/identity.ts`, `src/utils/request-shape.ts` or the probes' own inputs | `probes` | adds the keyed probes |
+| nightly, dispatch | `full` | adds the full keyed suites |
+| a push to main | `none` | keyless only |
+
+- **The keyless matrix** (every run): 3 shapes × 4 protocols × 2 planes. A 404 means the path is gone; a 400 "Model is unavailable" or a 410 means the model is gone. It asserts that every cell has a model and was sent, that every legacy and modern answer is readable (a redirect, a rate limit or no answer is not), and that no cell the default dispatches to (`TODAY_DISPATCH`: all four protocols on the modern family) answers 404. The free probe asserts that a free completions model is served or free-tier-gated on `/inference/openai/v1/chat/completions`, and skips on a rate limit.
+- **The keyed probes** (`probes` and `full`), per plane and from the `TODAY_DISPATCH` cells alone: it fails when one answers path-gone, wrong-protocol or auth-refused (the flip evidence) or nothing readable — `other`, a redirect, a refused session, `transport-error` or `no-model` (not flip evidence); it skips when none of them was served (the account's answer, a rate limit, a busy upstream, a retired model, a parsed but refused body), since that measured nothing.
+- `endpoint: legacy`'s cells (completions, Responses and Messages on both planes, and Zen's Google) and the root shape are recorded, not asserted — a legacy keyless answer must still be readable, but its path-gone fails nothing; Go's Google stays on `/inference/go/google/v1beta` under every family (`GO_GOOGLE_BASE_URL`).
+- Both probe suites write a dated table to the run summary and the `endpoint-families` artifact; a run's tables are pasted into `docs/redirect-planes.md` §13.
 
 ## How each phase is built
 

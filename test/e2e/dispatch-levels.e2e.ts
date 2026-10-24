@@ -22,9 +22,11 @@
  * The last block is live and keyed: one toggle-only model per plane and
  * protocol, sent through the plane adapter on a tier-A host with the effort id
  * the picker's "On" carries, so the adapter builds the wire value and a
- * gateway that refuses it fails here rather than in a user's turn. It skips
- * without the plane's key, and when no toggle model was entitled on the
- * account (none reached the gateway's body check).
+ * gateway that refuses it fails here rather than in a user's turn. It runs on
+ * the `full` tier of `OPENCODE_E2E_KEYED` (the default when it is unset; CI
+ * runs it nightly and on dispatch), and skips without the plane's key, on a
+ * lower tier, and when no toggle model was entitled on the account (none
+ * reached the gateway's body check).
  *
  * Opt-in (`OPENCODE_E2E=1`), like every file in this suite. The sweep needs
  * no network and no port: its value is the real rule and the real catalog.
@@ -41,6 +43,7 @@ import {
   mountTierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
+import { armedKey, keyedTierOf } from "../support/keyed-probes.ts";
 import {
   type CatalogModelSpec,
   OPENCODE_FAMILY_API,
@@ -53,19 +56,21 @@ import {
 } from "../support/src.ts";
 
 const ENABLED = process.env.OPENCODE_E2E === "1";
+/** What may spend a key: the live block runs on the `full` tier only. */
+const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
 
 /** The two plane routes, the catalog and family map each resolves from, and its key. */
 const PLANES = [
   {
     catalog: OPENCODE_ZEN_CATALOG,
     family: OPENCODE_FAMILY_API.zen,
-    key: process.env.OPENCODE_API_KEY,
+    key: armedKey(TIER, "full", process.env.OPENCODE_API_KEY),
     route: "opencode",
   },
   {
     catalog: OPENCODE_GO_CATALOG,
     family: OPENCODE_FAMILY_API.go,
-    key: process.env.OPENCODE_GO_API_KEY,
+    key: armedKey(TIER, "full", process.env.OPENCODE_GO_API_KEY),
     route: "opencode-go",
   },
 ] as const;

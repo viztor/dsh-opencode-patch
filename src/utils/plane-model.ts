@@ -8,7 +8,7 @@
  * | name, context, max tokens, modalities | the user's row > pi-ai's `modelOverrides` > catalog > pi > defaults (D17) |
  * | cost | catalog > pi > zero |
  * | reasoning | the user's `reasoningEfforts` > the override's > the catalog ({@link reasoningFor}, D1) > pi > none |
- * | baseUrl | the route's `baseURL`, shaped > the endpoint family ({@link baseUrlFor}) |
+ * | baseUrl | the route's `baseURL`, shaped > the endpoint family ({@link baseUrlFor}; `auto` is {@link AUTO_ENDPOINT_FAMILY}) |
  *
  * A route-level `api` never reclassifies an id the catalog or pi describes:
  * the plane serves every protocol at once, so the route's `api` only says what
@@ -39,8 +39,18 @@ import {
   protocolForSdk,
 } from "./protocols.ts";
 
-/** The endpoint family a plane sends to; `auto` is `modern`. */
+/** The endpoint family a plane sends to; `auto` is {@link AUTO_ENDPOINT_FAMILY}. */
 export type EndpointChoice = "auto" | "legacy" | "modern";
+
+/**
+ * The family `auto` — the default `endpoint` (`DEFAULT_ENDPOINT_FAMILY`) —
+ * sends to. It has been `modern` since P-R1; P-R2 measures the families on the
+ * live gateway (`docs/redirect-planes.md` §13) and keeps it. The family `auto`
+ * resolves to is this one value; a flip also moves the copy, `TODAY_DISPATCH`,
+ * the bases `test/endpoint-family.test.ts` pins and the re-tagged wire facets
+ * (§13).
+ */
+export const AUTO_ENDPOINT_FAMILY: Exclude<EndpointChoice, "auto"> = "modern";
 
 /** The catalog spec fields this module reads (`CatalogModelSpec`'s shape). */
 export interface PlaneCatalogSpec extends ReasoningSpec {
@@ -173,7 +183,7 @@ const forProtocol = (protocol: Protocol, base: string): string =>
  *    the legacy one, `/inference(/go)(/openai)/v1` the modern one.
  * 2. Any other route-level `baseURL` is the user's endpoint, used as written
  *    (trailing slashes trimmed, and a trailing `/v1` dropped for Anthropic).
- * 3. Otherwise the `endpoint` choice; `auto` is `modern`.
+ * 3. Otherwise the `endpoint` choice; `auto` is {@link AUTO_ENDPOINT_FAMILY}.
  * 4. Modern: the catalog's family map for the model's SDK, else for the
  *    protocol's family, else the measured fallback.
  * 5. Legacy: pi's own base when pi files the model under this protocol on a
@@ -190,7 +200,8 @@ export const baseUrlFor = (
   routeBaseURL?: string,
   pi?: PlanePiModel
 ): string => {
-  let family: "legacy" | "modern" = endpoint === "legacy" ? "legacy" : "modern";
+  let family: Exclude<EndpointChoice, "auto"> =
+    endpoint === "auto" ? AUTO_ENDPOINT_FAMILY : endpoint;
   if (routeBaseURL !== undefined && routeBaseURL.length > 0) {
     const path = vendorPathOf(routeBaseURL);
     if (path?.startsWith("/zen") === true) {
