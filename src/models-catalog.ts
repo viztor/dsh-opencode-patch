@@ -695,6 +695,14 @@ export const isGoModelsListingUrl = (
 /**
  * Merge and enrich a gateway `/models` response with the complete OpenCode Go or Zen catalog.
  *
+ * Passes any non-2xx other than a 404 through unchanged: a 401, a 403, a 429 or
+ * a 5xx is the gateway's verdict on the request — a missing or refused key, a
+ * tier the account lacks, a rate limit, an outage — and answering it with a
+ * catalog told the caller the listing had succeeded. A 404 is filled on both
+ * planes with that plane's catalog: the Go plane's inference base has no
+ * `/models` of its own, so the plane's catalog IS the listing there, and a Zen
+ * base without one is answered the same way.
+ *
  * @param url - the request URL
  * @param response - the upstream fetch Response
  * @param fetchFn - optional fetch implementation for SWR background refresh
@@ -705,6 +713,9 @@ export const enrichModelsResponse = async (
   response: Response,
   fetchFn: typeof fetch = globalThis.fetch
 ): Promise<Response> => {
+  if (!response.ok && response.status !== 404) {
+    return response;
+  }
   let existingData: Record<string, unknown>[] = [];
   try {
     const raw: unknown = await response.clone().json();
@@ -712,7 +723,7 @@ export const enrichModelsResponse = async (
       existingData = raw.data.filter(isRecord);
     }
   } catch {
-    // If the upstream returned non-JSON, generate the full catalog response.
+    // A 2xx or 404 whose body is not JSON still yields the full catalog.
   }
 
   // The plane from the PATH alone. The caller has already decided this is a

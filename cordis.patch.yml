@@ -38,7 +38,7 @@
 #                               families: ['opencode.ai/zen', 'opencode.ai/inference']).
 #   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
 #   debug: true|false           log every streamed call that receives the header.
-#   debugFile: path             optional append target for stream debug JSONL.
+#   debugFile: path             optional append target for stream debug JSONL; written only while debug is on.
 - insert:
     - id: dsh-opencode-patch
       name: "dsh-opencode-patch"

@@ -50,6 +50,61 @@ describe("purgeDeprecatedModels", () => {
   });
 });
 
+describe("purgeDeprecatedModels: the contract decides what a result is", () => {
+  it("carries the host's refusal envelope in its own words", async () => {
+    // The remote answers a failure as `{ ok: false, error }`. Read as a shape
+    // error about the envelope, the host's own reason was lost.
+    await expect(
+      purgeDeprecatedModels(
+        scopeWith(async () => ({
+          error: new Error("no config editor on this host"),
+          ok: false,
+        }))
+      )
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "no config editor on this host",
+    });
+  });
+
+  it("names a refusal that carries no message", async () => {
+    await expect(
+      purgeDeprecatedModels(scopeWith(async () => ({ error: {}, ok: false })))
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host refused the purge",
+    });
+  });
+
+  it("refuses a value without catalogRead, which the contract requires", async () => {
+    const outcome = await purgeDeprecatedModels(
+      scopeWith(async () => ({ ok: true, value: { removed: [] } }))
+    );
+    expect(outcome).toMatchObject({ kind: "failed" });
+  });
+
+  it("strips a removed row down to the fields the card renders", async () => {
+    const outcome = await purgeDeprecatedModels(
+      scopeWith(async () => ({
+        ok: true,
+        value: {
+          catalogRead: true,
+          removed: [
+            { extra: 1, id: "x", provider: "opencode", site: "summarizer" },
+          ],
+        },
+      }))
+    );
+    expect(outcome).toEqual({
+      kind: "purged",
+      result: {
+        catalogRead: true,
+        removed: [{ id: "x", provider: "opencode", site: "summarizer" }],
+      },
+    });
+  });
+});
+
 describe("purgeDeprecatedModels: the paths a scope can take", () => {
   it("reads the namespace through ctx.get, the path that works at runtime", () => {
     // The `scope.remote.opencodeModelPurge` property read in the cases above is

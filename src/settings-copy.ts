@@ -13,11 +13,11 @@ export const en = {
   enrichModelsHint:
     'Fills context limits, modalities and thinking levels from the OpenCode catalog (models.opencode.ai — the same registry models.dev serves) into the model info, and lets the gateway\'s /models listing carry the full catalog. It does NOT add models to the picker — the picker shows only what you declared; use "Check catalog" above for that. Off leaves both the listing and the model info as the gateway sent them.',
   endpoint: "API Endpoint",
-  endpointAuto: "Automatic (follow the catalog)",
+  endpointAuto: "Automatic (same as Modern)",
   endpointHint:
-    "Which endpoint family requests are sent to. Automatic follows the gateway's own catalog address; the other two pin one. The older and newer families are separately entitled and both still answer, so pick whichever your account works on rather than whichever is current.",
+    "Which endpoint family requests are sent to. Modern sends each protocol to its own inference path (inference/openai, inference/anthropic, inference/google; inference/go/… on Go); Automatic is the same as Modern; Legacy pins the older zen/v1 base (zen/go/v1 on Go). The two families are separately entitled and both still answer, so pick whichever your account works on.",
   endpointLegacy: "Legacy (zen/v1)",
-  endpointModern: "Modern (inference/v1)",
+  endpointModern: "Modern (inference, per protocol)",
   injectCoreTools: "Inject Core Tools (default on)",
   injectCoreToolsHint:
     "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
@@ -200,11 +200,11 @@ export const zh: Record<keyof typeof en, string> = {
   groupQuota: "配额计量",
   groupRequests: "网关请求",
   endpoint: "API 端点",
-  endpointAuto: "自动（跟随目录）",
+  endpointAuto: "自动（同新端点）",
   endpointHint:
-    "请求发往哪个端点家族。自动会跟随网关目录给出的地址；另外两项则固定其一。旧端点与新端点的授权彼此独立且目前均可访问，因此请选择账户可用的那个，而不是当前最新的那个。",
+    "请求发往哪个端点家族。新端点按协议各自发往 inference 路径（inference/openai、inference/anthropic、inference/google；Go 为 inference/go/…）；自动与新端点相同；旧端点固定使用较早的 zen/v1（Go 为 zen/go/v1）。两套端点的授权彼此独立且目前均可访问，因此请选择账户可用的那个。",
   endpointLegacy: "旧端点（zen/v1）",
-  endpointModern: "新端点（inference/v1）",
+  endpointModern: "新端点（inference，按协议）",
   freeModel: "免费",
   invalidText: "该值未被接受，留空使用默认值。",
   keySource: "凭据来源",

@@ -248,7 +248,7 @@ opencode-responses:
 | **模型与免费额度** | 自动补全核心工具（默认开启） | `on` | 补上免费层 `/responses` 请求体所需的 `read` + `bash` schema |
 | **配额计量** | 开启输入区用量计量（默认开启） | `on` | 在输入框停靠栏挂载实时计量表——Go 额度环，或 Zen 会话消耗 |
 | **配额计量** | 显示会话消耗与模型费率（默认开启） | `on` | 追加显示本会话累计花费与当前模型每百万 Token 费率 |
-| **账户与端点** | API 端点 | `auto` | 请求发往哪个端点家族：**自动**（跟随目录） · **旧端点**（`zen/v1`） · **新端点**（`inference/v1`） |
+| **账户与端点** | API 端点 | `auto` | 请求发往哪个端点家族：**自动**（同新端点） · **旧端点**（`zen/v1`、`zen/go/v1`） · **新端点**（按协议的 `inference/{openai,anthropic,google}/…`，Go 为 `inference/go/…`） |
 | **账户与端点** | 凭据来源 | `auto` | 多个密钥同时可用时以哪个为准：**自动** · **优先实时请求** · **优先已声明密钥** |
 | **账户与端点** | 读取 OpenCode 安装版的密钥（默认关闭） | `off` | 允许本插件读取 OpenCode 自己保存的凭据，且仅作最后手段——默认关闭 |
 
@@ -256,7 +256,7 @@ opencode-responses:
 
 一个请求发往哪里由两个问题决定，答案就在**账户与端点**分区里。
 
-**发往哪个端点家族。** 网关在两套端点上都应答——较早的 `/zen/v1` 与较新的 `/inference/v1`——而两者的授权是**彼此独立**的：在一边可用的账户不保证在另一边可用。`auto` 会跟随网关自己的目录，目前它指向较新的一套，因此目录迁移会带着你一起走；`legacy` 与 `modern` 则固定其一，适用于账户只在较早一套上可用，或你想确认较新的一套是否可用的情况。
+**发往哪个端点家族。** 网关在两套端点上都应答——较早的 `/zen/v1`（Go 为 `/zen/go/v1`），所有协议共用一个基址；以及较新的按协议划分的 `inference` 家族（`/inference/openai/v1`、`/inference/anthropic/v1`、`/inference/google/v1beta`，Go 为 `/inference/go/…`）——而两者的授权是**彼此独立**的：在一边可用的账户不保证在另一边可用。`modern` 将每个协议发往各自的 inference 路径；`auto`（默认值）是 `modern` 的别名；`legacy` 固定使用较早的一套，适用于账户只在那里可用的情况。
 
 **以哪个凭据为准。** `keySource` 决定插件可见的多个凭据源的优先级——`auto` 优先使用你声明过的密钥，其次是从实时请求中捕获的密钥，最后是声明的凭据引用；`request` 把捕获到的密钥提到最前；`configured` 则相反。其下的 `readOpencodeStore` 允许插件读取 OpenCode 自己保存的凭据，且**仅作最后手段**。两者默认分别为 `auto` 与关闭，因此在你说要改之前一切照旧。
 
@@ -362,7 +362,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | 指定一个仅当调用方提供会话 id 时才使用的环境变量名 |
 | `freeModelMarker` | `free` | 模型 id 子串；`*` 强制启用回退，`''` 关闭回退 |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | 端点覆盖；从组合中自动发现 |
-| `debug` / `debugFile` | `false` / — | 诊断用 JSONL 日志，不是谁会在 UI 里调节的行为 |
+| `debug` / `debugFile` | `false` / — | 诊断用 JSONL 日志，不是谁会在 UI 里调节的行为；仅在 `debug` 开启时才写入该文件 |
 
 ```yaml
 # cordis.patch.yml — the plugin's row; every key is optional.
@@ -390,7 +390,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
         enrichModels: true # merge catalog specs into model info + gateway /models listings
         usageEnabled: true # off = no meter and no price row
         # File-level only debug options:
-        debug: false
+        debug: false # 仅在 debug 开启时写入 debugFile
         debugFile: "/tmp/dsh-opencode-debug.jsonl"
 ```
 

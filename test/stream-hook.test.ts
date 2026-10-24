@@ -16,9 +16,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { recordDebug } from "../src/debug.ts";
 import { projectNameFrom } from "../src/stream-hook.ts";
+import { collectUnknown, createMockStream } from "./test-helpers.ts";
+
+// The debug sink is observed rather than written: a negative assertion over a
+// file needs a wait to mean anything, and a mock makes "never called" exact.
+vi.mock("../src/debug.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/debug.ts")>()),
+  recordDebug: vi.fn(),
+}));
 
 const created: string[] = [];
 
@@ -112,13 +121,16 @@ describe("stream-hook · the pass-through guards", () => {
    * mistyped options object, a provider it does not own, and a model it cannot
    * serve.
    */
-  const hookWith = async (providers: string[]) => {
+  const hookWith = async (
+    providers: string[],
+    overrides: Record<string, unknown> = {}
+  ) => {
     const { createStreamHook } = await import("../src/stream-hook.ts");
     const { AsyncLocalStorage } = await import("node:async_hooks");
     const { resolveConfig } = await import("../src/config.ts");
     return createStreamHook(
       { logger: { info: () => {} } } as never,
-      resolveConfig({ providers, usageEnabled: false } as never),
+      resolveConfig({ providers, usageEnabled: false, ...overrides } as never),
       new AsyncLocalStorage()
     );
   };
@@ -157,5 +169,82 @@ describe("stream-hook · the pass-through guards", () => {
     const next = vi.fn(() => "next-result");
     expect(hook({ provider: 7, model: "x" }, next)).toBe("next-result");
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("stream-hook · the debug gate", () => {
+  /**
+   * `debug` is the switch and `debugFile` is only where the switch writes. The
+   * fetch patch has always been gated that way; the stream hook wrote the file
+   * whenever a path was configured, so turning debugging off left one of the two
+   * logs running.
+   */
+  const debugFile = join(tmpdir(), "dsh-stream-debug", "stream.jsonl");
+
+  const hookWith = async (
+    debug: boolean,
+    file: string | undefined,
+    info: (...args: unknown[]) => void
+  ) => {
+    const { createStreamHook } = await import("../src/stream-hook.ts");
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    const { resolveConfig } = await import("../src/config.ts");
+    return createStreamHook(
+      { logger: { info } } as never,
+      resolveConfig({
+        debug,
+        ...(file === undefined ? {} : { debugFile: file }),
+        providers: ["opencode"],
+        usageEnabled: false,
+      } as never),
+      new AsyncLocalStorage()
+    );
+  };
+
+  /** Drive one turn through the hook and drain it. */
+  const turn = async (
+    debug: boolean,
+    {
+      info = () => {},
+      withFile = true,
+    }: {
+      info?: (...args: unknown[]) => void;
+      withFile?: boolean;
+    } = {}
+  ): Promise<void> => {
+    const hook = await hookWith(debug, withFile ? debugFile : undefined, info);
+    const result = hook(
+      { model: "m", provider: "opencode", sessionId: "s" },
+      () => createMockStream("x")
+    );
+    await collectUnknown(result as AsyncIterable<unknown>);
+  };
+
+  beforeEach(() => {
+    vi.mocked(recordDebug).mockClear();
+  });
+
+  it("stream-hook · the debug gate: writes nothing to debugFile while debug is off", async () => {
+    await turn(false);
+    expect(recordDebug).not.toHaveBeenCalled();
+  });
+
+  it("writes one entry for the turn to debugFile while debug is on", async () => {
+    await turn(true);
+    expect(recordDebug).toHaveBeenCalledTimes(1);
+    const [, file, entry] = vi.mocked(recordDebug).mock.calls[0] ?? [];
+    expect(file).toBe(debugFile);
+    expect(entry).toMatchObject({
+      header: "x-opencode-session",
+      session: "s",
+    });
+  });
+
+  it("logs the turn but writes no file while debug is on without a debugFile", async () => {
+    const info = vi.fn<(...args: unknown[]) => void>();
+    await turn(true, { info, withFile: false });
+    expect(recordDebug).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls[0]).toContain("x-opencode-session");
   });
 });

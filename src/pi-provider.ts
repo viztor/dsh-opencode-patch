@@ -79,10 +79,10 @@ export const LEGACY_PLANE_API: Readonly<Record<Plane, string>> = {
 /**
  * The base URL one plane's requests go to under one endpoint family.
  *
- * `auto` is the catalog's own value, so following the vendor costs nothing here;
- * `legacy` and `modern` pin the family explicitly. The two families are
- * independently entitled, which is why a user can choose rather than being
- * carried along by whatever the catalog happens to name.
+ * `auto` is an alias of `modern`: both answer the per-protocol inference
+ * family's plane base, and `legacy` pins the older single base per plane. The
+ * two families are independently entitled, which is why a user can choose
+ * rather than being carried along by whatever the catalog happens to name.
  *
  * @param plane - the gateway plane.
  * @param family - the endpoint family to resolve.
@@ -197,8 +197,8 @@ const INFERENCE_BASE: Readonly<
  *
  * Memoised per family: the table is rebuilt at most once per family per process,
  * and the map keys are exactly the accepted {@link EndpointFamily} values, so an
- * unknown family falls through to the catalog's own answer rather than to
- * `undefined`.
+ * unknown family falls through to auto's answer (an alias of modern) rather
+ * than to `undefined`.
  */
 const BASES_BY_FAMILY = new Map<EndpointFamily, BaseTable>();
 
@@ -244,7 +244,7 @@ function withPlaneBase(
 type BaseTable = Readonly<Record<Plane, Readonly<Record<string, string>>>>;
 
 /**
- * The base URL each protocol uses on each plane, following the catalog.
+ * The base URL each protocol uses on each plane under auto, an alias of modern.
  *
  * Kept as the default table for callers that name no family; read
  * {@link baseForProtocol} with an explicit family once one is known.
@@ -292,7 +292,7 @@ const isPlane = (value: string): value is Plane =>
  *
  * @param plane - the gateway plane.
  * @param protocol - the protocol the request speaks.
- * @param family - the endpoint family; the catalog's own endpoint by default.
+ * @param family - the endpoint family; auto (an alias of modern) by default.
  * @returns the base URL, or undefined when the table does not carry that plane.
  */
 export const baseForProtocol = (
@@ -405,7 +405,7 @@ const ALL_THINKING_LEVELS = [
  * @param spec - the catalogued model.
  * @param protocol - the protocol it speaks, from {@link protocolFor}.
  * @param base - pi's installed catalog entry for this id, when it has one.
- * @param family - the endpoint family to send it to; the catalog's own endpoint
+ * @param family - the endpoint family to send it to; auto (an alias of modern)
  *   by default.
  * @returns the model object pi's provider dispatches on.
  */

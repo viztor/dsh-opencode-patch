@@ -727,6 +727,18 @@ describe("GoUsageService gateway failures", () => {
     expect(reading.monthly.percent).toBe(0);
   });
 
+  it("falls back to Zen overflow when Go usage rejects a 401 on the Zen Google route", async () => {
+    // `opencode-google` is Zen's Google route, not a Go one: the same 401 that
+    // falls back on plain `opencode` must fall back here, rather than reaching
+    // the card as a rejected Go key.
+    stubFetch(() => new Response('{"type":"error"}', { status: 401 }));
+    const reading = await serviceWithKey("oc_sk_zen-key").read({
+      provider: "opencode-google",
+    });
+    expect(reading.zenOverflow).toBe(true);
+    expect(reading.quotaUnavailable).toBe(true);
+  });
+
   it("rejects an oversized body before parsing it", async () => {
     // The cap exists because the body is read into memory first; rejecting
     // after `JSON.parse` would already have paid for the megabyte.

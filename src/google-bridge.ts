@@ -357,8 +357,9 @@ const installedEntryFor = (
  * one — a provider is a record pi dispatches through, not a class it
  * instantiates. `getModels` returns the models of the Zen plane whose SDK is
  * `@ai-sdk/google`, each carrying the base URL this protocol uses on that
- * plane (`…/zen/v1`), so the request lands on
- * `…/zen/v1/models/<id>:streamGenerateContent`.
+ * plane (`…/inference/google/v1beta` under auto or modern, and
+ * `…/inference/go/google/v1beta` on Go), so the request lands on
+ * `…/inference/google/v1beta/models/<id>:streamGenerateContent`.
  *
  * The streams are pi's raw implementation. The session, client, project and
  * User-Agent headers are NOT added here: the fetch patch already restores all
@@ -366,8 +367,8 @@ const installedEntryFor = (
  * append, so the bridge would only duplicate that work.
  *
  * @param specs - the catalogued models the route serves.
- * @param family - the endpoint family to send them to; the catalog's own
- *   address by default.
+ * @param family - the endpoint family to send them to; auto (an alias of
+ *   modern) by default.
  * @returns the provider the adapter's collection will hold.
  */
 export const googleProviderFor = (
@@ -512,8 +513,8 @@ export interface GoogleBridgeInputs {
    */
   readonly readOpencodeStore?: boolean;
   /**
-   * Which endpoint family the bridge's models are sent to. The catalog's own
-   * address by default, and the same choice the internal routes use so a
+   * Which endpoint family the bridge's models are sent to. Auto (an alias of
+   * modern) by default, and the same choice the internal routes use so a
    * deployment cannot end up on two families at once.
    */
   readonly endpoint?: EndpointFamily;

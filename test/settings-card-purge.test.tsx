@@ -328,6 +328,36 @@ describe("settings-card: the states that only exist after an interaction", () =>
       });
       await settle();
       expect(host.textContent).toContain(en.purgeFailed);
+      // In the host's warning TEXT colour: a refusal read in caption grey is
+      // indistinguishable from a success that removed nothing.
+      const line = [...host.querySelectorAll("div")].find((d) =>
+        (d.textContent ?? "").startsWith(en.purgeFailed)
+      );
+      expect(line?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("shows an outcome that is not a refusal in caption text", async () => {
+    const { act, host, settle, cleanup } = await mountCard({
+      purgeDeprecated: async () => ({
+        kind: "purged",
+        result: { catalogRead: true, removed: [] },
+      }),
+    });
+    try {
+      const button = [...host.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes(en.purgeAction)
+      );
+      act(() => {
+        button?.click();
+      });
+      await settle();
+      const line = [...host.querySelectorAll("div")].find((d) =>
+        (d.textContent ?? "").startsWith(en.purgeNothing)
+      );
+      expect(line?.style.color).toBe("var(--dsw-alias-label-caption)");
     } finally {
       cleanup();
     }

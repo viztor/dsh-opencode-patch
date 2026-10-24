@@ -258,14 +258,18 @@ export const ANTHROPIC_VERSION = "2023-06-01";
 /**
  * Whether a provider route is OpenCode Zen rather than Go.
  *
- * Both routes share the `opencode` prefix, so the distinguishing signal is
- * the presence of `go`: `opencode-go` is the subscription plan, plain
- * `opencode` is Zen pay-as-you-go.
+ * The Go plane is `opencode-go` and its own `opencode-go-*` internal routes —
+ * the rule `catalogPlaneForRoute` encodes. Everything else in the opencode
+ * family is Zen pay-as-you-go, including `opencode-google`, the Zen Google
+ * route, which starts with `opencode-go` but not with `opencode-go-`.
  */
 export const isZenProvider = (provider?: string): boolean => {
   if (typeof provider !== "string") {
     return false;
   }
   const lower = provider.toLowerCase();
-  return lower.includes("opencode") && !lower.includes("go");
+  if (!lower.includes("opencode")) {
+    return false;
+  }
+  return !(lower === "opencode-go" || lower.startsWith("opencode-go-"));
 };
