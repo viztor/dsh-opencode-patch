@@ -234,3 +234,155 @@ jobs:
           OPENCODE_E2E: "1"
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+
+  # The published host binary with this checkout linked into a throwaway
+  # profile: the only run that boots `dsh` itself rather than the host packages
+  # the unit suite assembles. `test/e2e/host/probe-plugin.mjs` measures the
+  # registry, the listings, validation, where each turn is sent and the save of
+  # a catalog-unknown id, and `test/e2e/host-binary.e2e.ts` asserts today's
+  # rows (`S0_TODAY`, shared with the in-process characterization).
+  #
+  # Two cells. `pinned` installs the host with npm `overrides` forcing pi to
+  # the version `test/support/host-versions.ts` names and applies the
+  # harness's own patch; `floating` takes whatever pi npm resolves for the
+  # published host (newer than the harness pins), so a pi release that moves
+  # the ground shows up nightly. Pull requests run `pinned` only, and only when
+  # they touch the host seam; dispatch and the nightly run both cells.
+  #
+  # The scope is decided by a step rather than by `on.pull_request.paths`: a
+  # workflow-level path filter would silence every other job in this file.
+  # Offline: the probe answers every gateway request itself, and the keys it
+  # stores are dummies. No secret is passed.
+  e2e-host:
+    name: e2e · host binary (${{ matrix.cell }})
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: ${{ github.event_name == 'pull_request' && fromJSON('["pinned"]') || fromJSON('["pinned","floating"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: does this change touch the host seam?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Its own command, so a diff that cannot be computed (a base ref
+          # that was not fetched, a deleted base branch) fails the step rather
+          # than reading as "nothing changed" and skipping the job green.
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          # The job's own definition and runner config are in scope: a pull
+          # request that breaks the install, the override, the patch step or
+          # the e2e config must run the job it breaks. That includes
+          # vite.config.ts: it holds the pack config that builds lib/index.mjs
+          # (the only test that loads that bundle into a real host is this
+          # one, and its externals keep cordis and schemastery the host's
+          # copies) and the test settings vitest.e2e.config.ts inherits.
+          # package.json is not (every dependency bump touches it), so a
+          # change to its `test:e2e:host` script alone is exercised only by
+          # the nightly run.
+          # Until P-R1 moves the host seam under src/host/, the modules that
+          # install the host patches and mounts whose behaviour depends on the
+          # real loader and apply order (the hidden-route mount, the listing
+          # patch and adapter decoration, the Google bridge, the fetch patch,
+          # the plane bases and the stream hook) are in scope by name. Every
+          # other row producer (key-capture.ts, models-catalog.ts, config.ts,
+          # the generated catalog) is covered on each pull request by the
+          # in-process characterization of the same S0_TODAY rows, and here by
+          # the nightly run.
+          if printf '%s\n' "$changed" \
+            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/responses-provider\.ts$|src/responses-routes\.ts$|src/models-discovery\.ts$|src/google-bridge\.ts$|src/fetch-patch\.ts$|src/pi-provider\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "no host-seam path changed; the host binary e2e does not run for this pull request"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: the host versions this repository pins
+        id: versions
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          node --experimental-strip-types --input-type=module -e "import { HOST_VERSIONS } from './test/support/host-versions.ts'; console.log('dsh=' + HOST_VERSIONS.dsh); console.log('pi=' + HOST_VERSIONS.pi)" >> "$GITHUB_OUTPUT"
+          echo "PREFIX=$RUNNER_TEMP/dsh-host" >> "$GITHUB_ENV"
+      # The pinned install is reproducible, so it is cached by the versions
+      # and the patch; the floating one is the point of re-resolving, so never.
+      - name: cache the pinned host install
+        id: host-cache
+        if: steps.scope.outputs.run == 'true' && matrix.cell == 'pinned'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dsh-host
+          key: dsh-host-${{ matrix.cell }}-${{ steps.versions.outputs.dsh }}-${{ steps.versions.outputs.pi }}-${{ hashFiles('patches/*.patch') }}
+      - name: install the published host into a throwaway prefix
+        if: steps.scope.outputs.run == 'true' && steps.host-cache.outputs.cache-hit != 'true'
+        env:
+          CELL: ${{ matrix.cell }}
+          DSH: ${{ steps.versions.outputs.dsh }}
+          PI: ${{ steps.versions.outputs.pi }}
+        run: |
+          mkdir -p "$PREFIX"
+          # The overrides must be in the prefix's own package.json BEFORE the
+          # install, or npm resolves the wrapper's ^range to the newest pi.
+          if [ "$CELL" = pinned ]; then
+            printf '{ "private": true, "overrides": { "@earendil-works/pi-ai": "%s" } }\n' "$PI" > "$PREFIX/package.json"
+          else
+            printf '{ "private": true }\n' > "$PREFIX/package.json"
+          fi
+          npm install --prefix "$PREFIX" --no-audit --no-fund "@deepseek-ai/dsh@$DSH"
+          # Only on a fresh install: re-applying to a cached, patched copy fails.
+          if [ "$CELL" = pinned ]; then
+            patch -p1 -d "$PREFIX/node_modules/@earendil-works/pi-ai" < "patches/@earendil-works__pi-ai@$PI.patch"
+          fi
+      - name: assert the pi the host resolved
+        if: steps.scope.outputs.run == 'true'
+        env:
+          CELL: ${{ matrix.cell }}
+          PI: ${{ steps.versions.outputs.pi }}
+        run: |
+          resolved="$(node -p "require(process.env.PREFIX + '/node_modules/@earendil-works/pi-ai/package.json').version")"
+          echo "cell $CELL: pi $resolved"
+          copies="$(find "$PREFIX/node_modules" -path '*/@earendil-works/pi-ai/package.json' | wc -l)"
+          if [ "$copies" -ne 1 ]; then
+            echo "::error::expected one copy of pi under the host prefix, found $copies"
+            exit 1
+          fi
+          if [ "$CELL" = pinned ] && [ "$resolved" != "$PI" ]; then
+            echo "::error::the pinned cell resolved pi $resolved, not $PI"
+            exit 1
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm run build
+      - name: boot the host binary with the probe
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm run test:e2e:host --run
+        env:
+          DSH_HOST_E2E: "1"
+          DSH_HOST_PREFIX: ${{ runner.temp }}/dsh-host
+          DSH_HOST_PI_CELL: ${{ matrix.cell }}
+          DSH_HOST_PROBE_COPY: ${{ runner.temp }}/probe-${{ matrix.cell }}.json
+      - name: upload the probe's measurement
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: host-probe-${{ matrix.cell }}
+          path: ${{ runner.temp }}/probe-${{ matrix.cell }}.json
+          if-no-files-found: ignore
+          retention-days: 7

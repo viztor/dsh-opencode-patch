@@ -76,6 +76,7 @@
     "test": "vp test",
     "test:coverage": "vp test run --coverage",
     "test:e2e": "vp test --config vitest.e2e.config.ts",
+    "test:e2e:host": "vp test --config vitest.e2e.config.ts test/e2e/host-binary.e2e.ts",
     "test:mock": "vp test --config vitest.mock.config.ts",
     "test:shuffle": "vp test run --sequence.shuffle",
     "typecheck": "tsc --noEmit",
