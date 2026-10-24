@@ -133,6 +133,11 @@ export interface CordisContext {
     info?: (msg: string, ...args: unknown[]) => void;
     warn?: (msg: string, ...args: unknown[]) => void;
   };
+  /**
+   * Listen for a host event. Cordis answers the listener's disposer
+   * (`() => boolean`), which `rewrapOnAdaptersUpdated` calls to stop listening;
+   * a stand-in may answer nothing, so the answer is `unknown` until checked.
+   */
   on?: (
     event: string,
     callback: (
@@ -140,8 +145,8 @@ export interface CordisContext {
       next: () => unknown,
       ...rest: unknown[]
     ) => unknown,
-    options?: { prepend?: boolean }
-  ) => void;
+    options?: { global?: boolean; prepend?: boolean }
+  ) => unknown;
   /**
    * Start a plugin in this context and return its fiber. A plugin is a function
    * or an object with an `apply` method — which is exactly what `llm-pi-ai`

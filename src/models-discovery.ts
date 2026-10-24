@@ -19,6 +19,7 @@
 import type { ResolvedPluginConfig } from "./config.ts";
 import type { CordisContext } from "./cordis-context.ts";
 import { declaredProviderModels } from "./go-discovery.ts";
+import { patchMethod, type UnpatchedMethod } from "./host/patch-method.ts";
 import {
   catalogPlaneForRoute,
   type CatalogPlane,
@@ -44,6 +45,18 @@ import {
 } from "./responses-routes.ts";
 import { isRecord } from "./utils/guards.ts";
 import { isGoPlaneUrl } from "./utils/request-shape.ts";
+
+/**
+ * The patch sites this module installs, one id each. Two activations of the
+ * same site share it, which is how a reload replaces a wrapper instead of
+ * stacking another one on it (see `host/patch-method.ts`).
+ */
+const PATCH_SITE = {
+  discovery: "dsh-opencode-patch/model-discovery",
+  listing: "dsh-opencode-patch/listing",
+  modelInfo: "dsh-opencode-patch/model-info",
+  planeAdapter: "dsh-opencode-patch/plane-adapter",
+} as const;
 
 export interface DiscoveryCandidate {
   contextWindow?: number;
@@ -252,6 +265,12 @@ const withoutRoute = (value: unknown, key: "id" | "provider"): unknown =>
     ? value.filter((entry) => !(isRecord(entry) && isInternalRoute(entry[key])))
     : value;
 
+/** The configurable directory, without the internal routes. */
+const wrapListConfigurableProviders = (unpatched: UnpatchedMethod) =>
+  function listConfigurableProviders(this: unknown): unknown {
+    return withoutRoute(Reflect.apply(unpatched, this, []), "provider");
+  };
+
 /**
  * Whether a model can be served, judged by the SDK the PLANE IN HAND declares.
  *
@@ -384,6 +403,13 @@ const costsMoney = (plane: CatalogPlane, id: string): boolean => {
   return cost !== undefined && cost.input > 0;
 };
 
+/** The listing methods the patch wraps, in the order it installs them. */
+const LISTING_KEYS = [
+  "listProviders",
+  "listConfigurableProviders",
+  "listModels",
+] as const;
+
 export const hideResponsesRoute = (
   ctx: CordisContext,
   config: ResolvedPluginConfig,
@@ -393,64 +419,47 @@ export const hideResponsesRoute = (
   if (llm === undefined) {
     return undefined;
   }
-  const {
-    listConfigurableProviders: originalListConfigurableProviders,
-    listModels: originalListModels,
-    listProviders: originalListProviders,
-  } = llm;
-  if (
-    typeof originalListProviders !== "function" &&
-    typeof originalListConfigurableProviders !== "function" &&
-    typeof originalListModels !== "function"
-  ) {
+  // Today's install order, and only the methods the host has.
+  const keys = LISTING_KEYS.filter((key) => typeof llm[key] === "function");
+  if (keys.length === 0) {
     return undefined;
   }
-  if (typeof originalListProviders === "function") {
-    registeredRoutes = { list: originalListProviders, receiver: llm };
-  }
 
-  const patched: Record<string, unknown> = {};
-  if (typeof originalListProviders === "function") {
-    patched.listProviders = function listProviders(this: unknown): unknown {
-      return withoutRoute(Reflect.apply(originalListProviders, this, []), "id");
+  const wrapListProviders = (unpatched: UnpatchedMethod) => {
+    // Captured as the wrapper is built, which is the TRUE unfiltered listing:
+    // a reload's second install is handed the host's own method, not the first
+    // install's filtered one.
+    registeredRoutes = { list: unpatched, receiver: llm };
+    return function listProviders(this: unknown): unknown {
+      return withoutRoute(Reflect.apply(unpatched, this, []), "id");
     };
-  }
-  if (typeof originalListConfigurableProviders === "function") {
-    patched.listConfigurableProviders = function listConfigurableProviders(
-      this: unknown
-    ): unknown {
-      return withoutRoute(
-        Reflect.apply(originalListConfigurableProviders, this, []),
-        "provider"
-      );
-    };
-  }
-  if (typeof originalListModels === "function") {
-    // **The deployment's model list is the whole list.** This route's `models:`
-    // array is a decision the operator made, and the picker must show it and
-    // nothing else.
-    //
-    // An earlier revision merged the plane's whole catalog in here, so that
-    // models living on the hidden protocol routes would be reachable. That was
-    // wrong, and the way it failed is worth keeping: the join was invisible on
-    // screen (nobody can tell 27 rows from 88 unless they counted the config), it
-    // overrode every explicit `models:` list, and it put models the operator never
-    // offered in front of them — which is how a request for a model the account
-    // cannot use became the reported bug. A route's list is not ours to widen.
-    //
-    // What remains is a filter, and only that: a model the plane cannot serve is
-    // dropped, because offering one produces a failure with nothing in the row to
-    // explain it. `internalRouteFor` still redirects a DECLARED model whose
-    // protocol differs, so a Responses / Messages / Google id the operator lists
-    // keeps working — it just has to be listed.
-    patched.listModels = async function listModels(
+  };
+  // **The deployment's model list is the whole list.** This route's `models:`
+  // array is a decision the operator made, and the picker must show it and
+  // nothing else.
+  //
+  // An earlier revision merged the plane's whole catalog in here, so that
+  // models living on the hidden protocol routes would be reachable. That was
+  // wrong, and the way it failed is worth keeping: the join was invisible on
+  // screen (nobody can tell 27 rows from 88 unless they counted the config), it
+  // overrode every explicit `models:` list, and it put models the operator never
+  // offered in front of them — which is how a request for a model the account
+  // cannot use became the reported bug. A route's list is not ours to widen.
+  //
+  // What remains is a filter, and only that: a model the plane cannot serve is
+  // dropped, because offering one produces a failure with nothing in the row to
+  // explain it. `internalRouteFor` still redirects a DECLARED model whose
+  // protocol differs, so a Responses / Messages / Google id the operator lists
+  // keeps working — it just has to be listed.
+  const wrapListModels = (unpatched: UnpatchedMethod) =>
+    async function listModels(
       this: unknown,
       provider: string
     ): Promise<unknown> {
       if (isInternalRoute(provider)) {
         return [];
       }
-      const models = await Reflect.apply(originalListModels, this, [provider]);
+      const models = await Reflect.apply(unpatched, this, [provider]);
       // **Only the routes this plugin claims.** A provider the deployment did
       // not hand it — a direct `anthropic` or `openai` route — is answered by its
       // own adapter and nothing else: the servability rule below reads OUR
@@ -501,30 +510,30 @@ export const hideResponsesRoute = (
         return typeof id !== "string" || !costsMoney(plane, id);
       });
     };
-  }
 
-  const installed: string[] = [];
-  const restoreFrom: Record<string, unknown> = {
-    listConfigurableProviders: originalListConfigurableProviders,
-    listModels: originalListModels,
-    listProviders: originalListProviders,
+  const factories = {
+    listConfigurableProviders: wrapListConfigurableProviders,
+    listModels: wrapListModels,
+    listProviders: wrapListProviders,
   };
-  try {
-    for (const [key, value] of Object.entries(patched)) {
-      Reflect.set(llm, key, value);
-      installed.push(key);
+
+  const stops: (() => void)[] = [];
+  for (const key of keys) {
+    const stop = patchMethod(llm, key, factories[key], {
+      id: PATCH_SITE.listing,
+    });
+    if (stop === undefined) {
+      // All or nothing: a host that refuses one listing keeps all three.
+      for (const undo of stops.toReversed()) {
+        undo();
+      }
+      return undefined;
     }
-  } catch {
-    for (const key of installed) {
-      Reflect.set(llm, key, restoreFrom[key]);
-    }
-    return undefined;
+    stops.push(stop);
   }
   return () => {
-    for (const key of installed) {
-      if (Reflect.get(llm, key) === patched[key]) {
-        Reflect.set(llm, key, restoreFrom[key]);
-      }
+    for (const undo of stops.toReversed()) {
+      undo();
     }
   };
 };
@@ -548,35 +557,30 @@ export const decorateModelDiscovery = (
   if (llm === undefined || typeof llm.discoverModels !== "function") {
     return undefined;
   }
-  const discover = llm.discoverModels;
-  const decorated = async (
-    settingsNs: string,
-    request?: unknown,
-    signal?: AbortSignal
-  ): Promise<unknown> => {
-    const discovered = await Reflect.apply(discover, llm, [
-      settingsNs,
-      request,
-      signal,
-    ]);
-    const provider = resolveDiscoveryProvider(request, config);
-    if (provider === undefined) {
-      return discovered;
-    }
-    return mergeDiscoveredModels(discovered, provider);
-  };
-
-  try {
-    llm.discoverModels = decorated;
-  } catch {
-    // A non-extensible Host service must not prevent request patching.
-    return undefined;
-  }
-  return () => {
-    if (llm.discoverModels === decorated) {
-      llm.discoverModels = discover;
-    }
-  };
+  // A non-extensible Host service answers `undefined` here, and must not
+  // prevent request patching.
+  return patchMethod(
+    llm,
+    "discoverModels",
+    (discover) =>
+      async (
+        settingsNs: string,
+        request?: unknown,
+        signal?: AbortSignal
+      ): Promise<unknown> => {
+        const discovered: unknown = await Reflect.apply(discover, llm, [
+          settingsNs,
+          request,
+          signal,
+        ]);
+        const provider = resolveDiscoveryProvider(request, config);
+        if (provider === undefined) {
+          return discovered;
+        }
+        return mergeDiscoveredModels(discovered, provider);
+      },
+    { id: PATCH_SITE.discovery }
+  );
 };
 
 /** Every pi thinking level, in escalation order, `off` first. */
@@ -707,6 +711,13 @@ export const resolveEffectiveContextWindow = (
  * the original runs with the adapter as its receiver, because all three are
  * class methods that read `this`.
  *
+ * Each (adapter, method) is ONE patch, installed through `patchMethod`
+ * (`host/patch-method.ts`). pi-ai serves both plane routes from one adapter
+ * instance, so that patch composes the adapter's plane routes in registry
+ * order, each fill wrapping the previous one's - the nesting the per-route wraps
+ * always had, and the one the host characterization pins - and a reload
+ * replaces the whole composition instead of wrapping it again.
+ *
  * @param llm - the Host's LLM service.
  * @param config - the resolved config, for the ids a deployment withholds.
  * @returns the disposer restoring the original methods, or `undefined`.
@@ -724,7 +735,12 @@ export const decoratePlaneAdapters = (
   if (!(adapters instanceof Map)) {
     return undefined;
   }
-  const restored: (() => void)[] = [];
+  // pi-ai serves both planes from ONE adapter instance, so the routes are
+  // grouped per adapter, in registry order, and each plane's fill wraps the
+  // previous plane's: the later route's fill runs outermost and sees what the
+  // earlier one answered. One patch per (adapter, method) composes them, which
+  // is what a reload replaces as a whole.
+  const planeRoutes = new Map<Record<string, unknown>, string[]>();
   for (const [route, registration] of adapters) {
     const adapter = registration?.adapter;
     if (adapter === undefined || adapter === null) {
@@ -737,191 +753,216 @@ export const decoratePlaneAdapters = (
     if (!(route in PLANES)) {
       continue;
     }
-    // The plane comes from the ROUTE, so a Go model is filled from the Go
-    // catalog and a Zen one from Zen's - the same rule `findModelSpecOn` applies.
-    const plane = catalogPlaneForRoute(route);
+    planeRoutes.set(adapter, [...(planeRoutes.get(adapter) ?? []), route]);
+  }
+
+  const stops: (() => void)[] = [];
+  for (const [adapter, routes] of planeRoutes) {
     for (const method of ["resolveModel", "prepareCall"] as const) {
-      const original = adapter[method];
-      if (typeof original !== "function") {
-        continue;
+      const stop = patchMethod(
+        adapter,
+        method,
+        (unpatched) => {
+          // The original with the adapter as its receiver: both methods are
+          // class methods that read `this` (pi-ai's open with
+          // `this.current()`), and a detached call fails the provider's whole
+          // catalog load.
+          let chain = (
+            provider: string,
+            model: string,
+            signal?: AbortSignal
+          ): unknown =>
+            Reflect.apply(unpatched, adapter, [provider, model, signal]);
+          for (const route of routes) {
+            // Captured per route: `chain` itself is reassigned below, and a
+            // fill that called it would call itself.
+            const inner = chain;
+            // The plane comes from the ROUTE, so a Go model is filled from the
+            // Go catalog and a Zen one from Zen's - the same rule
+            // `findModelSpecOn` applies.
+            const plane = catalogPlaneForRoute(route);
+            chain = async (
+              provider: string,
+              model: string,
+              signal?: AbortSignal
+            ): Promise<unknown> => {
+              // Go's shipped catalog cannot resolve Gemini before the stream hook runs.
+              // Ask the native bridge during model preparation as well as generation.
+              if (
+                provider === "opencode-go" &&
+                internalRouteFor(
+                  provider,
+                  model,
+                  findModelSpecOn("go", model)?.provider_npm,
+                  config.modelRoutes[model]?.api
+                ) === GO_GOOGLE_INTERNAL_ROUTE
+              ) {
+                const target = adapters.get(GO_GOOGLE_INTERNAL_ROUTE)?.adapter;
+                const resolve = target?.[method];
+                if (target !== undefined && typeof resolve === "function") {
+                  const prepared: unknown = await Reflect.apply(
+                    resolve,
+                    target,
+                    [GO_GOOGLE_INTERNAL_ROUTE, model, signal]
+                  );
+                  if (isRecord(prepared))
+                    return method === "prepareCall" && isRecord(prepared.model)
+                      ? { ...prepared, model: { ...prepared.model, provider } }
+                      : { ...prepared, provider };
+                  return prepared;
+                }
+              }
+              // What the earlier plane's fill answered, or the adapter's own method
+              // when this is the first plane on the adapter.
+              const answered: unknown = await inner(provider, model, signal);
+              const spec = findModelSpecOn(plane, model);
+              if (spec === undefined) {
+                return answered;
+              }
+              // Only what the adapter left BLANK. An adapter that answers keeps its
+              // answer, because that is what dispatch will honour.
+              const override = config.modelOverrides[model];
+              const record = isRecord(answered) ? answered : {};
+              const existingContext = isRecord(record.context)
+                ? record.context
+                : {};
+              const requestedWindow =
+                override?.contextWindow ??
+                (typeof existingContext.contextWindow === "number"
+                  ? existingContext.contextWindow
+                  : undefined);
+              // What the deployment declared outranks the catalog; the catalog is the
+              // fallback when nothing did.
+              const declaredWindow = requestedWindow ?? spec.context_window;
+              const effectiveWindow =
+                declaredWindow > 0
+                  ? resolveEffectiveContextWindow(
+                      declaredWindow,
+                      config.maxContextWindow
+                    )
+                  : undefined;
+              const modelName =
+                override?.name ??
+                (typeof record.name === "string" ? record.name : spec.name);
+              const { defaultMaxTokens: recordMaxTokens } = record;
+              let inputModalities: ("text" | "image")[] = sanitizeModalities(
+                spec.input_modalities
+              );
+              if (override?.inputModalities !== undefined) {
+                inputModalities = [...override.inputModalities];
+              } else if (Array.isArray(record.inputModalities)) {
+                inputModalities = sanitizeModalities(record.inputModalities);
+              }
+
+              let defaultMaxTokens: number | undefined;
+              if (override?.maxTokens !== undefined) {
+                defaultMaxTokens = override.maxTokens;
+              } else if (typeof recordMaxTokens === "number") {
+                defaultMaxTokens = recordMaxTokens;
+              } else if (spec.max_output_tokens > 0) {
+                defaultMaxTokens = spec.max_output_tokens;
+              }
+
+              // The same pair the picker reads: `thinkingLevelMapFor` decides which
+              // levels exist, `effortsFromLevelMap` renders them, so a level offered
+              // here is a level the composer shows.
+              let supports: { id: string; name: string }[] | undefined;
+              if (override?.reasoningEfforts !== undefined) {
+                supports = override.reasoningEfforts.map((id) => ({
+                  id,
+                  name:
+                    id === "off"
+                      ? "Off"
+                      : `${id.charAt(0).toUpperCase()}${id.slice(1)}`,
+                }));
+              } else if (record.reasoning === undefined) {
+                const map = thinkingLevelMapFor(spec);
+                if (map !== undefined) {
+                  supports = effortsFromLevelMap(map);
+                }
+              }
+
+              const outRecord: Record<string, unknown> = {
+                ...record,
+                inputModalities,
+                name: modelName,
+              };
+              if (record.provider === undefined) {
+                outRecord.provider = provider;
+              }
+              if (record.id === undefined) {
+                outRecord.id = model;
+              }
+              if (effectiveWindow !== undefined) {
+                outRecord.context = {
+                  ...existingContext,
+                  contextWindow: effectiveWindow,
+                };
+              }
+              if (defaultMaxTokens !== undefined) {
+                outRecord.defaultMaxTokens = defaultMaxTokens;
+              }
+              if (supports !== undefined && supports.length > 0) {
+                outRecord.reasoning = { efforts: supports };
+              }
+              // **Route the model on the object the host dispatches on.**
+              // `dsh-llm-pi-ai` selects the implementation per model —
+              // `stream: (model, …) => input.api.stream(model, …)`, with the protocol
+              // materialized as `request.api ?? base?.api ?? routeApi` — so a single
+              // provider route serves every protocol its models name. That makes this
+              // object the place to say it, and it is why a model needing Anthropic does
+              // not need a provider of its own.
+              //
+              // The catalog's protocol is the default; `modelRoutes` overrides it, which
+              // is the layer for an endpoint the shim gets wrong.
+              const declaredRoute = config.modelRoutes[model];
+              const protocol = declaredRoute?.api ?? protocolFor(spec);
+              if (protocol !== undefined) {
+                outRecord.api = protocol;
+              }
+              // **The endpoint: a declaration outranks our measurement, except where the
+              // declaration is the vendor's own retired path.** pi's installed catalog
+              // still says `https://opencode.ai/zen`, and a profile written for the old
+              // gateway says `…/zen/v1`; both are aliases today (measured: `/zen/v1/…`
+              // and `/inference/openai/v1/…` both answer 200), but the per-family
+              // addresses are what the gateway serves, and an anthropic model on a
+              // `/zen` base is simply wrong.
+              //
+              // Anything else is left alone: a deployment pointing this route at its own
+              // proxy must not have that endpoint rewritten by a bundled snapshot.
+              const existingBase =
+                typeof record.baseUrl === "string"
+                  ? record.baseUrl.trim().replace(/\/+$/u, "")
+                  : undefined;
+              const legacyBase =
+                existingBase !== undefined &&
+                LEGACY_PLANE_BASES.has(existingBase);
+              // The catalog's per-family endpoint is a REPAIR for a retired base and a
+              // FALLBACK when none was given; an endpoint the deployment wrote is kept.
+              const keepExisting =
+                existingBase !== undefined &&
+                !legacyBase &&
+                protocol !== undefined;
+              const measured =
+                protocol === undefined
+                  ? undefined
+                  : baseForProtocol(route, protocol, config.endpoint);
+              const baseURL =
+                declaredRoute?.baseURL ??
+                (keepExisting ? existingBase : measured);
+              if (baseURL !== undefined) {
+                outRecord.baseUrl = baseURL;
+              }
+              return outRecord;
+            };
+          }
+          return chain;
+        },
+        { id: PATCH_SITE.planeAdapter }
+      );
+      if (stop !== undefined) {
+        stops.push(stop);
       }
-      const wrapped = async (
-        provider: string,
-        model: string,
-        signal?: AbortSignal
-      ): Promise<unknown> => {
-        // Go's shipped catalog cannot resolve Gemini before the stream hook runs.
-        // Ask the native bridge during model preparation as well as generation.
-        if (
-          provider === "opencode-go" &&
-          internalRouteFor(
-            provider,
-            model,
-            findModelSpecOn("go", model)?.provider_npm,
-            config.modelRoutes[model]?.api
-          ) === GO_GOOGLE_INTERNAL_ROUTE
-        ) {
-          const target = adapters.get(GO_GOOGLE_INTERNAL_ROUTE)?.adapter;
-          const resolve = target?.[method];
-          if (target !== undefined && typeof resolve === "function") {
-            const prepared: unknown = await Reflect.apply(resolve, target, [
-              GO_GOOGLE_INTERNAL_ROUTE,
-              model,
-              signal,
-            ]);
-            if (isRecord(prepared))
-              return method === "prepareCall" && isRecord(prepared.model)
-                ? { ...prepared, model: { ...prepared.model, provider } }
-                : { ...prepared, provider };
-            return prepared;
-          }
-        }
-        // The original with the adapter as its receiver: both methods are class
-        // methods that read `this` (pi-ai's open with `this.current()`), and a
-        // detached call fails the provider's whole catalog load.
-        const answered: unknown = await Reflect.apply(original, adapter, [
-          provider,
-          model,
-          signal,
-        ]);
-        const spec = findModelSpecOn(plane, model);
-        if (spec === undefined) {
-          return answered;
-        }
-        // Only what the adapter left BLANK. An adapter that answers keeps its
-        // answer, because that is what dispatch will honour.
-        const override = config.modelOverrides[model];
-        const record = isRecord(answered) ? answered : {};
-        const existingContext = isRecord(record.context) ? record.context : {};
-        const requestedWindow =
-          override?.contextWindow ??
-          (typeof existingContext.contextWindow === "number"
-            ? existingContext.contextWindow
-            : undefined);
-        // What the deployment declared outranks the catalog; the catalog is the
-        // fallback when nothing did.
-        const declaredWindow = requestedWindow ?? spec.context_window;
-        const effectiveWindow =
-          declaredWindow > 0
-            ? resolveEffectiveContextWindow(
-                declaredWindow,
-                config.maxContextWindow
-              )
-            : undefined;
-        const modelName =
-          override?.name ??
-          (typeof record.name === "string" ? record.name : spec.name);
-        const { defaultMaxTokens: recordMaxTokens } = record;
-        let inputModalities: ("text" | "image")[] = sanitizeModalities(
-          spec.input_modalities
-        );
-        if (override?.inputModalities !== undefined) {
-          inputModalities = [...override.inputModalities];
-        } else if (Array.isArray(record.inputModalities)) {
-          inputModalities = sanitizeModalities(record.inputModalities);
-        }
-
-        let defaultMaxTokens: number | undefined;
-        if (override?.maxTokens !== undefined) {
-          defaultMaxTokens = override.maxTokens;
-        } else if (typeof recordMaxTokens === "number") {
-          defaultMaxTokens = recordMaxTokens;
-        } else if (spec.max_output_tokens > 0) {
-          defaultMaxTokens = spec.max_output_tokens;
-        }
-
-        // The same pair the picker reads: `thinkingLevelMapFor` decides which
-        // levels exist, `effortsFromLevelMap` renders them, so a level offered
-        // here is a level the composer shows.
-        let supports: { id: string; name: string }[] | undefined;
-        if (override?.reasoningEfforts !== undefined) {
-          supports = override.reasoningEfforts.map((id) => ({
-            id,
-            name:
-              id === "off"
-                ? "Off"
-                : `${id.charAt(0).toUpperCase()}${id.slice(1)}`,
-          }));
-        } else if (record.reasoning === undefined) {
-          const map = thinkingLevelMapFor(spec);
-          if (map !== undefined) {
-            supports = effortsFromLevelMap(map);
-          }
-        }
-
-        const outRecord: Record<string, unknown> = {
-          ...record,
-          inputModalities,
-          name: modelName,
-        };
-        if (record.provider === undefined) {
-          outRecord.provider = provider;
-        }
-        if (record.id === undefined) {
-          outRecord.id = model;
-        }
-        if (effectiveWindow !== undefined) {
-          outRecord.context = {
-            ...existingContext,
-            contextWindow: effectiveWindow,
-          };
-        }
-        if (defaultMaxTokens !== undefined) {
-          outRecord.defaultMaxTokens = defaultMaxTokens;
-        }
-        if (supports !== undefined && supports.length > 0) {
-          outRecord.reasoning = { efforts: supports };
-        }
-        // **Route the model on the object the host dispatches on.**
-        // `dsh-llm-pi-ai` selects the implementation per model —
-        // `stream: (model, …) => input.api.stream(model, …)`, with the protocol
-        // materialized as `request.api ?? base?.api ?? routeApi` — so a single
-        // provider route serves every protocol its models name. That makes this
-        // object the place to say it, and it is why a model needing Anthropic does
-        // not need a provider of its own.
-        //
-        // The catalog's protocol is the default; `modelRoutes` overrides it, which
-        // is the layer for an endpoint the shim gets wrong.
-        const declaredRoute = config.modelRoutes[model];
-        const protocol = declaredRoute?.api ?? protocolFor(spec);
-        if (protocol !== undefined) {
-          outRecord.api = protocol;
-        }
-        // **The endpoint: a declaration outranks our measurement, except where the
-        // declaration is the vendor's own retired path.** pi's installed catalog
-        // still says `https://opencode.ai/zen`, and a profile written for the old
-        // gateway says `…/zen/v1`; both are aliases today (measured: `/zen/v1/…`
-        // and `/inference/openai/v1/…` both answer 200), but the per-family
-        // addresses are what the gateway serves, and an anthropic model on a
-        // `/zen` base is simply wrong.
-        //
-        // Anything else is left alone: a deployment pointing this route at its own
-        // proxy must not have that endpoint rewritten by a bundled snapshot.
-        const existingBase =
-          typeof record.baseUrl === "string"
-            ? record.baseUrl.trim().replace(/\/+$/u, "")
-            : undefined;
-        const legacyBase =
-          existingBase !== undefined && LEGACY_PLANE_BASES.has(existingBase);
-        // The catalog's per-family endpoint is a REPAIR for a retired base and a
-        // FALLBACK when none was given; an endpoint the deployment wrote is kept.
-        const keepExisting =
-          existingBase !== undefined && !legacyBase && protocol !== undefined;
-        const measured =
-          protocol === undefined
-            ? undefined
-            : baseForProtocol(route, protocol, config.endpoint);
-        const baseURL =
-          declaredRoute?.baseURL ?? (keepExisting ? existingBase : measured);
-        if (baseURL !== undefined) {
-          outRecord.baseUrl = baseURL;
-        }
-        return outRecord;
-      };
-      adapter[method] = wrapped;
-      restored.push(() => {
-        adapter[method] = original;
-      });
     }
 
     // The half dispatch validates against, and the reason a filled picker was
@@ -935,89 +976,99 @@ export const decoratePlaneAdapters = (
     // The map is the one the composer already renders: `thinkingLevelMapFor` is
     // the same derivation `decorateModelInfo` uses to build the picker's Effort
     // row, so the two read one source rather than two that have to agree.
-    const originalModelOf = adapter.modelOf;
-    if (typeof originalModelOf === "function") {
-      const wrappedModelOf = (
-        snapshot: unknown,
-        provider: string,
-        model: string
-      ): unknown => {
-        const answered: unknown = Reflect.apply(originalModelOf, adapter, [
-          snapshot,
-          provider,
-          model,
-        ]);
-        if (!isRecord(answered)) {
-          return answered;
+    const stopModelOf = patchMethod(
+      adapter,
+      "modelOf",
+      (unpatched) => {
+        let chain = (
+          snapshot: unknown,
+          provider: string,
+          model: string
+        ): unknown =>
+          Reflect.apply(unpatched, adapter, [snapshot, provider, model]);
+        for (const route of routes) {
+          const inner = chain;
+          const plane = catalogPlaneForRoute(route);
+          chain = (
+            snapshot: unknown,
+            provider: string,
+            model: string
+          ): unknown => {
+            const answered: unknown = inner(snapshot, provider, model);
+            if (!isRecord(answered)) {
+              return answered;
+            }
+            const spec = findModelSpecOn(plane, model);
+            if (spec === undefined) {
+              return answered;
+            }
+            const override = config.modelOverrides[model];
+            const levels =
+              override?.reasoningEfforts === undefined
+                ? thinkingLevelMapFor(spec)
+                : Object.fromEntries(
+                    override.reasoningEfforts.map((id) => [id, id] as const)
+                  );
+            // No opinion: the catalog does not call the model a reasoning one, and
+            // the deployment named no level for it either.
+            if (levels === undefined || Object.keys(levels).length === 0) {
+              return answered;
+            }
+            const declared = isRecord(answered.thinkingLevelMap)
+              ? answered.thinkingLevelMap
+              : {};
+            // pi's acceptance rule, which is what `resolveReasoningLevel` throws
+            // against (`getSupportedThinkingLevels`): a model that reasons takes a
+            // level whose entry is not `null`, and `xhigh`/`max` need an entry to
+            // exist at all - an absent entry there is not a level, while for the
+            // base levels it means the level's own name on the wire.
+            const taken = (level: string): boolean => {
+              if (answered.reasoning !== true) {
+                return false;
+              }
+              const entry = declared[level];
+              if (entry === null) {
+                return false;
+              }
+              return level === "xhigh" || level === "max"
+                ? entry !== undefined
+                : true;
+            };
+            const merged: Record<string, unknown> = { ...declared };
+            let filled = false;
+            for (const [level, wire] of Object.entries(levels)) {
+              // A level the model already takes keeps the adapter's own answer: one
+              // that spells the level itself keeps that spelling, and one that leaves
+              // it out keeps the level's name on the wire. Only what it REFUSES is
+              // filled, so the levels that work today keep working byte for byte.
+              if (wire === null || taken(level)) {
+                continue;
+              }
+              merged[level] = wire;
+              filled = true;
+            }
+            // Nothing to add - and so nothing to say about `reasoning` either, since
+            // every level is only "taken" for a model that already reasons: hand back
+            // the adapter's own object rather than an equal copy of it.
+            if (!filled) {
+              return answered;
+            }
+            return { ...answered, reasoning: true, thinkingLevelMap: merged };
+          };
         }
-        const spec = findModelSpecOn(plane, model);
-        if (spec === undefined) {
-          return answered;
-        }
-        const override = config.modelOverrides[model];
-        const levels =
-          override?.reasoningEfforts === undefined
-            ? thinkingLevelMapFor(spec)
-            : Object.fromEntries(
-                override.reasoningEfforts.map((id) => [id, id] as const)
-              );
-        // No opinion: the catalog does not call the model a reasoning one, and
-        // the deployment named no level for it either.
-        if (levels === undefined || Object.keys(levels).length === 0) {
-          return answered;
-        }
-        const declared = isRecord(answered.thinkingLevelMap)
-          ? answered.thinkingLevelMap
-          : {};
-        // pi's acceptance rule, which is what `resolveReasoningLevel` throws
-        // against (`getSupportedThinkingLevels`): a model that reasons takes a
-        // level whose entry is not `null`, and `xhigh`/`max` need an entry to
-        // exist at all - an absent entry there is not a level, while for the
-        // base levels it means the level's own name on the wire.
-        const taken = (level: string): boolean => {
-          if (answered.reasoning !== true) {
-            return false;
-          }
-          const entry = declared[level];
-          if (entry === null) {
-            return false;
-          }
-          return level === "xhigh" || level === "max"
-            ? entry !== undefined
-            : true;
-        };
-        const merged: Record<string, unknown> = { ...declared };
-        let filled = false;
-        for (const [level, wire] of Object.entries(levels)) {
-          // A level the model already takes keeps the adapter's own answer: one
-          // that spells the level itself keeps that spelling, and one that leaves
-          // it out keeps the level's name on the wire. Only what it REFUSES is
-          // filled, so the levels that work today keep working byte for byte.
-          if (wire === null || taken(level)) {
-            continue;
-          }
-          merged[level] = wire;
-          filled = true;
-        }
-        // Nothing to add - and so nothing to say about `reasoning` either, since
-        // every level is only "taken" for a model that already reasons: hand back
-        // the adapter's own object rather than an equal copy of it.
-        if (!filled) {
-          return answered;
-        }
-        return { ...answered, reasoning: true, thinkingLevelMap: merged };
-      };
-      adapter.modelOf = wrappedModelOf;
-      restored.push(() => {
-        adapter.modelOf = originalModelOf;
-      });
+        return chain;
+      },
+      { id: PATCH_SITE.planeAdapter }
+    );
+    if (stopModelOf !== undefined) {
+      stops.push(stopModelOf);
     }
   }
-  if (restored.length === 0) {
+  if (stops.length === 0) {
     return undefined;
   }
   return () => {
-    for (const undo of restored.toReversed()) {
+    for (const undo of stops.toReversed()) {
       undo();
     }
   };
@@ -1071,133 +1122,134 @@ export const decorateModelInfo = (
   if (llm === undefined || typeof llm.resolveModelInfo !== "function") {
     return undefined;
   }
-  const original = llm.resolveModelInfo;
-  const decorated = async (
-    provider: string,
-    model: string,
-    signal?: AbortSignal
-  ): Promise<unknown> => {
-    // A provider this plugin does not claim is answered by its own adapter,
-    // unchanged and un-caught. Our catalog is OpenCode's: substituting it for a
-    // foreign route's failure, or overwriting a foreign route's limits with it,
-    // describes a model the user is not calling.
-    if (!config.providers.has(provider) && !isInternalRoute(provider)) {
-      return Reflect.apply(original, llm, [provider, model, signal]);
-    }
-    let resolved: unknown;
-    try {
-      resolved = await Reflect.apply(original, llm, [provider, model, signal]);
-    } catch (error) {
-      // **One throw removes the WHOLE provider group from the picker.** The Host
-      // builds a group with `Promise.all` over `listModels`, and a rejection
-      // there is caught per PROVIDER, not per model — so the user loses every
-      // model on that route, not one row.
-      //
-      // That became reachable when `listModels` started publishing the catalog on
-      // the parent route: the route's own adapter never carried the Responses,
-      // Messages or Google models, so `resolveModelInfo` may refuse an id it does
-      // not know. Our catalog does know it, so answer from there rather than
-      // letting one unknown id take the group down.
-      //
-      // A model the catalog cannot describe either is rethrown: inventing an
-      // answer for an id nobody knows would hide a real problem.
-      const spec = findModelSpecOn(catalogPlaneForRoute(provider), model);
-      if (isInternalRoute(provider) || spec === undefined) {
-        throw error;
-      }
-      resolved = {};
-    }
-    // Our own routes carry the real metadata already.
-    if (isInternalRoute(provider)) {
-      return resolved;
-    }
-    const spec = findModelSpecOn(catalogPlaneForRoute(provider), model);
-    if (spec === undefined) {
-      return resolved;
-    }
-    // A NON-RECORD answer is the same hazard as a throw, one step quieter: the
-    // Host reads `resolved.reasoning` immediately after this returns, so
-    // `undefined` becomes `TypeError: Cannot read properties of undefined` inside
-    // the group's `Promise.all` — and the whole provider group goes with it. When
-    // the catalog knows the model, the answer is built from the catalog instead of
-    // passed through.
-    const out: Record<string, unknown> = isRecord(resolved)
-      ? { ...resolved }
-      : {};
-    // Our catalog is the FRESHER VINTAGE of the same data, and the divergence is
-    // measured rather than assumed. pi ships an installed `opencode` catalog the
-    // plane routes fall back to, and it is a different snapshot of models.dev:
-    // it says 272k for `gpt-5.4` and 200k for `claude-sonnet-4-5` where the
-    // vendor and our shim both say 1.05M and 1M, and it carries no
-    // `thinkingLevelMap` for the `budget_tokens` Claude models where models.dev
-    // declares a token minimum.
-    //
-    // Filling only what the adapter left BLANK let every one of those stale
-    // values survive, which is what the surfaces then reported — so the fields
-    // our catalog carries are authoritative here rather than advisory.
-    const override = config.modelOverrides[model];
-    const existingContext = isRecord(out.context) ? out.context : {};
-    const requestedWindow = override?.contextWindow;
+  return patchMethod(
+    llm,
+    "resolveModelInfo",
+    (original) =>
+      async (
+        provider: string,
+        model: string,
+        signal?: AbortSignal
+      ): Promise<unknown> => {
+        // A provider this plugin does not claim is answered by its own adapter,
+        // unchanged and un-caught. Our catalog is OpenCode's: substituting it for a
+        // foreign route's failure, or overwriting a foreign route's limits with it,
+        // describes a model the user is not calling.
+        if (!config.providers.has(provider) && !isInternalRoute(provider)) {
+          return Reflect.apply(original, llm, [provider, model, signal]);
+        }
+        let resolved: unknown;
+        try {
+          resolved = await Reflect.apply(original, llm, [
+            provider,
+            model,
+            signal,
+          ]);
+        } catch (error) {
+          // **One throw removes the WHOLE provider group from the picker.** The Host
+          // builds a group with `Promise.all` over `listModels`, and a rejection
+          // there is caught per PROVIDER, not per model — so the user loses every
+          // model on that route, not one row.
+          //
+          // That became reachable when `listModels` started publishing the catalog on
+          // the parent route: the route's own adapter never carried the Responses,
+          // Messages or Google models, so `resolveModelInfo` may refuse an id it does
+          // not know. Our catalog does know it, so answer from there rather than
+          // letting one unknown id take the group down.
+          //
+          // A model the catalog cannot describe either is rethrown: inventing an
+          // answer for an id nobody knows would hide a real problem.
+          const spec = findModelSpecOn(catalogPlaneForRoute(provider), model);
+          if (isInternalRoute(provider) || spec === undefined) {
+            throw error;
+          }
+          resolved = {};
+        }
+        // Our own routes carry the real metadata already.
+        if (isInternalRoute(provider)) {
+          return resolved;
+        }
+        const spec = findModelSpecOn(catalogPlaneForRoute(provider), model);
+        if (spec === undefined) {
+          return resolved;
+        }
+        // A NON-RECORD answer is the same hazard as a throw, one step quieter: the
+        // Host reads `resolved.reasoning` immediately after this returns, so
+        // `undefined` becomes `TypeError: Cannot read properties of undefined` inside
+        // the group's `Promise.all` — and the whole provider group goes with it. When
+        // the catalog knows the model, the answer is built from the catalog instead of
+        // passed through.
+        const out: Record<string, unknown> = isRecord(resolved)
+          ? { ...resolved }
+          : {};
+        // Our catalog is the FRESHER VINTAGE of the same data, and the divergence is
+        // measured rather than assumed. pi ships an installed `opencode` catalog the
+        // plane routes fall back to, and it is a different snapshot of models.dev:
+        // it says 272k for `gpt-5.4` and 200k for `claude-sonnet-4-5` where the
+        // vendor and our shim both say 1.05M and 1M, and it carries no
+        // `thinkingLevelMap` for the `budget_tokens` Claude models where models.dev
+        // declares a token minimum.
+        //
+        // Filling only what the adapter left BLANK let every one of those stale
+        // values survive, which is what the surfaces then reported — so the fields
+        // our catalog carries are authoritative here rather than advisory.
+        const override = config.modelOverrides[model];
+        const existingContext = isRecord(out.context) ? out.context : {};
+        const requestedWindow = override?.contextWindow;
 
-    if (typeof spec.context_window === "number" && spec.context_window > 0) {
-      const effectiveWindow = resolveEffectiveContextWindow(
-        requestedWindow ?? spec.context_window,
-        config.maxContextWindow
-      );
-      out.context = {
-        ...existingContext,
-        contextWindow: effectiveWindow,
-      };
-    }
-    // The output cap is the same class of staleness, and a wrong one truncates
-    // rather than merely mis-reports.
-    if (override?.maxTokens !== undefined) {
-      out.defaultMaxTokens = override.maxTokens;
-    } else if (
-      typeof spec.max_output_tokens === "number" &&
-      spec.max_output_tokens > 0
-    ) {
-      out.defaultMaxTokens = spec.max_output_tokens;
-    }
-    if (override?.name !== undefined) {
-      out.name = override.name;
-    }
-    if (override?.inputModalities !== undefined) {
-      out.inputModalities = [...override.inputModalities];
-    }
-    if (override?.reasoningEfforts === undefined) {
-      const map = thinkingLevelMapFor(spec);
-      const efforts = map === undefined ? [] : effortsFromLevelMap(map);
-      if (efforts.length > 0) {
-        out.reasoning = { efforts };
-      } else {
-        // The model takes no thinking level. Leaving the adapter's `reasoning`
-        // here would offer a control the model refuses — and for a model our
-        // catalog marks non-reasoning, that is exactly the stale shape.
-        delete out.reasoning;
-      }
-    } else {
-      out.reasoning = {
-        efforts: override.reasoningEfforts.map((id) => ({
-          id,
-          name:
-            id === "off"
-              ? "Off"
-              : `${id.charAt(0).toUpperCase()}${id.slice(1)}`,
-        })),
-      };
-    }
-    return out;
-  };
-
-  try {
-    llm.resolveModelInfo = decorated;
-  } catch {
-    return undefined;
-  }
-  return () => {
-    if (llm.resolveModelInfo === decorated) {
-      llm.resolveModelInfo = original;
-    }
-  };
+        if (
+          typeof spec.context_window === "number" &&
+          spec.context_window > 0
+        ) {
+          const effectiveWindow = resolveEffectiveContextWindow(
+            requestedWindow ?? spec.context_window,
+            config.maxContextWindow
+          );
+          out.context = {
+            ...existingContext,
+            contextWindow: effectiveWindow,
+          };
+        }
+        // The output cap is the same class of staleness, and a wrong one truncates
+        // rather than merely mis-reports.
+        if (override?.maxTokens !== undefined) {
+          out.defaultMaxTokens = override.maxTokens;
+        } else if (
+          typeof spec.max_output_tokens === "number" &&
+          spec.max_output_tokens > 0
+        ) {
+          out.defaultMaxTokens = spec.max_output_tokens;
+        }
+        if (override?.name !== undefined) {
+          out.name = override.name;
+        }
+        if (override?.inputModalities !== undefined) {
+          out.inputModalities = [...override.inputModalities];
+        }
+        if (override?.reasoningEfforts === undefined) {
+          const map = thinkingLevelMapFor(spec);
+          const efforts = map === undefined ? [] : effortsFromLevelMap(map);
+          if (efforts.length > 0) {
+            out.reasoning = { efforts };
+          } else {
+            // The model takes no thinking level. Leaving the adapter's `reasoning`
+            // here would offer a control the model refuses — and for a model our
+            // catalog marks non-reasoning, that is exactly the stale shape.
+            delete out.reasoning;
+          }
+        } else {
+          out.reasoning = {
+            efforts: override.reasoningEfforts.map((id) => ({
+              id,
+              name:
+                id === "off"
+                  ? "Off"
+                  : `${id.charAt(0).toUpperCase()}${id.slice(1)}`,
+            })),
+          };
+        }
+        return out;
+      },
+    { id: PATCH_SITE.modelInfo }
+  );
 };

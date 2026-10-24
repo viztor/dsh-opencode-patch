@@ -24,7 +24,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P2    | `feat:` a smaller public API                  | in review |
 | P-T1a | `build:` pin the host                         | in review |
 | P-T1b | `test:` a harness that is the real host       | in review |
-| P-H   | `refactor:` one way to patch a host method    | planned   |
+| P-H   | `refactor:` one way to patch a host method    | in review |
 | P-R1  | `feat:` the plugin owns the plane routes      | planned   |
 | P-R2  | `fix:` the endpoint family, measured          | planned   |
 | P3    | `feat:` Settings complements pi's list        | planned   |
@@ -318,7 +318,7 @@ What stays private is pinned by contract tests against the real host packages:
 **How each phase opens:**
 
 - **Behaviour phases open with a red test:** P1a, P1b's fixes, P2, P-R1, P-R2, P3, P6 and P10b.
-- **Pinning phases open with a green pin**, which the PR shows unchanged: P-T1a/b, P-H, P5, P7, P8, P9, P10a and P-T2.
+- **Pinning phases open with a green pin**, which the PR shows unchanged: P-T1a/b, P-H, P5, P7, P8, P9, P10a and P-T2. P-H's exceptions are red on the base by design: its reload test (the defect the phase removes) and the five cases in `test/models-discovery.test.ts` marked "a deliberate change in P-H" (a refused listing define, a reinstall's `registeredRoutes`, a frozen adapter, a refused adapter method, and an inherited adapter method left with no own property after dispose).
 - **P-T3 and P12 are exempt.**
 
 **Characterization rows are tagged when they are recorded**, so a later phase flips named rows. The authoritative per-facet table is `S0_TODAY` in `test/support/host.ts` (each model's info, call-config verdict and wire carry their own tag); a phase's PR body cites the rows it flips from there. The three tags:
@@ -377,7 +377,18 @@ What stays private is pinned by contract tests against the real host packages:
    - **A stored gap id blocks every edit of its plane**, `displayName` included: the strict check names the stored id first, ahead of the one being saved.
    - **Shapes.** A resolved profile also carries the profile's pass-through fields (`compat`, `defaultContextWindow`, `defaultInput`, `defaultMaxTokens`, `headers`, `modelOverrides`, `thinkingBudgets`), and a built pi provider exposes `getModels()` but no `api` map, so F10 is pinned by behaviour (pi's own "no API implementation" error) rather than by its keys.
 
-6. **P-H `refactor:` one way to patch a host method.** `host/patch-method.ts` and `test/reload.test.ts` (apply A → apply B → dispose A → B intact → dispose B → originals).
+6. **P-H `refactor:` one way to patch a host method.** Landed as:
+   - **The helper.** `src/host/patch-method.ts` (`patchMethod`) is the only way the plugin wraps a method on a host object. A dispose restores only while its own descriptor still holds its wrapper, deletes the own property when the original was inherited, and a same-site reinstall wraps the unpatched method. It carries a 100% per-file coverage floor.
+   - **The four migrated sites,** all in `models-discovery.ts`: `hideResponsesRoute` (the three listings), `decorateModelDiscovery`, `decorateModelInfo` and `decoratePlaneAdapters`. No wrapper's answer changed on a host that accepts the patch. The existing green pins of each site's behaviour in `test/models-discovery.test.ts` opened the phase and stayed unchanged; the five new cases there marked "a deliberate change in P-H" were added red: four over the three edge changes below (two for the adapter bullet: a frozen adapter and one refused method), and one for the helper's deletion of an inherited original (a class adapter's `resolveModel`, which the base assigned back as an own property).
+   - **The reload test.** `test/reload.test.ts` runs apply A → apply B → dispose A → B intact → dispose B → originals restored exactly, and the reverse disposal order, for every site on own and inherited originals and on the real host (tier A). cordis itself disposes before it re-applies (`Fiber.update` → `restart` → `_unload` → `_reload`), so the overlapping sequence models two activations live at once (two rows) and the base's stacking, where a dispose restored nothing and the next activation wrapped the leftover. A stacked install leaks wherever the decoration reads config, which every site does: a reload whose config changed (the live answer is B's alone) pins discovery (`gatewayUrls`), model-info, both plane-adapter patches (`resolveModel`'s window and `modelOf`'s levels) and the listing's `listModels` (its per-activation keyless option, `hasCredential`, rather than config); the listing's `listProviders` capture is pinned by the `isRouteRegistered` reinstall case in `test/models-discovery.test.ts`. Structurally, for every key of every site, the second install is checked to have REPLACED the first (two live entries of one site id). A foreign wrapper on top with the newest install disposed first is run too. `apply()` itself is driven twice, first disposed first, on a stand-in context. All four sites failed it before the helper.
+   - **Deliberate edge changes**, each pinned; the first three are not reachable with the real `LlmRuntime` and pi-ai adapter (both extensible class instances):
+     - **The listing install is all or nothing on a refused define.** Before, a silent refusal (`Reflect.set` answering false on a non-writable `listModels`) left the other two listings filtered and returned a disposer; now all three stay as they were, which is what a throwing refusal already did. The three listings must agree on what is hidden.
+     - **A refused plane-adapter method is skipped.** Before, `adapter[method] = wrapped` threw a `TypeError` out of the fetch-patch effect on a frozen adapter; now that method keeps its own, the others are patched, and a fully frozen adapter answers `undefined`. Each adapter fill is independent, so this site is per method.
+     - **A reinstall's `registeredRoutes` reads the host's own listing**, not the previous install's filtered one, so `isRouteRegistered` keeps finding the hidden route after a reload.
+   - **The measured identity trap.** On the real host the three `llm` disposers never restored: `ctx.llm` is cordis's traceable proxy, every method read answers a new shadow proxy, so `llm.x === decorated` was never true and reloads stacked wrappers. The helper reads identity from own descriptors (`docs/engineering-notes.md`). So on the real host a disable or a reload now restores the listing, discovery and model-info methods; before, each reload stacked a wrapper that kept the previous config's decisions, and a disable left them installed. The limit, recorded and pinned on tier A: a foreign plugin that wraps and later unwraps through `ctx.llm` puts back a shadow proxy, which the helper treats as foreign, so one correct pass-through stays as an own property.
+   - **The plane adapters' composition.** pi-ai serves both planes from one adapter, so the per-route wraps became one patch per (adapter, method) that composes the adapter's plane routes in registry order. That keeps today's nesting, including the pi-ai-first `[INTENDED_CHANGE]` row where the Go plane's repaired base is Zen's.
+   - **Re-wrap built, not wired.** `rewrapOnAdaptersUpdated` is tested but used by no site: on `decoratePlaneAdapters` it would wrap pi-ai's adapter in the plugin-first order and flip the `[KNOWN_DEFECT]` rows, and P-R1 deletes that site.
+   - **Left for P6:** the global `fetch` patch in `lifecycle.ts` stacks the same way (A, B, dispose A, dispose B leaves A's patched fetch installed), but it is a global, not a host service method.
 7. **P-R1 `feat:` the plugin owns the plane routes.**
    - **New:**
      - the design above;
@@ -417,6 +428,7 @@ What stays private is pinned by contract tests against the real host packages:
     - One resolver, for an empty or placeholder wire key only.
     - A parity test over the deciders, with the adapter path as its own row: a rotated key takes effect, and a service failure propagates.
     - A `CaptureStore` per root, evicting a key on 401.
+    - The global `fetch` patch reads its original inside the effect and restores only while it is still current, so apply A, apply B, dispose A, dispose B ends at the native `fetch`, in both orders. Today `lifecycle.ts` captures it in `apply()`, and the plugin's interceptor outlives a full disable after two overlapping activations (recorded in P-H).
 14. **P7 `refactor:` one source per table.** One `planeForRoute` (four copies today), `formatUsd` and `specFor`; delete the duplicate `ALL_THINKING_LEVELS` and the capitalisation copies.
 15. **P8 `refactor:` settings table.** It starts with a snapshot test of the derived `Config`. Then one field table drives the schema, resolver, types, card, copy and manifest.
 16. **P9 `refactor:` remote seam.** `defineRemote`, `markRemote` and `callRemote`, with the parity test reading the contracts.
@@ -440,7 +452,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 - **P1a first:** it fixes what already shipped broken.
 - **P-T1a and P-T1b before any routing change:** the real-host harness records today's behaviour, and P-R1 must keep it except for the rows it names.
-- **P-H before P-R1:** P-R1 needs the `describe` wrapper.
+- **P-H before P-R1:** P-R1 builds its `settings.describe` wrapper on `patchMethod`.
 - **P10a only after P5–P9:** a module is moved only once tests pin what it does.
 
 ## Test matrix
@@ -481,6 +493,11 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
   - the `settings.describe` and `hasProviderApiKey` host contracts, the latter restated from the real parts (above), with the with-plugin `[BASELINE]` row in the characterization; the Models store's join moves to P-R1.
 - **Characterization rows**, tagged, on pi 1.1.0, in both apply orders.
 - **Binary e2e and the keyless matrix**, as below.
+
+**P-H**
+
+- **Unit:** each `patchMethod` clause, at 100% coverage; every site through apply A, apply B and both disposal orders, on own and inherited originals; a changed-config reload; a foreign wrapper with the newest install disposed first; the refusal edges.
+- **Real host, tier A:** every site in both disposal orders on the traceable proxy, and the re-wrap over pi-ai's adapter.
 
 **P-R1**
 
@@ -556,6 +573,10 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
   - a composer with no `models` list.
 - **Contract:** the wrapper is seen through the gateway and survives a restart.
 - **Binary e2e:** the Settings fetch action.
+
+**P6**
+
+- **Unit:** apply A, apply B, dispose A, dispose B ends at the native `fetch`, in both orders (red on the base).
 
 ## End-to-end infrastructure
 

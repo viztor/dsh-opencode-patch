@@ -428,6 +428,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 - **A smaller public API.** The package's entry exports `apply`, `Config`, `inject` and `name` — the names the host reads — and the config types (`PluginConfig`, `ResolvedPluginConfig`, `ModelOverrideConfig`, `ModelRouteConfig`, `EndpointFamily`, `KeySourcePolicy`). Everything else it used to re-export is internal now.
 - **`./src/*` is no longer an export.** `src/` was never in the published files, so the subpath resolved in the repository and nowhere else.
 - **`internalRoutes` was removed.** The per-protocol routes always mount. A profile row that still carries `internalRoutes` validates and the key is ignored.
+- **Disabling or reloading the plugin restores the host methods it wrapped.** The model listing, model discovery and model-info decorations, and the plane adapters' fill, come off on a disable; a live reload replaces them instead of stacking another layer, so a setting removed in the reload stops applying.
 - **`@viztor/dsh-opencode` is no longer published.** Its last version's "Renamed to @viztor/dsh-opencode-patch" deprecation stands as the final message; install `dsh-opencode-patch` or `@viztor/dsh-opencode-patch` instead.
 
 ## 📜 Compatibility & Verification

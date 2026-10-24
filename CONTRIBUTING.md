@@ -127,7 +127,7 @@ The web profile wires this checkout with `link:`, so builds are picked up like t
 - **Raise them when you genuinely add coverage** — a PR that lifts statements by a few points should lift the threshold with it, or the next contributor inherits a gate nobody re-measured.
 - **Never set one above the current measurement.** That does not make the suite better; it makes every subsequent PR fail until someone deletes tests.
 
-`src/index.ts` is excluded from the report — it is a pure re-export barrel, and the coverage tools attribute an untaken re-export line to whichever file re-exports it, so leaving it in reports a hole nobody can fill while hiding real ones. `responses-provider.ts` and `responses-routes.ts` carry their own per-file floors: the mount has four host contracts to survive, and a well-covered average must not be able to hide it.
+`src/index.ts` is excluded from the report — it is a pure re-export barrel, and the coverage tools attribute an untaken re-export line to whichever file re-exports it, so leaving it in reports a hole nobody can fill while hiding real ones. `responses-provider.ts` and `responses-routes.ts` carry their own per-file floors: the mount has four host contracts to survive, and a well-covered average must not be able to hide it. `host/patch-method.ts` carries a 100% floor, because it is the one way to patch a host method and each of its branches is a reload case.
 
 ## Release process (maintainers)
 

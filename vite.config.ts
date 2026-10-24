@@ -273,6 +273,13 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // The one way to patch a host method: every branch is a reload case.
+        "src/host/patch-method.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
       },
     },
   },
