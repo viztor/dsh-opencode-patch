@@ -22,14 +22,13 @@ import {
   MATRIX_PROTOCOLS,
   type MatrixCell,
   matrixUrl,
-  NEXT_DISPATCH,
   TODAY_DISPATCH,
 } from "./support/keyless-matrix.ts";
 import {
   type CatalogModelSpec,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-  protocolFor,
+  protocolForSdk,
 } from "./support/src.ts";
 
 const spec = (
@@ -249,7 +248,7 @@ describe("keyless matrix · the cells", () => {
         cell.plane === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
       const first = catalog.find(
         (entry) =>
-          protocolFor(entry) === cell.protocol &&
+          protocolForSdk(entry.provider_npm) === cell.protocol &&
           entry.is_free !== true &&
           !/free/iu.test(entry.id)
       );
@@ -303,18 +302,18 @@ describe("keyless matrix · the cells the live run asserts", () => {
       }
     }
     expect([...reached].toSorted()).toEqual([...TODAY_DISPATCH].toSorted());
-    // Completions reach the legacy family today: the modern completions cells
-    // are P-R1's target, asserted live as a forward guard, never as today's.
-    expect([...TODAY_DISPATCH]).toContain("opencode openai-completions legacy");
+    // Every protocol on both planes reaches the modern family, completions
+    // included (P-R1), and nothing reaches a legacy cell by default.
+    expect([...TODAY_DISPATCH].toSorted()).toEqual(
+      PLANES.flatMap((plane) =>
+        MATRIX_PROTOCOLS.map((protocol) => `${plane} ${protocol} modern`)
+      ).toSorted()
+    );
     expect(
-      [...NEXT_DISPATCH].filter((cell) => TODAY_DISPATCH.has(cell))
+      [...TODAY_DISPATCH].filter((cell) => cell.endsWith("legacy"))
     ).toEqual([]);
-    expect([...NEXT_DISPATCH].toSorted()).toEqual([
-      "opencode openai-completions modern",
-      "opencode-go openai-completions modern",
-    ]);
     const all = new Set(keylessMatrix({ go: GO, zen: ZEN }).map(key));
-    for (const cell of [...TODAY_DISPATCH, ...NEXT_DISPATCH]) {
+    for (const cell of TODAY_DISPATCH) {
       expect(all.has(cell), cell).toBe(true);
     }
   });

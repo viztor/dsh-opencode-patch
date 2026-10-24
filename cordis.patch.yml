@@ -30,10 +30,9 @@
 # Config-only overrides — the card deliberately hides these, because each is a
 # literal, a marker, or a reference whose default fits every documented setup.
 # See src/settings-fields.ts CONFIG_ONLY_FIELDS.
-#   providers: [string]         provider route keys to intercept (default: opencode, opencode-go,
-#                               opencode-responses, opencode-anthropic, opencode-google,
-#                               opencode-go-responses, opencode-go-anthropic, opencode-go-google — covers every
-#                               route this layer declares, including the Google bridge's).
+#   providers: [string]         route ids whose turns this plugin decorates (default: opencode,
+#                               opencode-go; both planes are always included, so only a relay route
+#                               needs adding).
 #   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
 #   originClient: string        x-opencode-client value (default 'cli').
 #   sessionIdEnv: string        env var carrying a caller-supplied session id (default 'OPENCODE_SESSION_ID').
@@ -44,9 +43,6 @@
 #                               families: ['opencode.ai/zen', 'opencode.ai/inference']).
 #   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
 #   credentialOrg: string       org id (wrk_...) sent with an account credential that came from elsewhere.
-#   maxContextWindow: number    optional ceiling clamping model context windows (e.g. 131072).
-#   modelOverrides: object      per-model overrides for contextWindow, maxTokens and metadata (default {}).
-#   modelRoutes: object         per-model wire routing: { <id>: { api, baseURL } } (default {}).
 #   debug: true|false           log every streamed call that receives the header.
 #   debugFile: path             optional append target for stream debug JSONL; written only while debug is on.
 - insert:
@@ -56,12 +52,6 @@
         providers:
           - opencode
           - opencode-go
-          - opencode-responses
-          - opencode-anthropic
-          - opencode-google
-          - opencode-go-responses
-          - opencode-go-anthropic
-          - opencode-go-google
         injectUserAgent: true
         userAgent: ""
         injectOriginHeaders: true

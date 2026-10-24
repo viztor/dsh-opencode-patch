@@ -1,14 +1,15 @@
 /**
  * Live protocol-routing E2E — the one thing a stub provably cannot prove.
  *
- * The reason this plugin mounts a second `llm-pi-ai` route is a claim about the
- * **vendor**: a model's wire format is named by its `provider_npm` on models.dev,
- * and a model carried on the wrong route is served an endpoint that does not
- * speak its format. Unit tests can only check that our table maps an SDK to a
- * route — they read the table we wrote, so a vendor that reassigns a model's SDK
- * still ships green. Two rounds of real bugs got through exactly that way: nine
- * models mis-routed from a stale shim, and three more from reading the wrong
- * PLANE's SDK. Neither was visible to a unit test.
+ * The reason the plane adapter dispatches each model on its catalog protocol
+ * (D16) is a claim about the **vendor**: a model's wire format is named by its
+ * `provider_npm` on models.dev, and a model sent on the wrong protocol is
+ * served an endpoint that does not speak its format. Unit tests can only check
+ * that our table maps an SDK to a protocol — they read the table we wrote, so
+ * a vendor that reassigns a model's SDK still ships green. Two rounds of real
+ * bugs got through exactly that way: nine models mis-routed from a stale shim,
+ * and three more from reading the wrong PLANE's SDK. Neither was visible to a
+ * unit test.
  *
  * So this file asks the gateway directly.
  *
@@ -44,8 +45,17 @@
  *   SKIP in that situation instead of failing, because the account's entitlement
  *   is not this plugin's contract.
  *
+ * **Every probe goes where the plugin sends.** The URL is the base the plane
+ * adapter's own model object names (`planeModelFor`, D16) for the served
+ * protocol, and the plane's base for the same protocol on the default family
+ * for a negative control — the modern `/inference/…` family since P-R1, Go's
+ * Google included. So a model that the gateway serves on the legacy `/zen`
+ * family but refuses on the one the plugin dispatches to turns a case red.
+ * Probing the legacy family per protocol is P-R2's record.
+ *
  * Opt-in via `OPENCODE_E2E=1`. The base is overridable so this can be pointed at
- * a mirror or a local stub.
+ * a mirror or a local stub: an override is used for every protocol with the
+ * legacy family's paths, as before.
  *
  *   OPENCODE_E2E=1 OPENCODE_API_KEY=… pnpm run test:e2e
  */
@@ -53,31 +63,34 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  GOOGLE_INTERNAL_ROUTE,
+  baseUrlFor,
+  GO_GOOGLE_BASE_URL,
   GOOGLE_SDK,
+  OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
   OPENCODE_PATCH_USER_AGENT,
   OPENCODE_ZEN_CATALOG,
   PROTOCOL_FOR_SDK,
   findModelSpec,
   findModelSpecOn,
-  internalRouteFor,
   isServableSdk,
+  planeModelFor,
 } from "../support/src.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 const ZEN_KEY = process.env.OPENCODE_API_KEY;
-
-const ZEN_BASE =
-  process.env.OPENCODE_ZEN_BASE_URL ?? "https://opencode.ai/zen/v1";
 
 /**
  * The Go plane. A different base URL AND a different credential — which is why
  * probing its models against the Zen base proves nothing about them.
  */
 const GO_KEY = process.env.OPENCODE_GO_API_KEY;
-const GO_BASE =
-  process.env.OPENCODE_GO_BASE_URL ?? "https://opencode.ai/zen/go/v1";
+
+/** A base to probe instead of the plugin's own, per plane (a mirror or a stub). */
+const BASE_OVERRIDE: Readonly<Record<"go" | "zen", string | undefined>> = {
+  go: process.env.OPENCODE_GO_BASE_URL,
+  zen: process.env.OPENCODE_ZEN_BASE_URL,
+};
 
 /** Generous: these cross the public internet from CI. */
 // Deliberately SHORTER than the suite's `testTimeout` (30s), because the two
@@ -96,17 +109,29 @@ const TIMEOUT_MS = 20_000;
  */
 const FANOUT_BUDGET_MS = 240_000;
 
-/**
- * What a model with no SDK gets: nothing is redirected, so it stays on the route
- * the user configured, and that route speaks completions.
- */
+/** What a model with no SDK of its own is served on (D16). */
 const DEFAULT_PROTOCOL = "openai-completions";
 
-/** The path each protocol uses against the Zen base. */
+/**
+ * The path each protocol uses against an OVERRIDDEN base, which is read as a
+ * legacy-family base (`…/zen/v1`): one base for every protocol.
+ */
 const PATH_FOR: Readonly<Record<string, string>> = {
   "anthropic-messages": "/messages",
   // The Gemini path carries the MODEL in the URL, not the body, so the probe
   // substitutes the `{model}` placeholder the same way the wire does.
+  "google-generative-ai": "/models/{model}:streamGenerateContent?alt=sse",
+  "openai-completions": "/chat/completions",
+  "openai-responses": "/responses",
+};
+
+/**
+ * The path each protocol appends to the base the plugin's model names: pi's
+ * Anthropic client appends `/v1/messages` to a base without `/v1`, the others
+ * append their own path to a base that carries its version.
+ */
+const PLUGIN_PATH_FOR: Readonly<Record<string, string>> = {
+  "anthropic-messages": "/v1/messages",
   "google-generative-ai": "/models/{model}:streamGenerateContent?alt=sse",
   "openai-completions": "/chat/completions",
   "openai-responses": "/responses",
@@ -170,18 +195,51 @@ interface Probe {
   readonly summary: string;
 }
 
+/**
+ * The URL the plugin sends `protocol` for `model` to on `plane`: the base the
+ * served model names when `protocol` is the one it is served on, else the
+ * plane's base for `protocol` on the default family — or the override.
+ */
+const urlFor = (
+  plane: "go" | "zen",
+  protocol: string,
+  model: string
+): string => {
+  const override = BASE_OVERRIDE[plane];
+  const template =
+    override === undefined ? PLUGIN_PATH_FOR[protocol] : PATH_FOR[protocol];
+  if (template === undefined) {
+    throw new Error(`no live path is known for protocol ${protocol}`);
+  }
+  const path = template.replace("{model}", model);
+  if (override !== undefined) {
+    return `${override}${path}`;
+  }
+  const served = servedOn(plane, model);
+  const base =
+    served?.api === protocol
+      ? served.baseUrl
+      : baseUrlFor(
+          PLANE_ROUTE[plane].route,
+          protocol as never,
+          undefined,
+          "modern",
+          PLANE_ROUTE[plane].family
+        );
+  return `${base}${path}`;
+};
+
 /** Ask one endpoint about one model, optionally with a credential. */
 const probe = async (
   protocol: string,
   model: string,
   key?: string,
-  base: string = ZEN_BASE
+  plane: "go" | "zen" = "zen"
 ): Promise<Probe> => {
   const template = PATH_FOR[protocol];
   if (template === undefined) {
     throw new Error(`no live path is known for protocol ${protocol}`);
   }
-  const path = template.replace("{model}", model);
   // A protocol whose path carries the model does not also want it in the body:
   // the Gemini endpoints reject unknown fields rather than ignoring them.
   const payload = template.includes("{model}")
@@ -193,7 +251,7 @@ const probe = async (
       : (AUTH_FOR[protocol]?.(key) ?? {});
   let response: Response;
   try {
-    response = await fetch(`${base}${path}`, {
+    response = await fetch(urlFor(plane, protocol, model), {
       body: JSON.stringify(payload),
       headers: { ...PLUGIN_HEADERS, ...auth },
       method: "POST",
@@ -275,54 +333,47 @@ const accessDisabled = (result: Probe): boolean =>
   // so nothing about the route was observed either way.
   result.status === 0;
 
-/**
- * The protocol the model is SERVED ON, per the shipped catalog on the Zen plane.
- *
- * `undefined` only when the model is not in the Zen catalog at all. A model with
- * no redirect is NOT "unrouted" — it stays on the route the user configured, and
- * that route speaks completions, so the default is a real answer rather than a
- * missing one. Conflating those two made this helper report `undefined` for
- * every default model, which is most of the catalog.
- *
- * Read through the real exported table rather than restated here, so this cannot
- * drift away from what the plugin will do. The plane is explicit because the two
- * planes declare different SDKs for the same id — that difference is the whole
- * subject of one of the cases below.
- */
-/** The route id each plane is reached by. */
-const ROUTE_FOR_PLANE = { go: "opencode-go", zen: "opencode" } as const;
+/** The route id each plane is reached by, and its family map. */
+const PLANE_ROUTE = {
+  go: { family: OPENCODE_FAMILY_API.go, route: "opencode-go" },
+  zen: { family: OPENCODE_FAMILY_API.zen, route: "opencode" },
+} as const;
 
 /**
- * The protocol a model is served on, ON ITS OWN PLANE.
+ * The protocol and base a model is SERVED ON, ON ITS OWN PLANE: the model
+ * object the plane adapter builds (`planeModelFor`, D16), read rather than
+ * restated here, so this cannot drift away from what the plugin will do.
  *
- * The plane is a parameter rather than a constant because the same model id can
- * exist on both planes and be served on a different shape in each — which is the
- * whole reason the route is chosen from (plane, SDK) and not from the SDK.
+ * `undefined` only when the model is not in that plane's catalog at all. A
+ * model with no SDK of its own is served on completions, which is a real
+ * answer rather than a missing one. The plane is a parameter because the same
+ * id can exist on both planes and be served on a different shape in each.
  */
-const servedProtocolForOn = (
+const servedOn = (
   plane: "go" | "zen",
   model: string
-): string | undefined => {
+): { api: string; baseUrl: string } | undefined => {
   const spec = findModelSpecOn(plane, model);
   if (spec === undefined) {
     return undefined;
   }
-  return internalRouteFor(ROUTE_FOR_PLANE[plane], model, spec.provider_npm) ===
-    undefined
-    ? DEFAULT_PROTOCOL
-    : PROTOCOL_FOR_SDK[spec.provider_npm ?? ""];
+  return planeModelFor({
+    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
+    endpoint: "modern",
+    entry: { id: model },
+    familyApi: PLANE_ROUTE[plane].family,
+    route: PLANE_ROUTE[plane].route,
+    spec,
+  }).model;
 };
+
+const servedProtocolForOn = (
+  plane: "go" | "zen",
+  model: string
+): string | undefined => servedOn(plane, model)?.api;
 
 const servedProtocolFor = (model: string): string | undefined =>
   servedProtocolForOn("zen", model);
-
-/** Whether the layer redirects this model off the configured route at all. */
-const redirectsOff = (model: string): boolean =>
-  internalRouteFor(
-    "opencode",
-    model,
-    findModelSpecOn("zen", model)?.provider_npm
-  ) !== undefined;
 
 describe.skipIf(!LIVE)("live protocol routing", () => {
   /**
@@ -342,10 +393,10 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
     candidates: readonly string[],
     protocol: string,
     key?: string,
-    base: string = ZEN_BASE
+    plane: "go" | "zen" = "zen"
   ): Promise<string | undefined> => {
     for (const model of candidates) {
-      const answer = await probe(protocol, model, key, base);
+      const answer = await probe(protocol, model, key, plane);
       if (!accessDisabled(answer) && answer.status !== 0) {
         return model;
       }
@@ -369,9 +420,10 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         return;
       }
       const expected = servedProtocolFor(model);
-      expect(expected, `${model} no longer redirects`).toBe(
-        "openai-completions"
-      );
+      expect(
+        expected,
+        `${model} is no longer served on the expected protocol`
+      ).toBe("openai-completions");
 
       const right = await probe(expected ?? "", model);
       if (accessDisabled(right)) {
@@ -441,9 +493,10 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         return;
       }
       const expected = servedProtocolFor(model);
-      expect(expected, `${model} no longer redirects`).toBe(
-        "openai-completions"
-      );
+      expect(
+        expected,
+        `${model} is no longer served on the expected protocol`
+      ).toBe("openai-completions");
 
       const response = await probe(expected ?? "", model);
       if (accessDisabled(response) || freeTierClosed(response)) {
@@ -487,7 +540,10 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         return;
       }
       const expected = servedProtocolFor(model);
-      expect(expected, `${model} no longer redirects`).toBe("openai-responses");
+      expect(
+        expected,
+        `${model} is no longer served on the expected protocol`
+      ).toBe("openai-responses");
 
       const right = await probe(expected ?? "", model, ZEN_KEY);
       if (accessDisabled(right)) {
@@ -560,9 +616,8 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
           findModelSpecOn("zen", model)?.provider_npm,
           `${model} Zen plane`
         ).toBeUndefined();
-        // And our routing follows the Zen plane, so no redirect happens and the
-        // model is served on the route the user configured.
-        expect(redirectsOff(model), `${model} must not redirect`).toBe(false);
+        // And our routing follows the Zen plane, so the model is served as
+        // completions there, whatever Go's row says.
         expect(servedProtocolFor(model)).toBe(DEFAULT_PROTOCOL);
 
         const onCompletions = await probe("openai-completions", model, ZEN_KEY);
@@ -652,10 +707,11 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         return;
       }
       expect(servedProtocolFor(model)).toBe("google-generative-ai");
-      // And the routing agrees: this is the one protocol whose dispatch lands
-      // on the route the plugin mounts itself.
-      expect(internalRouteFor("opencode", model, GOOGLE_SDK)).toBe(
-        GOOGLE_INTERNAL_ROUTE
+      // The URL probed below is the one the plane adapter sends to, Zen's own
+      // Google base on the default family (D13); this pins it, so a family
+      // change is a visible edit here rather than a silent retarget.
+      expect(urlFor("zen", "google-generative-ai", model)).toBe(
+        `https://opencode.ai/inference/google/v1beta/models/${model}:streamGenerateContent?alt=sse`
       );
       if (ZEN_KEY === undefined || ZEN_KEY.length === 0) {
         context.skip();
@@ -690,12 +746,13 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
   );
 
   it("probes a Go model on the GO base, where its own shapes are served", async (context) => {
-    // The gap this closes: every case above talks to the Zen base, so the Go
+    // The gap this closes: every case above talks to the Zen plane, so the Go
     // plane's non-completions models were covered by unit tests only - and
     // the unit tests read the very mapping they verify. This sends a real
-    // request to the Go base with the Go credential, which is the only thing
-    // that can prove the plane is routed where it is served. The subject is
-    // picked live from the Go catalog's Responses-family slice.
+    // request to the URL the plane adapter uses for it
+    // (`/inference/go/openai/v1/responses`) with the Go credential, which is
+    // the only thing that can prove the plane is routed where it is served.
+    // The subject is picked live from the Go catalog's Responses-family slice.
     const candidates = OPENCODE_GO_CATALOG.filter(
       (m) => m.provider_npm === "@ai-sdk/openai"
     ).map((m) => m.id);
@@ -703,18 +760,16 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       context.skip();
       return;
     }
-    const model = await pickModel(
-      candidates,
-      "openai-responses",
-      GO_KEY,
-      GO_BASE
-    );
+    const model = await pickModel(candidates, "openai-responses", GO_KEY, "go");
     if (model === undefined) {
       context.skip();
       return;
     }
     expect(servedProtocolForOn("go", model)).toBe("openai-responses");
-    const parsed = await probe("openai-responses", model, GO_KEY, GO_BASE);
+    expect(urlFor("go", "openai-responses", model)).toBe(
+      "https://opencode.ai/inference/go/openai/v1/responses"
+    );
+    const parsed = await probe("openai-responses", model, GO_KEY, "go");
     if (accessDisabled(parsed)) {
       // The claim below is "any answer the gateway produced after reading the model
       // proves this path is the right one". A status 0 is no answer at all, and
@@ -723,13 +778,16 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       context.skip();
       return;
     }
-    // The claim is "this path is the right one", not "this request succeeds":
-    // any answer the gateway produced after reading the model proves that, and a
-    // 404 (no such path) or 500 (the shape does not parse) proves the opposite.
+    // The claim is "the plugin's path for this model is a right one", not
+    // "this request succeeds": any answer the gateway produced after reading
+    // the model proves that, and a 404 (no such path), a 500 (the shape does
+    // not parse) or a 400 ModelProtocolUnsupported (served, but not in this
+    // format) proves the opposite.
     // Asserting a specific code instead would make the case a bet on an
     // entitlement this account may or may not have today.
     expect(parsed.status).not.toBe(404);
     expect(parsed.status).not.toBe(500);
+    expect(parsed.summary).not.toContain("ModelProtocolUnsupported");
   });
 
   it("probes the GO plane's OTHER shape too, so both are covered", async (context) => {
@@ -749,14 +807,17 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       candidates,
       "anthropic-messages",
       GO_KEY,
-      GO_BASE
+      "go"
     );
     if (model === undefined) {
       context.skip();
       return;
     }
     expect(servedProtocolForOn("go", model)).toBe("anthropic-messages");
-    const parsed = await probe("anthropic-messages", model, GO_KEY, GO_BASE);
+    expect(urlFor("go", "anthropic-messages", model)).toBe(
+      "https://opencode.ai/inference/go/anthropic/v1/messages"
+    );
+    const parsed = await probe("anthropic-messages", model, GO_KEY, "go");
     if (accessDisabled(parsed)) {
       // Same as its sibling: a non-answer satisfies `not.toBe(404)` without proving
       // anything, so the case would pass on a gateway that never replied.
@@ -765,6 +826,40 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
     }
     expect(parsed.status).not.toBe(404);
     expect(parsed.status).not.toBe(500);
+    expect(parsed.summary).not.toContain("ModelProtocolUnsupported");
+  });
+
+  it("probes a Go Gemini model on the Go Google base the plane adapter sends it to", async (context) => {
+    // pi 1.1.0's own Go provider wires no Google protocol (F10); the plane
+    // adapter does, on `/inference/go/google/v1beta` under every family. This
+    // is the keyed half of that claim: the gateway reads the model there.
+    const candidates = OPENCODE_GO_CATALOG.filter(
+      (m) => m.provider_npm === GOOGLE_SDK
+    ).map((m) => m.id);
+    if (GO_KEY === undefined || GO_KEY.length === 0) {
+      context.skip();
+      return;
+    }
+    const model = await pickModel(
+      candidates,
+      "google-generative-ai",
+      GO_KEY,
+      "go"
+    );
+    if (model === undefined) {
+      context.skip();
+      return;
+    }
+    expect(servedProtocolForOn("go", model)).toBe("google-generative-ai");
+    expect(servedOn("go", model)?.baseUrl).toBe(GO_GOOGLE_BASE_URL);
+    const parsed = await probe("google-generative-ai", model, GO_KEY, "go");
+    if (accessDisabled(parsed)) {
+      context.skip();
+      return;
+    }
+    expect(parsed.status).not.toBe(404);
+    expect(parsed.status).not.toBe(500);
+    expect(parsed.summary).not.toContain("ModelProtocolUnsupported");
   });
 
   it("keeps every sampled model servable, so the cases above are not vacuous", () => {
@@ -793,6 +888,12 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         OPENCODE_GO_CATALOG.filter(
           (m) => m.provider_npm === "@ai-sdk/anthropic"
         ).map((m) => m.id),
+      ],
+      [
+        "go google",
+        OPENCODE_GO_CATALOG.filter((m) => m.provider_npm === GOOGLE_SDK).map(
+          (m) => m.id
+        ),
       ],
     ];
     for (const [label, ids] of slices) {

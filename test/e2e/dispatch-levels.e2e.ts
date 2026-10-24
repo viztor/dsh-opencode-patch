@@ -2,25 +2,32 @@
  * Dispatch against the real rule: every level the picker offers is accepted.
  *
  * Two readers decide whether a turn's saved thinking level survives. The
- * composer renders the Effort row from `ctx.llm.resolveModelInfo`, which
- * `decorateModelInfo` fills from our catalog; dispatch resolves the model
- * through the adapter's `modelOf`, which `decoratePlaneAdapters` fills, and
- * validates the saved effort with `getSupportedThinkingLevels`. When the two
- * disagreed, `glm-5.3-flash-free` offered `high` and `max` beside its name in
- * the composer and answered UNSUPPORTED_REASONING_EFFORT for both
- * (`fix(models): dispatch takes the levels the picker offers`).
+ * composer renders the Effort row the plane adapter answers, and dispatch
+ * validates the saved effort with `getSupportedThinkingLevels` against the
+ * model object the adapter built. Before P-R1 those were two decorators over
+ * pi-ai's adapter, and when they disagreed `glm-5.3-flash-free` offered `high`
+ * and `max` beside its name in the composer and answered
+ * UNSUPPORTED_REASONING_EFFORT for both. Now both come from one rule
+ * (`reasoningFor`, D1) folded into one model object (`planeModelFor`), so
+ * this file is the check that the one rule and pi's agree.
  *
- * The unit suite pins the wrapper's logic against pi's rule copied into the
- * test. This file imports the rule ITSELF — `getSupportedThinkingLevels` from
- * the installed `@earendil-works/pi-ai`, the function `dsh-llm-pi-ai` carries
- * its own copy of and validates with — runs both real decorators on both sides,
- * and sweeps the whole shipped catalog on both planes: for every model,
- * **every level the picker offers is a level the rule accepts**. A vendor move
- * in the rule, or a catalog row the wrapper mishandles, fails here rather than
- * in a user's turn.
+ * The unit suite (`test/model-metadata.test.ts`) pins the rule against pi's
+ * levels for the rule's own map. This file imports pi's rule ITSELF —
+ * `getSupportedThinkingLevels` from the installed `@earendil-works/pi-ai`, the
+ * function `dsh-llm-pi-ai` carries its own copy of and validates with — and
+ * sweeps the whole shipped catalog on both planes through the model object
+ * the plane adapter serves: for every model, **the levels the picker offers
+ * are exactly the levels the rule accepts**.
  *
- * Opt-in (`OPENCODE_E2E=1`), like every file in this suite. No network and no
- * port: the value is the real rule and the real catalog, not a socket.
+ * The last block is live and keyed: one toggle-only model per plane and
+ * protocol, sent through the plane adapter on a tier-A host with the effort id
+ * the picker's "On" carries, so the adapter builds the wire value and a
+ * gateway that refuses it fails here rather than in a user's turn. It skips
+ * without the plane's key, and when no toggle model was entitled on the
+ * account (none reached the gateway's body check).
+ *
+ * Opt-in (`OPENCODE_E2E=1`), like every file in this suite. The sweep needs
+ * no network and no port: its value is the real rule and the real catalog.
  */
 
 import { readFile } from "node:fs/promises";
@@ -29,130 +36,81 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { describe, expect, it } from "vitest";
 
 import {
+  drainStream,
+  fakeCredentials,
+  mountTierA,
+  waitForPlaneOwner,
+} from "../support/host.ts";
+import {
+  type CatalogModelSpec,
+  OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-  decorateModelInfo,
-  decoratePlaneAdapters,
-  resolveConfig,
+  planeModelFor,
+  type Protocol,
+  protocolForSdk,
+  reasoningFor,
 } from "../support/src.ts";
 
 const ENABLED = process.env.OPENCODE_E2E === "1";
 
-/** The two plane routes, and the catalog each one's models resolve from. */
+/** The two plane routes, the catalog and family map each resolves from, and its key. */
 const PLANES = [
-  { catalog: OPENCODE_ZEN_CATALOG, plane: "zen", route: "opencode" },
-  { catalog: OPENCODE_GO_CATALOG, plane: "go", route: "opencode-go" },
+  {
+    catalog: OPENCODE_ZEN_CATALOG,
+    family: OPENCODE_FAMILY_API.zen,
+    key: process.env.OPENCODE_API_KEY,
+    route: "opencode",
+  },
+  {
+    catalog: OPENCODE_GO_CATALOG,
+    family: OPENCODE_FAMILY_API.go,
+    key: process.env.OPENCODE_GO_API_KEY,
+    route: "opencode-go",
+  },
 ] as const;
 
-type Adapter = Record<string, unknown>;
-type Registry = Map<string, { adapter: Adapter }>;
-
-interface Fixture {
-  /**
-   * The one object the adapter answers per id, so a case can assert the
-   * wrapper handed the adapter's own answer back — or filled a new one.
-   */
-  readonly answers: Map<string, Record<string, unknown>>;
-  readonly llm: {
-    readonly adapters: Registry;
-    resolveModelInfo: (provider: string, model: string) => Promise<unknown>;
-  };
-}
-
-/**
- * A Host LLM service as the decorators find it: a public `adapters` map keyed
- * by route, and a `resolveModelInfo` (the picker's read) answering the shape
- * pi's plane adapter does for an id its installed catalog does not carry —
- * `reasoning: false`, no level map. A foreign route rides along, because
- * "only the plane routes" is half the contract.
- */
-const fixtureFor = (
-  seed: (model: string) => Record<string, unknown>
-): Fixture => {
-  const answers = new Map<string, Record<string, unknown>>();
-  const answer = (model: string): Record<string, unknown> => {
-    const existing = answers.get(model);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const made = seed(model);
-    answers.set(model, made);
-    return made;
-  };
-  const adapters: Registry = new Map();
-  for (const route of [...PLANES.map((entry) => entry.route), "deepseek"]) {
-    adapters.set(route, {
-      adapter: {
-        modelOf: (_snapshot: unknown, _provider: string, model: string) =>
-          answer(model),
-      },
-    });
+/** The model the plane adapter serves for one catalog row, on the default family. */
+const servedModel = (
+  plane: (typeof PLANES)[number],
+  spec: CatalogModelSpec
+): Readonly<Record<string, unknown>> & { api: Protocol; baseUrl: string } => {
+  const { model, error } = planeModelFor({
+    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
+    endpoint: "modern",
+    entry: { id: spec.id },
+    familyApi: plane.family,
+    route: plane.route,
+    spec,
+  });
+  if (model === undefined) {
+    throw new Error(`${plane.route}/${spec.id}: ${error}`);
   }
-  return {
-    answers,
-    llm: {
-      adapters,
-      resolveModelInfo: async (_provider: string, model: string) =>
-        answer(model),
-    },
-  };
+  return model;
 };
 
-/** The adapter's own `modelOf`, typed for the call dispatch makes. */
-const modelOfOn = (
-  registry: Registry,
-  route: string
-): ((provider: string, model: string) => unknown) => {
-  const method = registry.get(route)?.adapter.modelOf;
-  if (typeof method !== "function") {
-    throw new TypeError(`no modelOf on ${route}`);
-  }
-  return (provider: string, model: string): unknown =>
-    (method as (snapshot: unknown, provider: string, model: string) => unknown)(
-      undefined,
-      provider,
-      model
-    );
-};
+/** The levels the picker offers for a served model, as effort ids. */
+const offeredLevels = (
+  spec: CatalogModelSpec,
+  model: Readonly<Record<string, unknown>> & { api: Protocol }
+): string[] =>
+  reasoningFor(
+    spec,
+    model.api,
+    model.compat as Readonly<Record<string, unknown>> | undefined
+  )?.efforts.map((effort) => effort.id) ?? ["off"];
 
 /**
  * The real rule. `getSupportedThinkingLevels` is typed against pi's `Model`
- * union; the decorated answer is the shape `modelOf` returns and the rule
- * reads two fields off it, so the cast is the seam.
+ * union; the served model is the shape it reads two fields off, so the cast
+ * is the seam.
  */
-const acceptedLevels = (answer: unknown): string[] =>
-  getSupportedThinkingLevels(answer as never);
-
-/** The Effort row `decorateModelInfo` rendered, as level ids. */
-const offeredLevels = (info: unknown): string[] => {
-  if (typeof info !== "object" || info === null) {
-    return [];
-  }
-  const { reasoning } = info as { reasoning?: unknown };
-  if (typeof reasoning !== "object" || reasoning === null) {
-    return [];
-  }
-  const { efforts } = reasoning as { efforts?: unknown };
-  if (!Array.isArray(efforts)) {
-    return [];
-  }
-  const ids: string[] = [];
-  for (const effort of efforts) {
-    if (typeof effort === "object" && effort !== null) {
-      const { id } = effort as { id?: unknown };
-      if (typeof id === "string") {
-        ids.push(id);
-      }
-    }
-  }
-  return ids;
-};
+const acceptedLevels = (model: unknown): string[] =>
+  getSupportedThinkingLevels(model as never);
 
 describe.skipIf(!ENABLED)(
   "the levels the picker offers are the levels dispatch accepts",
   () => {
-    const config = resolveConfig({ enrichModels: true });
-
     it("pins the deployed copy of the rule to the oracle it imports", async () => {
       // `dsh-llm-pi-ai` carries its own copy of the rule — that copy is what
       // the deployment validates with — and the oracle above imports the
@@ -179,206 +137,142 @@ describe.skipIf(!ENABLED)(
       );
     });
 
-    it("sweeps the whole catalog: every offered level is accepted", async () => {
-      const fixture = fixtureFor((model) => ({
-        id: model,
-        name: model,
-        reasoning: false,
-      }));
-      const stopAdapters = decoratePlaneAdapters(fixture.llm as never, config);
-      const stopInfo = decorateModelInfo({ llm: fixture.llm } as never, config);
+    it("sweeps the whole catalog: the offered levels are exactly the accepted ones", () => {
       const problems: string[] = [];
-      try {
-        for (const { catalog, plane, route } of PLANES) {
-          let checked = 0;
-          for (const spec of catalog) {
-            const offered = offeredLevels(
-              await fixture.llm.resolveModelInfo(route, spec.id)
+      for (const plane of PLANES) {
+        let checked = 0;
+        for (const spec of plane.catalog) {
+          const model = servedModel(plane, spec);
+          // The catalog's protocol is the one dispatched on (D16).
+          expect(model.api).toBe(protocolForSdk(spec.provider_npm));
+          const offered = offeredLevels(spec, model);
+          const accepted = acceptedLevels(model);
+          if (offered.join(",") !== accepted.join(",")) {
+            problems.push(
+              `${plane.route} ${spec.id}: offers [${offered.join(", ")}], dispatch takes [${accepted.join(", ")}]`
             );
-            if (offered.length === 0) {
-              continue;
-            }
-            checked += 1;
-            const accepted = acceptedLevels(
-              modelOfOn(fixture.llm.adapters, route)(route, spec.id)
-            );
-            for (const level of offered) {
-              if (!accepted.includes(level)) {
-                problems.push(`${plane} ${spec.id}: dispatch refuses ${level}`);
-              }
-            }
           }
-          // Anti-vacuity: a plane whose rows stopped offering levels (a parser
-          // change, a catalog swap) must fail here, not pass by covering zero.
-          expect(
-            checked,
-            `no ${plane} model offered a thinking level`
-          ).toBeGreaterThan(0);
+          if (spec.reasoning === true) {
+            checked += 1;
+          }
         }
-      } finally {
-        stopInfo?.();
-        stopAdapters?.();
+        // Anti-vacuity: a plane whose rows stopped reasoning (a parser change,
+        // a catalog swap) must fail here, not pass by covering zero.
+        expect(checked, `no ${plane.route} model reasons`).toBeGreaterThan(0);
       }
       expect(problems).toEqual([]);
     });
 
-    it("dispatches the turns that reported the bug", async () => {
-      const fixture = fixtureFor((model) => ({
-        id: model,
-        name: model,
-        reasoning: false,
-      }));
-      const stopAdapters = decoratePlaneAdapters(fixture.llm as never, config);
-      const stopInfo = decorateModelInfo({ llm: fixture.llm } as never, config);
-      try {
-        const turns = [
-          { id: "glm-5.3-flash-free", route: "opencode" },
-          { id: "beam-free", route: "opencode" },
-          { id: "beam-free", route: "opencode-go" },
-        ] as const;
-        for (const { id, route } of turns) {
-          const offered = offeredLevels(
-            await fixture.llm.resolveModelInfo(route, id)
-          );
-          // These two sat beside the model's name in the composer when the
-          // turn came back UNSUPPORTED_REASONING_EFFORT.
-          expect(offered, `${route} ${id} no longer offers high`).toContain(
-            "high"
-          );
-          expect(offered, `${route} ${id} no longer offers max`).toContain(
-            "max"
-          );
-          const accepted = acceptedLevels(
-            modelOfOn(fixture.llm.adapters, route)(route, id)
-          );
-          expect(
-            offered.filter((level) => !accepted.includes(level)),
-            `${route} ${id}`
-          ).toEqual([]);
-          // The premise, on the object the adapter itself answered with:
-          // without the fill, dispatch takes nothing but `off`, which is why
-          // every offered level failed before the fix.
-          const raw = fixture.answers.get(id);
-          if (raw === undefined) {
-            throw new TypeError(`the fixture never answered for ${id}`);
+    it("dispatches the turn that reported the bug", () => {
+      // `glm-5.3-flash-free` offered levels its dispatch refused. One rule
+      // now builds both, so whatever it offers is taken.
+      const [zen] = PLANES;
+      const spec = zen.catalog.find((row) => row.id === "glm-5.3-flash-free");
+      if (spec === undefined) {
+        throw new TypeError("glm-5.3-flash-free left the Zen catalog");
+      }
+      const model = servedModel(zen, spec);
+      const offered = offeredLevels(spec, model);
+      expect(offered.length).toBeGreaterThan(1);
+      expect(acceptedLevels(model)).toEqual(offered);
+    });
+  }
+);
+
+/** The first toggle-only model of each protocol on a plane: its efforts are named "On". */
+const toggleModels = (
+  plane: (typeof PLANES)[number]
+): { spec: CatalogModelSpec; protocol: Protocol }[] => {
+  const seen = new Map<Protocol, CatalogModelSpec>();
+  for (const spec of plane.catalog) {
+    const protocol = protocolForSdk(spec.provider_npm);
+    if (protocol === undefined || seen.has(protocol)) {
+      continue;
+    }
+    const reasoning = reasoningFor(spec, protocol);
+    if (reasoning?.efforts.some((effort) => effort.name === "On") === true) {
+      seen.set(protocol, spec);
+    }
+  }
+  return [...seen].map(([protocol, spec]) => ({ protocol, spec }));
+};
+
+/** An answer about the account, not the wire: no paid access, no funds, rate limited. */
+const ENTITLEMENT =
+  /\b40[23]\b|\b429\b|access is disabled|Insufficient account funds/iu;
+
+describe.skipIf(!ENABLED)(
+  "live · a toggle model's On is a wire value the gateway takes",
+  () => {
+    const keyed = (plane: (typeof PLANES)[number]): boolean =>
+      plane.key !== undefined && plane.key.length > 0;
+
+    it.for(PLANES)(
+      "$route: every toggle-only protocol accepts On through the plane adapter",
+      { timeout: 120_000 },
+      async (plane, context) => {
+        // Without the plane's key there is nothing to send: reported as
+        // skipped, never as a pass.
+        context.skip(!keyed(plane), "no key for this plane");
+        const toggles = toggleModels(plane);
+        // Anti-vacuity: each plane carries at least one toggle-only model.
+        expect(toggles.length).toBeGreaterThan(0);
+        const ref =
+          plane.route === "opencode"
+            ? "OPENCODE_API_KEY"
+            : "OPENCODE_GO_API_KEY";
+        const tier = await mountTierA({
+          credentials: fakeCredentials({ refs: { [ref]: plane.key ?? "" } }),
+          plugin: {},
+          providers: {
+            [plane.route]: {
+              apiKeyEnv: ref,
+              models: toggles.map(({ spec }) => ({ id: spec.id })),
+            },
+          },
+        });
+        try {
+          await waitForPlaneOwner(tier.llm, [plane.route]);
+          const refused: string[] = [];
+          let reached = 0;
+          for (const { protocol, spec } of toggles) {
+            // The id the picker's "On" carries, read from what the adapter
+            // answers rather than assumed.
+            const info = (await tier.llm.resolveModelInfo(
+              plane.route,
+              spec.id
+            )) as { reasoning?: { efforts?: { id: string; name: string }[] } };
+            const on = info.reasoning?.efforts?.find(
+              (effort) => effort.name === "On"
+            )?.id;
+            expect(on, `${spec.id} offers no On`).toBeDefined();
+            const drained = await drainStream(tier.llm, plane.route, spec.id, {
+              reasoningEffort: on,
+              signal: AbortSignal.timeout(60_000),
+            });
+            const message = drained.failureMessage ?? drained.error ?? "";
+            if (ENTITLEMENT.test(message)) {
+              continue;
+            }
+            reached += 1;
+            if (
+              drained.error !== undefined ||
+              drained.finish?.kind === "error"
+            ) {
+              refused.push(`${spec.id} (${protocol}): ${message}`);
+            }
           }
-          expect(acceptedLevels(raw)).toEqual(["off"]);
+          // Every toggle model refused on entitlement: nothing about the wire
+          // was observed, which is a skip, never a pass.
+          context.skip(
+            reached === 0,
+            "no toggle model was entitled on this account"
+          );
+          expect(refused).toEqual([]);
+        } finally {
+          await tier.dispose();
         }
-      } finally {
-        stopInfo?.();
-        stopAdapters?.();
       }
-    });
-
-    it("fills only what the adapter refuses, and keeps every spelling it declares", () => {
-      const fixture = fixtureFor((model) => ({
-        id: model,
-        name: model,
-        reasoning: true,
-        thinkingLevelMap: { high: "its-own-wire", low: null, xhigh: "X" },
-      }));
-      const stop = decoratePlaneAdapters(fixture.llm as never, config);
-      try {
-        const answer = modelOfOn(fixture.llm.adapters, "opencode")(
-          "opencode",
-          "beam-free"
-        );
-        const record = answer as {
-          reasoning?: unknown;
-          thinkingLevelMap?: Record<string, unknown>;
-        };
-        const map = record.thinkingLevelMap ?? {};
-        expect(record.reasoning).toBe(true);
-        // Its own wire spelling survives: an answer that takes a level keeps it.
-        expect(map.high).toBe("its-own-wire");
-        expect(map.xhigh).toBe("X");
-        // A `null` entry is a REFUSAL, so it is filled from our catalog...
-        expect(map.low).toBe("low");
-        // ...and so is `max`: for xhigh/max an absent entry is not a level at
-        // all, which is why the toggle rows gained them.
-        expect(map.max).toBe("max");
-        // A base level it leaves out keeps the LEVEL'S OWN NAME on the wire —
-        // pi's rule for an absent base entry — so it is deliberately not filled.
-        expect("medium" in map).toBe(false);
-      } finally {
-        stop?.();
-      }
-    });
-
-    it("hands back the adapter's own object when nothing is refused", () => {
-      const fixture = fixtureFor((model) => ({
-        id: model,
-        name: model,
-        reasoning: true,
-        thinkingLevelMap: { low: "L", max: "M", xhigh: "X" },
-      }));
-      const stop = decoratePlaneAdapters(fixture.llm as never, config);
-      try {
-        // cat-jam-free's offered levels are low, medium, high, xhigh and max:
-        // the declared map takes low/xhigh/max, and medium and high are base
-        // levels taken by omission — so there is nothing to fill. The call
-        // creates the fixture's answer; the wrapper must hand THAT object back
-        // rather than manufacture a new one.
-        const answer = modelOfOn(fixture.llm.adapters, "opencode")(
-          "opencode",
-          "beam-free"
-        );
-        expect(answer).toBe(fixture.answers.get("beam-free"));
-      } finally {
-        stop?.();
-      }
-    });
-
-    it("takes a toggle model's xhigh and max, spelled `on`", () => {
-      const fixture = fixtureFor((model) => ({
-        id: model,
-        name: model,
-        reasoning: false,
-      }));
-      const stop = decoratePlaneAdapters(fixture.llm as never, config);
-      try {
-        const answer = modelOfOn(fixture.llm.adapters, "opencode")(
-          "opencode",
-          "qwen3.6-plus"
-        );
-        const map = ((answer as { thinkingLevelMap?: unknown })
-          .thinkingLevelMap ?? {}) as Record<string, unknown>;
-        // A toggle model's wire value is `on` at every level, and before the
-        // fix dispatch refused xhigh/max outright: an absent entry is not a
-        // level for those two.
-        expect(map.xhigh).toBe("on");
-        expect(map.max).toBe("on");
-        const accepted = acceptedLevels(answer);
-        expect(accepted).toContain("xhigh");
-        expect(accepted).toContain("max");
-      } finally {
-        stop?.();
-      }
-    });
-
-    it("wraps the plane routes only, and only ids the catalog can describe", () => {
-      const fixture = fixtureFor((model) => ({
-        id: model,
-        name: model,
-        reasoning: false,
-      }));
-      const { adapters } = fixture.llm;
-      const planeBefore = adapters.get("opencode")?.adapter.modelOf;
-      const foreignBefore = adapters.get("deepseek")?.adapter.modelOf;
-      const stop = decoratePlaneAdapters(fixture.llm as never, config);
-      try {
-        expect(adapters.get("deepseek")?.adapter.modelOf).toBe(foreignBefore);
-        // An id in no catalog: the adapter's own answer, untouched.
-        const unknown = modelOfOn(adapters, "opencode")(
-          "opencode",
-          "not-in-any-catalog"
-        );
-        expect(unknown).toBe(fixture.answers.get("not-in-any-catalog"));
-      } finally {
-        stop?.();
-      }
-      expect(adapters.get("opencode")?.adapter.modelOf).toBe(planeBefore);
-      expect(adapters.get("deepseek")?.adapter.modelOf).toBe(foreignBefore);
-    });
+    );
   }
 );

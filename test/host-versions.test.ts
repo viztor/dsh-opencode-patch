@@ -56,7 +56,7 @@ const HARNESS_PATCH_HASH =
   "66eaf960054f10441b93ac3857114e96c1901f6d183713e2f21437b007111644";
 
 describe("host pin", () => {
-  it("the pi the bridge loads at runtime is the harness's pin", async () => {
+  it("the pi the plane adapter loads at runtime is the harness's pin", async () => {
     // `loadHostPi` resolves the wrapper and walks up from its real location to
     // the first pi it finds — the copy the wrapper itself would load.
     const pi = await loadHostPi();
@@ -66,7 +66,7 @@ describe("host pin", () => {
 
   it("the root pi the tests import is that same copy, and the only one", async () => {
     // `loadHostPi` hands pi's function through untouched, so identity proves
-    // one module instance — the tests and the bridge read one file.
+    // one module instance — the tests and the plane adapter read one file.
     const pi = await loadHostPi();
     expect(pi?.getBuiltinModels).toBe(getBuiltinModels);
     expect(versionOf(piRoot())).toBe(HOST_VERSIONS.pi);

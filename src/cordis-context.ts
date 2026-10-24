@@ -12,7 +12,10 @@
  */
 
 import { readString } from "./config-values.ts";
+import { defaultHostModuleSource } from "./host/host-modules.ts";
 import { isFunctionLike, isRecord } from "./utils/guards.ts";
+import type { PlanePiModel } from "./utils/plane-model.ts";
+import type { PlaneRoute, Protocol } from "./utils/protocols.ts";
 
 /**
  * The disposer `llm.registerAdapter` returns.
@@ -101,14 +104,15 @@ export interface CordisContext {
     ) => AdapterRegistrationLike | undefined;
     /**
      * The models one route advertises. The browser catalog turns each route into
-     * a group and DROPS groups with no models, so this is how an internal route
-     * stays out of the picker.
+     * a group and DROPS groups with no models, which is why the plane adapter
+     * lists a plane's declared ids even when no key resolves (F18).
      */
     listModels?: (provider: string) => Promise<unknown>;
     /**
      * One exact model's capabilities. What the model picker's Effort row reads:
      * a route that reports no `reasoning` here shows no thinking-level control,
-     * which is why {@link decorateModelInfo} fills the gap for the plane routes.
+     * which is why the plane adapter builds every model's reasoning from the
+     * catalog (D1, D17).
      */
     resolveModelInfo?: (
       provider: string,
@@ -393,4 +397,204 @@ export const readSessionMetaResolver = (
       return undefined;
     }
   };
+};
+
+// ---------------------------------------------------------------------------
+// The host's own modules
+// ---------------------------------------------------------------------------
+
+/** pi-ai's three public exports the plane adapter is built from (F19). */
+export interface PiAiModule {
+  readonly PiAiAdapter: new (options: Record<string, unknown>) => object;
+  readonly Config: (raw: unknown) => unknown;
+  readonly recordKeyFor: (providerId: string) => string;
+}
+
+/**
+ * The libraries pi-ai runs on, as the plane provider uses them: pi's provider
+ * pieces, dsh-llm's helpers and the loader's `interpolate`. Typed locally,
+ * because the copies at runtime are the host's, not this package's.
+ */
+export interface HostLibraries {
+  /** pi's `createProvider` (`dist/models.js`). */
+  readonly createProvider: (input: Record<string, unknown>) => unknown;
+  /** pi's `withOpenCodeSessionHeader` (`providers/opencode-headers.js`). */
+  readonly withOpenCodeSessionHeader: (api: unknown) => unknown;
+  /** pi's four protocol factories (`api/*.lazy.js`). */
+  readonly apis: Readonly<Record<Protocol, () => unknown>>;
+  /** `opencodeProvider().auth`: pi's ambient OpenCode key discovery. */
+  readonly opencodeAuth: unknown;
+  /** `opencodeGoProvider().auth`. */
+  readonly opencodeGoAuth: unknown;
+  /** pi's installed models for a route (`getBuiltinModels`). */
+  readonly builtinModels: (route: PlaneRoute) => readonly PlanePiModel[];
+  /** The pi version that was loaded, for diagnostics. */
+  readonly version: string;
+  /** The package root pi was loaded from, for diagnostics. */
+  readonly root?: string;
+  /** dsh-llm's `resolveRetryPolicy`. */
+  readonly resolveRetryPolicy: (policy: unknown, label: string) => unknown;
+  /** dsh-llm's `LlmError`, so a refusal carries the host's own class. */
+  readonly LlmError?: new (message: string, code: string) => Error;
+  /** dsh-llm's `assertUsableApiKey`. */
+  readonly assertUsableApiKey?: (
+    raw: string,
+    pkg: string,
+    ref: string
+  ) => string;
+  /** The loader's `interpolate`, absent when no loader is installed. */
+  readonly interpolate?: (ctx: unknown, value: unknown) => unknown;
+}
+
+/** Both halves, once both resolved. */
+export interface HostModules {
+  readonly piAi: PiAiModule;
+  readonly libraries: HostLibraries;
+}
+
+/** Where the host modules come from; the harness replaces it. */
+export interface HostModuleSource {
+  readonly piAi: (
+    ctx: unknown,
+    fiber?: unknown
+  ) => Promise<PiAiModule | undefined>;
+  /** The libraries pi-ai runs on, found from the context's base URL. */
+  readonly libraries: (ctx?: unknown) => Promise<HostLibraries | undefined>;
+}
+
+let replacementSource: HostModuleSource | undefined;
+
+/**
+ * Replace where the host modules come from, until the returned restore runs.
+ * A bare cordis context has no loader to find pi-ai's module through, so the
+ * real-host harness hands the statically imported packages in here.
+ *
+ * @param source - the replacement, or `undefined` for the default.
+ * @returns the restore.
+ */
+export const replaceHostModuleSource = (
+  source: HostModuleSource | undefined
+): (() => void) => {
+  const previous = replacementSource;
+  replacementSource = source;
+  return () => {
+    replacementSource = previous;
+  };
+};
+
+/**
+ * The host's pi-ai module and libraries, or `undefined` while either cannot be
+ * read.
+ *
+ * @param ctx - the plugin context.
+ * @param piFiber - pi-ai's fiber, whose loader entry holds its module.
+ */
+export const loadHostModules = async (
+  ctx: unknown,
+  piFiber?: unknown
+): Promise<HostModules | undefined> => {
+  const source = replacementSource ?? defaultHostModuleSource;
+  try {
+    const [piAi, libraries] = await Promise.all([
+      source.piAi(ctx, piFiber),
+      source.libraries(ctx),
+    ]);
+    return piAi === undefined || libraries === undefined
+      ? undefined
+      : { libraries, piAi };
+  } catch {
+    return undefined;
+  }
+};
+
+/** One value of a launch-environment snapshot. */
+export interface LaunchEnvironmentLike {
+  readonly get: (name: string) => { readonly value?: string } | undefined;
+}
+
+/**
+ * The launch environment, as pi-ai reads it (`launchEnvironmentOf`,
+ * `launch-environment/src/index.ts:114-117`): the composition's snapshot when
+ * one is provided, the process environment otherwise.
+ *
+ * @param ctx - the plugin context.
+ */
+export const readLaunchEnvironment = (ctx: unknown): LaunchEnvironmentLike => {
+  let provided: unknown;
+  if (isRecord(ctx) && isFunctionLike(ctx.get)) {
+    try {
+      provided = Reflect.apply(ctx.get, ctx, ["launchEnvironment"]);
+    } catch {
+      provided = undefined;
+    }
+  }
+  if (isRecord(provided) && isFunctionLike(provided.get)) {
+    const { get } = provided;
+    return {
+      get: (name) => {
+        const hit: unknown = Reflect.apply(get, provided, [name]);
+        return isRecord(hit) && typeof hit.value === "string"
+          ? { value: hit.value }
+          : undefined;
+      },
+    };
+  }
+  return {
+    get: (name) => {
+      const value = process.env[name];
+      return value === undefined ? undefined : { value };
+    },
+  };
+};
+
+/** A cordis fiber, as far as the route claim reads one. */
+export interface HostFiber {
+  readonly uid: number | null;
+  readonly state: number;
+  readonly runtime?: { readonly name?: string } | null;
+  readonly _config?: unknown;
+  readonly config?: unknown;
+  readonly entry?: { readonly options?: { readonly id?: string } } | undefined;
+  readonly parent?: { readonly fiber?: { readonly state?: number } };
+  readonly ctx?: unknown;
+  readonly await?: () => Promise<unknown>;
+  readonly restart?: () => Promise<unknown>;
+}
+
+/** The name pi-ai's runtime is registered under. */
+export const PI_AI_RUNTIME = "llm-pi-ai";
+
+/**
+ * Every live fiber of pi-ai, in registry order, read through `ctx.registry`'s
+ * runtimes. Never by `fiber.name`, which pi-ai's inject children inherit.
+ *
+ * @param ctx - the plugin context.
+ */
+export const piAiFibers = (ctx: unknown): HostFiber[] => {
+  try {
+    const registry: unknown = isRecord(ctx) ? ctx.registry : undefined;
+    if (!isRecord(registry) || !isFunctionLike(registry.values)) {
+      return [];
+    }
+    const runtimes: unknown = Reflect.apply(registry.values, registry, []);
+    const out: HostFiber[] = [];
+    // cordis's registry yields runtimes and each runtime's `fibers` is a
+    // DisposableList; both are iterated, and a non-iterable throws into the
+    // catch below. A fiber is read only through optional fields.
+    /* oxlint-disable typescript/no-unsafe-type-assertion */
+    for (const runtime of runtimes as Iterable<unknown>) {
+      if (!isRecord(runtime) || runtime.name !== PI_AI_RUNTIME) {
+        continue;
+      }
+      for (const fiber of (runtime.fibers ?? []) as Iterable<unknown>) {
+        if (isRecord(fiber)) {
+          out.push(fiber as unknown as HostFiber);
+        }
+      }
+    }
+    /* oxlint-enable typescript/no-unsafe-type-assertion */
+    return out;
+  } catch {
+    return [];
+  }
 };

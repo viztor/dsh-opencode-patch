@@ -17,20 +17,17 @@ import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
   PROTOCOL_FOR_SDK,
-  ROUTE_FOR_PROTOCOL,
+  protocolForSdk,
   SESSION_HEADER,
-  UNSERVED_PLANE_SDKS,
-  UNSERVED_SDKS,
   enrichModelsResponse,
   findModelSpec,
   getLiveGoCatalog,
   getLiveZenCatalog,
-  internalRouteFor,
   isGoModelsListingUrl,
   isModelsListingUrl,
   isServableSdk,
-  modelsForSdk,
   parseModelsDevCatalog,
+  planeModelFor,
   patchFetch,
   refreshCatalog,
   resetCatalogState,
@@ -243,58 +240,37 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(buckets.get("@ai-sdk/openai")?.length).toBe(31);
     expect(buckets.get("@ai-sdk/anthropic")?.length).toBe(17);
 
-    // And each of those SDKs maps to a protocol this plugin actually serves, so
-    // no carried model names a format with nowhere to go.
+    // And each of those SDKs maps to a protocol the plane adapter serves, so no
+    // carried model names a format with nowhere to go. `@ai-sdk/mistral` is no
+    // exception any more: pi's own data files it as completions (D16).
     for (const [npm, ids] of buckets) {
-      const protocol = PROTOCOL_FOR_SDK[npm];
-      if (protocol === undefined) {
-        // `@ai-sdk/mistral` is the deliberate exception, and it is the only one:
-        // `isServableSdk` keeps it out of every picker, so it is carried only to
-        // be excluded on purpose rather than being absent by accident.
-        // `@ai-sdk/google` used to be here too; it now maps to a protocol the
-        // bridge serves, so it takes the branch below.
-        expect(isServableSdk(npm)).toBe(false);
-        expect(ids.length).toBeGreaterThan(0);
-        continue;
-      }
-      expect(ROUTE_FOR_PROTOCOL[protocol]).toBeDefined();
-      expect(isServableSdk(npm)).toBe(true);
+      expect(protocolForSdk(npm), npm).toBeDefined();
+      expect(isServableSdk(npm), npm).toBe(true);
+      expect(ids.length).toBeGreaterThan(0);
     }
+    expect(protocolForSdk("@ai-sdk/mistral")).toBe("openai-completions");
   });
 
-  it("serves every SDK-routed model from the route its SDK names", () => {
-    // The end-to-end shape of the split, on cold-start data: each plane's model
-    // count is exactly the shim's, and the two planes do not overlap.
-    const responses = modelsForSdk("@ai-sdk/openai").map((m) => m.id);
-    const anthropic = modelsForSdk("@ai-sdk/anthropic").map((m) => m.id);
+  it("serves every SDK-routed model on the protocol its SDK names", () => {
+    // The end-to-end shape of the split, on cold-start data: the union of both
+    // planes' models falls into disjoint protocol sets, and the flagship of
+    // each is on the shim, so a cold start can serve it.
+    const byProtocol = new Map<string, Set<string>>();
+    for (const spec of [...OPENCODE_ZEN_CATALOG, ...OPENCODE_GO_CATALOG]) {
+      const protocol = protocolForSdk(spec.provider_npm) ?? "unserved";
+      byProtocol.set(
+        protocol,
+        (byProtocol.get(protocol) ?? new Set()).add(spec.id)
+      );
+    }
+    expect(byProtocol.has("unserved")).toBe(false);
+    const responses = [...(byProtocol.get("openai-responses") ?? [])];
+    const anthropic = [...(byProtocol.get("anthropic-messages") ?? [])];
     expect(responses.length).toBe(33);
     expect(anthropic.length).toBe(20);
     expect(responses.filter((id) => anthropic.includes(id))).toEqual([]);
-    // The flagship of each plane is on the shim, so a cold start can serve it.
     expect(responses).toContain("muse-spark-1.2");
     expect(anthropic).toContain("claude-sonnet-4-5");
-  });
-
-  it("keeps the Go plane's models off the Zen-based internal routes", () => {
-    // `modelsForSdk` unions both planes by default, which is right for "what
-    // does this gateway serve". It is wrong for the routes this plugin mounts:
-    // they are Zen-based, and the Go plane names six models the Zen endpoint does
-    // not serve — `qwen3.8-max`, `minimax-m2.7`, `minimax-m3` and
-    // `qwen3.7-plus` among them, none of which carries an SDK override on Zen.
-    // Offering one resolves to "model not found" against the route's own base URL.
-    const zen = OPENCODE_ZEN_CATALOG;
-    for (const sdk of ["@ai-sdk/openai", "@ai-sdk/anthropic"]) {
-      expect(modelsForSdk(sdk, zen).length).toBeLessThan(
-        modelsForSdk(sdk).length
-      );
-    }
-    expect(modelsForSdk("@ai-sdk/openai", zen).length).toBe(31);
-    expect(modelsForSdk("@ai-sdk/anthropic", zen).length).toBe(17);
-    // And the ones that would have leaked are genuinely Go-only.
-    const goOnly = ["muse-spark-1.3-contributor", "qwen3.7-plus"];
-    for (const id of goOnly) {
-      expect(zen.some((s) => s.id === id)).toBe(false);
-    }
   });
 
   it("enriches a truncated gateway models response with full catalog metadata", async () => {
@@ -1117,131 +1093,130 @@ describe("catalog · SDK coverage", () => {
         }
       }
     }
-    const classified = new Set([
-      ...Object.keys(PROTOCOL_FOR_SDK),
-      ...UNSERVED_SDKS,
-    ]);
+    // Non-vacuous: the catalogs name more than one SDK.
+    expect(named.size).toBeGreaterThan(1);
+    const classified = new Set(Object.keys(PROTOCOL_FOR_SDK));
     expect([...named].filter((sdk) => !classified.has(sdk))).toEqual([]);
+    expect([...named].filter((sdk) => !isServableSdk(sdk))).toEqual([]);
   });
 });
+
+/** A plane's model as the plane adapter would build it, on the default family. */
+const servedOn = (
+  route: "opencode" | "opencode-go",
+  id: string,
+  routeApi?: string
+) => {
+  const catalog =
+    route === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
+  const spec = catalog.find((candidate) => candidate.id === id);
+  const result = planeModelFor({
+    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
+    endpoint: "modern",
+    entry: { id },
+    familyApi:
+      route === "opencode" ? OPENCODE_FAMILY_API.zen : OPENCODE_FAMILY_API.go,
+    route,
+    ...(routeApi === undefined ? {} : { routeApi }),
+    ...(spec === undefined ? {} : { spec }),
+  });
+  if (result.model === undefined) {
+    throw new Error(`${route}/${id}: ${result.error}`);
+  }
+  return result.model;
+};
 
 /**
  * INVARIANT I1 - every model the plugin offers is routable.
  *
  * The picker shows both planes' models. A model naming an SDK is served on that
- * SDK's protocol, so it needs a route on ITS OWN plane: the Go plane's base URL
- * is not Zen's, and a route carries exactly one of them. Checking the SDK alone
- * - which is what the servability check does - cannot see the difference, so
- * this walks (plane, SDK) pairs instead, and names every one that has no route.
- *
- * A knowingly unserved SDK is skipped: that is a decision (I5), not a gap.
+ * SDK's protocol, on ITS OWN plane: the Go plane's base URL is not Zen's. One
+ * route per plane carries every protocol (D13), so the check is that each
+ * catalog model resolves to a protocol and to a base on its own plane.
  */
 describe("catalog · plane and SDK coverage", () => {
-  it("has a route for every (plane, SDK) pair the catalogs contain", () => {
+  it("serves every catalog model on its own plane's base, whatever its SDK", () => {
     const gaps: string[] = [];
     const planes = [
       ["opencode", OPENCODE_ZEN_CATALOG],
       ["opencode-go", OPENCODE_GO_CATALOG],
     ] as const;
+    let checked = 0;
     for (const [plane, catalog] of planes) {
-      for (const model of catalog) {
-        const sdk = (model as { provider_npm?: string }).provider_npm;
-        if (
-          sdk === undefined ||
-          UNSERVED_SDKS.has(sdk) ||
-          UNSERVED_PLANE_SDKS.has(`${plane} + ${sdk}`)
-        ) {
-          continue;
+      for (const spec of catalog) {
+        const model = servedOn(plane, spec.id);
+        checked += 1;
+        const onGo = new URL(model.baseUrl).pathname.startsWith(
+          "/inference/go/"
+        );
+        if (model.api !== protocolForSdk(spec.provider_npm)) {
+          gaps.push(`${plane}/${spec.id}: ${model.api}`);
         }
-        if (internalRouteFor(plane, model.id, sdk) === undefined) {
-          gaps.push(`${plane} + ${sdk}`);
+        if (onGo !== (plane === "opencode-go")) {
+          gaps.push(`${plane}/${spec.id}: ${model.baseUrl}`);
         }
       }
     }
-    expect([...new Set(gaps)].toSorted()).toEqual([]);
+    expect(checked).toBe(
+      OPENCODE_ZEN_CATALOG.length + OPENCODE_GO_CATALOG.length
+    );
+    expect(gaps).toEqual([]);
   });
 });
 
 /**
  * The plane is half of the routing decision. An SDK says which shape a model
  * needs; only the route the caller selected says which account and base URL
- * serve it - and a redirected call comes back with an internal route id, which
- * is not a plane, which is what stops the redirect recursing.
+ * serve it.
  */
 describe("routing · the plane half of the decision", () => {
-  it("sends the same SDK to a different route per plane", () => {
-    expect(internalRouteFor("opencode", "gpt-5.4", "@ai-sdk/openai")).toBe(
-      "opencode-responses"
+  it("sends the same SDK to a different base per plane", () => {
+    expect(servedOn("opencode", "gpt-5.4")).toMatchObject({
+      api: "openai-responses",
+      baseUrl: "https://opencode.ai/inference/openai/v1",
+    });
+    expect(servedOn("opencode-go", "grok-4.7")).toMatchObject({
+      api: "openai-responses",
+      baseUrl: "https://opencode.ai/inference/go/openai/v1",
+    });
+    expect(servedOn("opencode-go", "minimax-m3")).toMatchObject({
+      api: "anthropic-messages",
+      baseUrl: "https://opencode.ai/inference/go/anthropic",
+    });
+    expect(servedOn("opencode-go", "gemini-4-argon-contributor")).toMatchObject(
+      {
+        api: "google-generative-ai",
+        baseUrl: "https://opencode.ai/inference/go/google/v1beta",
+      }
     );
-    expect(internalRouteFor("opencode-go", "grok-4.7", "@ai-sdk/openai")).toBe(
-      "opencode-go-responses"
-    );
-    expect(
-      internalRouteFor("opencode-go", "minimax-m3", "@ai-sdk/anthropic")
-    ).toBe("opencode-go-anthropic");
-  });
-
-  it("refuses to redirect from anything that is not a plane", () => {
-    // An internal route id is where a redirected call arrives from, so treating
-    // it as a plane would loop.
-    expect(
-      internalRouteFor("opencode-responses", "gpt-5.4", "@ai-sdk/openai")
-    ).toBeUndefined();
-    expect(
-      internalRouteFor("opencode-go-responses", "grok-4.7", "@ai-sdk/openai")
-    ).toBeUndefined();
-  });
-
-  it("leaves a model with no protocol alone", () => {
-    expect(
-      internalRouteFor(
-        "opencode-go",
-        "gemini-4-argon-contributor",
-        "@ai-sdk/google"
-      )
-    ).toBe("opencode-go-google");
-    expect(internalRouteFor("opencode-go", "grok-4.7")).toBeUndefined();
   });
 });
 
 /**
- * The default format, which is the only thing the original route has to decide.
- *
- * A model that speaks the route's own protocol has no SDK of its own — the route's
- * `api` IS its protocol — so the call stays where the user configured it. That is
- * the whole of "handling the original opencode default format": there is nothing to
- * redirect, and nothing to hide. Everything the plugin adds lives around this case,
- * not in it.
+ * The default format. A model that speaks completions has no SDK of its own,
+ * and an id nobody catalogued is served the same way (D15): a name is not a
+ * protocol, so `claude-unlisted-9` is not guessed onto Messages.
  */
-describe("routing · the default format stays where it is", () => {
-  it("never redirects a model with no SDK of its own", () => {
-    // `big-pickle` carries no `provider.npm`: completions is the default, and the
-    // declared route already speaks it.
-    expect(internalRouteFor("opencode", "big-pickle")).toBeUndefined();
-    expect(internalRouteFor("opencode-go", "big-pickle")).toBeUndefined();
+describe("routing · the default format", () => {
+  it("serves a model with no SDK of its own as completions", () => {
+    for (const route of ["opencode", "opencode-go"] as const) {
+      expect(servedOn(route, "big-pickle").api).toBe("openai-completions");
+    }
   });
 
-  it("redirects an id-only family the catalog does not describe", () => {
-    // A model nobody catalogued still cannot be sent as a chat completion when its
-    // family fixes the protocol by name — the measured behaviour, not a guess.
-    expect(internalRouteFor("opencode", "claude-unlisted-9")).toBe(
-      "opencode-anthropic"
+  it("serves an id the catalog does not describe as completions, unless the route names a protocol", () => {
+    expect(servedOn("opencode", "claude-unlisted-9").api).toBe(
+      "openai-completions"
     );
-    expect(internalRouteFor("opencode", "gemini-unlisted-9")).toBe(
-      "opencode-google"
+    expect(servedOn("opencode", "gemini-unlisted-9").api).toBe(
+      "openai-completions"
     );
-  });
-
-  it("leaves the route alone when the declared protocol is its own", () => {
-    // The `modelRoutes` override reaches the decision, and a declaration equal to
-    // the route's protocol means no move at all.
     expect(
-      internalRouteFor(
-        "opencode",
-        "some-model",
-        "@ai-sdk/anthropic",
-        "openai-completions"
-      )
-    ).toBeUndefined();
+      servedOn("opencode", "claude-unlisted-9", "anthropic-messages").api
+    ).toBe("anthropic-messages");
+    // A route-level api never reclassifies an id the catalog describes.
+    expect(servedOn("opencode", "gpt-5.4", "anthropic-messages").api).toBe(
+      "openai-responses"
+    );
   });
 });

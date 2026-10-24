@@ -21,32 +21,60 @@
  * - `PROBE_OUT`: where to write the JSON;
  * - `PROBE_MODELS`: `{ "<route>": ["<model id>", …] }`, the ids to ask about;
  * - `PROBE_SAVE`: an id to append to `opencode`'s models through the config
- *   editor, the way the Settings page saves one. It is tried three times over:
- *   onto the plane as booted (`saveBlocked`), then — after the ids in
- *   `PROBE_SAVE_DROP` are removed from the plane (`saveCleared`) — once more
- *   (`save`), so the last answer is about the id itself and not about a gap id
- *   the plane already stores;
- * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove first;
- * - `PROBE_ROUTES`: `["<route>", …]`, the hidden routes to wait for, which the
- *   e2e passes from `INTERNAL_ROUTES` so the probe holds no copy of them;
+ *   editor, the way the Settings page saves one. It is tried onto the plane as
+ *   booted (`saveBlocked`); only if that is refused are the ids in
+ *   `PROBE_SAVE_DROP` removed (`saveCleared`) and the id tried once more
+ *   (`save`), so the last answer is about the id itself;
+ * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove on a refusal;
+ * - `PROBE_PLANES`: `["<route>", …]`, the plane routes to wait for until an
+ *   adapter other than pi-ai's serves each (the plugin's own);
  * - `PROBE_PI_PACKAGE`: the package name pi-ai's loader entry carries;
- * - `PROBE_SETTLE_MS`: how long to wait for the plugin's hidden routes
- *   (default 30000).
+ * - `PROBE_HOST_PREFIX`: the host's install prefix. The probe records which pi
+ *   the plugin's plane provider was built from RELATIVE to it, so the JSON
+ *   never holds an absolute path, and says whether it is inside it at all;
+ * - `PROBE_SETTLE_MS`: how long to wait for the planes (default 30000).
  *
  * @module test/e2e/host/probe-plugin
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
 
 export const name = "dsh-host-probe";
 
 const OUT = process.env.PROBE_OUT;
 const SETTLE_MS = Number(process.env.PROBE_SETTLE_MS ?? "30000");
 const GATEWAY_HOSTS = new Set(["opencode.ai", "models.opencode.ai"]);
-/** The routes today's plugin mounts behind the planes. */
-const HIDDEN_ROUTES = JSON.parse(process.env.PROBE_ROUTES ?? "[]");
+/** The plane routes the plugin owns. */
+const PLANES = JSON.parse(process.env.PROBE_PLANES ?? "[]");
 const PI_AI_PACKAGE = process.env.PROBE_PI_PACKAGE ?? "";
 /** The longest error message written: enough to triage, too short for a dump. */
 const MESSAGE_LIMIT = 500;
+
+const HOST_PREFIX = process.env.PROBE_HOST_PREFIX ?? "";
+
+/**
+ * Where the plane provider's pi came from, relative to the host prefix: the
+ * plane adapter's class carries the root and version it was built from. A
+ * root outside the prefix is reported as such, never as a path.
+ */
+const piLoadedFrom = (adapter) => {
+  const hostPi = adapter?.constructor?.hostPi;
+  if (hostPi === undefined || typeof hostPi.root !== "string") {
+    return null;
+  }
+  let path;
+  try {
+    path = relative(realpathSync(HOST_PREFIX), realpathSync(hostPi.root));
+  } catch {
+    path = "..";
+  }
+  const inside = path.length > 0 && !path.startsWith("..") && !isAbsolute(path);
+  return {
+    fromHostPrefix: inside,
+    path: inside ? path.split(sep).join("/") : null,
+    version: hostPi.version,
+  };
+};
 
 /** An error's message, cut to {@link MESSAGE_LIMIT}. */
 const messageOf = (error) =>
@@ -204,6 +232,7 @@ const saveSequence = async (llm, editor, saveId, drop) => {
     models: [...(plane.models ?? []), { id: saveId }],
   });
   const blocked = await editZen(editor, entry, append);
+  const document = editor.documentPath;
   let out = { saveBlocked: { id: saveId, ...blocked } };
   let saved = blocked;
   if (blocked.rejected !== undefined) {
@@ -222,8 +251,15 @@ const saveSequence = async (llm, editor, saveId, drop) => {
   const call = await settle(() =>
     llm.resolveCallConfig({ model: saveId, provider: "opencode" })
   );
+  let savedInFile;
+  try {
+    savedInFile = readFileSync(document, "utf8").includes(saveId);
+  } catch {
+    savedInFile = false;
+  }
   return {
     ...out,
+    savedInFile,
     afterSave: {
       callConfig: call.error?.code ?? "ok",
       dispatch: await turn(llm, "opencode", saveId),
@@ -233,17 +269,19 @@ const saveSequence = async (llm, editor, saveId, drop) => {
 };
 
 const measure = async (ctx) => {
-  if (HIDDEN_ROUTES.length === 0 || PI_AI_PACKAGE.length === 0) {
-    throw new Error("probe: PROBE_ROUTES and PROBE_PI_PACKAGE must be set");
+  if (PLANES.length === 0 || PI_AI_PACKAGE.length === 0) {
+    throw new Error("probe: PROBE_PLANES and PROBE_PI_PACKAGE must be set");
   }
   await ctx.get("loader")?.await?.();
   const llm = required(ctx, "llm");
   const registry = () => llm.adapters;
+  /** Whether the plugin's adapter, not pi-ai's, serves a plane. */
+  const claimed = (route) => {
+    const owner = registry().get(route)?.adapter?.constructor.name;
+    return owner !== undefined && owner !== "PiAiAdapter";
+  };
   const until = Date.now() + SETTLE_MS;
-  while (
-    HIDDEN_ROUTES.some((route) => !registry().has(route)) &&
-    Date.now() < until
-  ) {
+  while (!PLANES.every(claimed) && Date.now() < until) {
     await sleep(100);
   }
   const ids = JSON.parse(process.env.PROBE_MODELS ?? "{}");
@@ -255,6 +293,7 @@ const measure = async (ctx) => {
         provider: entry.provider,
         settingsNs: entry.settingsNs,
         settingsPath: entry.settingsPath,
+        ...(entry.error === undefined ? {} : { error: messageOf(entry.error) }),
       })),
     fetchInnermost: globalThis.fetch !== probeFetch,
     owners: Object.fromEntries(
@@ -263,23 +302,11 @@ const measure = async (ctx) => {
         row.adapter.constructor.name,
       ])
     ),
-    // Whether the plugin's adapter decoration (decoratePlaneAdapters in
-    // src/models-discovery.ts) wrapped pi-ai's plane adapter. It wraps only
-    // the adapters registered when its effect ran, so the apply order is
-    // INFERRED from it (`inferredOrder`) — not observed: a pi-ai restart after
-    // the plugin applied would read as plugin-first. The per-model rows depend
-    // on the decoration, not on the order as such, so this is what they need.
-    planeAdapterDecorated: Object.hasOwn(
-      registry().get("opencode")?.adapter ?? {},
-      "resolveModel"
-    ),
+    piLoaded: piLoadedFrom(registry().get(PLANES[0])?.adapter),
+    planesSettled: PLANES.every(claimed),
     providers: llm.listProviders().map((provider) => provider.id),
     registryRoutes: [...registry().keys()],
-    routesSettled: HIDDEN_ROUTES.every((route) => registry().has(route)),
   };
-  registered.inferredOrder = registered.planeAdapterDecorated
-    ? "pi-ai-first"
-    : "plugin-first";
   const asked = await askAbout(llm, ids);
   const zenNs = registered.configurable.find(
     (entry) => entry.provider === "opencode"
@@ -298,9 +325,49 @@ const measure = async (ctx) => {
     const listed = await settle(() => llm.listModels(route));
     listModelsAfter[route] = listed.ok?.map((model) => model.id) ?? listed;
   }
-  const piDescriptor = required(ctx, "settings")
+  const settings = required(ctx, "settings");
+  const piDescriptor = settings
     .describe()
     .find((descriptor) => descriptor.ns === "llm-pi-ai");
+  // What Settings reads per plane: the profile's apiKeyEnv and model ids
+  // (`describeEntries`), and the Models page's join (`modelsJoin`) — the
+  // directory entry looked up in the redacted describe at its settingsPath.
+  const describeEntries = {};
+  for (const plane of PLANES) {
+    const entry = piDescriptor?.value?.providers?.[plane];
+    describeEntries[plane] =
+      entry === undefined
+        ? null
+        : {
+            apiKeyEnv: entry.apiKeyEnv,
+            models: (entry.models ?? []).map((model) => model.id),
+          };
+  }
+  const redacted = settings.describe({ redactSecrets: true });
+  const modelsJoin = {};
+  for (const entry of llm.listConfigurableProviders()) {
+    if (!PLANES.includes(entry.provider)) continue;
+    const view = redacted.find(
+      (namespace) => namespace.ns === entry.settingsNs
+    );
+    let profile = view?.value;
+    for (const key of entry.settingsPath) {
+      profile =
+        typeof profile === "object" && profile !== null
+          ? profile[key]
+          : undefined;
+    }
+    const ref =
+      typeof profile === "object" && profile !== null
+        ? profile.apiKeyEnv
+        : undefined;
+    modelsJoin[entry.provider] = {
+      apiKeyEnv: typeof ref === "string" && ref.length > 0 ? ref : undefined,
+      configured:
+        view !== undefined &&
+        (entry.settingsPath.length === 0 || profile !== undefined),
+    };
+  }
   const editor = required(ctx, "configEditor");
   const saveId = process.env.PROBE_SAVE ?? "";
   const drop = JSON.parse(process.env.PROBE_SAVE_DROP ?? "[]");
@@ -317,8 +384,10 @@ const measure = async (ctx) => {
             user: Object.keys(piDescriptor.user?.providers ?? {}),
             value: Object.keys(piDescriptor.value?.providers ?? {}),
           },
+    describeEntries,
     discovery: discovered.ok ? { count: discovered.ok.length } : discovered,
     dispatch,
+    modelsJoin,
     listModelsAfter,
   };
 };

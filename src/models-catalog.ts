@@ -129,6 +129,55 @@ const deprecatedZenIds = new Set<string>();
 
 let lastRefreshedAt = 0;
 /**
+ * Bumped whenever either active map is replaced, so a reader that derives
+ * something from the catalog (the plane profiles) can tell its derivation is
+ * stale without comparing maps.
+ */
+let generation = 0;
+/** Called after a refresh replaced a map; see {@link onCatalogChange}. */
+const changeListeners = new Set<() => void>();
+
+/**
+ * The catalog's generation: a number that changes whenever the live catalog
+ * does, and only then.
+ */
+export const catalogGeneration = (): number => generation;
+
+/**
+ * Be told when a refresh lands new catalog data. The bundled shim is what a
+ * process starts from, so the first reader of the catalog sees it and only
+ * triggers the refresh; a listener is how that reader learns the refresh
+ * landed. A listener that throws is ignored: the refresh stays a success.
+ *
+ * @param listener - called after the maps are replaced.
+ * @returns the unsubscribe.
+ */
+export const onCatalogChange = (listener: () => void): (() => void) => {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+};
+
+/**
+ * How many change listeners are subscribed: the probe that shows an
+ * unsubscribe happened, since a stale listener that does nothing is otherwise
+ * indistinguishable from none.
+ */
+export const catalogListenerCount = (): number => changeListeners.size;
+
+/** Bump the generation and tell every listener. */
+const catalogChanged = (): void => {
+  generation += 1;
+  for (const listener of changeListeners) {
+    try {
+      listener();
+    } catch {
+      // A listener's failure is its own; the catalog changed either way.
+    }
+  }
+};
+/**
  * Whether the MOST RECENT refresh attempt read a usable payload.
  *
  * Distinct from {@link lastRefreshedAt}, which only advances on success and so
@@ -162,6 +211,7 @@ export const resetCatalogState = (): void => {
   lastRefreshedAt = 0;
   lastRefreshSucceeded = false;
   refreshPromise = undefined;
+  generation += 1;
 };
 
 export interface ParsedCatalogs {
@@ -392,8 +442,8 @@ export type CatalogPlane = "go" | "zen";
 /**
  * The plane a route's models come from.
  *
- * `opencode-go` is the subscription plane; everything else this plugin knows
- * about (`opencode`, and the internal routes derived from it) is Zen.
+ * `opencode-go` is the subscription plane, and so is an `opencode-go-*` relay
+ * route; everything else this plugin knows about (`opencode`) is Zen.
  */
 export const catalogPlaneForRoute = (route: unknown): CatalogPlane =>
   route === "opencode-go" ||
@@ -574,6 +624,7 @@ export const refreshCatalog = (
         if (parsed.go.length > 0 || parsed.zen.length > 0) {
           lastRefreshedAt = Date.now();
           lastRefreshSucceeded = true;
+          catalogChanged();
         }
       }
     } catch {

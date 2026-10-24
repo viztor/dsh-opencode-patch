@@ -83,27 +83,12 @@ export const CONFIG_ONLY_FIELDS: readonly {
   },
   {
     field: "providers",
-    reason: "route ids to intercept; the default covers the documented routes",
+    reason:
+      "route ids whose turns are decorated; both planes are always included, so only a relay route needs adding",
   },
   {
     field: "gatewayUrls",
     reason: "URL substrings; only a mirror or relay needs to change them",
-  },
-  {
-    field: "maxContextWindow",
-    reason:
-      "context ceiling in tokens; an override for deployments tuning context limits",
-  },
-  {
-    field: "modelOverrides",
-    reason:
-      "per-model overrides for contextWindow, maxTokens, and metadata in YAML config",
-  },
-  {
-    field: "modelRoutes",
-    reason:
-      "per-model wire routing (api and baseURL); it overrides what the catalog " +
-      "computed, which is a deployment concern rather than a card control",
   },
   {
     field: "usageBaseURL",

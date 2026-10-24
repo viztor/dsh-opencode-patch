@@ -29,16 +29,7 @@ const node = (value: unknown) => ({
 describe("config-values: shared defaults", () => {
   it("exposes the marker and defaults both sides read", () => {
     expect(ALL_MODELS_MARKER).toBe("*");
-    expect(DEFAULT_PROVIDERS).toEqual([
-      "opencode",
-      "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
-    ]);
+    expect(DEFAULT_PROVIDERS).toEqual(["opencode", "opencode-go"]);
   });
 });
 

@@ -10,25 +10,20 @@
  * The probe records what the host serves and exits the process; this file reads
  * its JSON.
  *
- * The assertions are TODAY's behaviour, read from the same `S0_TODAY` table the
- * in-process characterization pins, so the binary and the harness cannot drift
- * apart unnoticed. P-R1 flips the rows its PR names. The loader starts rows in
- * parallel, so which of pi-ai and the plugin applies first is a race. The rows
- * depend on whether the plugin's adapter decoration wrapped pi-ai's plane
- * adapter, so the probe records that and the order it implies
- * (`inferredOrder`), and the per-model rows follow it (`todayRowsFor`) rather
- * than pinning a 70 ms margin.
+ * The assertions are the plugin's behaviour, read from the same `S0_TODAY`
+ * table the in-process characterization pins, so the binary and the harness
+ * cannot drift apart unnoticed. Since P-R1 the plugin owns both plane routes
+ * (D13): no row depends on which of pi-ai and the plugin applies first, so the
+ * per-model rows are `S0_TODAY.rows` in either order, and the listing and save
+ * rows no longer depend on which ids pi describes.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
  * directory whose `node_modules/@deepseek-ai/dsh` is the installed host.
  * `DSH_HOST_PI_CELL=pinned` (the default) also requires the pi
  * `host-versions.ts` names, with the harness patch, and asserts every row;
- * `floating` accepts whatever pi the host resolved. It skips the rows that
- * depend on which ids pi describes (the keyed listing and the per-model rows)
- * and still asserts the save rows. Those assume the floating pi lacks at least
- * one of `ZEN_UNDESCRIBED` and still describes every other declared Zen id, so
- * a pi that learns all of them or retires a declared id turns them red by
- * design — triage a red floating run as a pi change first.
+ * `floating` accepts whatever pi the host resolved, and skips the per-model
+ * rows (a newer pi's own entry can move a model's metadata); its probe JSON is
+ * the record.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -57,17 +52,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { HOST_VERSIONS } from "../support/host-versions.ts";
 import {
-  type ApplyOrder,
   CHARACTERIZED_MODELS,
   CHARACTERIZED_PROFILE,
   PI_AI_PACKAGE,
+  PLANES,
   S0_TODAY,
-  SAVE_BLOCKED_BY_ANY_UNDESCRIBED,
   SAVE_CANDIDATE,
-  todayRowsFor,
   ZEN_UNDESCRIBED,
 } from "../support/host.ts";
-import { INTERNAL_ROUTES } from "../support/src.ts";
 
 const ENABLED = process.env.DSH_HOST_E2E === "1";
 const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
@@ -81,14 +73,20 @@ const PROBE_BUNDLE = join(CHECKOUT, "test", "e2e", "host");
 interface ProbeOutput {
   readonly fatal?: string;
   readonly fetchInnermost: boolean;
-  readonly routesSettled: boolean;
-  readonly planeAdapterDecorated: boolean;
-  /** Inferred from `planeAdapterDecorated`, not observed: see the probe. */
-  readonly inferredOrder: ApplyOrder;
+  readonly planesSettled: boolean;
+  readonly piLoaded: {
+    fromHostPrefix: boolean;
+    path: string | null;
+    version: string;
+  } | null;
   readonly providers: string[];
   readonly registryRoutes: string[];
   readonly owners: Record<string, string>;
-  readonly configurable: { provider: string; settingsNs: string }[];
+  readonly configurable: {
+    provider: string;
+    settingsNs: string;
+    error?: string;
+  }[];
   readonly listModels: Record<string, unknown>;
   readonly listModelsAfter: Record<string, unknown>;
   readonly modelInfo: Record<
@@ -98,6 +96,15 @@ interface ProbeOutput {
   readonly callConfig: Record<string, string>;
   readonly dispatch: Record<string, { sent: string[]; finish: string }>;
   readonly describe: { user: string[]; value: string[] } | undefined;
+  readonly describeEntries: Record<
+    string,
+    { apiKeyEnv?: string; models: string[] } | null
+  >;
+  readonly modelsJoin: Record<
+    string,
+    { configured: boolean; apiKeyEnv?: string }
+  >;
+  readonly savedInFile?: boolean;
   readonly saveBlocked: { id: string; rejected?: string; accepted?: true };
   readonly saveCleared?: {
     dropped: string[];
@@ -105,7 +112,11 @@ interface ProbeOutput {
     accepted?: true;
   };
   readonly save: { id: string; rejected?: string; accepted?: true };
-  readonly afterSave?: unknown;
+  readonly afterSave?: {
+    callConfig: string;
+    dispatch: { sent: string[]; finish: string };
+    listed: unknown;
+  };
 }
 
 /** The entries of a directory, or none when it cannot be read. */
@@ -202,6 +213,8 @@ const posix = (path: string): string => path.split(sep).join("/");
 
 let home = "";
 let out: ProbeOutput;
+/** The version of the host prefix's own pi. */
+let hostPiVersion = "";
 
 describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
   beforeAll(async () => {
@@ -227,6 +240,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
         version: string;
       }
     ).version;
+    hostPiVersion = piVersion;
     console.info(`[e2e-host] cell ${CELL}: pi ${piVersion}`);
     expect(piCopies(join(PREFIX, "node_modules"))).toHaveLength(1);
     if (PINNED) {
@@ -322,10 +336,11 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
         cwd: home,
         env: {
           ...env,
+          PROBE_HOST_PREFIX: PREFIX,
           PROBE_MODELS: JSON.stringify(CHARACTERIZED_MODELS),
           PROBE_OUT: probeOut,
           PROBE_PI_PACKAGE: PI_AI_PACKAGE,
-          PROBE_ROUTES: JSON.stringify(INTERNAL_ROUTES),
+          PROBE_PLANES: JSON.stringify(PLANES),
           PROBE_SAVE: SAVE_CANDIDATE,
           PROBE_SAVE_DROP: JSON.stringify(ZEN_UNDESCRIBED),
         },
@@ -382,68 +397,74 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     }
   });
 
-  it("measured with the probe innermost and the hidden routes settled", () => {
+  it("measured with the probe innermost and both planes settled on the plugin's adapter", () => {
     expect(out.fatal).toBeUndefined();
     expect(out.fetchInnermost).toBe(true);
-    expect(out.routesSettled).toBe(true);
+    expect(out.planesSettled).toBe(true);
   });
 
-  it("[INTENDED_CHANGE] registry: the planes are pi-ai's; the hidden routes are registered and not listed (P-R1 claims the planes)", () => {
+  it("the plane provider is built from the host's own pi, not the linked checkout's (both cells)", () => {
+    // The plugin is installed as a `link:` to this checkout, whose own
+    // development install holds a pi too; the plugin resolves the wrapper
+    // from the loader's base URL, so it reaches the host prefix's copy — the
+    // floating cell's floating pi included.
+    expect(out.piLoaded).toEqual({
+      fromHostPrefix: true,
+      path: "node_modules/@earendil-works/pi-ai",
+      version: hostPiVersion,
+    });
+  });
+
+  it("[BASELINE] registry: both planes are the plugin's PlaneAdapter, no hidden route exists, and Settings addresses the planes under pi-ai's namespace with no error (D13)", () => {
     expect(out.providers).toEqual(
       expect.arrayContaining(["opencode", "opencode-go"])
     );
-    for (const route of INTERNAL_ROUTES) {
-      expect(out.providers).not.toContain(route);
-      expect(out.registryRoutes).toContain(route);
+    expect(out.owners.opencode).toBe("PlaneAdapter");
+    expect(out.owners["opencode-go"]).toBe("PlaneAdapter");
+    expect(
+      out.registryRoutes.filter((route) =>
+        /^opencode-(?:responses|anthropic|google|go-)/u.test(route)
+      )
+    ).toEqual([]);
+    for (const plane of PLANES) {
+      const entry = out.configurable.find((row) => row.provider === plane);
+      expect(entry).toMatchObject({ provider: plane, settingsNs: "llm-pi-ai" });
+      expect(entry?.error).toBeUndefined();
     }
-    expect(out.owners.opencode).toBe("PiAiAdapter");
-    expect(out.owners["opencode-go"]).toBe("PiAiAdapter");
-    for (const plane of ["opencode", "opencode-go"]) {
-      expect(out.configurable).toContainEqual(
-        expect.objectContaining({ provider: plane, settingsNs: "llm-pi-ai" })
+  });
+
+  it("[BASELINE] listing before any turn: every declared id is listed (D21)", () => {
+    expect(out.listModels).toEqual(S0_TODAY.listingBeforeTurn);
+  });
+
+  it("[BASELINE] listing after a turn on each plane: every declared id is still listed (G1)", () => {
+    expect(out.listModelsAfter).toEqual(S0_TODAY.listingAfterTurn);
+  });
+
+  // A floating pi's own entry can move a model's metadata, so these are
+  // pinned for the pi this repository pins; the floating cell's probe JSON is
+  // the record.
+  it.skipIf(!PINNED)(
+    "resolveModelInfo, resolveCallConfig and the wire match the in-process rows (pinned pi)",
+    () => {
+      for (const [key, row] of Object.entries(S0_TODAY.rows)) {
+        expect(out.modelInfo[key], key).toEqual(row.info);
+        expect(out.callConfig[key], key).toBe(row.callConfig);
+        expect(out.dispatch[key], key).toEqual({
+          finish: row.finish,
+          sent: row.sent,
+        });
+      }
+      expect(
+        out.dispatch["opencode-go/gemini-4-argon-contributor"]?.sent
+      ).toEqual([
+        "https://opencode.ai/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent?alt=sse",
+      ]);
+      expect(out.callConfig["opencode-go/gemini-4-argon-contributor"]).toBe(
+        "ok"
       );
     }
-  });
-
-  it("[INTENDED_CHANGE] keyless listing: every paid model is hidden before a key is captured", () => {
-    expect(out.listModels).toEqual(S0_TODAY.keylessListing);
-  });
-
-  // These two depend on which ids pi describes, so they are pinned for the
-  // pi this repository pins; the floating cell skips them and its probe JSON
-  // is the record.
-  describe("rows that depend on which ids pi describes", () => {
-    it.skipIf(!PINNED)(
-      "[KNOWN_DEFECT] keyed listing: the gap ids are missing (pinned pi)",
-      () => {
-        expect(out.listModelsAfter).toEqual(S0_TODAY.keyedListing);
-      }
-    );
-
-    it.skipIf(!PINNED)(
-      "resolveModelInfo, resolveCallConfig and the wire match the in-process rows for the decoration state the probe recorded (pinned pi)",
-      () => {
-        // The loader starts rows in parallel (F17), so whether the plugin's
-        // decoration wrapped pi-ai's plane adapter is a race: measured on the
-        // published binary it did not (the plugin applied about 70 ms first),
-        // which is no margin to pin. So the rows follow the recorded state, and
-        // `todayRowsFor` throws on a missing or unknown value.
-        console.info(
-          `[e2e-host] plane adapter decorated: ${String(out.planeAdapterDecorated)} (inferred order ${out.inferredOrder})`
-        );
-        for (const [key, row] of Object.entries(
-          todayRowsFor(out.inferredOrder)
-        )) {
-          expect(out.modelInfo[key], key).toEqual(row.info);
-          expect(out.callConfig[key], key).toBe(row.callConfig);
-          expect(out.dispatch[key], key).toEqual({
-            finish: row.finish,
-            sent: row.sent,
-          });
-        }
-      }
-    );
-  });
+  );
 
   it("[BASELINE] the settings page reads every plane the profile declares", () => {
     expect(out.describe?.value.toSorted()).toEqual([
@@ -453,26 +474,40 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     ]);
   });
 
-  it("[KNOWN_DEFECT] a stored gap id blocks saving any new id on its plane", () => {
-    // pi-ai's strict check names the FIRST stored id the installed pi cannot
-    // describe. The pinned pi lacks gpt-5.3-codex-spark, so it is named; a
-    // floating pi may have learned it, and then names the next undescribed id
-    // — so the floating cell asserts only that one of them blocks the save.
-    expect(out.saveBlocked.rejected).toMatch(
-      PINNED ? S0_TODAY.saveBlockedByStoredGap : SAVE_BLOCKED_BY_ANY_UNDESCRIBED
-    );
+  it("[BASELINE] the Settings graft shows each plane's own entry, and the Models page reads both planes configured under their apiKeyEnv (D18)", () => {
+    expect(out.describeEntries).toEqual({
+      opencode: {
+        apiKeyEnv: "OPENCODE_API_KEY",
+        models: CHARACTERIZED_MODELS.opencode,
+      },
+      "opencode-go": {
+        apiKeyEnv: "OPENCODE_GO_API_KEY",
+        models: CHARACTERIZED_MODELS["opencode-go"],
+      },
+    });
+    expect(out.modelsJoin.opencode).toEqual({
+      apiKeyEnv: "OPENCODE_API_KEY",
+      configured: true,
+    });
+    expect(out.modelsJoin["opencode-go"]).toEqual({
+      apiKeyEnv: "OPENCODE_GO_API_KEY",
+      configured: true,
+    });
   });
 
-  it("[KNOWN_DEFECT] a catalog-unknown id cannot be saved, once the plane stores no gap id", () => {
-    // Clearing only ZEN_UNDESCRIBED assumes the installed pi still describes
-    // the other opencode ids the profile declares. The floating cell asserts
-    // it too: a pi that retires one of them would fail here, and that is a
-    // retirement worth a red nightly rather than a row to skip.
-    expect(out.saveCleared).toEqual({
-      accepted: true,
-      dropped: [...ZEN_UNDESCRIBED],
+  it("[BASELINE] a stored gap id blocks no save: the catalog-unknown id is accepted on the first try (D15)", () => {
+    expect(out.saveBlocked).toEqual({ accepted: true, id: SAVE_CANDIDATE });
+    expect(out.saveCleared).toBeUndefined();
+  });
+
+  it("[BASELINE] a catalog-unknown id saves to the file, is listed, validates and is sent as completions on the modern base (D15, D16)", () => {
+    expect(out.save).toEqual({ accepted: true, id: SAVE_CANDIDATE });
+    expect(out.savedInFile).toBe(true);
+    expect(out.afterSave?.listed).toContain(SAVE_CANDIDATE);
+    expect(out.afterSave?.callConfig).toBe("ok");
+    expect(out.afterSave?.dispatch).toEqual({
+      finish: "AUTH",
+      sent: ["https://opencode.ai/inference/openai/v1/chat/completions"],
     });
-    expect(out.save.rejected).toMatch(S0_TODAY.saveRejectedUnknown);
-    expect(out.afterSave).toBeUndefined();
   });
 });

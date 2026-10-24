@@ -6,6 +6,8 @@
  *
  * | installer                | side effect                                   |
  * | ------------------------ | --------------------------------------------- |
+ * | {@link installRouteClaim}   | own the `opencode`/`opencode-go` routes (D13) |
+ * | {@link installDescribeGraft} | keep Settings showing the planes (D18)      |
  * | {@link logRenameNotice}  | one-time notice for legacy rows                |
  * | {@link installUsageService} | register the Go quota service + remotes     |
  * | {@link installFetchPatch}   | wrap `globalThis.fetch` (returns `false` if none) |
@@ -20,7 +22,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
-  type ModelOverrideConfig,
   type PluginConfig,
   type ResolvedPluginConfig,
   resolveConfig,
@@ -29,29 +30,24 @@ import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
 import { recordDebug } from "./debug.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
+import { installDescribeGraft } from "./host/describe-graft.ts";
+import { installRouteClaim } from "./host/route-claim.ts";
 import { LEGACY_NAME, LEGACY_PKG, name } from "./identity.ts";
-import { getCapturedApiKey, isPlaceholderApiKey } from "./key-capture.ts";
 import {
   type CatalogModelSpec,
   getLiveGoCatalog,
   getLiveZenCatalog,
   sanitizeModalities,
 } from "./models-catalog.ts";
-import {
-  decorateModelDiscovery,
-  decorateModelInfo,
-  decoratePlaneAdapters,
-  hideResponsesRoute,
-} from "./models-discovery.ts";
+import { decorateModelDiscovery } from "./models-discovery.ts";
 import { STORE_NAMESPACE } from "./opencode-store-contract.ts";
 import { OpencodeStoreService } from "./opencode-store-service.ts";
 import { ModelPurgeService } from "./purge-service.ts";
-import { registerResponsesProvider } from "./responses-provider.ts";
-import { isServableSdk } from "./responses-routes.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { GoUsageService } from "./usage.ts";
-import { isFetchFunction, isRecord } from "./utils/guards.ts";
+import { isFetchFunction, isFunctionLike, isRecord } from "./utils/guards.ts";
+import { isServableSdk } from "./utils/protocols.ts";
 
 /**
  * One catalog row in the shape DSH's model-discovery surface expects.
@@ -59,31 +55,16 @@ import { isFetchFunction, isRecord } from "./utils/guards.ts";
  * Models whose SDK no route serves are dropped: offering them would be offering
  * a model that cannot work, and the user has no way to tell that from the row.
  */
-const toDiscovered = (
-  specs: readonly CatalogModelSpec[],
-  maxContextWindow?: number,
-  modelOverrides?: Readonly<Record<string, ModelOverrideConfig>>
-) =>
+const toDiscovered = (specs: readonly CatalogModelSpec[]) =>
   specs
     .filter((m) => isServableSdk(m.provider_npm))
-    .map((m) => {
-      const override = modelOverrides?.[m.id];
-      const baseContext = override?.contextWindow ?? m.context_window;
-      const contextWindow =
-        typeof maxContextWindow === "number" && maxContextWindow > 0
-          ? Math.min(baseContext, maxContextWindow)
-          : baseContext;
-      return {
-        contextWindow,
-        id: m.id,
-        inputModalities:
-          override?.inputModalities === undefined
-            ? sanitizeModalities(m.input_modalities)
-            : [...override.inputModalities],
-        maxTokens: override?.maxTokens ?? m.max_output_tokens,
-        name: override?.name ?? m.name,
-      };
-    });
+    .map((m) => ({
+      contextWindow: m.context_window,
+      id: m.id,
+      inputModalities: sanitizeModalities(m.input_modalities),
+      maxTokens: m.max_output_tokens,
+      name: m.name,
+    }));
 
 /** Tell a row still configured under the pre-rename id/package to update. */
 const logRenameNotice = (ctx: CordisContext): void => {
@@ -330,7 +311,7 @@ const installStoreService = (ctx: CordisContext): void => {
 
 /**
  * Wrap `globalThis.fetch` so claimed OpenCode traffic carries session affinity
- * and the gateway headers, restoring both on dispose.
+ * and the gateway headers, restoring it on dispose.
  *
  * @returns `false` when there is no fetch to wrap. The caller then stops: the
  * stream hook and discovery must not attach, or turns would run without the
@@ -377,37 +358,7 @@ const installFetchPatch = (
         ", "
       )}]`
     );
-    // Decorate discovery in the same effect so disabling the plugin restores
-    // both the gateway fetch behavior and the Host discovery method.
-    const stopDiscoveryDecoration = decorateModelDiscovery(ctx, config);
-    // And the model-info decoration, which is what the picker's Effort row
-    // reads. Same effect and same reason: it replaces a Host method, so it has
-    // to live on this fiber to be undone on reload rather than stacked.
-    const stopModelInfoDecoration = decorateModelInfo(ctx, config);
-    // And the adapters themselves, which is where dispatch reads a model from.
-    // The picker's answer and the dispatched call must come from one place, and
-    // this is the half that `resolveModelInfo` cannot reach.
-    const stopAdapterDecoration = decoratePlaneAdapters(ctx.llm, config);
-    // Same reasoning for the listing patch: it replaces Host methods, so it must
-    // be tied to this fiber. Called OUTSIDE an effect it would never be undone,
-    // and every live reload would stack another wrapper. Installed before the
-    // stream hook is used, because the redirect asks it whether the route is
-    // really registered.
-    // Told which planes are keyless, so the picker can offer only what such a
-    // deployment can actually call (the official client's rule).
-    const stopCatalogHiding = hideResponsesRoute(ctx, config, {
-      hasCredential: hasPlaneCredential,
-    });
-    // Own the Responses route from here, so the user configures nothing: they
-    // keep the `opencode` provider and key they already have. Best-effort — a
-    // route declared in the profile still works if this cannot register.
-    const releaseResponsesProvider = mountInternalRoutes(ctx, config);
     return () => {
-      releaseResponsesProvider();
-      stopCatalogHiding?.();
-      stopDiscoveryDecoration?.();
-      stopModelInfoDecoration?.();
-      stopAdapterDecoration?.();
       if (globalThis.fetch === patched) {
         globalThis.fetch = originalFetch;
       }
@@ -458,15 +409,15 @@ const DISCOVERY_NAMESPACES: readonly {
  * Registered once per root and never withdrawn, like the usage service. The
  * earlier shape registered on every activation and swallowed the host's
  * duplicate refusal, so the FIRST activation's settings answered forever: a
- * reload that changed `modelOverrides`, `maxContextWindow` or `enrichModels`
- * changed nothing the picker saw. Each namespace is registered on its own, so
- * one refusal no longer skips the others.
+ * reload that changed `enrichModels` changed nothing the picker saw. Each
+ * namespace is registered on its own, so one refusal no longer skips the
+ * others.
  */
 const installModelDiscovery = (
-  ctx: CordisContext,
+  scope: CordisContext,
   config: ResolvedPluginConfig
 ): void => {
-  const root: CordisContext = ctx.root ?? ctx;
+  const root: CordisContext = scope.root ?? scope;
   const registered = discoveryConfigOn.has(root);
   if (!registered && !config.enrichModels) {
     return;
@@ -475,7 +426,7 @@ const installModelDiscovery = (
   if (registered) {
     return;
   }
-  const { llm } = ctx;
+  const { llm } = scope;
   if (typeof llm?.registerModelDiscovery !== "function") {
     return;
   }
@@ -486,18 +437,12 @@ const installModelDiscovery = (
       llm.registerModelDiscovery(ns, () => {
         const settings = current();
         return Promise.resolve(
-          settings.enrichModels
-            ? toDiscovered(
-                catalog(),
-                settings.maxContextWindow,
-                settings.modelOverrides
-              )
-            : []
+          settings.enrichModels ? toDiscovered(catalog()) : []
         );
       });
     } catch (error) {
       // Non-fatal, and said: a picker missing a plane is otherwise a silence.
-      ctx.logger?.warn?.(
+      scope.logger?.warn?.(
         `[dsh-opencode-patch] model discovery for ${ns} did not register`,
         error
       );
@@ -506,115 +451,69 @@ const installModelDiscovery = (
 };
 
 /**
- * Mount the internal protocol routes for one activation, and own their withdrawal.
- *
- * The registration is async (it reads `llm-pi-ai` off the loader), so the
- * disposer cannot live in a local the effect body fills in later: an effect
- * that re-runs before the mount settles would find `undefined`, release nothing,
- * and leave the previous mount's routes registered. So this owns the
- * WITHDRAWAL, not the mount: a mount that completes after release is withdrawn
- * on the spot, and one that completes before it is withdrawn by the release.
- *
- * A REJECTED mount is reported and contained. It used to escape as an unhandled
- * rejection from a `void` IIFE — which Node's default mode turns into a process
- * exit — whenever the Google bridge failed to register.
- *
- * @param ctx - the host context.
- * @param config - the resolved settings the mount reads.
- * @param register - the mount itself; a parameter so its failure is testable.
- * @returns the release, safe to call at any point and more than once.
+ * Discovery for one `llm` scope: the catalog namespaces, and the wrapper that
+ * merges the catalog into a discovery answer, tied to the scope so an `llm`
+ * restart or a disable undoes it.
  */
-export const mountInternalRoutes = (
+const installDiscovery = (
   ctx: CordisContext,
-  config: ResolvedPluginConfig,
-  register: typeof registerResponsesProvider = registerResponsesProvider
-): (() => void) => {
-  let stop: (() => void) | undefined;
-  let released = false;
-  void (async () => {
-    let next: (() => void) | undefined;
-    try {
-      next = await register(ctx, config);
-    } catch (error) {
-      ctx.logger?.warn?.(
-        "[dsh-opencode-patch] the internal routes did not mount; routes declared in the profile are unaffected",
-        error
-      );
+  config: ResolvedPluginConfig
+): void => {
+  ctx.inject?.(["llm"], (scope: unknown) => {
+    if (!isRecord(scope)) {
       return;
     }
-    if (released) {
-      next?.();
-      return;
+    const llmScope = scope as CordisContext;
+    installModelDiscovery(llmScope, config);
+    const stop = decorateModelDiscovery(llmScope, config);
+    if (isFunctionLike(llmScope.effect)) {
+      llmScope.effect(() => () => stop?.(), "dsh-opencode-patch.discovery");
     }
-    stop = next;
-  })();
-  return () => {
-    released = true;
-    stop?.();
-    stop = undefined;
-  };
+  });
 };
 
 /**
- * Whether this plane holds a credential the gateway would accept.
- *
- * Deliberately synchronous and deliberately generous: a declared env key or a
- * key captured from a live request. The
- * SQLite store is not consulted because it is opt-in and off by default, and
- * calling a deployment "keyless" when it does hold a credential would hide models
- * it can actually use.
- *
- * @param plane - the gateway plane.
- * @returns whether any credential is known for it.
- */
-const hasPlaneCredential = (plane: string): boolean => {
-  const declared =
-    plane === "opencode-go"
-      ? process.env.OPENCODE_GO_API_KEY
-      : process.env.OPENCODE_API_KEY;
-  if (
-    typeof declared === "string" &&
-    declared.length > 0 &&
-    !isPlaceholderApiKey(declared)
-  ) {
-    return true;
-  }
-  return getCapturedApiKey(plane) !== undefined;
-};
-
-/**
- * Plugin entry: register the quota service, patch `fetch` for OpenCode
- * traffic, and capture turn state for configured providers.
+ * Plugin entry: claim the plane routes, register the quota service, patch
+ * `fetch` for OpenCode traffic, and capture turn state for configured
+ * providers.
  *
  * Order matters:
- * 1. the rename notice, so it is the first thing a legacy row logs;
- * 2. the quota service, before the fetch patch, so a composition without
- *    `globalThis.fetch` still gets a working meter;
- * 3. the fetch patch, which bails out (warning) when there is nothing to
- *    wrap — `on` must not be attached in that case, or turns would run
+ * 1. the route claim, first, so its teardown is the first effect and runs
+ *    last, and its `internal/config` listener is in place before any pi-ai
+ *    config run this activation can see;
+ * 2. the Settings graft, which reads the claim's committed entries;
+ * 3. the rename notice and the services, before the fetch patch, so a
+ *    composition without `globalThis.fetch` still gets a working meter;
+ * 4. the fetch patch, which bails out (warning) when there is nothing to
+ *    wrap — the stream hook must not be attached then, or turns would run
  *    without session affinity;
- * 4. the stream hook and model discovery, which only make sense once the
+ * 5. the stream hook and model discovery, which only make sense once the
  *    request path is patched.
+ *
+ * The returned promise is the claim's mount: cordis waits for it, which is
+ * what orders a pi-ai restart against the rest of the boot (F17). It never
+ * rejects.
  *
  * @param ctx - the Cordis host context.
  * @param rawConfig - the row config, if any.
  */
-export const apply = (
+export const apply = async (
   ctx: CordisContext,
   rawConfig: PluginConfig = {}
-): void => {
+): Promise<void> => {
   const config = resolveConfig(rawConfig);
   const als = new AsyncLocalStorage<ActiveTurnState>();
 
+  const claim = installRouteClaim(ctx, config);
+  installDescribeGraft(ctx, claim);
   logRenameNotice(ctx);
   installUsageService(ctx, config);
   installPurgeService(ctx);
   installStoreService(ctx);
 
-  if (!installFetchPatch(ctx, config, als)) {
-    return;
+  if (installFetchPatch(ctx, config, als)) {
+    installStreamHook(ctx, config, als);
+    installDiscovery(ctx, config);
   }
-
-  installStreamHook(ctx, config, als);
-  installModelDiscovery(ctx, config);
+  await claim.mounted;
 };

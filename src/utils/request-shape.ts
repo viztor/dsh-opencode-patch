@@ -258,10 +258,10 @@ export const ANTHROPIC_VERSION = "2023-06-01";
 /**
  * Whether a provider route is OpenCode Zen rather than Go.
  *
- * The Go plane is `opencode-go` and its own `opencode-go-*` internal routes —
- * the rule `catalogPlaneForRoute` encodes. Everything else in the opencode
- * family is Zen pay-as-you-go, including `opencode-google`, the Zen Google
- * route, which starts with `opencode-go` but not with `opencode-go-`.
+ * The Go plane is `opencode-go` and any `opencode-go-*` relay route — the rule
+ * `catalogPlaneForRoute` encodes. Everything else in the opencode family is
+ * Zen pay-as-you-go, including a route named `opencode-google`, which starts
+ * with `opencode-go` but not with `opencode-go-`.
  */
 export const isZenProvider = (provider?: string): boolean => {
   if (typeof provider !== "string") {

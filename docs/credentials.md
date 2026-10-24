@@ -8,13 +8,18 @@ The plugin's default is the deployment's own credential: whatever `apiKeyEnv` th
 
 ## Current request wiring
 
-The primary fetch fallback keeps real request auth untouched, then resolves a missing or placeholder credential in this order:
+**The plane adapter resolves a plane's key by `llm-pi-ai`'s own rule (D20)**, in `planeApiKeyResolver` (`src/host/plane-provider.ts`), before any request is built:
+
+    a named apiKeyEnv  →  the credentials service (the launch environment only when no service is mounted)
+    no reference       →  pi's own lookup (a Sign-in record under llm-pi-ai/<plane>, then OPENCODE_API_KEY)  →  the installation's store (opt-in)
+
+A named reference that resolves nothing is `MISSING_CREDENTIAL`, and no request is sent; a credentials service that fails propagates its own error rather than reading as a missing key. A captured or literal key never answers for the adapter. The installation's store is read only when the deployment sets `readOpencodeStore`, only for a plane that names no reference, and only when pi's own lookup would find nothing: the resolver's answer is handed to pi as the request's explicit key, which pi lets win over its own lookup, so a store key returned any earlier would outrank a Sign-in record or an exported `OPENCODE_API_KEY`.
+
+**The fetch interceptor's fallback is the second, narrower path.** It keeps real request auth untouched and fills only a missing or placeholder credential on gateway traffic, in this order:
 
     captured → declared environment key → installation key (opt-in) → nothing
 
-That third step reads the OpenCode installation's own store, and only when the deployment sets `readOpencodeStore`. The Google bridge resolves the route's own reference first and falls back the same way. Two sources that are no longer in this branch — the DSH grant and the login session — are `v2` work.
-
-The `configured` key-source policy still skips captured fallback; an API key already present in a request is never displaced. Empty and placeholder environment values do not block the login fallback. The Google bridge still raises for an unresolved named reference rather than replacing it with a login.
+The `configured` key-source policy skips the captured fallback; an API key already present in a request is never displaced. Two sources that are no longer in this branch — the DSH grant and the login session — are `v2` work.
 
 Authentication follows the wire format: Bearer for OpenAI, `x-api-key` for Anthropic `/messages`, and `x-goog-api-key` for Google generation. Header extraction skips placeholders when another header carries a real key; placeholder detection is case-insensitive. The URL's pathname determines the plane, not query text or a conflicting turn provider.
 
@@ -32,7 +37,7 @@ These contracts are exercised with fixture grants and SQLite databases through `
 
 One reference resolves per route:
 
-1. **The route's `apiKeyEnv`** — the reference the deployment declared, resolved through the credentials service with the launch environment as fallback. This is the zero-configuration default, and the whole behavior for a deployment that declares nothing else.
+1. **The route's `apiKeyEnv`** — the reference the deployment declared, resolved through the credentials service when one is mounted and through the launch environment only when none is (a service miss does not fall through to the environment, as in `llm-pi-ai`). This is the zero-configuration default, and the whole behavior for a deployment that declares nothing else.
 2. **A named reference that misses fails loud.** Never hand pi an `undefined` for a named ref: it would pick up an unrelated ambient key (`OPENAI_API_KEY` and friends) and bill another tenant.
 
 Where a route names no reference at all, the chain continues into the login and the installation's store — "The handoff" below is where that order lives.
@@ -72,7 +77,7 @@ v1 (`console login`) additionally reads `/api/user` and `/api/orgs`, stores the 
 
 ## What the plugin never touches
 
-- **The `google` route name.** A real deployment may configure Google AI Studio under that id; the plugin's internal route is named `opencode-google` precisely so that name stays free.
+- **Any route but its two planes.** Since 1.x the plugin mounts no route of its own: a Google model on either plane is served on `opencode` or `opencode-go`, so a real deployment's `google` route (Google AI Studio, say) is never touched.
 - **The CLI's `auth.json`.** Reading it couples the plugin to another program's private file format; writing it collides with the program that owns it. The database that replaced it is read only when `readOpencodeStore` is on, and is never written.
 
 ## What the seam enforces about writes (verified, not assumed)
@@ -140,6 +145,8 @@ Two more details worth copying. Secrets are `Redacted`, so they are never string
 `config(name)` is the one that matters for this plugin's model: a credential may come from the user's own configuration, and the vendor's own reader treats that as one source among several rather than as an afterthought. Which source wins is not encoded in the sources at all — it is `orElse`, applied by whoever assembles them.
 
 So the shape to copy is two-layered, and both layers already exist here in some form: a source list (literal, config, installation, captured request) and an order that puts everything the user declared ahead of everything inferred. Reading a file is one entry in the first list, and the switch that turns it on belongs to the user, not to this plugin's default.
+
+> **(`v2` record, from before 1.x.)** From here to the end of this section, the text describes the Google bridge (`google-bridge.ts`) and `responses-provider.ts`, both deleted in 1.x, and the tests that went with them. Plane credentials are resolved by `planeApiKeyResolver` in `src/host/plane-provider.ts` (D20, above); a login token would join that resolver's no-reference branch, where the opt-in store already sits. The measurements and the two obstacles below are kept as history.
 
 **The two resolution paths, and which one is a gap.** `resolveGatewayKey` is deliberately two-faced, and the difference is tested:
 
@@ -249,7 +256,7 @@ What a login is FOR is measured, not assumed: the account's session token, on `/
 
 Built, and the opt-in reader it prepared for:
 
-- **The installation's own store, read only when asked.** `readOpencodeStore` is a config field, default `false`, with a card control beside the credential-source select. When it is on, `resolveOpencodeStoreKey` reads the credential OpenCode itself holds for the plane in hand and the step sits LAST in all three key-source policies — after a literal, after a captured request, after the named reference and the environment — so a credential declared in DSH always wins. Both paths that resolve a request's key consult it: the fetch interceptor's Authorization fallback, and the Google bridge's per-request resolver. Nothing logs a value from it, and `node:sqlite` keeps the module on the host side of the bundle rule.
+- **The installation's own store, read only when asked.** `readOpencodeStore` is a config field, default `false`, with a card control beside the credential-source select. When it is on, `resolveOpencodeStoreKey` reads the credential OpenCode itself holds for the plane in hand and the step sits LAST in all three key-source policies — after a literal, after a captured request, after the named reference and the environment — so a credential declared in DSH always wins. Both paths that resolve a request's key consult it: the fetch interceptor's Authorization fallback, and the plane adapter's resolver (`planeApiKeyResolver`) for a plane that names no reference. Nothing logs a value from it, and `node:sqlite` keeps the module on the host side of the bundle rule.
 
 ## Reading the installation's own credential store needs no dependency
 

@@ -291,17 +291,22 @@ jobs:
           # package.json is not (every dependency bump touches it), so a
           # change to its `test:e2e:host` script alone is exercised only by
           # the nightly run.
-          # Until P-R1 moves the host seam under src/host/, the modules that
-          # install the host patches and mounts whose behaviour depends on the
-          # real loader and apply order (the hidden-route mount, the listing
-          # patch and adapter decoration, the Google bridge, the fetch patch,
-          # the plane bases and the stream hook) are in scope by name. Every
-          # other row producer (key-capture.ts, models-catalog.ts, config.ts,
-          # the generated catalog) is covered on each pull request by the
-          # in-process characterization of the same S0_TODAY rows, and here by
-          # the nightly run.
+          # The host seam lives under src/host/ (the route claim, the plane
+          # adapter, the Settings graft, the host-module loaders), and the
+          # modules whose behaviour depends on the real loader and apply order
+          # sit beside it by name: the composition (lifecycle.ts, identity.ts),
+          # the host-module seam (cordis-context.ts), the remaining discovery
+          # patch (models-discovery.ts), and the two modules that still install
+          # host-level patches until P6/P10a move them under src/host/: the
+          # global fetch wrapper (fetch-patch.ts, whose order the probe reads
+          # as fetchInnermost) and the llm/stream hook (stream-hook.ts). Every
+          # other row producer (the pure
+          # plane profile and model in src/utils/, key-capture.ts,
+          # models-catalog.ts, config.ts, the generated catalog) is covered on
+          # each pull request by the in-process characterization of the same
+          # S0_TODAY rows, and here by the nightly run.
           if printf '%s\n' "$changed" \
-            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/responses-provider\.ts$|src/responses-routes\.ts$|src/models-discovery\.ts$|src/google-bridge\.ts$|src/fetch-patch\.ts$|src/pi-provider\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
+            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

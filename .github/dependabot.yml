@@ -56,12 +56,12 @@ updates:
           - vitest
           - "@vitest/*"
     ignore:
-      # pi-ai follows the line the main dsh installs, not the registry. The bridge
-      # loads pi from the wrapper's copy, so our pin has to satisfy the range the
+      # pi-ai follows the line the main dsh installs, not the registry. The plane
+      # adapter loads pi from the wrapper's copy, so our pin has to satisfy the range the
       # wrapper declares - now `^1.1.0`, where minor releases stay inside the range
       # and a major does not. A second pi beside the wrapper's is the failure this
       # prevents: two module instances drift apart the moment either side moves, and
-      # `test/google-bridge.test.ts` asserts the pin satisfies the range, so a major
+      # `test/host-versions.test.ts` asserts the pin satisfies the range, so a major
       # here would land red rather than break something quietly. Minors are
       # welcome - they stay inside the wrapper's range - so only majors are ignored.
       - dependency-name: "@earendil-works/pi-ai"

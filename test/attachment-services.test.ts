@@ -1,14 +1,59 @@
 import { createRequire } from "node:module";
 
-import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { expect, it, vi } from "vitest";
 
-import { testPi } from "./google-runtime-fixture.ts";
+import { hostModulesForTests } from "./support/host.ts";
 import {
-  OPENCODE_GO_CATALOG,
   attachmentResolvers,
-  registerGoogleBridge,
+  buildPlaneProvider,
+  createPlaneAdapter,
+  OPENCODE_FAMILY_API,
+  OPENCODE_GO_CATALOG,
+  planeAuth,
+  planeProfileFor,
 } from "./support/src.ts";
+
+/**
+ * The plane adapter over the host's own `PiAiAdapter`, serving one Go Gemini
+ * model, with the image hooks of `images` — the way the route claim builds it.
+ */
+const goGeminiAdapter = async (
+  images: ReturnType<typeof attachmentResolvers>,
+  apiKey: string
+) => {
+  const source = hostModulesForTests();
+  const [piAi, libraries] = await Promise.all([
+    source.piAi({}),
+    source.libraries(),
+  ]);
+  if (piAi === undefined || libraries === undefined) {
+    throw new Error("no host modules");
+  }
+  const { profile } = planeProfileFor({
+    buildProvider: buildPlaneProvider(libraries),
+    catalog: OPENCODE_GO_CATALOG,
+    endpoint: "auto",
+    entry: { models: [{ id: "gemini-4-argon-contributor" }] },
+    familyApi: OPENCODE_FAMILY_API.go,
+    piModels: libraries.builtinModels("opencode-go"),
+    resolveRetryPolicy: libraries.resolveRetryPolicy,
+    route: "opencode-go",
+  });
+  const profiles = new Map([["opencode-go", profile]]);
+  // No effort renames: this model's reasoning is not what the case is about.
+  const noNames = new Map<string, Readonly<Record<string, string>>>();
+  return createPlaneAdapter({
+    auth: planeAuth({}, piAi.recordKeyFor, libraries),
+    effortNames: (_provider, model) => noNames.get(model),
+    modules: { libraries, piAi },
+    profiles: () => profiles,
+    resolveApiKey: () => Promise.resolve(apiKey),
+    resolveAttachments: images.resolveAttachments,
+    resolveImageAccess: images.resolveImageAccess,
+  }) as unknown as {
+    stream: (options: unknown) => AsyncIterable<unknown>;
+  };
+};
 
 const scopedServices = (services: Record<string, unknown>) => {
   const cleanups: (() => void)[] = [];
@@ -50,26 +95,13 @@ it("degrades gracefully when image services or host-path conversion are absent",
   }
 });
 
-it("releases optional service scopes when adapter registration fails", () => {
+it("releases both optional service scopes when the resolvers are disposed", () => {
+  // The route claim builds one pair per activation and disposes it in its
+  // teardown, whether or not an adapter was ever registered with it.
   const dispose = vi.fn();
-  const ctx = { inject: () => ({ dispose }) };
-  expect(() =>
-    registerGoogleBridge({
-      ctx,
-      pi: testPi(),
-      host: { PiAiAdapter },
-      plane: "opencode-go",
-      apiKeyRef: "UNUSED_KEY",
-      specs: OPENCODE_GO_CATALOG.filter(
-        (spec) => spec.id === "gemini-4-argon-contributor"
-      ),
-      llm: {
-        registerAdapter: () => {
-          throw new Error("registration failed");
-        },
-      },
-    })
-  ).toThrow("registration failed");
+  const images = attachmentResolvers({ inject: () => ({ dispose }) });
+  expect(dispose).not.toHaveBeenCalled();
+  images.dispose();
   expect(dispose).toHaveBeenCalledTimes(2);
 });
 
@@ -110,7 +142,7 @@ it("uses actual Cordis injection and clears the service on disposal", async () =
   }
 });
 
-it("streams a durable image through the actual Go Gemini adapter", async () => {
+it("streams a durable image through the plane adapter's Go Gemini model", async () => {
   const bytes = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6aSAAAAAASUVORK5CYII=",
     "base64"
@@ -138,35 +170,17 @@ it("streams a durable image through the actual Go Gemini adapter", async () => {
   const ctx = scopedServices({
     attachments: { readImageRequest, imageHostPath: () => null },
   });
-  let adapter:
-    | { stream: (options: unknown) => AsyncIterable<unknown> }
-    | undefined;
-  const dispose = registerGoogleBridge({
-    pi: testPi(),
-    ctx,
-    host: { PiAiAdapter },
-    plane: "opencode-go",
-    apiKeyRef: "BRIDGE_IMAGE_KEY",
-    specs: OPENCODE_GO_CATALOG.filter(
-      (spec) => spec.id === "gemini-4-argon-contributor"
-    ),
-    llm: {
-      registerAdapter: (_routes, value) => {
-        adapter = value as typeof adapter;
-        return () => {};
-      },
-    },
-  });
+  const images = attachmentResolvers(ctx);
+  const adapter = await goGeminiAdapter(images, "fixture-image-key");
   const original = globalThis.fetch;
   const bodies: Record<string, unknown>[] = [];
-  process.env.BRIDGE_IMAGE_KEY = "fixture-image-key";
   globalThis.fetch = vi.fn(async (_input, init) => {
     bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
     throw new Error("captured image request");
   });
   try {
-    for await (const _chunk of adapter!.stream({
-      provider: "opencode-go-google",
+    for await (const _chunk of adapter.stream({
+      provider: "opencode-go",
       model: "gemini-4-argon-contributor",
       messages: [
         {
@@ -184,8 +198,7 @@ it("streams a durable image through the actual Go Gemini adapter", async () => {
     expect(String(error)).toContain("captured image request");
   } finally {
     globalThis.fetch = original;
-    delete process.env.BRIDGE_IMAGE_KEY;
-    if (typeof dispose === "function") dispose();
+    images.dispose();
     ctx.dispose();
   }
   expect(readImageRequest).toHaveBeenCalledOnce();

@@ -20,16 +20,22 @@ import { readFileSync } from "node:fs";
 
 import type { Context, Fiber } from "@deepseek-ai/cordis";
 import { readProfilePatches } from "@deepseek-ai/dsh-app-boot";
+import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  adaptersOf,
   bootTierB,
+  drainStream,
   fakeCredentials,
+  modelsPageRows,
   planeKeysOnly,
+  PLANES,
   providerWithApiKey,
   recordingFetch,
   s0Providers,
   type TierB,
+  waitForPlaneOwner,
   waterfallSpy,
   withoutPlanes,
 } from "./support/host.ts";
@@ -417,6 +423,117 @@ describe(
       ).rejects.toThrow(
         "$.providers.deepseek.displayName expected string but got [object Object]"
       );
+    });
+  }
+);
+
+/** pi-ai's descriptor value for a provider, as `settings.describe()` builds it. */
+const describedEntry = (host: TierB, provider: string): unknown =>
+  (
+    host.ctx.settings
+      .describe()
+      .find((descriptor) => descriptor.ns === "llm-pi-ai")?.value as
+      | { providers?: Record<string, unknown> }
+      | undefined
+  )?.providers?.[provider];
+
+/** pi-ai's own resolved profile for a route, without its built provider. */
+const piAiProfile = (host: TierB, route: string): Record<string, unknown> => {
+  const adapter = adaptersOf(host.llm).get(route)?.adapter as unknown as {
+    config: { profiles: () => ReadonlyMap<string, Record<string, unknown>> };
+  };
+  const { piProvider: _provider, ...rest } =
+    adapter.config.profiles().get(route) ?? {};
+  return rest;
+};
+
+describe(
+  "contract · the plugin's Settings graft and pi-ai's own routes (tier B, D18)",
+  { timeout: 30_000 },
+  () => {
+    it("the graft gives each plane exactly the entry pi-ai's Config resolves from the file, the value a plugin-less boot shows, and leaves the revision alone", async () => {
+      vi.stubGlobal("fetch", recordingFetch().fetch);
+      tier = await bootTierB({ providers: s0Providers() });
+      await waitForPlaneOwner(tier.llm);
+      const resolved = (
+        LlmPiAi.Config({ providers: s0Providers() } as never) as unknown as {
+          providers: { get: () => Record<string, unknown> };
+        }
+      ).providers.get();
+      const grafted = Object.fromEntries(
+        PLANES.map((plane) => [plane, describedEntry(tier!, plane)])
+      );
+      for (const plane of PLANES) {
+        expect(grafted[plane], plane).toEqual(resolved[plane]);
+      }
+      /** What the graft must not touch: the descriptor's revision, base and user layers. */
+      const untouched = (host: TierB) => {
+        const descriptor = host.ctx.settings
+          .describe()
+          .find((entry) => entry.ns === "llm-pi-ai") as
+          | { revision?: unknown; base?: unknown; user?: unknown }
+          | undefined;
+        return {
+          base: descriptor?.base,
+          revision: descriptor?.revision,
+          user: descriptor?.user,
+        };
+      };
+      const withPlugin = untouched(tier);
+      expect(withPlugin.revision).toBeDefined();
+      expect(withPlugin.user).toBeDefined();
+      await tier.dispose();
+      tier = await bootTierB({ plugin: false, providers: s0Providers() });
+      for (const plane of PLANES) {
+        expect(describedEntry(tier, plane), plane).toEqual(grafted[plane]);
+      }
+      // The same profile booted without the plugin: the same revision, and
+      // the same base and user layers, so the graft changed only `value`.
+      expect(untouched(tier)).toEqual(withPlugin);
+    });
+
+    it("the Models page reads both planes configured under the profile's own apiKeyEnv, a custom one included, and a key typed under it authenticates the plane", async () => {
+      vi.stubGlobal("fetch", recordingFetch().fetch);
+      tier = await bootTierB({ providers: s0Providers() });
+      await waitForPlaneOwner(tier.llm);
+      expect(modelsPageRows(tier)).toEqual({
+        opencode: { apiKeyEnv: "OPENCODE_API_KEY", configured: true },
+        "opencode-go": { apiKeyEnv: "OPENCODE_GO_API_KEY", configured: true },
+      });
+      await tier.dispose();
+      const wire = recordingFetch();
+      vi.stubGlobal("fetch", wire.fetch);
+      const providers = s0Providers();
+      providers.opencode!.apiKeyEnv = "MY_ZEN_KEY";
+      const credentials = fakeCredentials();
+      tier = await bootTierB({ credentials, providers });
+      await waitForPlaneOwner(tier.llm);
+      expect(modelsPageRows(tier).opencode).toEqual({
+        apiKeyEnv: "MY_ZEN_KEY",
+        configured: true,
+      });
+      await (
+        credentials.service.set as unknown as (
+          ref: string,
+          value: string
+        ) => Promise<void>
+      )("MY_ZEN_KEY", "typed");
+      await drainStream(tier.llm, "opencode", "deepseek-v4-pro");
+      const sent = wire.requests.find(
+        (request) => !request.url.startsWith("https://models.opencode.ai/")
+      );
+      expect(sent?.headers.authorization).toBe("Bearer typed".length);
+    });
+
+    it("parity on a route that is not a plane: pi-ai's resolved deepseek profile is the same with and without the plugin", async () => {
+      vi.stubGlobal("fetch", recordingFetch().fetch);
+      tier = await bootTierB({ providers: s0Providers() });
+      await waitForPlaneOwner(tier.llm);
+      const withPlugin = piAiProfile(tier, "deepseek");
+      await tier.dispose();
+      tier = await bootTierB({ plugin: false, providers: s0Providers() });
+      expect(withPlugin).toEqual(piAiProfile(tier, "deepseek"));
+      expect(Object.keys(withPlugin)).toContain("retryPolicy");
     });
   }
 );

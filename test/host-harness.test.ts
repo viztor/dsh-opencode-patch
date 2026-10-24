@@ -2,10 +2,10 @@
  * The harness's own seams, each exercised once (`test/support/host.ts`).
  *
  * P-R1 builds on options no contract or characterization case passes: this
- * plugin mounted in tier A, a profile row for it in tier B, and a custom
- * responder on the recording fetch. A builder nobody has run is a builder
- * whose behaviour a later phase would assume, so each is run here and what it
- * does is recorded — including that tier A's plugin is a DEGRADED one. So are
+ * plugin mounted in tier A (through the host-module seam, since tier A has no
+ * loader), a profile row for it in tier B, and a custom responder on the
+ * recording fetch. A builder nobody has run is a builder whose behaviour a
+ * later phase would assume, so each is run here and what it does is recorded. So are
  * tier B's two failure paths: a first row whose config the schema rejects (in
  * each apply order), and a key the contributor's shell exports.
  *
@@ -22,14 +22,18 @@ import {
   fakeCredentials,
   mountTierA,
   PLANES,
+  piAiRestarts,
   recordingFetch,
   S0_TODAY,
   s0Providers,
   type TierA,
   type TierB,
-  waitForRoutes,
+  waitForPlaneOwner,
 } from "./support/host.ts";
-import { INTERNAL_ROUTES, loadPiAiAdapterHost } from "./support/src.ts";
+
+/** The ids of a listing, in order. */
+const modelIds = (models: readonly { id: string }[]): string[] =>
+  models.map((model) => model.id);
 
 let tierA: TierA | undefined;
 let tierB: TierB | undefined;
@@ -51,23 +55,6 @@ afterEach(async () => {
 const ACTIVE = 2;
 const FAILED = 3;
 
-/** Poll until `predicate` holds, or fail after `deadlineMs`. */
-const until = async (
-  predicate: () => boolean,
-  what: string,
-  deadlineMs = 10_000
-): Promise<void> => {
-  const end = Date.now() + deadlineMs;
-  while (!predicate()) {
-    if (Date.now() > end) {
-      throw new Error(`never happened: ${what}`);
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
-  }
-};
-
 /** A two-chunk chat-completions stream that ends with `stop`. */
 const completionStream = (model: string): Response => {
   const chunk = (delta: object, finish: string | null) =>
@@ -88,43 +75,35 @@ describe(
   "host harness · its seams (tiers A and B)",
   { timeout: 30_000 },
   () => {
-    it("tier A with the plugin: it applies and patches fetch, but WITHOUT a loader it cannot find pi-ai, so no hidden route mounts; disposal restores fetch", async () => {
-      const info = vi.spyOn(console, "info").mockImplementation(() => {
-        // Silenced: the case reads the calls, not the console.
+    it("tier A with the plugin: it reads the host's modules through the seam, claims both planes with one pi-ai restart (pi-ai mounted first), and disposal hands them back and restores fetch", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {
+        // Silenced: the activation line.
       });
       const wire = recordingFetch();
       vi.stubGlobal("fetch", wire.fetch);
+      let restarts: ReturnType<typeof piAiRestarts> | undefined;
       tierA = await mountTierA({
+        before: (ctx) => {
+          restarts = piAiRestarts(ctx);
+        },
         plugin: {},
-        providers: { opencode: { models: [{ id: "deepseek-v4-pro" }] } },
+        providers: {
+          opencode: { models: [{ id: "deepseek-v4-pro" }] },
+          "opencode-go": { models: [{ id: "deepseek-v4-pro" }] },
+        },
       });
       expect(tierA.pluginFiber?.state).toBe(2);
       expect(globalThis.fetch).not.toBe(wire.fetch);
-      // The plugin finds pi-ai through the loader's entries
-      // (`piAiEntry` in src/responses-provider.ts), and tier A has no loader: the mount
-      // reports that and stands down. A P-R1 case that needs the real plugin
-      // beside pi-ai belongs in tier B.
-      await until(
-        () =>
-          info.mock.calls.some((call) =>
-            String(call[0]).includes("no loaded llm-pi-ai in this composition")
-          ),
-        "the mount's stand-down line"
-      );
-      const registry = adaptersOf(tierA.llm);
-      for (const route of INTERNAL_ROUTES) {
-        expect(registry.has(route), route).toBe(false);
-      }
-      expect([...registry.keys()]).toEqual(["opencode"]);
-      // The Google bridge's absence is pinned by its CAUSE, not its outcome:
-      // this case declares no Google model, so an empty registry above would
-      // hold for that reason alone. The bridge builds its adapter from the
-      // record `loadPiAiAdapterHost` answers (src/responses-provider.ts), and
-      // registerGoogleBridge stands down without its `PiAiAdapter`
-      // (src/google-bridge.ts) — and without a loader there is no record.
-      await expect(loadPiAiAdapterHost(tierA.ctx)).resolves.toBeUndefined();
-      await tierA.dispose();
-      tierA = undefined;
+      // Tier A mounts pi-ai first, so it held the planes; the mount restarted
+      // it once, through the claim's listener, and registered its own adapter.
+      await waitForPlaneOwner(tierA.llm);
+      expect(restarts?.count()).toBe(1);
+      expect(
+        adaptersOf(tierA.llm).get("opencode")?.adapter.constructor.name
+      ).toBe("PlaneAdapter");
+      expect([...adaptersOf(tierA.llm).keys()].toSorted()).toEqual([...PLANES]);
+      await tierA.pluginFiber?.dispose();
+      await waitForPlaneOwner(tierA.llm, PLANES, "PiAiAdapter");
       expect(globalThis.fetch).toBe(wire.fetch);
     });
 
@@ -210,14 +189,13 @@ describe(
         }),
         providers: characterizedProviders(),
       });
-      await waitForRoutes(tierB.llm, ["opencode-responses"]);
+      await waitForPlaneOwner(tierB.llm);
       expect(process.env.OPENCODE_API_KEY).toBe("");
       expect(process.env.OPENCODE_GO_API_KEY).toBe("");
-      // The plugin reads the environment for its keyless listing filter: with
-      // the shell's key left in place, the paid models would be listed here.
+      // The listing no longer depends on a key (D21): every declared id.
       for (const plane of PLANES) {
-        expect(await tierB.llm.listModels(plane), plane).toEqual(
-          S0_TODAY.keylessListing[plane]
+        expect(modelIds(await tierB.llm.listModels(plane)), plane).toEqual(
+          S0_TODAY.listingBeforeTurn[plane]
         );
       }
       await tierB.dispose();

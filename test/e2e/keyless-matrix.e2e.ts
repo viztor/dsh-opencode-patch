@@ -14,12 +14,9 @@
  * - every one of the sixteen cells has a model and was SENT, and every answer
  *   is one the matrix can read — an empty or reshaped catalog fails here
  *   rather than measuring nothing;
- * - no cell today's plugin dispatches to with the default endpoint (`auto`,
- *   an alias of `modern`; `TODAY_DISPATCH`: completions on the legacy family,
- *   the hidden routes' Responses, Messages and Google on the modern one)
- *   answers "path gone";
- * - nor do the modern completions cells (`NEXT_DISPATCH`), where P-R1 moves
- *   completions: a forward guard, labelled as such when it fails.
+ * - no cell the plugin dispatches to with the default endpoint (`auto`, an
+ *   alias of `modern`; `TODAY_DISPATCH`: all four protocols on the modern
+ *   family, on both planes) answers "path gone".
  *
  * The other legacy verdicts are recorded, not asserted: P-R2 decides the
  * family from them. They include the cells an `endpoint: legacy` user
@@ -48,7 +45,6 @@ import {
   type KeylessVerdict,
   keylessMatrix,
   type MatrixCell,
-  NEXT_DISPATCH,
   TODAY_DISPATCH,
 } from "../support/keyless-matrix.ts";
 import { MODELS_OPENCODE_URL, parseModelsDevCatalog } from "../support/src.ts";
@@ -170,13 +166,6 @@ describe.skipIf(!LIVE || MIRRORED)(
         expect(
           goneToday,
           `a path today's plugin dispatches to is gone: ${JSON.stringify(goneToday)}`
-        ).toEqual([]);
-        const goneNext = rows.filter(
-          (row) => NEXT_DISPATCH.has(row.cell) && row.verdict === "path-gone"
-        );
-        expect(
-          goneNext,
-          `forward guard: a path P-R1 moves completions to is gone: ${JSON.stringify(goneNext)}`
         ).toEqual([]);
       },
       16 * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) + PROBE_TIMEOUT_MS
