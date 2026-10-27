@@ -35,21 +35,31 @@ import {
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
   clearCapturedApiKeys,
+  isOpenCodeSessionId,
+  newOpenCodeMessageId,
+  openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
 } from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import {
   firstSpecFor,
+  fixtureModel,
+  gatewayHarness,
   GO_KEY,
   keyFor,
+  lastRecorded,
   MOCK_SESSION,
   sessionTurn,
   ZEN_KEY,
 } from "./helpers.ts";
 import type { GatewayRequest, MockReply } from "./opencode-gateway.ts";
 
-const PARENT_VALUE = "ses_eb1e9e706ffdZYXWVUTSRQPONM";
+const PARENT_VALUE = openCodeSessionIdFor("mock-parent");
+
+/** A paid Responses model and a free completions one, from the catalog. */
+const PAID = fixtureModel("opencode", "openai-responses", "paid").id;
+const FREE = fixtureModel("opencode", "openai-completions", "free").id;
 
 const als = new AsyncLocalStorage<ActiveTurnState>();
 
@@ -100,26 +110,17 @@ const post = (
     method: "POST",
   });
 
-const recorded = (): GatewayRequest => {
-  const last = gateway.requests.at(-1);
-  if (last === undefined) {
-    throw new Error("the mock gateway saw no request");
-  }
-  return last;
-};
+const recorded = (): GatewayRequest => lastRecorded(gateway);
 
 const responsesUrl = (): string => `${gateway.origin}/zen/v1/responses`;
 
 describe("the request shape per configuration", () => {
   it("sends the session, origin, project, UA and Zen key under the defaults", async () => {
+    const requestValue = newOpenCodeMessageId();
     const response = await als.run(
-      sessionTurn({ project: "mock-project" }),
+      sessionTurn({ project: "mock-project", requestValue }),
       () =>
-        post(
-          patchedWith(resolveConfig()),
-          responsesUrl(),
-          responsesBody("gpt-5.4")
-        )
+        post(patchedWith(resolveConfig()), responsesUrl(), responsesBody(PAID))
     );
     expect(response.status).toBe(200);
     const request = recorded();
@@ -129,6 +130,8 @@ describe("the request shape per configuration", () => {
     expect(request.headers["x-opencode-session-id"]).toBe(MOCK_SESSION);
     expect(request.headers["x-opencode-client"]).toBe("cli");
     expect(request.headers["x-opencode-project"]).toBe("mock-project");
+    // The turn's message id, for the gateway's per-request metrics.
+    expect(request.headers["x-opencode-request"]).toBe(requestValue);
     expect(request.headers["user-agent"]).toBe(OPENCODE_UA);
     expect(request.headers.authorization).toBe(`Bearer ${ZEN_KEY}`);
     expect(request.headers["x-opencode-org-id"]).toBeUndefined();
@@ -137,23 +140,35 @@ describe("the request shape per configuration", () => {
   });
 
   it("falls the project back to global when the turn carries none", async () => {
+    // Nor a message id: an absent header is correct then, and an empty
+    // `x-opencode-request:` is a value the client cannot send.
     await als.run(sessionTurn(), () =>
-      post(
-        patchedWith(resolveConfig()),
-        responsesUrl(),
-        responsesBody("gpt-5.4")
-      )
+      post(patchedWith(resolveConfig()), responsesUrl(), responsesBody(PAID))
     );
     expect(recorded().headers["x-opencode-project"]).toBe("global");
+    expect(recorded().headers["x-opencode-request"]).toBeUndefined();
+  });
+
+  it("outside a turn, the patch derives a session id the gateway admits", async () => {
+    // The usage and discovery calls run outside any tracked turn, and the
+    // gateway refuses a request with no session or one outside its band. With
+    // no turn to claim it, the request is claimed by its gateway URL, so it goes
+    // to the vendor's origin through the harness that points it at the mock.
+    const harness = gatewayHarness(gateway.origin, resolveConfig());
+    const response = await post(
+      harness.fetch,
+      "https://opencode.ai/zen/v1/responses",
+      responsesBody(PAID)
+    );
+    expect(response.status).toBe(200);
+    expect(
+      isOpenCodeSessionId(recorded().headers["x-opencode-session-id"])
+    ).toBe(true);
   });
 
   it("carries both parent-lineage headers when the turn has a parent", async () => {
     await als.run(sessionTurn({ parentValue: PARENT_VALUE }), () =>
-      post(
-        patchedWith(resolveConfig()),
-        responsesUrl(),
-        responsesBody("gpt-5.4")
-      )
+      post(patchedWith(resolveConfig()), responsesUrl(), responsesBody(PAID))
     );
     const request = recorded();
     expect(request.headers[PARENT_SESSION_HEADER]).toBe(PARENT_VALUE);
@@ -163,7 +178,7 @@ describe("the request shape per configuration", () => {
   it("adds the affinity pair for a relay provider and keeps the session", async () => {
     const config = resolveConfig({ gatewayUrls: [gateway.origin] });
     await als.run(sessionTurn({ provider: "mock-relay" }), () =>
-      post(patchedWith(config), responsesUrl(), responsesBody("gpt-5.4"))
+      post(patchedWith(config), responsesUrl(), responsesBody(PAID))
     );
     const request = recorded();
     expect(request.headers[SESSION_HEADER]).toBe(MOCK_SESSION);
@@ -173,16 +188,19 @@ describe("the request shape per configuration", () => {
   });
 
   it("omits the origin headers when injectOriginHeaders is off", async () => {
-    await als.run(sessionTurn(), () =>
+    await als.run(sessionTurn({ requestValue: newOpenCodeMessageId() }), () =>
       post(
         patchedWith(resolveConfig({ injectOriginHeaders: false })),
         responsesUrl(),
-        responsesBody("gpt-5.4")
+        responsesBody(PAID)
       )
     );
     const request = recorded();
     expect(request.headers["x-opencode-client"]).toBeUndefined();
     expect(request.headers["x-opencode-project"]).toBeUndefined();
+    // The message id belongs to the same switch, and the turn HAS one here:
+    // the absence is the switch, not a missing value.
+    expect(request.headers["x-opencode-request"]).toBeUndefined();
     expect(request.headers[SESSION_HEADER]).toBe(MOCK_SESSION);
     expect(request.headers["user-agent"]).toBe(OPENCODE_UA);
   });
@@ -192,7 +210,7 @@ describe("the request shape per configuration", () => {
       post(
         patchedWith(resolveConfig({ injectProject: false })),
         responsesUrl(),
-        responsesBody("gpt-5.4")
+        responsesBody(PAID)
       )
     );
     const request = recorded();
@@ -205,7 +223,7 @@ describe("the request shape per configuration", () => {
       post(
         patchedWith(resolveConfig({ originClient: "dsh-mock/1.0" })),
         responsesUrl(),
-        responsesBody("gpt-5.4")
+        responsesBody(PAID)
       )
     );
     expect(recorded().headers["x-opencode-client"]).toBe("dsh-mock/1.0");
@@ -216,7 +234,7 @@ describe("the request shape per configuration", () => {
       post(
         patchedWith(resolveConfig({ userAgent: "mock-agent/9.9" })),
         responsesUrl(),
-        responsesBody("gpt-5.4")
+        responsesBody(PAID)
       )
     );
     expect(recorded().headers["user-agent"]).toBe("mock-agent/9.9");
@@ -227,7 +245,7 @@ describe("the request shape per configuration", () => {
       post(
         patchedWith(resolveConfig({ injectUserAgent: false })),
         responsesUrl(),
-        responsesBody("gpt-5.4")
+        responsesBody(PAID)
       )
     );
     expect(recorded().headers["user-agent"]).not.toBe(OPENCODE_UA);
@@ -238,58 +256,10 @@ describe("the request shape per configuration", () => {
       post(
         patchedWith(resolveConfig({ credentialOrg: "wrk_mock" })),
         responsesUrl(),
-        responsesBody("gpt-5.4")
+        responsesBody(PAID)
       )
     );
     expect(recorded().headers["x-opencode-org-id"]).toBe("wrk_mock");
-  });
-
-  it("authenticates the Messages endpoint with x-api-key alone", async () => {
-    const spec = firstSpecFor("opencode", "@ai-sdk/anthropic");
-    if (spec === undefined) {
-      throw new Error("the zen catalog serves no anthropic model");
-    }
-    const response = await als.run(sessionTurn(), () =>
-      post(
-        patchedWith(resolveConfig()),
-        `${gateway.origin}/zen/v1/messages?beta=true`,
-        {
-          max_tokens: 64,
-          messages: [{ content: "hi", role: "user" }],
-          model: spec.id,
-          stream: true,
-        },
-        // The Anthropic protocol identifies itself by version, and the request
-        // this test stands in for is one the SDK adapter produced — so it carries
-        // the header the adapter adds. The mock enforces it.
-        { "anthropic-version": "2023-06-01" }
-      )
-    );
-    expect(response.status).toBe(200);
-    const request = recorded();
-    expect(request.headers["x-api-key"]).toBe(ZEN_KEY);
-    // The official client hands the key to the SDK and lets it choose the header
-    // (`packages/opencode/src/provider/provider.ts:240`); an Anthropic request
-    // carries `x-api-key` and no `Authorization`.
-    expect(request.headers.authorization).toBeUndefined();
-  });
-
-  it("authenticates the Google endpoint with x-goog-api-key", async () => {
-    const spec = firstSpecFor("opencode", "@ai-sdk/google");
-    if (spec === undefined) {
-      throw new Error("the zen catalog serves no Google model");
-    }
-    const response = await als.run(sessionTurn(), () =>
-      post(
-        patchedWith(resolveConfig()),
-        `${gateway.origin}/zen/v1/models/${spec.id}:streamGenerateContent?alt=sse`,
-        { contents: [{ parts: [{ text: "hi" }], role: "user" }] }
-      )
-    );
-    expect(response.status).toBe(200);
-    const request = recorded();
-    expect(request.headers["x-goog-api-key"]).toBe(ZEN_KEY);
-    expect(request.headers.authorization).toBeUndefined();
   });
 
   it("adds the core-tool schemas for a free-tier completions model", async () => {
@@ -303,7 +273,7 @@ describe("the request shape per configuration", () => {
         `${gateway.origin}/zen/v1/chat/completions`,
         {
           messages: [{ content: "hi", role: "user" }],
-          model: "beam-free",
+          model: FREE,
         }
       )
     );
@@ -318,50 +288,6 @@ describe("the request shape per configuration", () => {
     expect(names).toContain("bash");
   });
 
-  it("passes a 403 refusal through with the gateway's status and message", async () => {
-    // The status belongs to the gateway. `Model access is disabled` is an
-    // entitlement answer, and rewriting it to 400 — to steer DSH's classifier away
-    // from its AUTH label — changed a status this plugin does not own. The
-    // classifier's label is its reading; the message underneath is accurate.
-    forced = {
-      body: JSON.stringify({
-        error: {
-          message: "Upstream request failed: Model access is disabled",
-          type: "server_error",
-        },
-      }),
-      status: 403,
-    };
-    const response = await als.run(sessionTurn(), () =>
-      post(
-        patchedWith(resolveConfig()),
-        responsesUrl(),
-        responsesBody("gpt-5.4")
-      )
-    );
-    expect(response.status).toBe(403);
-    const payload = (await response.json()) as {
-      error: { message: string; type: string };
-    };
-    expect(payload.error.type).toBe("server_error");
-    expect(payload.error.message).toContain("Model access is disabled");
-  });
-
-  it("passes a 401 through", async () => {
-    forced = {
-      body: JSON.stringify({ error: { message: "Invalid API key" } }),
-      status: 401,
-    };
-    const response = await als.run(sessionTurn(), () =>
-      post(
-        patchedWith(resolveConfig()),
-        responsesUrl(),
-        responsesBody("gpt-5.4")
-      )
-    );
-    expect(response.status).toBe(401);
-  });
-
   it("sends no credential and warns when none resolves", async () => {
     vi.stubEnv("OPENCODE_API_KEY", "");
     const warnings: unknown[][] = [];
@@ -369,11 +295,7 @@ describe("the request shape per configuration", () => {
       warnings.push(args);
     });
     const response = await als.run(sessionTurn(), () =>
-      post(
-        patchedWith(resolveConfig()),
-        responsesUrl(),
-        responsesBody("gpt-5.4")
-      )
+      post(patchedWith(resolveConfig()), responsesUrl(), responsesBody(PAID))
     );
     expect(response.status).toBe(401);
     expect(recorded().headers.authorization).toBeUndefined();
@@ -383,7 +305,77 @@ describe("the request shape per configuration", () => {
     expect(String(warnings[0]?.[0])).toContain(
       "no credential resolved for opencode"
     );
+
+    // The Go plane the same way: no Go key, nothing sent, and the gateway's 401.
+    vi.stubEnv("OPENCODE_GO_API_KEY", "");
+    const goModel = fixtureModel("opencode-go", "openai-responses", "paid").id;
+    const go = await als.run(
+      sessionTurn({ model: goModel, provider: "opencode-go" }),
+      () =>
+        post(
+          patchedWith(resolveConfig()),
+          `${gateway.origin}/inference/go/openai/v1/responses`,
+          responsesBody(goModel)
+        )
+    );
+    expect(go.status).toBe(401);
+    expect(recorded().plane).toBe("opencode-go");
+    expect(recorded().headers.authorization).toBeUndefined();
+    expect(recorded().reject).toBe("credential");
   });
+
+  /**
+   * **A refusal passes through untouched, with the gateway's own status and
+   * words.** The status belongs to the gateway. `Model access is disabled` is
+   * an entitlement answer, and rewriting it to 400 — to steer DSH's classifier
+   * away from its AUTH label — changed a status this plugin does not own. The
+   * classifier's label is its reading; the message underneath is accurate.
+   */
+  it.each([
+    [
+      403,
+      "server_error",
+      "Upstream request failed: Model access is disabled",
+      "/zen/v1/responses",
+    ],
+    [401, "invalid_api_key", "Invalid API key", "/zen/v1/responses"],
+    [
+      429,
+      "rate_limit_exceeded",
+      "Rate limit exceeded. Please wait 10s.",
+      "/zen/v1/responses",
+    ],
+    [502, "bad_gateway", "Bad Gateway", "/zen/v1/responses"],
+    [
+      403,
+      "entitlement_error",
+      "EntitlementError: subscription required",
+      "/zen/go/v1/usage",
+    ],
+  ] as const)(
+    "passes a %i %s through with the gateway's status and message",
+    async (status, type, message, path) => {
+      forced = { body: JSON.stringify({ error: { message, type } }), status };
+      const isUsage = path.endsWith("/usage");
+      const response = await als.run(
+        sessionTurn(isUsage ? { provider: "opencode-go" } : {}),
+        () =>
+          isUsage
+            ? patchedWith(resolveConfig())(`${gateway.origin}${path}`)
+            : post(
+                patchedWith(resolveConfig()),
+                `${gateway.origin}${path}`,
+                responsesBody(PAID)
+              )
+      );
+      expect(response.status).toBe(status);
+      const payload = (await response.json()) as {
+        error: { message: string; type: string };
+      };
+      expect(payload.error.type).toBe(type);
+      expect(payload.error.message).toBe(message);
+    }
+  );
 
   it("uses the Go key for the Go plane", async () => {
     const spec = firstSpecFor("opencode-go", "@ai-sdk/openai");
@@ -408,168 +400,6 @@ describe("the request shape per configuration", () => {
   });
 });
 
-/**
- * The gateway's own rules, asserted against the MOCK rather than through the
- * plugin.
- *
- * Every case here is a measurement taken against the live gateway and then
- * reproduced by `handleGatewayRequest`. They are what would have caught the
- * session-id bug years earlier: our ids were syntactically valid and the gateway
- * refused them, which nothing in this suite modelled until now.
- */
-const IN_BAND_SESSION = "ses_eb1e9e706ffeCDEFGHIJKLMNOP";
-
-describe("the gateway's rules, as measured", () => {
-  const IN_BAND = IN_BAND_SESSION;
-  const OUT_OF_BAND = "ses_0123456789abCDEFGHIJKLMNOP";
-  const TOOLS = [
-    {
-      function: { name: "read", parameters: { type: "object" } },
-      type: "function",
-    },
-  ];
-
-  const send = (
-    session: string,
-    body: Record<string, unknown>
-  ): Promise<Response> =>
-    fetch(`${gateway.origin}/zen/v1/chat/completions`, {
-      body: JSON.stringify(body),
-      headers: {
-        authorization: `Bearer ${ZEN_KEY}`,
-        "content-type": "application/json",
-        "x-opencode-session": session,
-        "x-opencode-session-id": session,
-      },
-      method: "POST",
-    });
-
-  const freeBody = (tools?: unknown): Record<string, unknown> => ({
-    max_tokens: 32,
-    messages: [{ content: "hi", role: "user" }],
-    model: "beam-free",
-    ...(tools === undefined ? {} : { tools }),
-  });
-
-  it("refuses a session id outside the admitted band, whatever its shape", async () => {
-    const response = await send(OUT_OF_BAND, freeBody(TOOLS));
-    expect(response.status).toBe(403);
-    const payload = (await response.json()) as {
-      error: { type: string };
-    };
-    const { error } = payload;
-    expect(error.type).toBe("FreeTierError");
-  });
-
-  it("admits the same request when the session is in the band", async () => {
-    const response = await send(IN_BAND, freeBody(TOOLS));
-    expect(response.status).toBe(200);
-  });
-
-  it("refuses a free-tier model whose body carries no tools", async () => {
-    const response = await send(IN_BAND, freeBody());
-    expect(response.status).toBe(403);
-    const payload = (await response.json()) as {
-      error: { type: string };
-    };
-    expect(payload.error.type).toBe("FreeTierError");
-  });
-});
-
-describe("each protocol's own contract, asserted against the mock", () => {
-  const ZEN_ANTHROPIC_PATH = "/zen/v1/messages?beta=true";
-  const spec = firstSpecFor("opencode", "@ai-sdk/anthropic");
-  const googleSpec = firstSpecFor("opencode", "@ai-sdk/google");
-
-  const raw = (
-    path: string,
-    body: Record<string, unknown>,
-    headers: Record<string, string>
-  ): Promise<Response> =>
-    fetch(`${gateway.origin}${path}`, {
-      body: JSON.stringify(body),
-      headers: {
-        "content-type": "application/json",
-        "x-opencode-session": IN_BAND_SESSION,
-        "x-opencode-session-id": IN_BAND_SESSION,
-        ...headers,
-      },
-      method: "POST",
-    });
-
-  it("requires anthropic-version on a Messages call", async () => {
-    if (spec === undefined) {
-      throw new Error("the zen catalog serves no anthropic model");
-    }
-    const response = await raw(
-      ZEN_ANTHROPIC_PATH,
-      {
-        max_tokens: 64,
-        messages: [{ content: "hi", role: "user" }],
-        model: spec.id,
-        stream: true,
-      },
-      { "x-api-key": ZEN_KEY }
-    );
-    expect(response.status).toBe(400);
-  });
-
-  it("requires the Messages auth header to be x-api-key, not Authorization", async () => {
-    if (spec === undefined) {
-      throw new Error("the zen catalog serves no anthropic model");
-    }
-    // The official client sends `x-api-key` and no `Authorization`
-    // (`provider/provider.ts:240`); a Bearer-only request has no credential on the
-    // header this protocol reads.
-    const response = await raw(
-      ZEN_ANTHROPIC_PATH,
-      {
-        max_tokens: 64,
-        messages: [{ content: "hi", role: "user" }],
-        model: spec.id,
-        stream: true,
-      },
-      {
-        "anthropic-version": "2023-06-01",
-        authorization: `Bearer ${ZEN_KEY}`,
-      }
-    );
-    expect(response.status).toBe(401);
-  });
-
-  it("requires Anthropic-shaped bodies: max_tokens and messages", async () => {
-    if (spec === undefined) {
-      throw new Error("the zen catalog serves no anthropic model");
-    }
-    const response = await raw(
-      ZEN_ANTHROPIC_PATH,
-      { model: spec.id, stream: true },
-      { "anthropic-version": "2023-06-01", "x-api-key": ZEN_KEY }
-    );
-    expect(response.status).toBe(400);
-  });
-
-  it("requires x-goog-api-key and a contents array on a Google call", async () => {
-    if (googleSpec === undefined) {
-      throw new Error("the zen catalog serves no Google model");
-    }
-    const path = `/zen/v1/models/${googleSpec.id}:streamGenerateContent?alt=sse`;
-    const withoutKey = await raw(
-      path,
-      { contents: [{ parts: [{ text: "hi" }], role: "user" }] },
-      { authorization: `Bearer ${ZEN_KEY}` }
-    );
-    expect(withoutKey.status).toBe(401);
-
-    const withoutContents = await raw(
-      path,
-      { messages: [{ content: "hi", role: "user" }] },
-      { "x-goog-api-key": ZEN_KEY }
-    );
-    expect(withoutContents.status).toBe(400);
-  });
-});
-
 describe("keyless: free models still answer", () => {
   it("serves a free model when no credential exists anywhere", async () => {
     // The deployment the plugin has to survive: an `apiKeyEnv` that is declared
@@ -586,7 +416,7 @@ describe("keyless: free models still answer", () => {
         `${gateway.origin}/zen/v1/chat/completions`,
         {
           messages: [{ content: "hi", role: "user" }],
-          model: "beam-free",
+          model: FREE,
           stream: true,
           tools: [
             {

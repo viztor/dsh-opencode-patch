@@ -1,62 +1,85 @@
-import assert from "node:assert/strict";
 /**
- * OpenCode Model Catalog & Enrichment.
+ * OpenCode Model Catalog: the bundled shim, as invariants.
  *
- * Split out of the former monolithic `plugin.test.ts`.
+ * Every assertion here is a property of the generated shim — non-empty, unique
+ * ids, the `is_free` rule the generator applies, a paid row on every protocol a
+ * plane serves — never a count, which breaks on every vendor refresh by
+ * construction. Retired ids stay named: absence does not break on a refresh.
+ * A row a case needs is picked by its shape (a priced Go row, a free Zen
+ * row), never by a vendor id a refresh can retire; the one case whose point
+ * IS a named id skips, by name, once the catalog no longer carries it.
+ * Its siblings: `catalog-enrichment` (the `/models` fill), `catalog-refresh`
+ * (the live registry read), `catalog-docs` (the README's table) and
+ * `catalog-routing` (protocol and plane coverage).
  *
  * @module test/catalog.test
  */
-import { AsyncLocalStorage } from "node:async_hooks";
-import { readFile } from "node:fs/promises";
+import assert from "node:assert/strict";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
-  type ActiveTurnState,
   OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-  PROTOCOL_FOR_SDK,
   protocolForSdk,
-  SESSION_HEADER,
-  enrichModelsResponse,
   findModelSpec,
-  getLiveGoCatalog,
-  getLiveZenCatalog,
-  isGoModelsListingUrl,
-  isModelsListingUrl,
   isServableSdk,
   parseModelsDevCatalog,
-  planeModelFor,
-  patchFetch,
-  refreshCatalog,
-  resetCatalogState,
-  resolveConfig,
   sanitizeModalities,
 } from "./support/src.ts";
-import { createCaptureFetch, headerOf, SESSION_RE } from "./test-helpers.ts";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  delete process.env.OPENCODE_SESSION_ID;
-});
+/** The paid id the registry retires on zen and keeps on go. */
+const MUSE = "muse-spark-1.2-contributor";
 
-describe("OpenCode Model Catalog & Enrichment", () => {
-  it("keeps a retained id fully described, not merely present", () => {
+/**
+ * Every row of a plane's shim names a protocol the plane adapter serves, and
+ * each protocol it serves has a paid row to serve, beside at least one free
+ * row overall: the cold-start picker always offers both tiers.
+ */
+const expectServedOnEveryProtocol = (
+  rows: readonly { id: string; is_free?: boolean; provider_npm?: string }[]
+): void => {
+  const served = new Set(rows.map((row) => protocolForSdk(row.provider_npm)));
+  expect(served.has(undefined)).toBe(false);
+  expect(served.size).toBeGreaterThan(0);
+  for (const protocol of served) {
+    expect(
+      rows.some(
+        (row) =>
+          protocolForSdk(row.provider_npm) === protocol && row.is_free !== true
+      ),
+      `${String(protocol)} has a paid row`
+    ).toBe(true);
+  }
+  expect(rows.some((row) => row.is_free === true)).toBe(true);
+  expect(rows.some((row) => row.is_free !== true)).toBe(true);
+};
+
+describe("OpenCode model catalog · the bundled shim", () => {
+  it("keeps every free row fully described, not merely present, and alike on both planes", () => {
     // A free row is offered to a user, so it has to carry what a picker
-    // renders. `beam-free` is the active free model both planes serve, so it
-    // is the fixture here — and its metadata survives with it: context,
-    // output cap, modalities and the thinking levels, because an id without
-    // its fields is a row that cannot be priced or reasoned about.
+    // renders: context, output cap, modalities and a name, because an id
+    // without its fields is a row that cannot be priced or reasoned about.
+    // A free id both planes serve is described the same on each.
+    const go = new Map(OPENCODE_GO_CATALOG.map((m) => [m.id, m]));
     for (const catalog of [OPENCODE_ZEN_CATALOG, OPENCODE_GO_CATALOG]) {
-      const spec = catalog.find((m) => m.id === "beam-free");
-      expect(spec).toBeDefined();
-      expect(spec?.context_window).toBeGreaterThan(0);
-      expect(spec?.max_output_tokens).toBeGreaterThan(0);
-      expect(spec?.input_modalities.length).toBeGreaterThan(0);
-      expect(spec?.reasoning).toBe(true);
-      expect(spec?.reasoning_options?.length).toBeGreaterThan(0);
-      expect(spec?.name.length).toBeGreaterThan(0);
+      const free = catalog.filter((m) => m.is_free === true);
+      expect(free.length).toBeGreaterThan(0);
+      for (const spec of free) {
+        expect(spec.context_window, spec.id).toBeGreaterThan(0);
+        expect(spec.max_output_tokens, spec.id).toBeGreaterThan(0);
+        expect(spec.input_modalities.length, spec.id).toBeGreaterThan(0);
+        expect(spec.name.length, spec.id).toBeGreaterThan(0);
+      }
+    }
+    for (const zen of OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true)) {
+      const twin = go.get(zen.id);
+      if (twin !== undefined) {
+        expect(twin.context_window, zen.id).toBe(zen.context_window);
+        expect(twin.input_modalities, zen.id).toEqual(zen.input_modalities);
+        expect(twin.reasoning, zen.id).toBe(zen.reasoning);
+      }
     }
   });
 
@@ -78,17 +101,31 @@ describe("OpenCode Model Catalog & Enrichment", () => {
         expect(ids.has(id), `${id} resurrected in a plane's shim`).toBe(false);
       }
     }
+  });
+
+  it("scopes a retirement to the plane the registry retires it on", (context) => {
     // Retirement is provider-scoped by the registry's own data, not by a rule
     // of ours: the paid `muse-spark-1.2-contributor` is absent from zen and
-    // served on go.
-    const zen = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
+    // served on go. The named id IS the point, so once go retires it too the
+    // case has nothing to show, and says so rather than failing a refresh.
     const go = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
-    expect(zen.has("muse-spark-1.2-contributor")).toBe(false);
-    expect(go.has("muse-spark-1.2-contributor")).toBe(true);
+    if (!go.has(MUSE)) {
+      context.skip(
+        `${MUSE} left the Go shim: no provider-scoped retirement to show`
+      );
+    }
+    const zen = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
+    expect(zen.has(MUSE)).toBe(false);
+    expect(findModelSpec(MUSE)?.id).toBe(MUSE);
   });
 
   it("ships only active, priced models in the bundled Go shim", () => {
-    expect(OPENCODE_GO_CATALOG.length).toBe(30);
+    // Invariants, not counts: a count breaks on every vendor refresh by
+    // construction, and says nothing a reader can act on when it does.
+    expect(OPENCODE_GO_CATALOG.length).toBeGreaterThan(0);
+    expect(new Set(OPENCODE_GO_CATALOG.map((m) => m.id)).size).toBe(
+      OPENCODE_GO_CATALOG.length
+    );
     for (const model of OPENCODE_GO_CATALOG) {
       expect(model.id.length).toBeGreaterThan(0);
       expect(model.name.length).toBeGreaterThan(0);
@@ -102,13 +139,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       expect(model.cost?.output).toBeGreaterThanOrEqual(0);
     }
 
-    const ids = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
-    expect(ids.has("deepseek-v4.1-flash")).toBe(true);
-    expect(ids.has("deepseek-v4-pro")).toBe(true);
-    expect(ids.has("qwen3.8-flash")).toBe(true);
-    expect(ids.has("grok-4.7")).toBe(true);
-    expect(ids.has("kimi-k3")).toBe(true);
-    expect(ids.has("mimo-v2.6-pro")).toBe(true);
+    expectServedOnEveryProtocol(OPENCODE_GO_CATALOG);
   });
 
   it("excludes models the gateway no longer serves", () => {
@@ -121,93 +152,29 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     }
   });
 
-  it("identifies model listing URLs accurately", () => {
-    expect(isModelsListingUrl("https://opencode.ai/zen/go/v1/models")).toBe(
-      true
-    );
-    expect(
-      isModelsListingUrl("https://opencode.ai/zen/v1/models?limit=50")
-    ).toBe(true);
-    expect(isGoModelsListingUrl("https://opencode.ai/zen/go/v1/models")).toBe(
-      true
-    );
-    expect(isGoModelsListingUrl("https://opencode.ai/zen/v1/models")).toBe(
-      false
-    );
-    // **The modern family's Go path.** The Go plane's base is the `inference`
-    // family now, and that path carries no `/models` of its own — the gateway
-    // answers 404 there and this enrichment is what fills it. Reading the plane
-    // by substring put it in the ZEN bucket, and the Go plane was then answered
-    // with the Zen catalog: every Zen model, and none of the Go plane's own.
-    expect(
-      isGoModelsListingUrl("https://opencode.ai/inference/go/openai/v1/models")
-    ).toBe(true);
-    expect(
-      isGoModelsListingUrl("https://opencode.ai/inference/openai/v1/models")
-    ).toBe(false);
-    // And the Zen google family is not the Go plane, though it starts the same.
-    expect(
-      isGoModelsListingUrl("https://opencode.ai/inference/google/v1beta/models")
-    ).toBe(false);
-    expect(
-      isModelsListingUrl("https://opencode.ai/zen/v1/chat/completions")
-    ).toBe(false);
-    expect(isModelsListingUrl("https://api.openai.com/v1/models")).toBe(false);
-  });
-
-  it("enriches a configured custom gateway, not just opencode.ai", () => {
-    // The gap this closes: `isModelsListingUrl` hardcoded `opencode.ai/zen`
-    // while `isOpenCodeRequest` already honoured `gatewayUrls`. A relay that
-    // matched every other OpenCode rule got the headers and the session id and
-    // then no catalog — the only symptom was a shorter model list, which reads
-    // as "fewer models" rather than as a broken rule.
-    const gateways = ["https://relay.example.com/opencode"];
-    expect(
-      isModelsListingUrl(
-        "https://relay.example.com/opencode/v1/models",
-        gateways
-      )
-    ).toBe(true);
-    // …and the default no longer matches it, because the marker replaced the
-    // constant: a custom gateway is opted into, not additionally allowed.
-    expect(
-      isModelsListingUrl("https://relay.example.com/opencode/v1/models")
-    ).toBe(false);
-
-    // The Go plane is the PATH, so a relay's Go route is recognised too.
-    expect(
-      isGoModelsListingUrl(
-        "https://relay.example.com/opencode/go/v1/models",
-        gateways
-      )
-    ).toBe(true);
-    expect(
-      isGoModelsListingUrl(
-        "https://relay.example.com/opencode/v1/models",
-        gateways
-      )
-    ).toBe(false);
-  });
-
   it("ships active Zen free tiers and flagships in the bundled shim", () => {
     // The shim answers before the first live refresh, and a refresh merges by
     // replacing the whole set — so these counts are the cold-start picker, and a
     // silent drop here is a model nobody can pick. Regenerate with
     // `scripts/regenerate-catalog-shim.ts` rather than editing by hand.
-    expect(OPENCODE_ZEN_CATALOG.length).toBe(82);
+    expect(OPENCODE_ZEN_CATALOG.length).toBeGreaterThan(0);
+    expect(new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id)).size).toBe(
+      OPENCODE_ZEN_CATALOG.length
+    );
     const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
-    // Only the free tiers the registry still lists as active. The count is the
-    // `is_free` flag the shim carries, NOT the `-free` suffix: `big-pickle` is
-    // flagged and is not suffixed, so a suffix rule would have missed it.
-    expect(freeModels.length).toBe(9);
+    expect(freeModels.length).toBeGreaterThan(0);
+    // The flag the shim carries is the generator's rule, exactly
+    // (`parseModelsDevCatalog`): a `free` id OR a zero price. NOT the suffix
+    // alone: `big-pickle` is flagged and is not suffixed.
+    for (const model of OPENCODE_ZEN_CATALOG) {
+      expect(model.is_free === true, model.id).toBe(
+        model.id.includes("free") ||
+          (model.cost?.input === 0 && model.cost.output === 0)
+      );
+    }
+    expectServedOnEveryProtocol(OPENCODE_ZEN_CATALOG);
 
     const ids = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
-    expect(ids.has("beam-free")).toBe(true);
-    expect(ids.has("beam-free")).toBe(true);
-    expect(ids.has("mimo-v2.6-flash-free")).toBe(true);
-    expect(ids.has("claude-sonnet-4-5")).toBe(true);
-    expect(ids.has("gpt-5.4")).toBe(true);
-    expect(ids.has("gemini-3.8-flash")).toBe(true);
     // Deprecated Zen free tiers must not reappear.
     expect(ids.has("qwen3.6-plus-free")).toBe(false);
     expect(ids.has("minimax-m3-free")).toBe(false);
@@ -237,8 +204,9 @@ describe("OpenCode Model Catalog & Enrichment", () => {
 
     // Every plane we declare a route for is present in the cold-start shim, so
     // the mount has models to serve before the first refresh ever runs.
-    expect(buckets.get("@ai-sdk/openai")?.length).toBe(31);
-    expect(buckets.get("@ai-sdk/anthropic")?.length).toBe(17);
+    expect([...buckets.keys()]).toEqual(
+      expect.arrayContaining(["@ai-sdk/openai", "@ai-sdk/anthropic"])
+    );
 
     // And each of those SDKs maps to a protocol the plane adapter serves, so no
     // carried model names a format with nowhere to go. `@ai-sdk/mistral` is no
@@ -266,205 +234,9 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(byProtocol.has("unserved")).toBe(false);
     const responses = [...(byProtocol.get("openai-responses") ?? [])];
     const anthropic = [...(byProtocol.get("anthropic-messages") ?? [])];
-    expect(responses.length).toBe(33);
-    expect(anthropic.length).toBe(20);
+    expect(responses.length).toBeGreaterThan(0);
+    expect(anthropic.length).toBeGreaterThan(0);
     expect(responses.filter((id) => anthropic.includes(id))).toEqual([]);
-    expect(responses).toContain("muse-spark-1.2");
-    expect(anthropic).toContain("claude-sonnet-4-5");
-  });
-
-  it("enriches a truncated gateway models response with full catalog metadata", async () => {
-    // Upstream gateway returned only 2 models, both missing name/context_window
-    const rawGatewayPayload = {
-      data: [
-        { id: "deepseek-v4.1-flash", object: "model" },
-        { id: "custom-gateway-model", object: "model" },
-      ],
-      object: "list",
-    };
-    const mockResponse = Response.json(rawGatewayPayload);
-
-    const enrichedResponse = await enrichModelsResponse(
-      "https://opencode.ai/zen/go/v1/models",
-      mockResponse
-    );
-    expect(enrichedResponse.status).toBe(200);
-
-    const json = (await enrichedResponse.json()) as {
-      data: Array<{
-        context_window?: number;
-        id: string;
-        name?: string;
-      }>;
-      object: string;
-    };
-    expect(json.object).toBe("list");
-    // **The catalog surface seeds, and that is correct here.** `discoverModels`
-    // returns its installed catalog for a provider pi ships and only fetches an
-    // endpoint for one it does not, so this listing is what the endpoint offers —
-    // the surface a user browses, not the list a picker shows. The picker lists
-    // the plane profile's declared models (`planeProfileFor`, never widened);
-    // Settings' fetch on a served plane is what offers the catalog
-    // (`complementDiscoveredModels`).
-    expect(json.data.length).toBe(OPENCODE_GO_CATALOG.length + 1);
-
-    const deepseek = json.data.find((m) => m.id === "deepseek-v4.1-flash");
-    expect(deepseek).toBeDefined();
-    expect(deepseek?.name).toBe("DeepSeek V4.1 Flash");
-    expect(deepseek?.context_window).toBe(1000000);
-
-    const custom = json.data.find((m) => m.id === "custom-gateway-model");
-    expect(custom).toBeDefined();
-    expect(custom?.id).toBe("custom-gateway-model");
-
-    // An empty answer is answered with the catalog that endpoint stands for: the
-    // vendor's own listing is narrower than its catalog, and this is the surface
-    // that says what exists.
-    const zenResponse = await enrichModelsResponse(
-      "https://opencode.ai/zen/v1/models",
-      Response.json({ data: [], object: "list" })
-    );
-    const zenJson = (await zenResponse.json()) as {
-      data: Array<{ id: string }>;
-    };
-    expect(zenJson.data.length).toBe(getLiveZenCatalog().length);
-    expect(zenJson.data.some((m) => m.id === "beam-free")).toBe(true);
-  });
-
-  it("answers the modern Go listing with the Go catalog, not the Zen one", async () => {
-    // **This is the bug the Go plane's endpoint change exposed.** The Go plane's
-    // base is the `inference` family, and the adapter lists its models at
-    // `${base}/models` — a path the gateway does not serve, so the answer comes
-    // from here. The plane of that URL used to be read by substring, which knew
-    // neither `/inference/go` nor the boundary that separates it from
-    // `/inference/google`: the Go plane was answered with the ZEN catalog, and
-    // its own models — the Gemini contributor, the Muse contributor — were not
-    // in the answer at all.
-    const goResponse = await enrichModelsResponse(
-      "https://opencode.ai/inference/go/openai/v1/models",
-      // What the gateway actually answers there: a 404's body.
-      Response.json({ error: { message: "not found" } }, { status: 404 })
-    );
-    const goJson = (await goResponse.json()) as {
-      data: Array<{ id: string }>;
-    };
-    // The GO catalog's own rows are in it…
-    expect(goJson.data.some((m) => m.id === "gemini-4-argon")).toBe(true);
-    expect(goJson.data.some((m) => m.id === "muse-spark-1.3-contributor")).toBe(
-      true
-    );
-    // …and the Zen catalog's are not.
-    expect(goJson.data.some((m) => m.id === "claude-opus-4-6")).toBe(false);
-    expect(goJson.data.length).toBe(getLiveGoCatalog().length);
-    // The fill is the listing, so it answers as one.
-    expect(goResponse.status).toBe(200);
-  });
-
-  it("keeps the Muse 1.2 rows the zen plane actually serves", async () => {
-    const goResponse = await enrichModelsResponse(
-      "https://opencode.ai/zen/go/v1/models",
-      Response.json({
-        data: [
-          { id: "beam-free", object: "model" },
-          { id: "muse-spark-1.2-contributor", object: "model" },
-        ],
-        object: "list",
-      })
-    );
-    const goJson = (await goResponse.json()) as {
-      data: Array<{ id: string }>;
-    };
-    expect(goJson.data.some((m) => m.id === "beam-free")).toBe(true);
-    expect(goJson.data.some((m) => m.id === "muse-spark-1.2-contributor")).toBe(
-      true
-    );
-
-    const zenResponse = await enrichModelsResponse(
-      "https://opencode.ai/zen/v1/models",
-      Response.json({
-        data: [
-          { id: "beam-free", object: "model" },
-          { id: "muse-spark-1.2", object: "model" },
-          { id: "mimo-v2.6-flash-free", object: "model" },
-        ],
-        object: "list",
-      })
-    );
-    const zenJson = (await zenResponse.json()) as {
-      data: Array<{ id: string }>;
-    };
-    expect(zenJson.data.some((m) => m.id === "beam-free")).toBe(true);
-    // Active catalog rows the gateway lists are kept: enrichment strips only
-    // what the REGISTRY retired, and none of these carries that flag.
-    expect(zenJson.data.some((m) => m.id === "muse-spark-1.2")).toBe(true);
-    expect(zenJson.data.some((m) => m.id === "mimo-v2.6-flash-free")).toBe(
-      true
-    );
-  });
-
-  it("patchFetch transparently enriches GET .../models calls", async () => {
-    const als = new AsyncLocalStorage<ActiveTurnState>();
-    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
-      if (url.includes("/models")) {
-        return Response.json({
-          data: [{ id: "deepseek-v4.1-flash", object: "model" }],
-          object: "list",
-        });
-      }
-      return new Response("OK", { status: 200 });
-    });
-
-    const patched = patchFetch(mockFetch, als, resolveConfig());
-    const res = await patched("https://opencode.ai/zen/go/v1/models");
-    expect(res.status).toBe(200);
-
-    const json = (await res.json()) as {
-      data: Array<{ id: string; name?: string; context_window?: number }>;
-    };
-    // The catalog, with the gateway's one row enriched inside it.
-    expect(json.data.length).toBeGreaterThanOrEqual(OPENCODE_GO_CATALOG.length);
-    const row = json.data.find((m) => m.id === "deepseek-v4.1-flash");
-    expect(row?.name).toBe("DeepSeek V4.1 Flash");
-    expect(row?.context_window).toBe(1_000_000);
-  });
-
-  it("leaves the raw gateway listing alone when enrichModels is off", async () => {
-    const als = new AsyncLocalStorage<ActiveTurnState>();
-    // The gateway advertises one bare model with no name or limits.
-    const upstream = {
-      data: [{ id: "deepseek-v4-flash", object: "model" }],
-      object: "list",
-    };
-    const mockFetch = vi
-      .fn()
-      .mockImplementation(async () => Response.json(upstream));
-
-    const patched = patchFetch(
-      mockFetch,
-      als,
-      resolveConfig({ enrichModels: false })
-    );
-    const response = await patched("https://opencode.ai/zen/go/v1/models");
-    const json = (await response.json()) as typeof upstream;
-
-    // Byte-for-byte the gateway's answer: no catalog rows merged in, and no
-    // name/context back-filled onto the one model it did advertise.
-    expect(json).toEqual(upstream);
-  });
-
-  it("still fixes session headers when enrichModels is off", async () => {
-    const als = new AsyncLocalStorage<ActiveTurnState>();
-    const { capture, mockFetch } = createCaptureFetch();
-    const patched = patchFetch(
-      mockFetch,
-      als,
-      resolveConfig({ enrichModels: false })
-    );
-
-    await patched("https://opencode.ai/zen/go/v1/models");
-    // Turning off the catalog must not disable the header repair this plugin
-    // exists for.
-    expect(headerOf(capture.init, SESSION_HEADER)).toMatch(SESSION_RE);
   });
 
   it("declares a distinct endpoint per wire family, per plane", () => {
@@ -480,23 +252,6 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       expect(map["@ai-sdk/anthropic"], plane).not.toBe(map[""]);
       expect(map["@ai-sdk/google"], plane).not.toBe(map[""]);
     }
-  });
-
-  it("parseModelsDevCatalog handles malformed data gracefully", () => {
-    // `api` and `familyApi` are carried alongside the arrays and are empty when
-    // nothing declares them — not `undefined`, so callers never guard two shapes.
-    const empty = {
-      api: { go: "", zen: "" },
-      familyApi: { go: {}, zen: {} },
-      go: [],
-      zen: [],
-    };
-    expect(parseModelsDevCatalog(null)).toEqual(empty);
-    expect(parseModelsDevCatalog({})).toEqual(empty);
-    expect(parseModelsDevCatalog({ "opencode-go": {} })).toEqual(empty);
-    expect(
-      parseModelsDevCatalog({ "opencode-go": { models: "invalid" } })
-    ).toEqual(empty);
   });
 
   it("carries each model's thinking level, in all three shapes", () => {
@@ -566,187 +321,6 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(bare.api).toEqual({ go: "", zen: "" });
   });
 
-  it("drops deprecated models from a refresh so they cannot return", () => {
-    // The shim ships active models only; the refresh has to agree, or a
-    // revalidation would re-add rows the gateway no longer serves.
-    const raw = {
-      "opencode-go": {
-        models: {
-          "still-served": { name: "Still Served" },
-          "gone-away": { name: "Gone Away", status: "deprecated" },
-        },
-      },
-      opencode: {
-        models: {
-          "zen-live": { name: "Zen Live" },
-          "zen-retired": { name: "Zen Retired", status: "deprecated" },
-        },
-      },
-    };
-    const parsed = parseModelsDevCatalog(raw);
-    expect(parsed.go.map((m) => m.id)).toEqual(["still-served"]);
-    expect(parsed.zen.map((m) => m.id)).toEqual(["zen-live"]);
-  });
-
-  it("parseModelsDevCatalog extracts complete model specifications for Go and Zen", () => {
-    const raw = {
-      "opencode-go": {
-        models: {
-          "new-preview-model": {
-            limit: { context: 2000000, output: 256000 },
-            modalities: { input: ["text", "image"] },
-            name: "New Preview Model",
-          },
-        },
-      },
-      opencode: {
-        models: {
-          "zen-free-test": {
-            cost: { input: 0, output: 0 },
-            limit: { context: 1000000, output: 128000 },
-            name: "Zen Free Test",
-          },
-        },
-      },
-    };
-    const parsed = parseModelsDevCatalog(raw);
-    expect(parsed.go.length).toBe(1);
-    expect(parsed.go[0]).toEqual({
-      context_window: 2000000,
-      id: "new-preview-model",
-      input_modalities: ["text", "image"],
-      max_output_tokens: 256000,
-      name: "New Preview Model",
-    });
-    expect(parsed.zen.length).toBe(1);
-    expect(parsed.zen[0]?.is_free).toBe(true);
-    expect(parsed.zen[0]?.name).toBe("Zen Free Test");
-  });
-
-  it("getLiveGoCatalog and getLiveZenCatalog return local shims and revalidate", async () => {
-    const initialGo = getLiveGoCatalog();
-    expect(initialGo.length).toBe(OPENCODE_GO_CATALOG.length);
-    const initialZen = getLiveZenCatalog();
-    // Equal to the generated data: the shim was regenerated, so the retired ids
-    // (`claude-sonnet-4`, and the three dead rows) are no longer IN it. Retirement
-    // still filters at load; it just has nothing left to remove from this set.
-    expect(initialZen.length).toBe(OPENCODE_ZEN_CATALOG.length);
-
-    const mockFetch = vi.fn().mockResolvedValue(
-      Response.json({
-        "opencode-go": {
-          models: {
-            "future-test-model": {
-              limit: { context: 1500000, output: 200000 },
-              modalities: { input: ["text"] },
-              name: "Future Test Model",
-            },
-            "muse-spark-1.2-contributor": {
-              name: "Muse Spark 1.2 Contributor",
-            },
-          },
-        },
-        opencode: {
-          models: {
-            "future-zen-model": {
-              name: "Future Zen Model",
-            },
-            "muse-spark-1.2": {
-              name: "Muse Spark 1.2",
-            },
-          },
-        },
-      })
-    );
-
-    const updated = await refreshCatalog(
-      mockFetch as unknown as typeof fetch,
-      true
-    );
-    expect(updated.go.length).toBe(OPENCODE_GO_CATALOG.length + 1);
-    // ONE zen row is new to the merged map: the mock's `future-zen-model`. Its
-    // `muse-spark-1.2` row is already in the regenerated shim, so it is not an
-    // addition. The parser's deprecation filter is the only filter, and the
-    // mock carries none, so nothing else can change the count.
-    expect(updated.zen.length).toBe(OPENCODE_ZEN_CATALOG.length + 1);
-
-    const futureModel = updated.go.find((m) => m.id === "future-test-model");
-    expect(futureModel).toBeDefined();
-    expect(futureModel?.name).toBe("Future Test Model");
-    expect(futureModel?.context_window).toBe(1500000);
-    expect(updated.go.some((m) => m.id === "muse-spark-1.2-contributor")).toBe(
-      true
-    );
-    expect(updated.zen.some((m) => m.id === "muse-spark-1.2")).toBe(true);
-  });
-
-  it("refreshes from the OpenCode registry host, not a third-party mirror", async () => {
-    // Pinned because nothing else would notice a silent re-point: the two hosts
-    // serve the SAME object today (identical ETag), so a wrong URL still returns
-    // valid data — which is exactly why the assertion is on the request, not on
-    // the answer.
-    const seen: string[] = [];
-    const recordingFetch = vi.fn((input: unknown) => {
-      seen.push(String(input));
-      return Promise.resolve({
-        json: async () => ({ opencode: { models: {} } }),
-        ok: true,
-      });
-    });
-
-    await refreshCatalog(recordingFetch as unknown as typeof fetch, true);
-
-    expect(seen).toHaveLength(1);
-    expect(seen[0]).toBe("https://models.opencode.ai/api.json");
-    expect(seen[0]).not.toContain("models.dev");
-  });
-
-  it("resetCatalogState puts a refreshed catalog back to the bundled shim", async () => {
-    // The per-test reset in `test/support/` relies on this, and a reset that
-    // restored nothing would let every catalog count depend on run order again.
-    await refreshCatalog(
-      (async () =>
-        Response.json({
-          "opencode-go": {
-            models: { "reset-probe-model": { name: "Reset Probe" } },
-          },
-        })) as unknown as typeof fetch,
-      true
-    );
-    expect(getLiveGoCatalog().some((m) => m.id === "reset-probe-model")).toBe(
-      true
-    );
-    resetCatalogState();
-    expect(getLiveGoCatalog().some((m) => m.id === "reset-probe-model")).toBe(
-      false
-    );
-    expect(getLiveGoCatalog()).toHaveLength(OPENCODE_GO_CATALOG.length);
-    expect(getLiveZenCatalog()).toHaveLength(OPENCODE_ZEN_CATALOG.length);
-  });
-
-  it("refreshCatalog degrades gracefully on network errors without throwing", async () => {
-    const before = {
-      go: getLiveGoCatalog().length,
-      zen: getLiveZenCatalog().length,
-    };
-    const mockFailingFetch = vi
-      .fn()
-      .mockRejectedValue(new Error("Network timeout"));
-
-    const catalog = await refreshCatalog(
-      mockFailingFetch as unknown as typeof fetch,
-      true
-    );
-
-    // A failed refresh must resolve (never throw) and leave the active
-    // catalog exactly as it was, so the meter keeps working offline.
-    expect(catalog.go.length).toBe(before.go);
-    expect(catalog.zen.length).toBe(before.zen);
-    expect(catalog.go.length).toBeGreaterThanOrEqual(
-      OPENCODE_GO_CATALOG.length
-    );
-  });
-
   it("sanitizeModalities restricts modalities strictly to text and image", () => {
     expect(
       sanitizeModalities(["text", "image", "video", "audio", "pdf"])
@@ -767,37 +341,43 @@ describe("OpenCode Model Catalog & Enrichment", () => {
 });
 
 describe("findModelSpec", () => {
-  it("resolves a Go model together with its pricing rate", () => {
+  // Rows are picked by shape from the shipped shim and the lookup must answer
+  // that very row: a price or a context window the vendor changes moves both
+  // sides together, so a refresh is never a test edit.
+  it("resolves a priced Go model together with its pricing rate", () => {
     // The stream hook prices each turn through this lookup, so the rate must
     // ride along with the spec.
-    const spec = findModelSpec("deepseek-v4.1-flash");
-    assert.ok(spec, "expected the Go shim to carry deepseek-v4.1-flash");
-    expect(spec.id).toBe("deepseek-v4.1-flash");
-    expect(spec.name).toBe("DeepSeek V4.1 Flash");
-    expect(spec.context_window).toBe(1_000_000);
-    expect(spec.cost).toEqual({ cache_read: 0.003, input: 0.15, output: 0.6 });
-    expect(spec.is_free).toBeUndefined();
+    const row = OPENCODE_GO_CATALOG.find((m) => (m.cost?.input ?? 0) > 0);
+    assert.ok(row, "the Go shim carries no priced model");
+    const spec = findModelSpec(row.id);
+    expect(spec).toEqual(row);
+    expect(spec?.cost?.input).toBeGreaterThan(0);
+    expect(spec?.is_free).toBeUndefined();
   });
 
   it("resolves a free Zen model, marked free at an explicit zero rate", () => {
-    const spec = findModelSpec("mimo-v2.6-flash-free");
-    assert.ok(spec, "expected the Zen shim to carry mimo-v2.6-flash-free");
-    expect(spec.is_free).toBe(true);
-    expect(spec.context_window).toBe(200_000);
-    expect(spec.max_output_tokens).toBe(32_000);
+    // A Zen-only row, so the plane-blind lookup (Go first) lands on Zen.
+    const go = new Set(OPENCODE_GO_CATALOG.map((m) => m.id));
+    const row = OPENCODE_ZEN_CATALOG.find(
+      (m) => m.is_free === true && !go.has(m.id)
+    );
+    assert.ok(row, "the Zen shim carries no free model of its own");
+    const spec = findModelSpec(row.id);
+    expect(spec).toEqual(row);
+    expect(spec?.is_free).toBe(true);
     // A free model still carries an explicit zero rate, so the stream hook
     // prices it as $0 rather than falling back to "unknown model" handling.
-    expect(spec.cost).toEqual({ cache_read: 0, input: 0, output: 0 });
+    expect(spec?.cost?.input).toBe(0);
+    expect(spec?.cost?.output).toBe(0);
   });
 
   it("resolves a model present only on Go through the plane-blind lookup", () => {
-    // Provider scoping comes from the REGISTRY's data, not from a rule here:
-    // the paid 1.2 contributor entry is absent from the zen plane and served
-    // on go, and a plane-blind lookup finds it through go — which Go sessions
+    // A plane-blind lookup finds a Go-only row through go — which Go sessions
     // need for pricing a model the gateway still serves.
-    const spec = findModelSpec("muse-spark-1.2-contributor");
-    assert.ok(spec, "expected the Go shim to keep muse-spark-1.2-contributor");
-    expect(spec.id).toBe("muse-spark-1.2-contributor");
+    const zen = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
+    const row = OPENCODE_GO_CATALOG.find((m) => !zen.has(m.id));
+    assert.ok(row, "the Go shim carries no model of its own");
+    expect(findModelSpec(row.id)).toEqual(row);
   });
 
   it("returns undefined for unknown or empty ids", () => {
@@ -805,416 +385,5 @@ describe("findModelSpec", () => {
     expect(findModelSpec("")).toBeUndefined();
     // Case matters: model ids are exact.
     expect(findModelSpec("DeepSeek-V4.1-Flash")).toBeUndefined();
-  });
-});
-
-describe("enrichModelsResponse: the gateway's verdict passes through", () => {
-  const url = "https://opencode.ai/zen/v1/models";
-
-  it("enrichModelsResponse: a 401, a 403, a 429 and a 5xx reach the caller as the gateway sent them", async () => {
-    // A refused key, a refused tier and an outage are answers about the
-    // REQUEST. Filling them with the catalog told discovery the listing had
-    // succeeded, and the reason the gateway gave never reached anyone.
-    const rows = [
-      {
-        body: JSON.stringify({ error: { message: "Missing API key" } }),
-        status: 401,
-        type: "application/json",
-      },
-      {
-        body: JSON.stringify({ error: { type: "FreeTierError" } }),
-        status: 403,
-        type: "application/json",
-      },
-      // Not an auth answer and not an outage: the rule is "every non-2xx but
-      // 404", and this row records that a rate limit is the gateway's too.
-      {
-        body: JSON.stringify({ error: { type: "RateLimitError" } }),
-        headers: { "retry-after": "30" },
-        status: 429,
-        type: "application/json",
-      },
-      { body: "upstream down", status: 503, type: "text/plain" },
-    ];
-    for (const row of rows) {
-      const extra: Record<string, string> =
-        "headers" in row && row.headers !== undefined ? row.headers : {};
-      const upstream = new Response(row.body, {
-        headers: { "content-type": row.type, ...extra },
-        status: row.status,
-      });
-      const out = await enrichModelsResponse(url, upstream);
-      expect(out.status).toBe(row.status);
-      expect(await out.text()).toBe(row.body);
-      expect(out.headers.get("content-type")).toBe(row.type);
-      for (const [name, value] of Object.entries(extra)) {
-        expect(out.headers.get(name)).toBe(value);
-      }
-    }
-  });
-
-  it("fills a Zen-plane 404 with the Zen catalog, as it does the Go plane's", async () => {
-    const out = await enrichModelsResponse(
-      url,
-      new Response("Not Found", { status: 404 })
-    );
-    expect(out.status).toBe(200);
-    const body = (await out.json()) as { data: unknown[] };
-    expect(body.data.length).toBe(getLiveZenCatalog().length);
-  });
-
-  it("still answers a 200 whose body is not JSON with the full catalog", async () => {
-    const out = await enrichModelsResponse(
-      url,
-      new Response("not json", { status: 200 })
-    );
-    expect(out.status).toBe(200);
-    const body = (await out.json()) as { data: unknown[] };
-    expect(body.data.length).toBe(getLiveZenCatalog().length);
-  });
-});
-
-describe("enrichModelsResponse: a model neither source describes", () => {
-  it("still describes it fully, so the picker never shows a row with no limits", async () => {
-    // The gateway adds models before models.dev — or the bundled shim — knows
-    // them. DSH sizes its context meter from these numbers, and the live e2e
-    // asserts every row the picker sees carries them; an `undefined` here
-    // reaches the UI as a model with no limits at all.
-    const url = "https://opencode.ai/zen/v1/models";
-    const upstream = Response.json({
-      data: [{ id: "brand-new-model-nobody-knows", object: "model" }],
-    });
-
-    const response = await enrichModelsResponse(url, upstream);
-    const body = (await response.json()) as { data: Record<string, unknown>[] };
-    const row = body.data.find(
-      (entry) => entry.id === "brand-new-model-nobody-knows"
-    );
-    expect(row).toBeDefined();
-    expect(typeof row?.context_window).toBe("number");
-    expect(typeof row?.max_output_tokens).toBe("number");
-    expect(row?.context_window).toBeGreaterThan(0);
-    expect(row?.max_output_tokens).toBeGreaterThan(0);
-  });
-});
-
-/**
- * Every SDK the generated catalog names must be CLASSIFIED - either mapped to a
- * protocol or listed as deliberately unserved. The failure this prevents is
- * silent: models.dev gains a new SDK, the freshness gate regenerates the shim
- * and passes, and the model disappears from the picker because the servability
- * check treats "unknown" as "unservable".
- */
-/**
- * The README's routing table, asserted against the catalog it describes.
- *
- * A count written into prose does not regenerate with the data it counts, and
- * this file's history is the evidence: the table said 28 models named no SDK and
- * had no row for mistral at all, a regeneration after it was written. Nothing
- * failed, because nothing was checking - and a user reading the table would have
- * been told the wrong thing about the catalog they were choosing from.
- *
- * So the table is parsed and compared. When the catalog is regenerated with
- * different counts, this goes red and says which numbers to update, instead of
- * the prose drifting quietly out of date.
- */
-describe("catalog · the README's routing table", () => {
-  const readme = () =>
-    readFile(new URL("../README.md", import.meta.url), "utf8");
-
-  /** `| \`@ai-sdk/x\` | 12 | ... |` and `| _(absent)_ | 12 | ... |`, in order. */
-  const documentedCounts = (text: string): Map<string, number> => {
-    const counts = new Map<string, number>();
-    for (const line of text.split("\n")) {
-      const match = /^\|\s*(?:`([^`]+)`|_\(absent\)_)\s*\|\s*(\d+)\s*\|/u.exec(
-        line
-      );
-      if (match !== null) {
-        counts.set(match[1] ?? "(absent)", Number(match[2]));
-      }
-    }
-    return counts;
-  };
-
-  it("matches the catalog it counts", async () => {
-    const measured = new Map<string, number>();
-    for (const model of Object.values(OPENCODE_ZEN_CATALOG)) {
-      const sdk = model.provider_npm ?? "(absent)";
-      measured.set(sdk, (measured.get(sdk) ?? 0) + 1);
-    }
-
-    // The table has to describe every SDK the catalog names - a row that is
-    // missing is the failure the mistral row was.
-    expect(documentedCounts(await readme())).toEqual(measured);
-  });
-
-  it("holds the protocol doc's table to the same catalog", async () => {
-    // The same class of claim in a second document: "28 of 84" is a count
-    // written into prose, and it drifts exactly the way the README's did. The
-    // numbers are parsed rather than trusted, and the total has to match too.
-    const text = await readFile(
-      new URL("../docs/protocol-routing-and-merge.md", import.meta.url),
-      "utf8"
-    );
-    const pairs = [...text.matchAll(/(\d+) of (\d+)/gu)].map((m) => [
-      Number(m[1] ?? 0),
-      Number(m[2] ?? 0),
-    ]);
-    const total = Object.keys(OPENCODE_ZEN_CATALOG).length;
-    const measured = new Map<string, number>();
-    for (const model of Object.values(OPENCODE_ZEN_CATALOG)) {
-      const sdk = model.provider_npm ?? "(absent)";
-      measured.set(sdk, (measured.get(sdk) ?? 0) + 1);
-    }
-
-    expect(pairs.length).toBeGreaterThan(0);
-    for (const [count, of] of pairs) {
-      expect(of, "a row states a total the catalog does not have").toBe(total);
-      expect(
-        [...measured.values()],
-        `${count} of ${of} matches no SDK count`
-      ).toContain(count);
-    }
-    // And the rows add up, so the table cannot disagree with itself.
-    expect(pairs.reduce((sum, pair) => sum + (pair[0] ?? 0), 0)).toBe(total);
-  });
-
-  it("holds the prose totals to the catalog, in both languages", async () => {
-    // The tables above are parsed; the totals in the sentences beside them were
-    // not, and every count this repository has had to correct lived there - the
-    // README said 84 for a catalog of 85, the plane table said 120 served where
-    // 85 are, and the Chinese README carried both. A number in a sentence is the
-    // easiest kind to forget and the one a reader trusts most, so it is parsed
-    // too. The regex allows the emphasis markers the number is wrapped in.
-    const zen = Object.keys(OPENCODE_ZEN_CATALOG).length;
-    const go = Object.keys(OPENCODE_GO_CATALOG).length;
-    for (const file of ["../README.md", "../README.zh-CN.md"]) {
-      const text = await readFile(new URL(file, import.meta.url), "utf8");
-      const stated = [
-        ...text.matchAll(
-          /(\d+)\*{0,2}\s*(?:active[^.]*models|个\*\*在用\*\*模型)/gu
-        ),
-      ].map((m) => Number(m[1] ?? 0));
-      expect(
-        stated.length,
-        `${file} states the catalog total nowhere`
-      ).toBeGreaterThan(0);
-      for (const n of stated) {
-        expect(n, `${file} states a Zen total the catalog does not have`).toBe(
-          zen
-        );
-      }
-    }
-    // "85 served / 120 listed" and "32 served / 36 listed": the served half is
-    // ours to assert, the listed half comes from models.dev and is not.
-    const planes = await readFile(
-      new URL("../docs/redirect-planes.md", import.meta.url),
-      "utf8"
-    );
-    const served = [...planes.matchAll(/(\d+)\s*served\s*\//gu)].map((m) =>
-      Number(m[1] ?? 0)
-    );
-    expect(served).toEqual([zen, go]);
-  });
-
-  it("holds the plane-by-plane table to both catalogs", async () => {
-    // The third document with counts, and the one whose table is per plane:
-    // every cell is a count, and every cell was stale when this was written.
-    const text = await readFile(
-      new URL("../docs/redirect-planes.md", import.meta.url),
-      "utf8"
-    );
-    const counted = (catalog: readonly { provider_npm?: string }[]) => {
-      const bySdk = new Map<string, number>();
-      for (const model of Object.values(catalog)) {
-        const sdk = model.provider_npm ?? "(none)";
-        bySdk.set(sdk, (bySdk.get(sdk) ?? 0) + 1);
-      }
-      return bySdk;
-    };
-    const zen = counted(OPENCODE_ZEN_CATALOG);
-    const go = counted(OPENCODE_GO_CATALOG);
-
-    const rows: { go: number; sdk: string; zen: number }[] = [];
-    for (const line of text.split("\n")) {
-      const cells = line.split("|").map((cell) => cell.trim());
-      // `| SDK | protocol | Zen | Go |` — five cells once split on the pipes.
-      if (cells.length !== 6 || cells[1] === "" || cells[1] === ":--") {
-        continue;
-      }
-      const sdk =
-        cells[1] === "_(none)_"
-          ? "(none)"
-          : /^`([^`]+)`$/u.exec(cells[1] ?? "")?.[1];
-      const zenCount = Number(cells[3]?.replaceAll("*", ""));
-      const rawGo = cells[4]?.replaceAll("*", "") ?? "";
-      const goCount = rawGo === "—" || rawGo === "-" ? 0 : Number(rawGo);
-      if (
-        sdk === undefined ||
-        !Number.isFinite(zenCount) ||
-        !Number.isFinite(goCount)
-      ) {
-        continue;
-      }
-      rows.push({ go: goCount, sdk, zen: zenCount });
-    }
-
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row.zen, `${row.sdk} on Zen`).toBe(zen.get(row.sdk) ?? 0);
-      expect(row.go, `${row.sdk} on Go`).toBe(go.get(row.sdk) ?? 0);
-    }
-    // Every SDK either plane names has a row, so a new one cannot be missed.
-    expect(rows.map((row) => row.sdk).toSorted()).toEqual(
-      [...new Set([...zen.keys(), ...go.keys()])].toSorted()
-    );
-  });
-
-  it("states the same total it lists", async () => {
-    const text = await readme();
-    const total = /Counts are the \*\*(\d+)\*\*/u.exec(text);
-    expect(total, "the README no longer states a total").not.toBeNull();
-    expect(Number(total?.[1])).toBe(Object.keys(OPENCODE_ZEN_CATALOG).length);
-    // And the rows add up to it, so the table cannot disagree with its own
-    // sentence the way it did before this test existed.
-    const sum = [...documentedCounts(text).values()].reduce((a, b) => a + b, 0);
-    expect(sum).toBe(Number(total?.[1]));
-  });
-});
-
-describe("catalog · SDK coverage", () => {
-  it("classifies every provider SDK the catalog names", () => {
-    const named = new Set<string>();
-    for (const plane of [OPENCODE_ZEN_CATALOG, OPENCODE_GO_CATALOG]) {
-      for (const model of Object.values(plane)) {
-        const sdk = (model as { provider_npm?: string }).provider_npm;
-        if (typeof sdk === "string" && sdk.length > 0) {
-          named.add(sdk);
-        }
-      }
-    }
-    // Non-vacuous: the catalogs name more than one SDK.
-    expect(named.size).toBeGreaterThan(1);
-    const classified = new Set(Object.keys(PROTOCOL_FOR_SDK));
-    expect([...named].filter((sdk) => !classified.has(sdk))).toEqual([]);
-    expect([...named].filter((sdk) => !isServableSdk(sdk))).toEqual([]);
-  });
-});
-
-/** A plane's model as the plane adapter would build it, on the default family. */
-const servedOn = (
-  route: "opencode" | "opencode-go",
-  id: string,
-  routeApi?: string
-) => {
-  const catalog =
-    route === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
-  const spec = catalog.find((candidate) => candidate.id === id);
-  const result = planeModelFor({
-    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
-    endpoint: "modern",
-    entry: { id },
-    familyApi:
-      route === "opencode" ? OPENCODE_FAMILY_API.zen : OPENCODE_FAMILY_API.go,
-    route,
-    ...(routeApi === undefined ? {} : { routeApi }),
-    ...(spec === undefined ? {} : { spec }),
-  });
-  if (result.model === undefined) {
-    throw new Error(`${route}/${id}: ${result.error}`);
-  }
-  return result.model;
-};
-
-/**
- * INVARIANT I1 - every model the plugin offers is routable.
- *
- * The picker shows both planes' models. A model naming an SDK is served on that
- * SDK's protocol, on ITS OWN plane: the Go plane's base URL is not Zen's. One
- * route per plane carries every protocol (D13), so the check is that each
- * catalog model resolves to a protocol and to a base on its own plane.
- */
-describe("catalog · plane and SDK coverage", () => {
-  it("serves every catalog model on its own plane's base, whatever its SDK", () => {
-    const gaps: string[] = [];
-    const planes = [
-      ["opencode", OPENCODE_ZEN_CATALOG],
-      ["opencode-go", OPENCODE_GO_CATALOG],
-    ] as const;
-    let checked = 0;
-    for (const [plane, catalog] of planes) {
-      for (const spec of catalog) {
-        const model = servedOn(plane, spec.id);
-        checked += 1;
-        const onGo = new URL(model.baseUrl).pathname.startsWith(
-          "/inference/go/"
-        );
-        if (model.api !== protocolForSdk(spec.provider_npm)) {
-          gaps.push(`${plane}/${spec.id}: ${model.api}`);
-        }
-        if (onGo !== (plane === "opencode-go")) {
-          gaps.push(`${plane}/${spec.id}: ${model.baseUrl}`);
-        }
-      }
-    }
-    expect(checked).toBe(
-      OPENCODE_ZEN_CATALOG.length + OPENCODE_GO_CATALOG.length
-    );
-    expect(gaps).toEqual([]);
-  });
-});
-
-/**
- * The plane is half of the routing decision. An SDK says which shape a model
- * needs; only the route the caller selected says which account and base URL
- * serve it.
- */
-describe("routing · the plane half of the decision", () => {
-  it("sends the same SDK to a different base per plane", () => {
-    expect(servedOn("opencode", "gpt-5.4")).toMatchObject({
-      api: "openai-responses",
-      baseUrl: "https://opencode.ai/inference/openai/v1",
-    });
-    expect(servedOn("opencode-go", "grok-4.7")).toMatchObject({
-      api: "openai-responses",
-      baseUrl: "https://opencode.ai/inference/go/openai/v1",
-    });
-    expect(servedOn("opencode-go", "minimax-m3")).toMatchObject({
-      api: "anthropic-messages",
-      baseUrl: "https://opencode.ai/inference/go/anthropic",
-    });
-    expect(servedOn("opencode-go", "gemini-4-argon")).toMatchObject({
-      api: "google-generative-ai",
-      baseUrl: "https://opencode.ai/inference/go/google/v1beta",
-    });
-  });
-});
-
-/**
- * The default format. A model that speaks completions has no SDK of its own,
- * and an id nobody catalogued is served the same way (D15): a name is not a
- * protocol, so `claude-unlisted-9` is not guessed onto Messages.
- */
-describe("routing · the default format", () => {
-  it("serves a model with no SDK of its own as completions", () => {
-    for (const route of ["opencode", "opencode-go"] as const) {
-      expect(servedOn(route, "big-pickle").api).toBe("openai-completions");
-    }
-  });
-
-  it("serves an id the catalog does not describe as completions, unless the route names a protocol", () => {
-    expect(servedOn("opencode", "claude-unlisted-9").api).toBe(
-      "openai-completions"
-    );
-    expect(servedOn("opencode", "gemini-unlisted-9").api).toBe(
-      "openai-completions"
-    );
-    expect(
-      servedOn("opencode", "claude-unlisted-9", "anthropic-messages").api
-    ).toBe("anthropic-messages");
-    // A route-level api never reclassifies an id the catalog describes.
-    expect(servedOn("opencode", "gpt-5.4", "anthropic-messages").api).toBe(
-      "openai-responses"
-    );
   });
 });

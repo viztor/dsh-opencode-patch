@@ -2,7 +2,7 @@
  * The OpenCode gateway, mocked — the vendor's endpoints as a Vite plugin.
  *
  * Divided cleanly by wire protocols (responses, completions, messages, google,
- * catalog, console-auth, usage-quota) under `test/mock/protocols/`.
+ * catalog, usage-quota) under `test/mock/protocols/`.
  *
  * @module dsh-opencode-patch/mock-gateway
  */
@@ -37,133 +37,11 @@ import {
 export { MOCK_TEXT };
 export type { MockUsageOptions };
 
-export interface MockAuthOptions {
-  readonly accessToken?: string;
-  readonly deviceCode?: string;
-  readonly expiresInSeconds?: number;
-  readonly intervalSeconds?: number;
-  readonly orgs?: readonly { readonly id: string; readonly name: string }[];
-  readonly pollOutcome?:
-    | "denied"
-    | "expired"
-    | "failed"
-    | "granted"
-    | "pending"
-    | "slow_down";
-  readonly refreshToken?: string;
-  readonly userCode?: string;
-  readonly userEmail?: string;
-  readonly userId?: string;
-}
-
-const deviceCodeResponse = (options?: MockAuthOptions): ShapeReply => ({
-  body: JSON.stringify({
-    device_code: options?.deviceCode ?? "dev_mock_code_12345",
-    expires_in: options?.expiresInSeconds ?? 600,
-    interval: options?.intervalSeconds ?? 1,
-    user_code: options?.userCode ?? "WDJB-MJHT",
-    verification_uri: "/console/device",
-  }),
-  contentType: JSON_CONTENT_TYPE,
-  status: 200,
-});
-
-const deviceTokenResponse = (options?: MockAuthOptions): ShapeReply => {
-  const outcome = options?.pollOutcome ?? "granted";
-  if (outcome === "pending") {
-    return {
-      body: JSON.stringify({
-        error: {
-          message: "Authorization pending",
-          type: "authorization_pending",
-        },
-      }),
-      contentType: JSON_CONTENT_TYPE,
-      status: 400,
-    };
-  }
-  if (outcome === "slow_down") {
-    return {
-      body: JSON.stringify({
-        error: { message: "Slow down", type: "slow_down" },
-        interval: 10,
-      }),
-      contentType: JSON_CONTENT_TYPE,
-      status: 400,
-    };
-  }
-  if (outcome === "denied") {
-    return {
-      body: JSON.stringify({
-        error: {
-          message: "The user denied authorization",
-          type: "access_denied",
-        },
-      }),
-      contentType: JSON_CONTENT_TYPE,
-      status: 400,
-    };
-  }
-  if (outcome === "expired") {
-    return {
-      body: JSON.stringify({
-        error: { message: "The code has expired", type: "expired_token" },
-      }),
-      contentType: JSON_CONTENT_TYPE,
-      status: 400,
-    };
-  }
-  if (outcome === "failed") {
-    return {
-      body: JSON.stringify({
-        error: { message: "Internal error", type: "server_error" },
-      }),
-      contentType: JSON_CONTENT_TYPE,
-      status: 500,
-    };
-  }
-  return {
-    body: JSON.stringify({
-      access_token: options?.accessToken ?? "mock-access-token-12345",
-      account: options?.userId ?? "acc_mock_user_123",
-      expires_in: options?.expiresInSeconds ?? 3600,
-      org: options?.orgs?.[0]?.id ?? "wrk_mock_org_456",
-      refresh_token: options?.refreshToken ?? "mock-refresh-token-67890",
-    }),
-    contentType: JSON_CONTENT_TYPE,
-    status: 200,
-  };
-};
-
-const userResponse = (options?: MockAuthOptions): ShapeReply => ({
-  body: JSON.stringify({
-    email: options?.userEmail ?? "developer@example.com",
-    id: options?.userId ?? "acc_mock_user_123",
-  }),
-  contentType: JSON_CONTENT_TYPE,
-  status: 200,
-});
-
-const orgsResponse = (options?: MockAuthOptions): ShapeReply => ({
-  body: JSON.stringify(
-    options?.orgs ?? [
-      { id: "wrk_mock_org_456", name: "Default Org" },
-      { id: "wrk_mock_org_789", name: "Secondary Org" },
-    ]
-  ),
-  contentType: JSON_CONTENT_TYPE,
-  status: 200,
-});
-
 /** The plane a request's base URL belongs to. */
 export type GatewayPlane = "opencode" | "opencode-go";
 
 /** The endpoint family a path names, by the last segment it carries. */
 export type GatewayKind =
-  | "api-orgs"
-  | "api-user"
-  | "auth-device-code"
-  | "auth-device-token"
   | "completions"
   | "google"
   | "messages"
@@ -194,7 +72,6 @@ export type GatewayBehavior = (
 ) => MockReply | undefined;
 
 export interface OpenCodeGatewayOptions {
-  auth?: MockAuthOptions;
   behavior?: GatewayBehavior;
   onRequest?: (request: GatewayRequest) => void;
   usage?: MockUsageOptions;
@@ -261,10 +138,6 @@ const ENDPOINTS: readonly {
 ];
 
 const WIRE_HEADER: Readonly<Record<GatewayKind, string>> = {
-  "api-orgs": "authorization",
-  "api-user": "authorization",
-  "auth-device-code": "",
-  "auth-device-token": "",
   completions: "authorization",
   google: "x-goog-api-key",
   messages: "x-api-key",
@@ -280,34 +153,6 @@ const CONSOLE_ROUTES: readonly {
   plane: GatewayPlane;
   protocol: string | null;
 }[] = [
-  {
-    kind: "auth-device-code",
-    method: "POST",
-    pattern: /^\/(?:console\/)?auth\/device\/code$/u,
-    plane: "opencode",
-    protocol: null,
-  },
-  {
-    kind: "auth-device-token",
-    method: "POST",
-    pattern: /^\/(?:console\/)?auth\/device\/token$/u,
-    plane: "opencode",
-    protocol: null,
-  },
-  {
-    kind: "api-user",
-    method: "GET",
-    pattern: /^\/(?:console\/)?api\/user$/u,
-    plane: "opencode",
-    protocol: null,
-  },
-  {
-    kind: "api-orgs",
-    method: "GET",
-    pattern: /^\/(?:console\/)?api\/orgs$/u,
-    plane: "opencode",
-    protocol: null,
-  },
   {
     kind: "usage",
     method: "GET",
@@ -574,12 +419,7 @@ export const handleGatewayRequest = (
   record.protocol = endpoint.protocol;
 
   const expectedMethod =
-    endpoint.kind === "models" ||
-    endpoint.kind === "api-user" ||
-    endpoint.kind === "api-orgs" ||
-    endpoint.kind === "usage"
-      ? "GET"
-      : "POST";
+    endpoint.kind === "models" || endpoint.kind === "usage" ? "GET" : "POST";
   if (record.method !== expectedMethod) {
     return refuse(
       405,
@@ -598,11 +438,7 @@ export const handleGatewayRequest = (
     endpoint.kind === "responses" ||
     endpoint.kind === "messages" ||
     endpoint.kind === "google";
-  if (
-    wireHeader.length > 0 &&
-    !perModelCredential &&
-    !isCredential(headers[wireHeader])
-  ) {
+  if (!perModelCredential && !isCredential(headers[wireHeader])) {
     return refuse(401, "Invalid API key", "invalid_api_key", "credential");
   }
 
@@ -641,38 +477,6 @@ export const handleGatewayRequest = (
   if (endpoint.kind === "usage") {
     const usageReply = options.behavior?.(record);
     return accept(usageReply ?? usageResponse(options.usage));
-  }
-
-  if (endpoint.kind === "auth-device-code") {
-    const codeReply = options.behavior?.(record);
-    return accept(codeReply ?? deviceCodeResponse(options.auth));
-  }
-
-  if (endpoint.kind === "auth-device-token") {
-    const tokenReply = options.behavior?.(record);
-    const generated = deviceTokenResponse(options.auth);
-    if (generated.status >= 400 && tokenReply === undefined) {
-      const parsed = JSON.parse(generated.body) as {
-        error: { message: string; type: string };
-      };
-      return refuse(
-        generated.status,
-        parsed.error.message,
-        parsed.error.type,
-        options.auth?.pollOutcome ?? "token"
-      );
-    }
-    return accept(tokenReply ?? generated);
-  }
-
-  if (endpoint.kind === "api-user") {
-    const userReply = options.behavior?.(record);
-    return accept(userReply ?? userResponse(options.auth));
-  }
-
-  if (endpoint.kind === "api-orgs") {
-    const orgsReply = options.behavior?.(record);
-    return accept(orgsReply ?? orgsResponse(options.auth));
   }
 
   const { ok, parsed } = parseBody(exchange.bodyText);
@@ -714,19 +518,17 @@ export const handleGatewayRequest = (
   // entry — measured: a keyless free-tier request answers 200), and requires a
   // real one everywhere else. A placeholder that is neither absent nor `public`
   // is still refused, on any model.
-  if (wireHeader.length > 0) {
-    const presented = headers[wireHeader];
-    const bare = presented
-      ?.replace(/^Bearer\s+/iu, "")
-      .trim()
-      .toLowerCase();
-    const admitted =
-      isCredential(presented) ||
-      (model.includes("free") &&
-        (bare === undefined || bare.length === 0 || bare === "public"));
-    if (!admitted) {
-      return refuse(401, "Invalid API key", "invalid_api_key", "credential");
-    }
+  const presented = headers[wireHeader];
+  const bare = presented
+    ?.replace(/^Bearer\s+/iu, "")
+    .trim()
+    .toLowerCase();
+  const admitted =
+    isCredential(presented) ||
+    (model.includes("free") &&
+      (bare === undefined || bare.length === 0 || bare === "public"));
+  if (!admitted) {
+    return refuse(401, "Invalid API key", "invalid_api_key", "credential");
   }
 
   // **Each protocol has its own contract, and the mock enforces it.** The auth

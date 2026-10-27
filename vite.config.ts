@@ -240,14 +240,17 @@ export default defineConfig({
         // once the hidden-route modules (about 4,000 lines, the least covered
         // in the tree) were deleted and the plane modules that replaced them
         // landed at 100% where they are pure. Set just below that measurement.
-        statements: 97.5,
+        // Raised in P-T2 to just below 98.2 / 95.6 / 98.01 / 98.19, measured
+        // after the mock-booting files left the unit run and the floor pins
+        // below landed.
+        statements: 98,
         // 91.5 -> 91.3: two tests that pinned hand-rolled menu-material CSS were
         // replaced by two that assert the panel renders MenuSurface, which is a
         // smaller assertion about a bigger fix. The floor follows the measured
         // value rather than the other way round. 94 since P-R1 (above).
-        branches: 94,
-        functions: 97.4,
-        lines: 97.5,
+        branches: 95.4,
+        functions: 97.9,
+        lines: 98,
         // Floors on the load-bearing modules only, so a well-covered average
         // cannot hide one that stopped being exercised. Not `perFile: true` —
         // that would hold every file to the aggregate number, which is a
@@ -304,6 +307,47 @@ export default defineConfig({
         "src/host/describe-graft.ts": {
           statements: 100,
           branches: 94,
+          functions: 100,
+          lines: 100,
+        },
+        // The three modules that install the plugin's effects on the host (P-T2):
+        // the composition, the stream hook and the fetch patch. Measured at
+        // 92.72 / 92.15 / 100 / 92.59, 100 / 97.72 / 100 / 100 and
+        // 100 / 98 / 100 / 100 once every branch a composition can reach was
+        // pinned (lifecycle: the rename notice on tier B, the usage service's
+        // base-URL closure, a composition with no `get`; stream-hook: numeric
+        // ids, a blank-named root, `cwd: "/"`, a non-string model, a usage
+        // chunk with one counter; fetch-patch: the `configured` policy, bodies
+        // the free-model check cannot read, a placeholder in the env, the
+        // store read, a blank `sessionIdEnv`, a debug entry of nulls), and set
+        // just below. What is left uncovered no composition reaches, and is
+        // named here rather than driven through a stand-in:
+        // - lifecycle.ts: `root.plugin()` throwing for the usage, purge and
+        //   store services (L172-173, L258-261, L283-284), `ctx.get` throwing
+        //   (L213), a usage binding whose namespace is not a string (L233), the
+        //   debug hook's `debugFile ?? ""` behind its own guard (L324), an
+        //   `llm` scope that is not a record or has no `effect` (L370-371, L375);
+        // - stream-hook.ts: `headerValueFor` answering `undefined` for a
+        //   non-empty session id (L149, L154), which it never does;
+        // - fetch-patch.ts: the report's "present" for a request key or a
+        //   captured key (L319, L321), since either one fills the wire and no
+        //   report follows, and a session header that is null after the patch
+        //   set it (L466).
+        "src/lifecycle.ts": {
+          statements: 92.5,
+          branches: 92,
+          functions: 100,
+          lines: 92.5,
+        },
+        "src/stream-hook.ts": {
+          statements: 100,
+          branches: 97.5,
+          functions: 100,
+          lines: 100,
+        },
+        "src/fetch-patch.ts": {
+          statements: 100,
+          branches: 97.5,
           functions: 100,
           lines: 100,
         },

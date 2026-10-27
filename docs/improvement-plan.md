@@ -29,7 +29,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P-R2  | `test:` the endpoint families, measured       | in review |
 | P-R2b | `fix:` flip the default on §13's evidence     | if needed |
 | P3    | `feat:` Settings complements pi's list        | in review |
-| P-T2  | `test:` suite structure                       | planned   |
+| P-T2  | `test:` suite structure                       | in review |
 | P-T3  | `ci:` CI and scripts                          | planned   |
 | P5    | `refactor:` installers                        | planned   |
 | P6    | `refactor:` the fetch patch's credential fill | planned   |
@@ -368,7 +368,7 @@ What stays private is pinned by contract tests against the real host packages:
 
    **What remains:** the Models store's join. It lives in the client package `ui-settings-models`, which is not installed here and has no server-side seam to restate, so P-R1 owns it (its contract list below, unconditionally), measured on the binary or with the package added at the pinned cluster tag.
 
-   The tier-A F11 smoke (`listProviders()` equals pi-ai's resolved keys) lives in `host-waterfall`, beside the other F-numbered contracts; `host-harness` holds the builder-seam cases.
+   The tier-A F11 smoke (`listProviders()` equals pi-ai's resolved keys) lives in `host-waterfall`, beside the other F-numbered contracts; `host-harness` held the builder-seam cases until P-T2 retired them as harness self-tests.
 
    **Corrections the harness measured** (P-R1 must design for these):
    - **F8/F12, the save check.** An outermost listener that strips the planes and returns a copy does NOT shield pi-ai's own listener: pi-ai validates the value `next()` returns, which is the raw value the inner chain saw (`llm-pi-ai/src/index.ts:177-186`). Against its stripped previous config every plane entry reads as changed, so the strict check runs on the planes: an editor save is refused while a plane stores any gap id. The claim listener must either keep pi-ai's listener from seeing the planes (run the nested waterfall on the copy, with a re-entrancy guard) or veto the chain for pi-ai's fiber and validate in its place.
@@ -410,19 +410,22 @@ What stays private is pinned by contract tests against the real host packages:
    - the `discoverModels` wrapper (`src/models-discovery.ts`, through `host/patch-method.ts`): on a plane the plugin serves, pi's rows first in pi's order (ids the OpenCode catalog has retired dropped once a live catalog read has landed — offline, pi's list passes through; each field read from the catalog first and from pi only where the catalog has none, the composer's own D17 order, so a row adopted from the fetch carries what the composer serves), then every servable, non-deprecated catalog model pi lacks (`complementDiscoveredModels`), each id once and whitelisted to `LlmDiscoveredModel`'s five fields; `NO_DISCOVERY` from pi-ai's namespace answers the catalog alone (F21);
    - `installModelDiscovery`, `toDiscovered`, the `registerModelDiscovery` namespaces and their lifecycle tests deleted;
    - the "adds nothing" tests and docs rewritten; `test/host-discovery.test.ts` carries the real-host and contract rows, and the binary e2e the Settings fetch row. Refinements: the `RouteClaim.claiming()` seam, so gap rows are offered only while the claim is live and only on the served row's namespace; the whitelist omits a field nobody supplied, unknown modalities included (absent means unknown in the Remote's schema), rather than defaulting it, and narrows a supplied modality list to text/image, omitting the field when nothing survives (as the composer's `catalogInput` does); `verify-catalog` check 3 retargeted from `mergeDiscoveredModels` to `planeProfileFor`, the composer's own source; and the wrapper kept behind `enrichModels`, as the listing enrichment and the old discovery registration were — with it off, Settings' fetch is pi's list and a restart's `NO_DISCOVERY` passes through, the user's opt-out (D8), a reading of D3 for the owner to confirm.
-10. **P-T2 `test:` suite structure.**
-    - Move the mock-booting unit files into `test/mock/`.
-    - Retire the ad-hoc contexts, `createMockContext` and `HarnessSimulator`.
-    - Turn constants into invariants, and split the seven big files.
-    - One shared e2e environment helper.
-    - Cover `session-id` and `opencode-store-contract`.
+10. **P-T2 `test:` suite structure.** In review. Landed as:
+    - **The mock suite holds every socket-bound case.** The nine unit files that booted the mock gateway through `testing-kit.ts` are gone: their protocol, credential and pass-through cases merged into `test/mock/request-shapes.mock.ts` and the new `protocol-endpoints.mock.ts` (one `it.for(PROTOCOLS)` table, models from the catalog through `fixtureModel`), and `testing-kit.ts` with them (`HarnessSimulator`, `ClientSimulator`, `GatewayTestRunner`, and an `AuthSimulator` that copied `opencode-store-fixture.ts`). The two port-binding offline e2e files (`patched-fetch-headers`, `refusal-classification`) moved into the mock suite, ungated. The device-login routes left the gateway mock: this build has no login.
+    - **Deleted as self-tests, 43:** `harness-context-remotes` (4) and `harness-loader-versions` (4), which tested `HarnessSimulator`; `gateway-contract.mock.ts` (10) and request-shapes' two mock-only describes (7), raw fetches with no plugin; five of `host-harness`' seven (its two failure-path cases moved to `host-planes`); and thirteen cases of the moved files whose assertions read only the mock's verdict.
+    - **Merged, 33:** 21 cases of the nine files and four of request-shapes' own (two credential headers, two pass-throughs) became twelve rows — the protocol table's four, its placeholder case and two usage rows, and a five-row pass-through `it.each` — and eight more (seven header cases and one core-tool case) folded into request-shapes' existing cases. **Deleted as restatements, 16:** ten `usage.test.ts` cases of `go-discovery`'s; four `usage.test.ts` `GoUsageService` cases of `usage-service-readings`' and `-failures`' (the two-session spend split, the missing key, the healthy read, and the 429 that is one row of the transient-status table); `free-tier-contract`'s big-pickle case, which read a catalog flag that `catalog.test.ts` asserts for every Zen row and drove no injection; and lifecycle's usage-registration case of composition's. Five cases moved whole (two listing and two core-tool cases to `protocol-endpoints`, the session recovery to request-shapes).
+    - **Real contexts.** `createMockContext` is gone: services are built on `new Context()` with what they read provided, and `lifecycle.test.ts` mounts the plugin on a real `Context` the way the Loader does (`test/support/composition.ts`, `mountPlugin`: the module's `apply`, `Config`, `inject` and `name`, with the row config), drives `ctx.waterfall("llm/stream", …)` and disposes through `fiber.dispose()`, reading after every case — before any stub is undone — whether a fetch patch is left, and asserting it once the cleanup has run, so a leak is blamed on the case that leaked it; the mount passes the exports unchanged, so repeated activations share one cordis runtime as the Loader's do; the one case that leaves one by construction (two overlapping activations disposed earliest-first) says so as `KNOWN_DEFECT P6`, for P6 to flip. Only the degraded-composition diagnostics keep a stand-in for the plugin's composition (`degradedHost`), because a real `Context` registers what it is asked to and always has `plugin`: a `plugin` that registers nothing, with and without `get` (the three unreachable-service diagnostics), and a composition with no `plugin`, or with neither `plugin` nor `provide`. The go-discovery and usage-service files serve their loader rows and credentials on `new Context()` (`test/support/loader-rows.ts`), so the reader takes the `ctx.get` arm a real host takes. Named exceptions, for module-level clause tests rather than the composition: the route claim keeps its stand-in host (`test/support/route-claim-stand-in.ts`) for fiber states a real host cannot be put in on demand (a LOADING or FAILED pi-ai, a null uid, a refusing registry), with `test/host-planes*.test.ts` covering the claim on the real host; the discovery, Settings-graft and reload tests keep the `llm` object their seam wraps; the client entry's tests (`test/settings-page*.test.tsx`, `test/client-bundle.test.ts`) keep a hand-built settings host, because the web runtime has no in-process tier and the jsdom files must not load the door.
+    - **Invariants, not counts:** the catalog tests assert non-empty, unique ids, the generator's `is_free` rule, a paid row per served protocol, and Go-only/Zen-only ids from set differences. A case that needs a catalogued or limits row picks it by shape (`findCatalogRow`, `freeZenModel`, the first priced row of the shim or of `GO_MODEL_LIMITS`) and reads its expected value off that row, or seeds the plane-divergent probes (`seedDivergentCatalog`), so a vendor refresh can retire any one id without failing a case about something else.
+    - **The seven largest files split by subject** (settings-page, fetch-patch, go-discovery, catalog, route-claim, usage-service, host-planes), the first part keeping the original name; shared fixtures in `test/support/`.
+    - **One e2e environment reader**, `test/support/e2e-env.ts`. `dispatch-levels`' offline sweep is a unit file (`test/dispatch-levels.test.ts`), not a mock one: it binds no port. Every `ses_` id a gateway, the mock or a live probe reads is derived (`openCodeSessionIdFor`), including `protocol-routing`'s, which was 23 characters and refused by the gateway on every keyed case; malformed-id inputs and opaque turn values a captured fetch only echoes stay literal on purpose.
+    - **Coverage:** `session-id`, `opencode-store-contract` and `e2e-env` have their own files; `lifecycle.ts`, `stream-hook.ts` and `fetch-patch.ts` carry per-file floors with the unreachable branches named.
 11. **P-T3 `ci:` CI and scripts.**
     - **The test run:** one unit run; build before the tests that read `lib/`; type-check `test/**/*.tsx`.
     - **Setup:** one composite setup action.
     - **`check.ts`** keeps the lib freshness check, the consumer install and the size tripwire.
     - **Scripts:** the generators share helpers, and the `verify-*` scripts exit non-zero.
     - **`no-local-paths`** also covers `.github/` and `*.sh`.
-12. **P5 `refactor:` installers.** `installRemoteService` replaces the three mount-once copies.
+12. **P5 `refactor:` installers.** `installRemoteService` replaces the three mount-once copies. `mountByProvide` cannot succeed on any composition today: it constructs the service first, the services need `ctx.reflect`, and only a real `Context` (which always has `plugin`) carries it. `installRemoteService` drops the provide arm or makes it publish; `lifecycle.test.ts` pins the dead arm as `KNOWN_DEFECT P5`.
 13. **P6 `refactor:` the fetch patch's credential fill.** The adapter path is already D20.
     - One resolver, for an empty or placeholder wire key only.
     - A parity test over the deciders, with the adapter path as its own row: a rotated key takes effect, and a service failure propagates.
@@ -579,6 +582,18 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → (P-R
 - **Contract:** the wrapper is seen through the gateway and survives a restart.
 - **Binary e2e:** the Settings fetch action.
 
+**P-T2**
+
+- **Unit:**
+  - `session-id`, `opencode-store-contract` and `e2e-env` (the reader driven with environments of its own);
+  - `dispatch-levels`' offline sweep;
+  - the per-file floor pins for `lifecycle.ts`, `stream-hook.ts` and `fetch-patch.ts`;
+  - the CI-scope pins in `keyed-probes.test.ts`.
+- **Mock:**
+  - `protocol-endpoints`' `it.for(PROTOCOLS)` table;
+  - request-shapes' merged rows;
+  - the two moved listener files (`patched-fetch-headers`, `refusal-classification`).
+
 **P6**
 
 - **Unit:** apply A, apply B, dispose A, dispose B ends at the native `fetch`, in both orders (red on the base).
@@ -587,7 +602,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → (P-R
 
 ### The `e2e-host` job (`ci.yml`)
 
-**When it runs:** on dispatch, nightly, and on PRs that touch the host seam — `src/host/**` and, beside it, `src/lifecycle.ts`, `src/identity.ts`, `src/cordis-context.ts` and `src/models-discovery.ts`, whose behaviour depends on the real loader and apply order, and the two modules that still install host-level patches until P6/P10a move them under `src/host/` (`src/fetch-patch.ts`, the global fetch wrapper whose order the probe reads, and `src/stream-hook.ts`) (every other row producer, such as the pure plane model and profile in `src/utils/`, `src/key-capture.ts`, `src/models-catalog.ts` or `src/config.ts`, is covered on each PR by the in-process characterization of the same `S0_TODAY` rows, and by the nightly run) — `cordis.patch.yml`, `test/e2e/host/**`, `test/e2e/host-binary.e2e.ts`, `test/support/host.ts`, `test/support/host-versions.ts`, `patches/**`, `.github/workflows/ci.yml`, `vitest.e2e.config.ts` or `vite.config.ts` (the pack config that builds `lib/index.mjs`, which only this job loads into a real host, and the test settings the e2e config inherits) (scoped by a step, since a workflow-level path filter would silence every job).
+**When it runs:** on dispatch, nightly, and on PRs that touch the host seam — `src/host/**` and, beside it, `src/lifecycle.ts`, `src/identity.ts`, `src/cordis-context.ts` and `src/models-discovery.ts`, whose behaviour depends on the real loader and apply order, and the two modules that still install host-level patches until P6/P10a move them under `src/host/` (`src/fetch-patch.ts`, the global fetch wrapper whose order the probe reads, and `src/stream-hook.ts`) (every other row producer, such as the pure plane model and profile in `src/utils/`, `src/key-capture.ts`, `src/models-catalog.ts` or `src/config.ts`, is covered on each PR by the in-process characterization of the same `S0_TODAY` rows, and by the nightly run) — `cordis.patch.yml`, `test/e2e/host/**`, `test/e2e/host-binary.e2e.ts`, `test/support/host.ts`, `test/support/e2e-env.ts` (the reader the binary e2e's gate and inputs come through), `test/support/host-versions.ts`, `patches/**`, `.github/workflows/ci.yml`, `vitest.e2e.config.ts` or `vite.config.ts` (the pack config that builds `lib/index.mjs`, which only this job loads into a real host, and the test settings the e2e config inherits) (scoped by a step, since a workflow-level path filter would silence every job).
 
 **What it does:**
 

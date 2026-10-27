@@ -6,8 +6,10 @@
  * request, the real `patchFetch`. Everywhere else in the suite the injected
  * headers are asserted against a captured `fetch`; here they cross a socket.
  *
- * Opt-in (`OPENCODE_E2E=1`): it binds a port, so it stays out of the
- * deterministic unit run.
+ * It binds a loopback port and nothing else, so it runs in the mock suite on
+ * every push rather than in the unit run.
+ *
+ * @module test/mock/patched-fetch-headers.mock
  */
 
 import assert from "node:assert/strict";
@@ -24,12 +26,11 @@ import {
   PARENT_SESSION_HEADER,
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
+  newOpenCodeMessageId,
   openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
 } from "../support/src.ts";
-
-const ENABLED = process.env.OPENCODE_E2E === "1";
 
 let server: Server;
 let origin: string;
@@ -63,22 +64,27 @@ const headerOf = (index: number, name: string): string | undefined => {
   return Array.isArray(value) ? value[0] : value;
 };
 
-describe.skipIf(!ENABLED)("patched fetch over a real socket", () => {
+describe("patched fetch over a real socket", () => {
   const als = new AsyncLocalStorage<ActiveTurnState>();
   const config = resolveConfig({});
   const patched = patchFetch(fetch, als, config);
 
+  /** The turn's own ids, derived rather than written, so each is in band. */
+  const TURN_VALUE = openCodeSessionIdFor("e2e-turn");
+  const PARENT_VALUE = openCodeSessionIdFor("e2e-parent");
+  const REQUEST_VALUE = newOpenCodeMessageId();
+
   const turn = (overrides: Partial<ActiveTurnState> = {}): ActiveTurnState => ({
     model: "deepseek-v4.1-flash",
     provider: "opencode",
-    requestValue: "msg_e2e0000000abCDEFGHIJKLMNOP",
-    value: "ses_e2e00000000",
+    requestValue: REQUEST_VALUE,
+    value: TURN_VALUE,
     ...overrides,
   });
 
   it("injects the full affinity header set for a claimed provider", async () => {
     const state = turn({
-      parentValue: "ses_parent00000",
+      parentValue: PARENT_VALUE,
       project: "dsh-opencode",
     });
     const response = await als.run(state, () => patched(`${origin}/models`));
@@ -96,16 +102,14 @@ describe.skipIf(!ENABLED)("patched fetch over a real socket", () => {
     expect(headerOf(0, "x-session-id")).toBeUndefined();
 
     // Parent lineage, in both spellings.
-    expect(headerOf(0, PARENT_SESSION_HEADER)).toBe("ses_parent00000");
-    expect(headerOf(0, PARENT_SESSION_ALT_HEADER)).toBe("ses_parent00000");
+    expect(headerOf(0, PARENT_SESSION_HEADER)).toBe(PARENT_VALUE);
+    expect(headerOf(0, PARENT_SESSION_ALT_HEADER)).toBe(PARENT_VALUE);
 
     // Origin identity, including the turn's message id — the header 1.19.4's
     // `request.ts` sends beside the client and project headers.
     expect(headerOf(0, "x-opencode-client")).toBe("cli");
     expect(headerOf(0, "x-opencode-project")).toBe("dsh-opencode");
-    expect(headerOf(0, "x-opencode-request")).toBe(
-      "msg_e2e0000000abCDEFGHIJKLMNOP"
-    );
+    expect(headerOf(0, "x-opencode-request")).toBe(REQUEST_VALUE);
     expect(headerOf(0, "user-agent")).toBe(OPENCODE_UA);
   });
 
@@ -135,14 +139,29 @@ describe.skipIf(!ENABLED)("patched fetch over a real socket", () => {
     expect(received[0]?.["user-agent"]).not.toBe(OPENCODE_UA);
   });
 
-  it("keeps a caller's own valid session header", async () => {
+  it("a turn's own session id outranks a caller's valid header, which is kept outside a turn", async () => {
+    const caller = openCodeSessionIdFor("e2e-caller");
     await als.run(turn(), () =>
       patched(`${origin}/models`, {
-        headers: { [SESSION_HEADER]: "ses_caller00000" },
+        headers: { [SESSION_HEADER]: caller },
       })
     );
     // The turn's own value wins while a turn is active…
-    expect(headerOf(0, SESSION_HEADER)).toBe("ses_e2e00000000");
+    expect(headerOf(0, SESSION_HEADER)).toBe(TURN_VALUE);
+
+    // …and with no turn, the caller's valid id is what goes on the wire. A
+    // request outside a turn is claimed by its URL alone, so this patch names
+    // the listener as a gateway the way a deployment names a relay.
+    const byUrl = patchFetch(
+      fetch,
+      als,
+      resolveConfig({ gatewayUrls: [origin] })
+    );
+    await byUrl(`${origin}/models`, { headers: { [SESSION_HEADER]: caller } });
+    expect(headerOf(1, "x-opencode-client"), "the request was claimed").toBe(
+      "cli"
+    );
+    expect(headerOf(1, SESSION_HEADER)).toBe(caller);
   });
 
   it("preserves the caller's unrelated headers", async () => {

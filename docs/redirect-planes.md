@@ -10,7 +10,7 @@ A **plane** is one gateway base URL with its own catalog and its own credential.
 
 | Plane | Route id | Base URL | Credential | Models |
 | :-- | :-- | :-- | :-- | --: |
-| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | the entry's `apiKeyEnv`; without one, pi's `OPENCODE_API_KEY` | 82 served / 127 listed |
+| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | the entry's `apiKeyEnv`; without one, pi's `OPENCODE_API_KEY` | 81 served / 127 listed |
 | Go (subscription) | `opencode-go` | the `endpoint` family's | the entry's `apiKeyEnv` (name `OPENCODE_GO_API_KEY`); without one, pi's `OPENCODE_API_KEY` | 30 served / 34 listed |
 
 **There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto`, the default, is an alias of `modern` (`AUTO_ENDPOINT_FAMILY` in `src/utils/plane-model.ts`), the per-protocol `…/inference/{openai,anthropic,google}/…` and `…/inference/go/…`; `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`, except Go's Google, which has no legacy base and stays on `…/inference/go/google/v1beta`. Which families answer, keyless and with each plane's own key, is measured in CI (§13), not assumed. The dated measurement below was taken on the legacy family.
@@ -25,13 +25,13 @@ A **shape** is one wire protocol, named by the SDK a model declares in the catal
 
 | SDK in the catalog  | Protocol               | Zen |    Go |
 | :------------------ | :--------------------- | --: | ----: |
-| _(none)_            | `openai-completions`   |  25 |    19 |
+| _(none)_            | `openai-completions`   |  24 |    19 |
 | `@ai-sdk/openai`    | `openai-responses`     |  31 | **5** |
 | `@ai-sdk/anthropic` | `anthropic-messages`   |  17 | **5** |
 | `@ai-sdk/mistral`   | `openai-completions`   |   1 |     — |
 | `@ai-sdk/google`    | `google-generative-ai` |   8 | **1** |
 
-**Absence is the signal, and it is a real one.** Both planes set a provider-level `npm` of `@ai-sdk/openai-compatible` in `models.dev`, and **no model declares it explicitly**: 0 of 82 on Zen, 0 of 30 on Go. A model that speaks the completions shape simply omits `provider.npm` and inherits it. So "no SDK" does not mean "unknown"; it means _the provider default_, which is the protocol the route was itself registered with.
+**Absence is the signal, and it is a real one.** Both planes set a provider-level `npm` of `@ai-sdk/openai-compatible` in `models.dev`, and **no model declares it explicitly**: 0 of 81 on Zen, 0 of 30 on Go. A model that speaks the completions shape simply omits `provider.npm` and inherits it. So "no SDK" does not mean "unknown"; it means _the provider default_, which is the protocol the route was itself registered with.
 
 That is why the servability check treats `undefined` as servable, and why `@ai-sdk/openai-compatible` is deliberately **not** in `PROTOCOL_FOR_SDK`: listing it would record the default as though it were an override. The coverage guard still covers the case where a model declares it explicitly. None do today, and if one did, the test would name it rather than drop the model.
 
@@ -66,8 +66,8 @@ These are the rules a correct implementation satisfies. Each one has a test in �
 
 | Guard | Holds | Fails when |
 | :-- | :-- | :-- |
-| `catalog.test.ts` · SDK coverage | I5 | the catalog names an SDK `PROTOCOL_FOR_SDK` does not map |
-| `catalog.test.ts` · plane × SDK coverage | I1, I2 | a catalog model resolves to a protocol other than its SDK's, or to a base off its own plane |
+| `catalog-routing.test.ts` · SDK coverage | I5 | the catalog names an SDK `PROTOCOL_FOR_SDK` does not map |
+| `catalog-routing.test.ts` · plane × SDK coverage | I1, I2 | a catalog model resolves to a protocol other than its SDK's, or to a base off its own plane |
 | `plane-model.test.ts` · protocol and base tables | I2, I3, I4 | a protocol, a family or a route-level base resolves to the wrong endpoint for its plane |
 | `protocol-routing.e2e.ts` · live probe | I1, I3 | a protocol is declared routable without a path and an auth convention that were really sent, on either plane |
 | `test/mock/*.mock.ts` · offline gateway | §9's shape table | a plane × protocol × family sends a path, query or wire header its endpoint would refuse, or the mock answers a request the vendor would refuse |
@@ -192,7 +192,7 @@ What carried over from the bridge, and why:
 - **The route names stay the vendor's.** No `google` route is taken; there are no hidden routes at all.
 - **A Go Gemini turn's replay state carries `provider: "opencode-go"`**, the label it is replayed under, so a signed tool call replays natively and the translators that bridged two labels (`utils/google-replay.ts`) are gone — decided by a mock-gateway replay test (`test/mock/plane-dispatch.mock.ts`).
 
-What is verified, and in what composition: the in-process characterization (`test/host-characterization.test.ts`) and the real-host suite (`test/host-planes.test.ts`) run the plugin on the real `llm` service and `llm-pi-ai` in both apply orders, and the binary e2e (`test/e2e/host-binary.e2e.ts`) runs the built bundle on a published host, asserting that both planes are the plugin's `PlaneAdapter` and that a Go Gemini turn is sent to `https://opencode.ai/inference/go/google/v1beta`.
+What is verified, and in what composition: the in-process characterization (`test/host-characterization.test.ts`) and the real-host suite (the `test/host-planes*.test.ts` files) run the plugin on the real `llm` service and `llm-pi-ai` in both apply orders, and the binary e2e (`test/e2e/host-binary.e2e.ts`) runs the built bundle on a published host, asserting that both planes are the plugin's `PlaneAdapter` and that a Go Gemini turn is sent to `https://opencode.ai/inference/go/google/v1beta`.
 
 ## 13. Measured: which endpoint families the gateway serves
 

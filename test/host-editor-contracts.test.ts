@@ -33,6 +33,7 @@ import {
   PLANES,
   providerWithApiKey,
   recordingFetch,
+  routeIds,
   s0Providers,
   type TierB,
   waitForPlaneOwner,
@@ -112,9 +113,6 @@ const describedRefs = (tier: TierB, from: number): string[] =>
     .filter(([method]) => method === "describe")
     .map(([, ref]) => ref);
 
-const routeIds = (tier: TierB): string[] =>
-  tier.llm.listProviders().map((provider) => provider.id);
-
 let tier: TierB | undefined;
 
 afterEach(async () => {
@@ -135,7 +133,7 @@ describe(
         prepare: prependStrip,
         providers: knownProviders(),
       });
-      expect(routeIds(tier)).toEqual(["deepseek"]);
+      expect(routeIds(tier.llm)).toEqual(["deepseek"]);
       await tier.ctx.configEditor.edit(
         tier.piEntry,
         editProvider("opencode", { displayName: "Zen (edited)" })
@@ -217,7 +215,7 @@ describe(
       expect(adaptersUpdated).toBe(0);
       expect(tier.piEntry.fiber).toBe(before);
       expect(tier.piFiber.state).toBe(2);
-      expect(routeIds(tier)).toEqual(["deepseek"]);
+      expect(routeIds(tier.llm)).toEqual(["deepseek"]);
 
       // Control: an edit pi-ai DOES see commits one volatile update, and pi-ai
       // re-registers in place — the route replace and the directory replace

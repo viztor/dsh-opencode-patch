@@ -16,7 +16,7 @@
  *
  * @module test/support/live-probe
  */
-import { OPENCODE_UA } from "./src.ts";
+import { OPENCODE_UA, openCodeSessionIdFor } from "./src.ts";
 
 /**
  * The path each protocol uses against an OVERRIDDEN base, which is read as a
@@ -90,14 +90,16 @@ export const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
 /**
  * Headers the plugin injects, so a probe looks like the traffic we actually
  * send: a turn's user agent is `OPENCODE_UA`, which the fetch patch stamps —
- * `OPENCODE_PATCH_USER_AGENT` signs only the plugin's own requests.
+ * `OPENCODE_PATCH_USER_AGENT` signs only the plugin's own requests — and a
+ * session id derived the plugin's own way, so it is in the band the gateway
+ * admits by construction rather than a hand-written value it refuses.
  */
 export const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "application/json",
   "user-agent": OPENCODE_UA,
   "x-opencode-client": "cli",
   "x-opencode-project": "global",
-  "x-opencode-session": "ses_e2e0000000000abcdefghij",
+  "x-opencode-session": openCodeSessionIdFor("protocol-routing"),
 };
 
 export interface Probe {

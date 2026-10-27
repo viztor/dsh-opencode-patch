@@ -41,6 +41,7 @@ import {
   piAiRestarts,
   s0Providers,
   type TierA,
+  until,
   waitForPlaneOwner,
 } from "./support/host.ts";
 import {
@@ -173,23 +174,6 @@ interface Site {
 
 /** A provider listing, for the `apply()` case's stand-in host. */
 const LISTED = [{ id: "opencode", name: "opencode" }];
-
-/** Poll until `predicate` holds, or fail by name. */
-const until = async (
-  predicate: () => boolean,
-  what: string,
-  deadlineMs = 10_000
-): Promise<void> => {
-  const end = Date.now() + deadlineMs;
-  while (!predicate()) {
-    if (Date.now() > end) {
-      throw new Error(`never happened: ${what}`);
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
-  }
-};
 
 /** pi-ai's descriptor as `settings.describe()` builds it without the planes. */
 const describeMethods = (): Record<string, Method> => ({

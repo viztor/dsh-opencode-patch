@@ -872,23 +872,6 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
   {
     context_window: 1_000_000,
     cost: {
-      cache_read: 0.028,
-      input: 0.14,
-      output: 0.28,
-    },
-    id: "deepseek-v4-flash",
-    input_modalities: ["text"],
-    max_output_tokens: 384_000,
-    name: "DeepSeek V4 Flash",
-    reasoning: true,
-    reasoning_options: [
-      { type: "toggle" },
-      { type: "effort", values: ["low", "high", "max"] },
-    ],
-  },
-  {
-    context_window: 1_000_000,
-    cost: {
       cache_read: 0.145,
       input: 1.74,
       output: 3.48,

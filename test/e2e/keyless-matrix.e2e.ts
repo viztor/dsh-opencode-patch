@@ -60,6 +60,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { e2e } from "../support/e2e-env.ts";
 import {
   freeProbeLine,
   type RecordedProbe,
@@ -92,11 +93,12 @@ import {
   parseModelsDevCatalog,
 } from "../support/src.ts";
 
-const LIVE = process.env.OPENCODE_E2E === "1";
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
+
+const LIVE = E2E.live;
 /** A mirror the rest of the suite is pointed at, which this file cannot follow. */
-const MIRRORED = ["OPENCODE_ZEN_BASE_URL", "OPENCODE_GO_BASE_URL"].some(
-  (name) => (process.env[name] ?? "").length > 0
-);
+const MIRRORED = E2E.mirrored;
 if (LIVE && MIRRORED) {
   console.info(
     "[keyless-matrix] skipped: a mirror base URL is set, and the matrix measures only the vendor's own paths"
@@ -218,11 +220,7 @@ describe.skipIf(!LIVE || MIRRORED)(
         recordTable({
           date: new Date().toISOString().slice(0, 10),
           probes: recorded,
-          run: runReference({
-            repository: process.env.GITHUB_REPOSITORY,
-            runId: process.env.GITHUB_RUN_ID,
-            server: process.env.GITHUB_SERVER_URL,
-          }),
+          run: runReference(E2E.run),
           title: "Keyless",
         }),
         "",
@@ -232,7 +230,7 @@ describe.skipIf(!LIVE || MIRRORED)(
       if (print) {
         console.info(record);
       }
-      const dir = process.env.OPENCODE_E2E_RECORD_DIR ?? "";
+      const dir = E2E.recordDir;
       if (dir.length > 0) {
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, "keyless.md"), record);

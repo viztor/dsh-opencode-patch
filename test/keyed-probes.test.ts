@@ -8,7 +8,8 @@
  * (and a retried one) is read, what a plane's verdicts decide, that a key
  * never reaches a printed excerpt, which pull requests CI arms it on, how the
  * record is kept, and — read from the live files — that every live suite
- * reads its key at its own tier and no probe follows a redirect. The
+ * reads its key through `E2E.keyFor` at its own tier and no probe follows a
+ * redirect. The
  * keyed cells also go through the offline gateway mock's own judge
  * (`handleGatewayRequest`), which refuses a request with no session header as
  * the live Go plane does.
@@ -316,12 +317,13 @@ describe("keyed probes · the cells", () => {
     expect(pluginIdentityHeaders(OPENCODE_UA)).toEqual(PROBE_IDENTITY);
   });
 
-  it("every live suite reads a key only through armedKey at its own tier: the keyed probes at `probes`, the full keyed suites at `full`, the keyless matrix never", () => {
+  it("every live suite reads a key only through E2E.keyFor at its own tier: the keyed probes at `probes`, the full keyed suites at `full`, the keyless matrix never", () => {
     // The live files are not loaded offline, and ci.yml passes both secrets
     // on a `probes` pull request, so a full suite that read a key straight
     // from the environment would spend it on every such pull request, and
     // keyed probes armed at `full` would never probe one: both stay green
-    // everywhere else.
+    // everywhere else. `E2E.keyFor` (test/support/e2e-env.ts) is the one
+    // reader, and it arms a key through `armedKey` at the tier it is asked for.
     const NEED: Readonly<Record<string, "full" | "probes">> = {
       "dispatch-levels.e2e.ts": "full",
       "keyed-probes.e2e.ts": "probes",
@@ -338,26 +340,35 @@ describe("keyed probes · the cells", () => {
     }
     const READ = /process\.env(?:\.|\[\s*["'`])OPENCODE_(?:GO_)?API_KEY\b/gu;
     const ARMED =
-      /armedKey\(\s*TIER,\s*"(full|probes)",\s*process\.env\.OPENCODE_(?:GO_)?API_KEY\s*\)/gu;
+      /\bE2E\.keyFor\(\s*"(opencode|opencode-go)",\s*"(full|probes)"\s*\)/gu;
     for (const name of files) {
       const live = liveSource(name);
       const reads = [...live.matchAll(READ)].length;
-      const armed = [...live.matchAll(ARMED)].map((match) => match[1]);
+      const armed = [...live.matchAll(ARMED)].map((match) => ({
+        need: match[2],
+        plane: match[1],
+      }));
       const need = NEED[name];
       expect(live, `${name} destructures a key out of process.env`).not.toMatch(
         /\}\s*=\s*process\.env\b/u
       );
+      // No live suite reads a key from the environment itself.
+      expect(reads, `${name} reads a key`).toBe(0);
       if (need === undefined) {
-        expect(reads, `${name} reads a key`).toBe(0);
+        expect(armed, `${name} arms a key`).toEqual([]);
         continue;
       }
-      // Both planes' keys, each through armedKey at the suite's tier, and no
-      // other read of either.
-      expect(reads, name).toBe(2);
-      expect(armed, name).toEqual([need, need]);
-      expect(live, name).toContain(
-        "const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);"
-      );
+      // Both planes' keys, each through E2E.keyFor at the suite's tier.
+      expect(
+        armed
+          .map((read) => read.plane)
+          .toSorted((a = "", b = "") => a.localeCompare(b)),
+        name
+      ).toEqual(["opencode", "opencode-go"]);
+      expect(
+        armed.map((read) => read.need),
+        name
+      ).toEqual([need, need]);
     }
     expect(liveSource("keyless-matrix.e2e.ts")).not.toContain(
       "OPENCODE_E2E_KEYED"
@@ -1193,6 +1204,7 @@ describe("keyed probes · the CI wiring", () => {
       "test/e2e/keyed-probes.e2e.ts",
       "test/support/keyed-probes.ts",
       "test/support/keyless-matrix.ts",
+      "test/support/e2e-env.ts",
       ".github/workflows/ci.yml",
     ]) {
       expect(armed.test(path), path).toBe(true);
@@ -1310,6 +1322,51 @@ describe("keyed probes · the CI wiring", () => {
       if (step !== testStep) {
         expect(step).not.toContain("secrets.OPENCODE");
       }
+    }
+  });
+});
+
+describe("the e2e-host job · its pull-request scope", () => {
+  const ci = readFileSync(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8"
+  );
+  const job = ci.slice(ci.indexOf("\n  e2e-host:\n"));
+  const scopeStep =
+    job.split(/\n {6}- /u).find((step) => step.includes("id: scope")) ?? "";
+  /** The pattern the scope step greps the changed paths with. */
+  const scope = /grep -Eq '([^']+)'/u.exec(scopeStep)?.[1];
+
+  it("the scope runs the binary e2e on its own inputs, the reader its gate comes through included, and not on unrelated paths", () => {
+    expect(scope).toBeDefined();
+    // The ERE is JavaScript-compatible, so the pattern CI runs is the one
+    // tested here.
+    const runs = new RegExp(scope ?? "(?!)", "u");
+    for (const path of [
+      "src/host/route-claim.ts",
+      "src/lifecycle.ts",
+      "src/fetch-patch.ts",
+      "test/e2e/host/probe-plugin.mjs",
+      "test/e2e/host-binary.e2e.ts",
+      "test/support/host.ts",
+      "test/support/host-versions.ts",
+      "test/support/e2e-env.ts",
+      "patches/pi.patch",
+      ".github/workflows/ci.yml",
+      "vitest.e2e.config.ts",
+      "vite.config.ts",
+    ]) {
+      expect(runs.test(path), path).toBe(true);
+    }
+    for (const path of [
+      "README.md",
+      "package.json",
+      "src/catalog-data.ts",
+      "src/utils/plane-model.ts",
+      "test/support/e2e-env.ts.bak",
+      "test/e2e-env.test.ts",
+    ]) {
+      expect(runs.test(path), path).toBe(false);
     }
   });
 });

@@ -8,68 +8,68 @@
  * route leaks into a plane. Every case boots its own host and reads the
  * registry, the profile file and the wire — never the plugin's own state.
  *
+ * This file holds who owns the planes and the claim's lifecycle; its siblings
+ * hold the config flow and the route set (`host-planes-config`) and the
+ * credentials and isolation (`host-planes-credentials`). The shared boot and
+ * readers are `support/host-planes.ts`.
+ *
  * @module test/host-planes.test
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 
 import {
   readProfilePatches,
   reconcileProfilePatches,
 } from "@deepseek-ai/dsh-app-boot";
-import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  adaptersOf,
+  appendTo,
+  bootPlanes,
+  disposeBooted,
+  offline,
+  routeIds,
+  settle,
+  stateOf,
+  wire,
+} from "./support/host-planes.ts";
+import {
   type ApplyOrder,
   bootTierB,
-  CHARACTERIZED_MODELS,
   characterizedProviders,
   drainStream,
   fakeCredentials,
-  type HostLlm,
-  logLines,
+  FIBER_STATE,
   mountTierA,
   ownerOf,
   PLANES,
-  piAiRestarts,
-  recordingFetch,
-  type RecordingFetch,
   S0_TODAY,
   s0Providers,
   SAVE_CANDIDATE,
   type TierA,
   type TierB,
+  until,
   waitForPlaneOwner,
 } from "./support/host.ts";
-import {
-  createOpencodeStore,
-  type FixtureStore,
-} from "./support/opencode-store-fixture.ts";
 import {
   apply,
   clearCapturedApiKeys,
   Config,
-  getCapturedApiKey,
   inject,
+  LEGACY_NAME,
+  LEGACY_PKG,
   name,
-  recordCapturedApiKey,
-  resolveGoApiKey,
 } from "./support/src.ts";
 
-/** The ids of a listing, in order. */
-const modelIds = (models: readonly { id: string }[]): string[] =>
-  models.map((model) => model.id);
-
 let tierA: TierA | undefined;
+
 let tierB: TierB | undefined;
-let wire: RecordingFetch;
 
 afterEach(async () => {
   try {
     await tierA?.dispose();
     await tierB?.dispose();
+    await disposeBooted();
   } finally {
     tierA = undefined;
     tierB = undefined;
@@ -78,157 +78,6 @@ afterEach(async () => {
     vi.unstubAllGlobals();
   }
 });
-
-/** cordis `FiberState`. */
-const ACTIVE = 2;
-const FAILED = 3;
-
-/** A fiber's state, read as a plain value. */
-const stateOf = (fiber: { readonly state: unknown } | undefined): unknown =>
-  fiber?.state;
-
-/** Poll until `predicate` holds, or fail by name. */
-const until = async (
-  predicate: () => boolean | Promise<boolean>,
-  what: string,
-  deadlineMs = 10_000
-): Promise<void> => {
-  const end = Date.now() + deadlineMs;
-  while (!(await predicate())) {
-    if (Date.now() > end) {
-      throw new Error(`never happened: ${what}`);
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
-  }
-};
-
-/** Stub `fetch` with a fresh recorder (before mounting the plugin). */
-const offline = (respond?: Parameters<typeof recordingFetch>[0]): void => {
-  wire = recordingFetch(respond);
-  vi.stubGlobal("fetch", wire.fetch);
-};
-
-type Providers = Record<string, Record<string, unknown>>;
-
-/** An edit of one provider entry, the way a settings surface derives one. */
-const editProvider =
-  (route: string, patch: Record<string, unknown>) =>
-  (current: Record<string, unknown>): Record<string, unknown> => {
-    const providers = { ...(current.providers as Providers) };
-    providers[route] = { ...providers[route], ...patch };
-    return { ...current, providers };
-  };
-
-/** An edit removing provider entries, the way a settings surface derives one. */
-const removeProviders =
-  (...routes: string[]) =>
-  (current: Record<string, unknown>): Record<string, unknown> => ({
-    ...current,
-    providers: Object.fromEntries(
-      Object.entries(current.providers as Providers).filter(
-        ([route]) => !routes.includes(route)
-      )
-    ),
-  });
-
-/** A config-editor mutation appending `id` to a plane's models. */
-const appendTo =
-  (plane: string, id: string) => (current: Record<string, unknown>) => {
-    const entry = (current.providers as Providers)[plane] as
-      | { models?: { id: string }[] }
-      | undefined;
-    return editProvider(plane, {
-      models: [...(entry?.models ?? []), { id }],
-    })(current);
-  };
-
-const routeIds = (llm: HostLlm): string[] =>
-  llm
-    .listProviders()
-    .map((provider) => provider.id)
-    .toSorted();
-
-/** The plane adapter's resolved profile for a route (its private `config`). */
-const planeProfile = (llm: HostLlm, route: string): Record<string, unknown> => {
-  const adapter = adaptersOf(llm).get(route)?.adapter as unknown as {
-    config: { profiles: () => ReadonlyMap<string, Record<string, unknown>> };
-  };
-  const profile = adapter.config.profiles().get(route);
-  if (profile === undefined) {
-    throw new Error(`no plane profile for ${route}`);
-  }
-  return profile;
-};
-
-/** One turn's gateway requests, the catalog read excluded. */
-const turn = async (llm: HostLlm, route: string, model: string) => {
-  const before = wire.requests.length;
-  const drained = await drainStream(llm, route, model);
-  return {
-    drained,
-    requests: wire.requests
-      .slice(before)
-      .filter(
-        (request) => !request.url.startsWith("https://models.opencode.ai/")
-      ),
-  };
-};
-
-const callConfigOf = async (
-  llm: HostLlm,
-  route: string,
-  model: string
-): Promise<string> => {
-  try {
-    await llm.resolveCallConfig({ model, provider: route } as never);
-    return "ok";
-  } catch (error) {
-    return String((error as { code?: unknown }).code);
-  }
-};
-
-/** Boot tier B with the characterization profile, counting pi-ai's restarts. */
-const bootPlanes = async (
-  options: {
-    readonly order?: ApplyOrder;
-    readonly providers?: Providers;
-  } = {}
-): Promise<{
-  tier: TierB;
-  restarts: () => number;
-  logged: () => string[];
-}> => {
-  offline();
-  let restarts: ReturnType<typeof piAiRestarts> | undefined;
-  let log: ReturnType<typeof logLines> | undefined;
-  tierB = await bootTierB({
-    credentials: fakeCredentials({
-      refs: { OPENCODE_API_KEY: "zen-k", OPENCODE_GO_API_KEY: "go-k" },
-    }),
-    order: options.order ?? "plugin-first",
-    prepare: (root) => {
-      restarts = piAiRestarts(root);
-      log = logLines(root);
-    },
-    providers: options.providers ?? characterizedProviders(),
-  });
-  return {
-    logged: () => log?.lines() ?? [],
-    restarts: () => restarts?.count() ?? 0,
-    tier: tierB,
-  };
-};
-
-/** Let every queued microtask and timer of a settled host run. */
-const settle = async (): Promise<void> => {
-  for (let index = 0; index < 10; index += 1) {
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  }
-};
 
 describe(
   "host planes · ownership and restart counts (tier B)",
@@ -248,8 +97,8 @@ describe(
         // A DUPLICATE_ADAPTER that escaped into pi-ai's apply fails pi-ai; one
         // the claim caught is logged as "still held elsewhere", and any other
         // refusal as "did not register". None of them happens in either order.
-        expect(tier.piFiber.state).toBe(ACTIVE);
-        expect(tier.pluginEntry?.fiber?.state).toBe(ACTIVE);
+        expect(tier.piFiber.state).toBe(FIBER_STATE.ACTIVE);
+        expect(tier.pluginEntry?.fiber?.state).toBe(FIBER_STATE.ACTIVE);
         tier.ctx.logger.info("[host-planes] the log is read");
         const lines = logged();
         expect(lines.at(-1)).toContain("[host-planes] the log is read");
@@ -260,7 +109,44 @@ describe(
             )
           )
         ).toEqual([]);
+        // A row filed under the current id and package is not told to rename.
+        expect(lines).not.toContainEqual(
+          expect.stringContaining("has been renamed")
+        );
       }
+    );
+
+    it.each([
+      [
+        "plugin-first",
+        "an invalid plugin row",
+        { pluginRow: { config: { debug: "not-a-boolean" } } },
+      ],
+      [
+        "pi-ai-first",
+        "an invalid pi-ai profile",
+        { providers: { deepseek: { displayName: 42 } } },
+      ],
+    ] as const)(
+      "tier B, %s with %s: the first row FAILS without applying, the held row is still released, and the boot finishes promptly",
+      async (order, _what, rows) => {
+        // Before the fallback release, the held row waited for an `apply` that
+        // never came, and the boot hung until the hook timed out.
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        offline();
+        tierB = await bootTierB({ order: order as ApplyOrder, ...rows });
+        const [failedEntry, heldEntry] =
+          order === "plugin-first"
+            ? [tierB.pluginEntry, tierB.piEntry]
+            : [tierB.piEntry, tierB.pluginEntry];
+        expect(failedEntry?.fiber?.state).toBe(FIBER_STATE.FAILED);
+        // The real error is readable, not a hook timeout.
+        await expect(failedEntry?.fiber?.await()).rejects.toThrow(
+          order === "plugin-first" ? /debug/u : /displayName/u
+        );
+        expect(heldEntry?.fiber?.state).toBe(FIBER_STATE.ACTIVE);
+      },
+      15_000
     );
 
     it("pi-ai FAILED for a sibling route while its plane entries are valid: nothing is claimed, the plugin stays active, and no plane is listed", async () => {
@@ -271,8 +157,8 @@ describe(
       const { tier } = await bootPlanes({ order: "pi-ai-first", providers });
       await until(
         () =>
-          stateOf(tier.piFiber) === FAILED &&
-          stateOf(tier.pluginEntry?.fiber) === ACTIVE,
+          stateOf(tier.piFiber) === FIBER_STATE.FAILED &&
+          stateOf(tier.pluginEntry?.fiber) === FIBER_STATE.ACTIVE,
         "pi-ai fails and the plugin is active"
       );
       // The claim reconciles on every registry change and after its mount;
@@ -294,6 +180,30 @@ describe(
 );
 
 describe("host planes · lifecycle", { timeout: 30_000 }, () => {
+  // Either half of the old filing is enough: the notice fires on the legacy
+  // id OR the legacy package, so each is booted on its own (the other half is
+  // the current one).
+  it.each([
+    ["id", { id: LEGACY_NAME }],
+    ["package", { name: LEGACY_PKG }],
+  ] as const)(
+    "a row still filed under the pre-rename %s is told to rename, and serves the planes all the same (tier B)",
+    async (_half, pluginRow) => {
+      const { logged, tier } = await bootPlanes({ pluginRow });
+      await waitForPlaneOwner(tier.llm);
+      // The row really is filed the way the case says.
+      expect(tier.pluginEntry?.options.id).toBe(
+        "id" in pluginRow ? pluginRow.id : name
+      );
+      tier.ctx.logger.info("[host-planes] the log is read");
+      const lines = logged();
+      expect(lines.at(-1)).toContain("[host-planes] the log is read");
+      expect(lines).toContainEqual(
+        expect.stringContaining(`"${LEGACY_PKG}" has been renamed to "${name}"`)
+      );
+    }
+  );
+
   it("disabling the plugin's row hands both planes back to pi-ai, and the next Settings save of a plane holding a gap id is refused with the file unchanged (tier B)", async () => {
     const { tier } = await bootPlanes();
     await waitForPlaneOwner(tier.llm);
@@ -335,8 +245,16 @@ describe("host planes · lifecycle", { timeout: 30_000 }, () => {
     offline();
     tierA = await mountTierA({ plugin: {}, providers: s0Providers() });
     await waitForPlaneOwner(tierA.llm);
+    expect(globalThis.fetch, "the mounted plugin patches fetch").not.toBe(
+      wire.fetch
+    );
     await tierA.pluginFiber?.dispose();
     await waitForPlaneOwner(tierA.llm, PLANES, "PiAiAdapter");
+    // The real composition's teardown — the claim restarting pi-ai while the
+    // patch unwinds — leaves the wire's own fetch in place.
+    expect(globalThis.fetch, "the disposed plugin restored fetch").toBe(
+      wire.fetch
+    );
     await tierA.ctx.plugin(
       { apply, Config, inject, name } as never,
       {} as never
@@ -442,487 +360,3 @@ describe("host planes · lifecycle", { timeout: 30_000 }, () => {
     expect(drained.types).toContain("text-delta");
   });
 });
-
-describe("host planes · config flow (tier B)", { timeout: 30_000 }, () => {
-  it("a plane-only save is served with no pi-ai restart; a displayName edit renames the route; a purge edit is accepted", async () => {
-    const { restarts, tier } = await bootPlanes();
-    await waitForPlaneOwner(tier.llm);
-    const before = restarts();
-    await tier.ctx.configEditor.edit(
-      tier.piEntry,
-      appendTo("opencode", SAVE_CANDIDATE)
-    );
-    await until(async () => {
-      const listed = await tier.llm.listModels("opencode");
-      return listed.some((model) => model.id === SAVE_CANDIDATE);
-    }, "the saved id is listed");
-    expect(restarts() - before).toBe(0);
-    await tier.ctx.configEditor.edit(
-      tier.piEntry,
-      editProvider("opencode", { displayName: "Zen X" })
-    );
-    await until(
-      () =>
-        tier.llm.listProviders().find((provider) => provider.id === "opencode")
-          ?.name === "Zen X",
-      "the rename reaches the registry"
-    );
-    // The purge action's shape: an entry with a model removed.
-    await tier.ctx.configEditor.edit(tier.piEntry, (current) => {
-      const entry = (current.providers as Providers)["opencode-go"] as {
-        models: { id: string }[];
-      };
-      return editProvider("opencode-go", {
-        models: entry.models.filter((model) => model.id !== "minimax-m3"),
-      })(current);
-    });
-    await until(async () => {
-      const listed = await tier.llm.listModels("opencode-go");
-      return !listed.some((model) => model.id === "minimax-m3");
-    }, "the purged id leaves the listing");
-  });
-
-  it("a malformed plane candidate is refused in pi-ai's words, and the file is byte-identical", async () => {
-    const { tier } = await bootPlanes();
-    await waitForPlaneOwner(tier.llm);
-    const before = readFileSync(tier.profile.patchPath);
-    await expect(
-      tier.ctx.configEditor.edit(
-        tier.piEntry,
-        editProvider("opencode", { models: [{ id: "" }] })
-      )
-    ).rejects.toThrow(/has a model with an empty id/u);
-    expect(readFileSync(tier.profile.patchPath)).toEqual(before);
-  });
-
-  it("a save a sibling route refuses changes nothing: not the file, not the plane's listing, not its profile", async () => {
-    const { tier } = await bootPlanes();
-    await waitForPlaneOwner(tier.llm);
-    const before = readFileSync(tier.profile.patchPath);
-    const listed = await tier.llm.listModels("opencode");
-    const profile = planeProfile(tier.llm, "opencode");
-    await expect(
-      tier.ctx.configEditor.edit(tier.piEntry, (current) =>
-        appendTo(
-          "opencode",
-          SAVE_CANDIDATE
-        )(editProvider("deepseek", { api: "nope" })(current))
-      )
-    ).rejects.toThrow();
-    expect(readFileSync(tier.profile.patchPath)).toEqual(before);
-    expect(await tier.llm.listModels("opencode")).toEqual(listed);
-    expect(planeProfile(tier.llm, "opencode")).toBe(profile);
-  });
-
-  it("a save a home-level patch refuses changes nothing: not the file, not the plane's listing, not its profile", async () => {
-    const { tier } = await bootPlanes();
-    await waitForPlaneOwner(tier.llm);
-    const before = readFileSync(tier.profile.patchPath);
-    const listed = await tier.llm.listModels("opencode");
-    const profile = planeProfile(tier.llm, "opencode");
-    // A home patch pins pi-ai's row to the config it already has; the editor
-    // refuses a profile edit whose result the home layer overrides.
-    writeFileSync(
-      join(tier.home, "cordis.patch.yml"),
-      `${JSON.stringify([{ config: { providers: characterizedProviders() }, id: "llm-pi-ai" }], null, 2)}\n`
-    );
-    await expect(
-      tier.ctx.configEditor.edit(
-        tier.piEntry,
-        appendTo("opencode", SAVE_CANDIDATE)
-      )
-    ).rejects.toThrow(/overridden by a home patch/u);
-    expect(readFileSync(tier.profile.patchPath)).toEqual(before);
-    expect(await tier.llm.listModels("opencode")).toEqual(listed);
-    expect(planeProfile(tier.llm, "opencode")).toBe(profile);
-  });
-
-  it("a stored malformed entry leaves deepseek serving and answers INVALID_CONFIG for that one id only", async () => {
-    const providers = s0Providers();
-    (providers.opencode as { models: { id: string }[] }).models.push({
-      id: "gpt-5.4",
-    });
-    const { tier } = await bootPlanes({ providers });
-    await waitForPlaneOwner(tier.llm);
-    expect(await callConfigOf(tier.llm, "opencode", "gpt-5.4")).toBe(
-      "INVALID_CONFIG"
-    );
-    expect(await callConfigOf(tier.llm, "opencode", "deepseek-v4-pro")).toBe(
-      "ok"
-    );
-    // The gap id pi's catalog does not describe resolves: the plugin, not
-    // pi-ai, serves the plane.
-    expect(
-      await callConfigOf(tier.llm, "opencode", "gpt-5.3-codex-spark")
-    ).toBe("ok");
-    expect(routeIds(tier.llm)).toContain("deepseek");
-  });
-
-  it("a stored plane entry malformed at route level, which would fail pi-ai's whole fiber, leaves pi-ai active and deepseek serving, and that plane answers INVALID_CONFIG", async () => {
-    const providers = s0Providers();
-    // An invalid header name is a route-level error pi-ai raises for the
-    // whole providers dict; the listener keeps it away from pi-ai.
-    providers.opencode = {
-      ...providers.opencode,
-      headers: { "bad header": "x" },
-    };
-    const { tier } = await bootPlanes({ providers });
-    await waitForPlaneOwner(tier.llm, ["opencode-go"]);
-    await settle();
-    expect(tier.piFiber.state).toBe(ACTIVE);
-    expect(await callConfigOf(tier.llm, "deepseek", "deepseek-v4-pro")).toBe(
-      "ok"
-    );
-    expect(await callConfigOf(tier.llm, "opencode", "deepseek-v4-pro")).toBe(
-      "INVALID_CONFIG"
-    );
-  });
-});
-
-describe("host planes · the route set (tier B)", { timeout: 30_000 }, () => {
-  it("only the planes the profile declares are registered", async () => {
-    const providers = s0Providers();
-    delete providers["opencode-go"];
-    const { tier } = await bootPlanes({ providers });
-    await waitForPlaneOwner(tier.llm, ["opencode"]);
-    expect(routeIds(tier.llm)).toEqual(["deepseek", "opencode"]);
-  });
-
-  it("a first plane added at runtime registers; removing both withdraws them through the live handle, and re-adding registers again", async () => {
-    const { deepseek } = s0Providers();
-    const { tier } = await bootPlanes({
-      providers: { deepseek: deepseek ?? {} },
-    });
-    // The plugin's row is ACTIVE only once `apply` returned, and `apply`
-    // awaits the claim's mount; the mount's own reconcile is queued in its
-    // `finally`, which settle() lets run. Only then is the empty registry a
-    // finding rather than a race.
-    await until(
-      () => stateOf(tier.pluginEntry?.fiber) === ACTIVE,
-      "the plugin's row is active"
-    );
-    await settle();
-    expect(routeIds(tier.llm)).toEqual(["deepseek"]);
-    const zen = s0Providers().opencode ?? {};
-    await tier.ctx.configEditor.edit(
-      tier.piEntry,
-      editProvider("opencode", zen)
-    );
-    await waitForPlaneOwner(tier.llm, ["opencode"]);
-    await tier.ctx.configEditor.edit(
-      tier.piEntry,
-      removeProviders("opencode", "opencode-go")
-    );
-    await until(
-      () => routeIds(tier.llm).length === 1,
-      "the last plane is withdrawn"
-    );
-    expect(routeIds(tier.llm)).toEqual(["deepseek"]);
-    await tier.ctx.configEditor.edit(
-      tier.piEntry,
-      editProvider("opencode", zen)
-    );
-    await waitForPlaneOwner(tier.llm, ["opencode"]);
-  });
-});
-
-describe("host planes · credentials (tier A, D20)", { timeout: 30_000 }, () => {
-  const mountWith = async (
-    credentials: ReturnType<typeof fakeCredentials>,
-    entry: Record<string, unknown> = {}
-  ): Promise<TierA> => {
-    offline();
-    tierA = await mountTierA({
-      credentials,
-      plugin: {},
-      providers: {
-        opencode: { models: [{ id: "deepseek-v4-pro" }], ...entry },
-      },
-    });
-    await waitForPlaneOwner(tierA.llm, ["opencode"]);
-    return tierA;
-  };
-
-  it("with no apiKeyEnv, pi's own discovery reads the credentials service's value", async () => {
-    const tier = await mountWith(
-      fakeCredentials({ refs: { OPENCODE_API_KEY: "svc-k" } })
-    );
-    const { requests } = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-    expect(requests[0]?.headers.authorization).toBe("Bearer svc-k".length);
-  });
-
-  it("a Go plane with no apiKeyEnv authenticates with pi's OPENCODE_API_KEY lookup, on every protocol; naming OPENCODE_GO_API_KEY sends the Go key", async () => {
-    // pi 1.1.0's opencode-go provider reads OPENCODE_API_KEY, the same
-    // variable as Zen (D20): a Go entry without a reference sends the Zen
-    // key. The two keys differ in length, which is what the recorder keeps.
-    const refs = {
-      OPENCODE_API_KEY: "zen-k-from-the-service",
-      OPENCODE_GO_API_KEY: "go-k",
-    };
-    const sent = async (entry: Record<string, unknown>) => {
-      offline();
-      tierA = await mountTierA({
-        credentials: fakeCredentials({ refs }),
-        plugin: {},
-        providers: {
-          "opencode-go": {
-            models: [{ id: "deepseek-v4-pro" }, { id: "minimax-m3" }],
-            ...entry,
-          },
-        },
-      });
-      await waitForPlaneOwner(tierA.llm, ["opencode-go"]);
-      const completions = await turn(
-        tierA.llm,
-        "opencode-go",
-        "deepseek-v4-pro"
-      );
-      const messages = await turn(tierA.llm, "opencode-go", "minimax-m3");
-      await tierA.dispose();
-      tierA = undefined;
-      return [
-        completions.requests[0]?.headers.authorization,
-        messages.requests[0]?.headers["x-api-key"],
-      ];
-    };
-    expect(await sent({})).toEqual([
-      `Bearer ${refs.OPENCODE_API_KEY}`.length,
-      refs.OPENCODE_API_KEY.length,
-    ]);
-    expect(await sent({ apiKeyEnv: "OPENCODE_GO_API_KEY" })).toEqual([
-      `Bearer ${refs.OPENCODE_GO_API_KEY}`.length,
-      refs.OPENCODE_GO_API_KEY.length,
-    ]);
-  });
-
-  it("the Go meter resolves OPENCODE_GO_API_KEY for a no-reference Go entry until a Go turn, then the Zen key that turn carried", async () => {
-    // The README's credential-isolation row describes this: the meter never
-    // reads an OPENCODE_API_KEY reference, but `auto` puts a key captured on
-    // a Go-plane request ahead of the configured one, so a Go entry that
-    // names no reference hands the meter the Zen key after its first turn.
-    const refs = {
-      OPENCODE_API_KEY: "zen-k-from-the-service",
-      OPENCODE_GO_API_KEY: "go-k",
-    };
-    offline();
-    tierA = await mountTierA({
-      credentials: fakeCredentials({ refs }),
-      plugin: {},
-      providers: { "opencode-go": { models: [{ id: "deepseek-v4-pro" }] } },
-    });
-    await waitForPlaneOwner(tierA.llm, ["opencode-go"]);
-    expect(await resolveGoApiKey(tierA.ctx, "opencode-go")).toBe(
-      refs.OPENCODE_GO_API_KEY
-    );
-    const { requests } = await turn(
-      tierA.llm,
-      "opencode-go",
-      "deepseek-v4-pro"
-    );
-    expect(requests[0]?.url).toContain("/inference/go/");
-    expect(getCapturedApiKey("opencode-go", "go")).toBe(refs.OPENCODE_API_KEY);
-    expect(await resolveGoApiKey(tierA.ctx, "opencode-go")).toBe(
-      refs.OPENCODE_API_KEY
-    );
-  });
-
-  it("a Sign-in record under llm-pi-ai/opencode authenticates the plane", async () => {
-    const credentials = fakeCredentials({
-      records: { "llm-pi-ai/opencode": { key: "stored-k", kind: "api-key" } },
-    });
-    const tier = await mountWith(credentials);
-    const { requests } = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-    expect(requests[0]?.headers.authorization).toBe("Bearer stored-k".length);
-    expect(credentials.calls).toContainEqual([
-      "readRecord",
-      "llm-pi-ai/opencode",
-    ]);
-  });
-
-  describe("OpenCode's own store, opted into, is the LAST resort", () => {
-    const stores: FixtureStore[] = [];
-
-    afterEach(() => {
-      for (const store of stores.splice(0)) {
-        store.cleanup();
-      }
-      vi.unstubAllEnvs();
-    });
-
-    /** A store holding a Zen key, and the plugin opted into reading it. */
-    const mountOptedIn = async (
-      credentials: ReturnType<typeof fakeCredentials>
-    ): Promise<TierA> => {
-      const store = createOpencodeStore([
-        { integrationId: "opencode", value: "oc_sk_from_the_store" },
-      ]);
-      stores.push(store);
-      vi.stubEnv("XDG_DATA_HOME", store.root);
-      offline();
-      tierA = await mountTierA({
-        credentials,
-        plugin: { readOpencodeStore: true },
-        providers: { opencode: { models: [{ id: "deepseek-v4-pro" }] } },
-      });
-      await waitForPlaneOwner(tierA.llm, ["opencode"]);
-      return tierA;
-    };
-
-    it("answers when pi's own lookup finds nothing (the known answer)", async () => {
-      const tier = await mountOptedIn(fakeCredentials());
-      const { requests } = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-      expect(requests[0]?.headers.authorization).toBe(
-        "Bearer oc_sk_from_the_store".length
-      );
-    });
-
-    it("never pre-empts an OPENCODE_API_KEY the credentials service holds", async () => {
-      const tier = await mountOptedIn(
-        fakeCredentials({ refs: { OPENCODE_API_KEY: "svc-k" } })
-      );
-      const { requests } = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-      expect(requests[0]?.headers.authorization).toBe("Bearer svc-k".length);
-    });
-
-    it("never pre-empts a Sign-in record under llm-pi-ai/opencode", async () => {
-      const tier = await mountOptedIn(
-        fakeCredentials({
-          records: {
-            "llm-pi-ai/opencode": { key: "stored-k", kind: "api-key" },
-          },
-        })
-      );
-      const { requests } = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-      expect(requests[0]?.headers.authorization).toBe("Bearer stored-k".length);
-    });
-  });
-
-  it("a named ref that resolves nothing still lists the models, and the turn fails MISSING_CREDENTIAL without a request", async () => {
-    const tier = await mountWith(fakeCredentials(), {
-      apiKeyEnv: "OPENCODE_API_KEY",
-    });
-    expect(modelIds(await tier.llm.listModels("opencode"))).toEqual([
-      "deepseek-v4-pro",
-    ]);
-    const { drained, requests } = await turn(
-      tier.llm,
-      "opencode",
-      "deepseek-v4-pro"
-    );
-    expect(drained.finish).toEqual({
-      code: "MISSING_CREDENTIAL",
-      kind: "error",
-    });
-    expect(requests).toEqual([]);
-  });
-
-  it("a credentials-service failure propagates rather than reading as a missing key", async () => {
-    const credentials = fakeCredentials();
-    (credentials.service as Record<string, unknown>).resolve = () =>
-      Promise.reject(new Error("vault down"));
-    const tier = await mountWith(credentials, {
-      apiKeyEnv: "OPENCODE_API_KEY",
-    });
-    await expect(tier.llm.listModels("opencode")).rejects.toThrow(
-      /vault down/u
-    );
-    const { drained, requests } = await turn(
-      tier.llm,
-      "opencode",
-      "deepseek-v4-pro"
-    );
-    // The turn fails on the service's own error, and nothing is sent: a
-    // swallowed rejection would read as a missing key or go out keyless.
-    expect(requests).toEqual([]);
-    expect(drained.finish?.kind).toBe("error");
-    expect(drained.finish?.code).not.toBe("MISSING_CREDENTIAL");
-    expect(drained.failureMessage ?? drained.error).toMatch(/vault down/u);
-  });
-
-  it("a rotated key takes effect on the next turn", async () => {
-    const credentials = fakeCredentials({ refs: { OPENCODE_API_KEY: "k1" } });
-    const tier = await mountWith(credentials, {
-      apiKeyEnv: "OPENCODE_API_KEY",
-    });
-    const first = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-    await (
-      credentials.service.set as unknown as (
-        ref: string,
-        value: string
-      ) => Promise<void>
-    )("OPENCODE_API_KEY", "k2-longer");
-    const second = await turn(tier.llm, "opencode", "deepseek-v4-pro");
-    expect(first.requests[0]?.headers.authorization).toBe("Bearer k1".length);
-    expect(second.requests[0]?.headers.authorization).toBe(
-      "Bearer k2-longer".length
-    );
-  });
-
-  it("a captured key never answers for a named ref that resolves nothing", async () => {
-    recordCapturedApiKey("opencode", "cap");
-    const tier = await mountWith(fakeCredentials(), {
-      apiKeyEnv: "OPENCODE_API_KEY",
-    });
-    const { drained, requests } = await turn(
-      tier.llm,
-      "opencode",
-      "deepseek-v4-pro"
-    );
-    expect(drained.finish?.code).toBe("MISSING_CREDENTIAL");
-    expect(requests).toEqual([]);
-  });
-});
-
-describe("host planes · isolation (tier A)", { timeout: 30_000 }, () => {
-  it("a sibling's headers, base, api, reasoning and retry never reach a plane", async () => {
-    offline();
-    tierA = await mountTierA({
-      credentials: fakeCredentials({ refs: { OPENCODE_API_KEY: "k" } }),
-      plugin: {},
-      providers: {
-        deepseek: {
-          api: "openai-responses",
-          apiKeyEnv: "DEEPSEEK_API_KEY",
-          baseURL: "http://127.0.0.1:9/v1",
-          headers: { "x-sib": "1" },
-          reasoning: "high",
-          retryPolicy: { maxRetries: 1, mode: "normal" },
-        },
-        opencode: {
-          apiKeyEnv: "OPENCODE_API_KEY",
-          models: [{ id: "deepseek-v4-pro" }],
-        },
-      },
-    });
-    await waitForPlaneOwner(tierA.llm, ["opencode"]);
-    const { requests } = await turn(tierA.llm, "opencode", "deepseek-v4-pro");
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.url).toBe(
-      "https://opencode.ai/inference/openai/v1/chat/completions"
-    );
-    expect(requests[0]?.headers).not.toHaveProperty("x-sib");
-    expect(adaptersOf(tierA.llm).get("opencode")?.retryPolicy).toEqual(
-      resolveRetryPolicy(undefined, "t")
-    );
-    const profile = planeProfile(tierA.llm, "opencode");
-    expect(profile.headers).toEqual({});
-    expect(profile.reasoning).toBeUndefined();
-  });
-});
-
-describe(
-  "host planes · the declared listing (tier B)",
-  { timeout: 30_000 },
-  () => {
-    it("lists every declared id on both planes, keyless or not", async () => {
-      offline();
-      tierB = await bootTierB({ providers: characterizedProviders() });
-      await waitForPlaneOwner(tierB.llm);
-      for (const plane of PLANES) {
-        expect(modelIds(await tierB.llm.listModels(plane))).toEqual(
-          CHARACTERIZED_MODELS[plane]
-        );
-      }
-    });
-  }
-);

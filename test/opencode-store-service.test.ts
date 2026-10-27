@@ -8,16 +8,18 @@
  *
  * The database is built here rather than found, so the suite does not need an
  * OpenCode installation — the path is injected for exactly that reason.
+ *
+ * @module test/opencode-store-service.test
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { OpencodeStoreService } from "./support/src.ts";
-import { createMockContext } from "./test-helpers.ts";
 
 const temporary: string[] = [];
 
@@ -66,7 +68,7 @@ const oauthDatabase = (expires: number): string => {
 
 /** The service over an injected path, which is what the seam allows. */
 const serviceFor = (path: string): OpencodeStoreService =>
-  new OpencodeStoreService(createMockContext(), {
+  new OpencodeStoreService(new Context(), {
     resolveStorePath: () => path,
   });
 
@@ -117,7 +119,7 @@ describe("opencode-store-service: the inspection seam", () => {
     // resolver has to be the default one. Asserted through the answer's shape
     // rather than the path's value — this machine may or may not have OpenCode,
     // and either answer is a correct one for "did it look somewhere".
-    const service = new OpencodeStoreService(createMockContext());
+    const service = new OpencodeStoreService(new Context());
     const result = await service.inspect();
     expect(typeof result.found).toBe("boolean");
   });
@@ -125,7 +127,7 @@ describe("opencode-store-service: the inspection seam", () => {
   it("ignores an injected resolver that is not a function", async () => {
     // `mountByProvide` passes its `options` through untouched, so a composition
     // that hands over something else must not turn into a crash at call time.
-    const service = new OpencodeStoreService(createMockContext(), {
+    const service = new OpencodeStoreService(new Context(), {
       resolveStorePath: "not a function",
     });
     const result = await service.inspect();

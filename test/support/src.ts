@@ -170,6 +170,8 @@ export {
 // identity.ts
 export {
   inject,
+  LEGACY_NAME,
+  LEGACY_PKG,
   name,
   OPENCODE_PATCH_USER_AGENT,
   OPENCODE_USER_AGENT,
@@ -224,6 +226,17 @@ export {
   opencodeDatabasePath,
   opencodeRoots,
 } from "../../src/opencode-paths.ts";
+
+// opencode-store-contract.ts
+export {
+  parseStoreInspection,
+  STORE_NAMESPACE,
+  storeRemote,
+} from "../../src/opencode-store-contract.ts";
+export type {
+  OpencodeStoreAccount,
+  OpencodeStoreInspection,
+} from "../../src/opencode-store-contract.ts";
 
 // opencode-store-service.ts
 export { OpencodeStoreService } from "../../src/opencode-store-service.ts";
@@ -473,11 +486,15 @@ export type { RetryOptions, RetryTimer } from "../../src/utils/retry.ts";
 
 // utils/session-id.ts
 export {
+  deriveSessionId,
   isOpenCodeMessageId,
   isOpenCodeSessionId,
   PARENT_SESSION_ALT_HEADER,
   PARENT_SESSION_HEADER,
+  pinnedSessionId,
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
+  SESSION_ID_HEADER,
   sessionIdForRequest,
 } from "../../src/utils/session-id.ts";
+export type { SessionDigest } from "../../src/utils/session-id.ts";

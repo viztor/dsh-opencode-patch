@@ -13,11 +13,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  findModelSpecOn,
-  maybeInjectCoreTools,
-  OPENCODE_ZEN_CATALOG,
-} from "./support/src.ts";
+import { maybeInjectCoreTools, OPENCODE_ZEN_CATALOG } from "./support/src.ts";
+import { parseJsonBody, toolNamesOf } from "./test-helpers.ts";
 
 const ROUTES = [
   "https://opencode.ai/zen/v1/chat/completions",
@@ -29,19 +26,6 @@ const freeModelIds = (): string[] => {
   for (const spec of OPENCODE_ZEN_CATALOG) {
     if (spec.is_free === true && typeof spec.id === "string") {
       ids.add(spec.id);
-    }
-  }
-  // The live map keys some ids differently (prefixes). The lookup reads the
-  // Zen plane, the plane every route below posts to and the one the injector
-  // reads with no route, so the set and the injector agree on what is free.
-  for (const id of [
-    "mimo-v2.6-flash-free",
-    "big-pickle",
-    "beam-free",
-    "muse-spark-1.2-contributor-free",
-  ]) {
-    if (findModelSpecOn("zen", id)?.is_free === true) {
-      ids.add(id);
     }
   }
   return [...ids];
@@ -57,27 +41,6 @@ const bodyFor = (model: string): string =>
     stream: true,
   });
 
-const toolNamesOf = (body: unknown): string[] => {
-  try {
-    const tools: unknown = (
-      JSON.parse(body as string) as Record<string, unknown>
-    ).tools;
-    if (!Array.isArray(tools)) {
-      return [];
-    }
-    return tools.map((t) => {
-      const rec = t as Record<string, unknown>;
-      if (typeof rec.name === "string") {
-        return rec.name;
-      }
-      const fn = rec.function as Record<string, unknown> | undefined;
-      return typeof fn?.name === "string" ? fn.name : "?";
-    });
-  } catch {
-    return [];
-  }
-};
-
 describe("free-tier contract", () => {
   const models = freeModelIds();
   it("covers at least one catalog free model", () => {
@@ -90,7 +53,7 @@ describe("free-tier contract", () => {
           enabled: true,
           modelMarker: "free",
         });
-        const names = toolNamesOf(out);
+        const names = toolNamesOf(parseJsonBody(out));
         expect(names).toContain("read");
         expect(names).toContain("bash");
       });
@@ -104,7 +67,7 @@ describe("free-tier contract", () => {
           enabled: true,
           modelMarker: "free",
         });
-        const names = toolNamesOf(out);
+        const names = toolNamesOf(parseJsonBody(out));
         expect(names).toContain("read");
         expect(names).toContain("bash");
       });
@@ -126,7 +89,4 @@ describe("free-tier contract", () => {
       });
     }
   }
-  it("big-pickle is free by catalog flag, not by marker", () => {
-    expect(findModelSpecOn("zen", "big-pickle")?.is_free).toBe(true);
-  });
 });

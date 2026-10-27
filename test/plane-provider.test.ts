@@ -5,7 +5,7 @@
  * The adapter is built over the host's own `PiAiAdapter` and pi's own provider
  * pieces (`hostModulesForTests`), so a case here runs the class the plugin
  * registers. The real-host behaviour — which key a turn carries, what a
- * missing one does on the wire — is pinned in `test/host-planes.test.ts`; this
+ * missing one does on the wire — is pinned in `test/host-planes-credentials.test.ts`; this
  * file covers the branches a host composition does not reach.
  *
  * @module test/plane-provider.test
@@ -13,7 +13,11 @@
 import { LlmError } from "@deepseek-ai/dsh-llm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fakeCredentials, hostModulesForTests } from "./support/host.ts";
+import {
+  fakeCredentials,
+  hostModulesForTests,
+  modelIds,
+} from "./support/host.ts";
 import {
   createOpencodeStore,
   type FixtureStore,
@@ -32,10 +36,6 @@ import {
   planeProfileFor,
   relabelEfforts,
 } from "./support/src.ts";
-
-/** The ids of a listing, in order. */
-const modelIds = (models: readonly { id: string }[]): string[] =>
-  models.map((model) => model.id);
 
 afterEach(() => {
   vi.unstubAllEnvs();

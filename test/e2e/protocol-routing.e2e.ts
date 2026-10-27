@@ -83,13 +83,13 @@
 
 import { describe, expect, it } from "vitest";
 
+import { e2e } from "../support/e2e-env.ts";
 import {
   drainStream,
   fakeCredentials,
   mountTierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
-import { armedKey, keyedTierOf } from "../support/keyed-probes.ts";
 import { isModelGoneMessage } from "../support/keyless-matrix.ts";
 import {
   accessDisabled,
@@ -119,21 +119,23 @@ import {
   planeModelFor,
 } from "../support/src.ts";
 
-const LIVE = process.env.OPENCODE_E2E === "1";
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
+
+const LIVE = E2E.live;
 /** What may spend a key: the keyed cases here run on the `full` tier only. */
-const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
-const ZEN_KEY = armedKey(TIER, "full", process.env.OPENCODE_API_KEY);
+const ZEN_KEY = E2E.keyFor("opencode", "full");
 
 /**
  * The Go plane. A different base URL AND a different credential — which is why
  * probing its models against the Zen base proves nothing about them.
  */
-const GO_KEY = armedKey(TIER, "full", process.env.OPENCODE_GO_API_KEY);
+const GO_KEY = E2E.keyFor("opencode-go", "full");
 
 /** A base to probe instead of the plugin's own, per plane (a mirror or a stub). */
 const BASE_OVERRIDE: Readonly<Record<"go" | "zen", string | undefined>> = {
-  go: process.env.OPENCODE_GO_BASE_URL,
-  zen: process.env.OPENCODE_ZEN_BASE_URL,
+  go: E2E.baseOverride.go,
+  zen: E2E.baseOverride.zen,
 };
 
 /** Generous: these cross the public internet from CI. */

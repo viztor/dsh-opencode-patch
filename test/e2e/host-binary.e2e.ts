@@ -53,6 +53,7 @@ import { fileURLToPath } from "node:url";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { e2e } from "../support/e2e-env.ts";
 import { HOST_VERSIONS } from "../support/host-versions.ts";
 import {
   CHARACTERIZED_MODELS,
@@ -70,9 +71,12 @@ import {
   OPENCODE_ZEN_CATALOG,
 } from "../support/src.ts";
 
-const ENABLED = process.env.DSH_HOST_E2E === "1";
-const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
-const CELL = process.env.DSH_HOST_PI_CELL ?? "pinned";
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
+
+const ENABLED = E2E.hostBinary.enabled;
+const PREFIX = E2E.hostBinary.prefix;
+const CELL = E2E.hostBinary.cell;
 const PINNED = CELL === "pinned";
 const BOOT_DEADLINE_MS = 180_000;
 /** Each `dsh plugin install` (a blocking `spawnSync`). */
@@ -318,7 +322,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
       DSH_HOME: dshHome,
       DSH_TELEMETRY_DISABLED: "1",
       HOME: home,
-      PATH: process.env.PATH ?? "",
+      PATH: E2E.hostBinary.path,
     };
     const dsh = (args: string[]) => {
       const run = spawnSync(process.execPath, [bin, ...args], {
@@ -426,7 +430,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     const written = existsSync(probeOut)
       ? readFileSync(probeOut, "utf8")
       : undefined;
-    const copy = process.env.DSH_HOST_PROBE_COPY ?? "";
+    const copy = E2E.hostBinary.probeCopy;
     if (written !== undefined && copy.length > 0) {
       writeFileSync(copy, written);
     }

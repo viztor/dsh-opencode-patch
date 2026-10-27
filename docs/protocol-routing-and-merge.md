@@ -8,13 +8,13 @@ OpenCode serves its models on **four different API shapes**, and which one a mod
 
 | API shape | Wire endpoint (Zen) | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
-| OpenAI **Chat Completions** | `POST /inference/openai/v1/chat/completions` | **the default**: 25 of 82 | the model names **no** SDK |
-| OpenAI **Responses** | `POST /inference/openai/v1/responses` | 31 of 82 | `@ai-sdk/openai` |
-| Anthropic **Messages** | `POST /inference/anthropic/v1/messages` | 17 of 82 | `@ai-sdk/anthropic` |
-| Google **Generative AI** | `POST /inference/google/v1beta/models/<id>:streamGenerateContent` | 8 of 82 | `@ai-sdk/google` |
-| OpenAI **Chat Completions** (as pi files it) | `POST /inference/openai/v1/chat/completions` | 1 of 82 | `@ai-sdk/mistral` |
+| OpenAI **Chat Completions** | `POST /inference/openai/v1/chat/completions` | **the default**: 24 of 81 | the model names **no** SDK |
+| OpenAI **Responses** | `POST /inference/openai/v1/responses` | 31 of 81 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /inference/anthropic/v1/messages` | 17 of 81 | `@ai-sdk/anthropic` |
+| Google **Generative AI** | `POST /inference/google/v1beta/models/<id>:streamGenerateContent` | 8 of 81 | `@ai-sdk/google` |
+| OpenAI **Chat Completions** (as pi files it) | `POST /inference/openai/v1/chat/completions` | 1 of 81 | `@ai-sdk/mistral` |
 
-Counts are the shipped catalog. They are asserted against this table by `catalog.test.ts`, because a count written into prose does not regenerate with the data it counts. Go's endpoints are the same paths under `/inference/go/…`; `endpoint: legacy` sends every protocol to `/zen/v1` (`/zen/go/v1` on Go), except Go's Google, which only the inference family serves.
+Counts are the shipped catalog. They are asserted against this table by `catalog-docs.test.ts`, because a count written into prose does not regenerate with the data it counts. Go's endpoints are the same paths under `/inference/go/…`; `endpoint: legacy` sends every protocol to `/zen/v1` (`/zen/go/v1` on Go), except Go's Google, which only the inference family serves.
 
 **"OpenAI" is two of the four served shapes.** Chat Completions and Responses are different wire formats, and a model that needs Responses does not work on the completions endpoint. The gateway does not fall back; it answers `500`. So each model has to be sent to the endpoint its own SDK names, without asking the user to configure anything.
 
@@ -86,7 +86,7 @@ They are different checks, and none stands in for another:
 
 - The **live suite** asks the gateway which endpoint recognises each shipped model, with a hand-written body per protocol. It proves the endpoint answers and what the gateway rejects.
 - The **mock-gateway suite** runs `llm.stream` through the real `LlmRuntime` and the plane adapter, with the plugin's fetch patch, against a local gateway that refuses a request whose shape its endpoint would not accept. It proves the request the plugin builds is one the endpoint accepts, for every characterized model on both planes and both families.
-- The **real-host suites** (`test/host-characterization.test.ts` and `test/host-planes.test.ts`) run the plugin beside `llm-pi-ai` on the real host, in both apply orders, and pin ownership, restarts, the Settings flow, credentials and isolation. `test/host-discovery.test.ts` covers Settings' fetch on tier B in the published binary's order (`plugin-first`), an explicit pi-ai restart that exercises the `NO_DISCOVERY` window a `pi-ai-first` mount would cause, and a stood-down claim on tier A, which mounts pi-ai first; with the claim stood down no restart follows, so the order is immaterial there.
+- The **real-host suites** (`test/host-characterization.test.ts` and the `test/host-planes*.test.ts` files) run the plugin beside `llm-pi-ai` on the real host, in both apply orders, and pin ownership, restarts, the Settings flow, credentials and isolation. `test/host-discovery.test.ts` covers Settings' fetch on tier B in the published binary's order (`plugin-first`), an explicit pi-ai restart that exercises the `NO_DISCOVERY` window a `pi-ai-first` mount would cause, and a stood-down claim on tier A, which mounts pi-ai first; with the claim stood down no restart follows, so the order is immaterial there.
 
 ### How we support API endpoints in different formats
 
@@ -103,7 +103,7 @@ Two guards keep the invisible half honest, because **a mechanism that silently d
 
 | Guard | What it catches |
 | :-- | :-- |
-| `catalog.test.ts` | A generated catalog that names an SDK `PROTOCOL_FOR_SDK` does not map, or a catalog model that resolves off its own plane. It fails and names the model. |
+| `catalog-routing.test.ts` | A generated catalog that names an SDK `PROTOCOL_FOR_SDK` does not map, or a catalog model that resolves off its own plane. It fails and names the model. |
 | `protocol-routing.e2e.ts` | A protocol called servable without a live probe: a path and an auth convention it really sends. |
 
 ## 3. The catalog merge

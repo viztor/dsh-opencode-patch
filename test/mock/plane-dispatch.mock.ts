@@ -39,6 +39,7 @@ import {
   waitForPlaneOwner,
 } from "../support/host.ts";
 import { clearCapturedApiKeys, headerValueFor } from "../support/src.ts";
+import { urlOf } from "../test-helpers.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { GO_KEY, ZEN_KEY } from "./helpers.ts";
 
@@ -124,14 +125,6 @@ const credentialOf = (
     return ["x-goog-api-key", key];
   }
   return ["authorization", `Bearer ${key}`];
-};
-
-/** The URL a `fetch` input names. */
-const urlOf = (input: RequestInfo | URL): string => {
-  if (typeof input === "string") {
-    return input;
-  }
-  return input instanceof URL ? input.href : input.url;
 };
 
 const keyOf = (plane: Plane): string =>

@@ -1,5 +1,6 @@
 /**
- * Dispatch against the real rule: every level the picker offers is accepted.
+ * Dispatch against the real rule, live: a toggle model's "On" is a wire value
+ * the gateway takes.
  *
  * Two readers decide whether a turn's saved thinking level survives. The
  * composer renders the Effort row the plane adapter answers, and dispatch
@@ -8,18 +9,14 @@
  * pi-ai's adapter, and when they disagreed `glm-5.3-flash-free` offered `high`
  * and `max` beside its name in the composer and answered
  * UNSUPPORTED_REASONING_EFFORT for both. Now both come from one rule
- * (`reasoningFor`, D1) folded into one model object (`planeModelFor`), so
- * this file is the check that the one rule and pi's agree.
+ * (`reasoningFor`, D1) folded into one model object (`planeModelFor`).
  *
- * The unit suite (`test/model-metadata.test.ts`) pins the rule against pi's
- * levels for the rule's own map. This file imports pi's rule ITSELF —
- * `getSupportedThinkingLevels` from the installed `@earendil-works/pi-ai`, the
- * function `dsh-llm-pi-ai` carries its own copy of and validates with — and
- * sweeps the whole shipped catalog on both planes through the model object
- * the plane adapter serves: for every model, **the levels the picker offers
- * are exactly the levels the rule accepts**.
+ * The offline half — pi's own rule swept over the whole shipped catalog on both
+ * planes, the offered levels exactly the accepted ones — is
+ * `test/dispatch-levels.test.ts`, in the unit suite: it needs no network and no
+ * port.
  *
- * The last block is live and keyed: one toggle-only model per plane and
+ * This block is live and keyed: one toggle-only model per plane and
  * protocol, sent through the plane adapter on a tier-A host with the effort id
  * the picker's "On" carries, so the adapter builds the wire value and a
  * gateway that refuses it fails here rather than in a user's turn. Each
@@ -31,22 +28,18 @@
  * tier, and, naming the protocol, when a protocol's every candidate was
  * refused on entitlement or withdrawn.
  *
- * Opt-in (`OPENCODE_E2E=1`), like every file in this suite. The sweep needs
- * no network and no port: its value is the real rule and the real catalog.
+ * Opt-in (`OPENCODE_E2E=1`), like every file in this suite.
  */
 
-import { readFile } from "node:fs/promises";
-
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { describe, expect, it } from "vitest";
 
+import { e2e } from "../support/e2e-env.ts";
 import {
   drainStream,
   fakeCredentials,
   mountTierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
-import { armedKey, keyedTierOf } from "../support/keyed-probes.ts";
 import { isModelGoneMessage } from "../support/keyless-matrix.ts";
 import {
   accessDisabled,
@@ -70,22 +63,27 @@ import {
   reasoningFor,
 } from "../support/src.ts";
 
-const ENABLED = process.env.OPENCODE_E2E === "1";
-/** What may spend a key: the live block runs on the `full` tier only. */
-const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
 
-/** The two plane routes, the catalog and family map each resolves from, and its key. */
+const ENABLED = E2E.live;
+
+/**
+ * The two plane routes, the catalog and family map each resolves from, and its
+ * key — armed on the `full` tier only (`E2E.keyFor`), which is what may spend
+ * one here.
+ */
 const PLANES = [
   {
     catalog: OPENCODE_ZEN_CATALOG,
     family: OPENCODE_FAMILY_API.zen,
-    key: armedKey(TIER, "full", process.env.OPENCODE_API_KEY),
+    key: E2E.keyFor("opencode", "full"),
     route: "opencode",
   },
   {
     catalog: OPENCODE_GO_CATALOG,
     family: OPENCODE_FAMILY_API.go,
-    key: armedKey(TIER, "full", process.env.OPENCODE_GO_API_KEY),
+    key: E2E.keyFor("opencode-go", "full"),
     route: "opencode-go",
   },
 ] as const;
@@ -108,96 +106,6 @@ const servedModel = (
   }
   return model;
 };
-
-/** The levels the picker offers for a served model, as effort ids. */
-const offeredLevels = (
-  spec: CatalogModelSpec,
-  model: Readonly<Record<string, unknown>> & { api: Protocol }
-): string[] =>
-  reasoningFor(
-    spec,
-    model.api,
-    model.compat as Readonly<Record<string, unknown>> | undefined
-  )?.efforts.map((effort) => effort.id) ?? ["off"];
-
-/**
- * The real rule. `getSupportedThinkingLevels` is typed against pi's `Model`
- * union; the served model is the shape it reads two fields off, so the cast
- * is the seam.
- */
-const acceptedLevels = (model: unknown): string[] =>
-  getSupportedThinkingLevels(model as never);
-
-describe.skipIf(!ENABLED)(
-  "the levels the picker offers are the levels dispatch accepts",
-  () => {
-    it("pins the deployed copy of the rule to the oracle it imports", async () => {
-      // `dsh-llm-pi-ai` carries its own copy of the rule — that copy is what
-      // the deployment validates with — and the oracle above imports the
-      // original from `@earendil-works/pi-ai`. The two are one rule by
-      // construction; this holds them together, so an upstream move fails here
-      // rather than quietly validating against the wrong thing.
-      const raw = await readFile(
-        new URL(
-          "../../node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js",
-          import.meta.url
-        ),
-        "utf8"
-      );
-      const source = raw.replaceAll("!== void 0", "!== undefined");
-      expect(
-        source,
-        "the deployed rule's reasoning-false branch left the bundle"
-      ).toContain('if (!model.reasoning) return ["off"];');
-      expect(
-        source,
-        "the deployed rule's xhigh/max requirement left the bundle"
-      ).toContain(
-        'if (level === "xhigh" || level === "max") return mapped !== undefined;'
-      );
-    });
-
-    it("sweeps the whole catalog: the offered levels are exactly the accepted ones", () => {
-      const problems: string[] = [];
-      for (const plane of PLANES) {
-        let checked = 0;
-        for (const spec of plane.catalog) {
-          const model = servedModel(plane, spec);
-          // The catalog's protocol is the one dispatched on (D16).
-          expect(model.api).toBe(protocolForSdk(spec.provider_npm));
-          const offered = offeredLevels(spec, model);
-          const accepted = acceptedLevels(model);
-          if (offered.join(",") !== accepted.join(",")) {
-            problems.push(
-              `${plane.route} ${spec.id}: offers [${offered.join(", ")}], dispatch takes [${accepted.join(", ")}]`
-            );
-          }
-          if (spec.reasoning === true) {
-            checked += 1;
-          }
-        }
-        // Anti-vacuity: a plane whose rows stopped reasoning (a parser change,
-        // a catalog swap) must fail here, not pass by covering zero.
-        expect(checked, `no ${plane.route} model reasons`).toBeGreaterThan(0);
-      }
-      expect(problems).toEqual([]);
-    });
-
-    it("dispatches the turn that reported the bug", () => {
-      // `glm-5.3-flash-free` offered levels its dispatch refused. One rule
-      // now builds both, so whatever it offers is taken.
-      const [zen] = PLANES;
-      const spec = zen.catalog.find((row) => row.id === "glm-5.3-flash-free");
-      if (spec === undefined) {
-        throw new TypeError("glm-5.3-flash-free left the Zen catalog");
-      }
-      const model = servedModel(zen, spec);
-      const offered = offeredLevels(spec, model);
-      expect(offered.length).toBeGreaterThan(1);
-      expect(acceptedLevels(model)).toEqual(offered);
-    });
-  }
-);
 
 /** The most toggle-only candidates any one protocol declares in the live block. */
 const TOGGLE_CANDIDATES = 3;

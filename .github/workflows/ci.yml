@@ -277,6 +277,7 @@ jobs:
               # version in the user agent the probes carry (identity.ts), the
               # anthropic-version every Messages probe sends
               # (request-shape.ts), and the probes' own inputs, CI arming
+              # and the environment reader that arms a key (e2e-env.ts)
               # included. Left out, and covered by the offline suite and the
               # nightly `full` run: the generated catalog (catalog-data.ts)
               # and the live model choice (models-catalog.ts), which the
@@ -287,7 +288,7 @@ jobs:
               # it. grep reads a here-string, not a pipe: under
               # pipefail, `grep -q` exiting on an early match could kill the
               # writer with SIGPIPE on a long path list and read as a miss.
-              if grep -Eq '^(src/host/|src/utils/protocols\.ts$|src/utils/plane-model\.ts$|src/identity\.ts$|src/utils/request-shape\.ts$|test/e2e/keyed-probes\.e2e\.ts$|test/support/keyed-probes\.ts$|test/support/keyless-matrix\.ts$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
+              if grep -Eq '^(src/host/|src/utils/protocols\.ts$|src/utils/plane-model\.ts$|src/identity\.ts$|src/utils/request-shape\.ts$|test/e2e/keyed-probes\.e2e\.ts$|test/support/keyed-probes\.ts$|test/support/keyless-matrix\.ts$|test/support/e2e-env\.ts$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
                 tier=probes
               else
                 tier=none
@@ -402,8 +403,13 @@ jobs:
           # models-catalog.ts, config.ts, the generated catalog) is covered on
           # each pull request by the in-process characterization of the same
           # S0_TODAY rows, and here by the nightly run.
+          # The binary e2e's own inputs are in scope too: the file, the rows it
+          # asserts (support/host.ts), the versions it installs
+          # (support/host-versions.ts) and the reader its gate and every input
+          # come through (support/e2e-env.ts). test/keyed-probes.test.ts
+          # compiles this pattern and checks it.
           # A here-string, not a pipe: see the e2e job's tier step.
-          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
+          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|test/support/e2e-env\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

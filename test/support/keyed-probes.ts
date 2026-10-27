@@ -40,7 +40,7 @@ import {
   isUpstreamBusy,
   verdictOfAttempts,
 } from "./keyless-matrix.ts";
-import { OPENCODE_UA } from "./src.ts";
+import { OPENCODE_UA, openCodeSessionIdFor } from "./src.ts";
 
 /** How much of the live suite may spend a key, from `OPENCODE_E2E_KEYED`. */
 export const KEYED_TIERS = ["none", "probes", "full"] as const;
@@ -138,12 +138,13 @@ export const keyedBody = (
 };
 
 /**
- * The session id a keyed probe sends: the client's shape
- * (`ses_<12 hex><14 base62>`) with its low twelve bits in the band the
- * gateway admits (`0xFC0..0xFFE`; the mock in `test/mock/opencode-gateway.ts`
- * enforces the same band), so a refusal cannot be the id's.
+ * The session id a keyed probe sends, derived the plugin's own way
+ * (`openCodeSessionIdFor`): the client's shape (`ses_<12 hex><14 base62>`)
+ * with its low twelve bits in the band the gateway admits (`0xFC0..0xFFE`; the
+ * mock in `test/mock/opencode-gateway.ts` enforces the same band) by
+ * construction, so a refusal cannot be the id's.
  */
-export const PROBE_SESSION_ID = "ses_000000000ffeKeyedProbe0001";
+export const PROBE_SESSION_ID = openCodeSessionIdFor("keyed-probe");
 
 /**
  * The identity headers the plugin's fetch patch sets on an OpenCode plane

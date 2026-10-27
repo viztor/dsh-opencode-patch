@@ -109,6 +109,8 @@ import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { withOpenCodeSessionHeader } from "@earendil-works/pi-ai/providers/opencode-headers";
 
+import { urlOf } from "../test-helpers.ts";
+import { FIBER_STATE } from "./cordis-wait.ts";
 import {
   apply,
   Config,
@@ -120,11 +122,20 @@ import {
   replaceHostModuleSource,
 } from "./src.ts";
 
+export { FIBER_STATE, logLines, until } from "./cordis-wait.ts";
+
 /** The package name the plugin looks pi-ai up by (`PI_AI_PACKAGE` in `src/host/host-modules.ts`). */
 export const PI_AI_PACKAGE = "@deepseek-ai/dsh-llm-pi-ai";
 
 /** The `llm` service as the tests read it, private registry included. */
 export type HostLlm = Context["llm"];
+
+/** The route ids an `llm` service lists, sorted. */
+export const routeIds = (llm: HostLlm): string[] =>
+  llm
+    .listProviders()
+    .map((provider) => provider.id)
+    .toSorted();
 
 /** One registry row, as `LlmRuntime`'s private `adapters` map holds it. */
 export interface RegistryRow {
@@ -332,13 +343,6 @@ export interface RecordingFetch {
   readonly fetch: typeof fetch;
   readonly requests: RecordedRequest[];
 }
-
-const urlOf = (input: RequestInfo | URL): string => {
-  if (typeof input === "string") {
-    return input;
-  }
-  return input instanceof URL ? input.href : input.url;
-};
 
 const recordHeaders = (
   input: RequestInfo | URL,
@@ -586,7 +590,7 @@ const B = "BASELINE";
 export const S0_TODAY = {
   /**
    * `listModels` before any turn, with the keys stored: every declared id
-   * (D21). The keyless boot is `test/host-planes.test.ts`'s declared-listing
+   * (D21). The keyless boot is `test/host-planes-credentials.test.ts`'s declared-listing
    * case.
    */
   listingBeforeTurn: CHARACTERIZED_MODELS,
@@ -923,6 +927,10 @@ export const waitForPlaneOwner = async (
   }
 };
 
+/** The ids of a listing, in order. */
+export const modelIds = (models: readonly { id: string }[]): string[] =>
+  models.map((model) => model.id);
+
 /** The adapter class serving a route, or `undefined`. */
 export const ownerOf = (llm: HostLlm, route: string): string | undefined =>
   adaptersOf(llm).get(route)?.adapter.constructor.name;
@@ -955,49 +963,6 @@ export const piAiRestarts = (
     dispose: () => {
       off();
     },
-  };
-};
-
-/**
- * Every line any logger writes from now on, at every level.
- *
- * cordis's own exporter buffers only up to `info` (its default threshold, so
- * a `warn` is never kept), and tier B adds no console exporter: nothing a
- * plugin logs reaches the console or the default buffer reliably. This
- * exporter takes every level, so an assertion about what was logged reads
- * what was actually logged. A case should log one line of its own through it
- * to prove the input is read.
- *
- * @param root - the host's root context.
- * @returns the lines (`<type> <name>: <args>`) and the exporter's removal.
- */
-export const logLines = (
-  root: Context
-): { readonly lines: () => string[]; readonly dispose: () => void } => {
-  const lines: string[] = [];
-  const logger = root.logger as unknown as {
-    exporter: (exporter: {
-      levels: { default: number };
-      export: (message: {
-        type: string;
-        name: string;
-        args: unknown[];
-      }) => void;
-    }) => () => void;
-  };
-  const off = logger.exporter({
-    export: (message) => {
-      lines.push(
-        `${message.type} ${message.name}: ${message.args.map(String).join(" ")}`
-      );
-    },
-    levels: { default: 3 },
-  });
-  return {
-    dispose: () => {
-      off();
-    },
-    lines: () => [...lines],
   };
 };
 
@@ -1257,7 +1222,7 @@ export const stubModuleLoader = (
 export type ApplyOrder = "pi-ai-first" | "plugin-first";
 
 /** The fiber states a row settles in: ACTIVE, FAILED, DISPOSED (cordis `FiberState`). */
-const SETTLED_STATES: ReadonlySet<number> = new Set([2, 3, 4]);
+const SETTLED_STATES: ReadonlySet<number> = new Set(Object.values(FIBER_STATE));
 
 /** {@link orderedModules}' answer: the modules, and the hook that arms the fallback release. */
 interface OrderedModules {
@@ -1283,17 +1248,23 @@ interface OrderedModules {
  * @param order - which applies first.
  * @returns the modules for {@link stubModuleLoader}, and the fallback hook.
  */
-const orderedModules = (order: ApplyOrder): OrderedModules => {
+const orderedModules = (
+  order: ApplyOrder,
+  modules: ReadonlyMap<string, unknown>,
+  pluginPackage: string
+): OrderedModules => {
   const { promise: released, resolve: release } =
     Promise.withResolvers<boolean>();
   const [first, second] =
-    order === "plugin-first" ? [name, PI_AI_PACKAGE] : [PI_AI_PACKAGE, name];
-  const firstModule = HOST_MODULES.get(first) as {
+    order === "plugin-first"
+      ? [pluginPackage, PI_AI_PACKAGE]
+      : [PI_AI_PACKAGE, pluginPackage];
+  const firstModule = modules.get(first) as {
     apply: (ctx: unknown, config: unknown) => unknown;
   };
   const held = async (): Promise<unknown> => {
     await released;
-    return HOST_MODULES.get(second);
+    return modules.get(second);
   };
   const firstApply = (ctx: unknown, config: unknown): unknown => {
     try {
@@ -1304,7 +1275,7 @@ const orderedModules = (order: ApplyOrder): OrderedModules => {
   };
   return {
     modules: new Map<string, unknown>([
-      ...HOST_MODULES,
+      ...modules,
       [first, { ...firstModule, apply: firstApply }],
       [second, held()],
     ]),
@@ -1323,14 +1294,26 @@ const orderedModules = (order: ApplyOrder): OrderedModules => {
   };
 };
 
-/** The bundle rows, in the ids the real host's `dsh-base` patch names them. */
-const BUNDLE_ROWS = [
+/** The host's bundle rows, in the ids the real host's `dsh-base` patch names them. */
+const HOST_ROWS = [
   { id: "llm", name: "@deepseek-ai/dsh-llm" },
   { id: "llm-pi-ai", name: PI_AI_PACKAGE },
   { id: "config-editor", name: "@deepseek-ai/dsh-config-editor" },
   { id: "settings", name: "@deepseek-ai/dsh-settings" },
-  { id: name, name },
 ];
+
+/**
+ * This plugin's row as a profile files it: under its own id and package by
+ * default, or under another (the pre-rename ones a profile may still carry).
+ */
+export interface PluginRow {
+  /** The row id (default: the plugin's `name`). */
+  readonly id?: string;
+  /** The package the loader imports (default: the plugin's `name`). */
+  readonly name?: string;
+  /** A profile row config for the plugin; omitted, the shipped defaults apply. */
+  readonly config?: Record<string, unknown>;
+}
 
 /** What {@link bootTierB} takes. */
 export interface TierBOptions {
@@ -1338,8 +1321,8 @@ export interface TierBOptions {
   readonly providers?: Record<string, unknown>;
   /** Mount this plugin's row (default `true`); host-only contracts leave it out. */
   readonly plugin?: boolean;
-  /** A profile row for this plugin's config; omitted, the shipped defaults apply. */
-  readonly pluginConfig?: Record<string, unknown>;
+  /** How the profile files this plugin's row, and its config. */
+  readonly pluginRow?: PluginRow;
   /** The profile patch as raw YAML text, replacing the generated one (for `!!js`). */
   readonly profilePatchYaml?: string;
   readonly credentials?: FakeCredentials;
@@ -1399,7 +1382,8 @@ const blankAmbientKeys = (): (() => void) => {
 /** The profile patch the S0-style boots write, as JSON text (valid YAML). */
 const profilePatchText = (
   providers: Record<string, unknown> | undefined,
-  pluginConfig: Record<string, unknown> | undefined
+  pluginConfig: Record<string, unknown> | undefined,
+  pluginId: string
 ): string =>
   `${JSON.stringify(
     [
@@ -1408,7 +1392,7 @@ const profilePatchText = (
         : [{ config: { providers }, id: "llm-pi-ai" }]),
       ...(pluginConfig === undefined
         ? []
-        : [{ config: pluginConfig, id: name }]),
+        : [{ config: pluginConfig, id: pluginId }]),
     ],
     null,
     2
@@ -1425,6 +1409,13 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
   const credentials = options.credentials ?? fakeCredentials();
   const launchEnvironment =
     options.launchEnvironment ?? fakeLaunchEnvironment();
+  const pluginId = options.pluginRow?.id ?? name;
+  const pluginPackage = options.pluginRow?.name ?? name;
+  // A row filed under another package resolves to this plugin all the same.
+  const modules: ReadonlyMap<string, unknown> =
+    pluginPackage === name
+      ? HOST_MODULES
+      : new Map([...HOST_MODULES, [pluginPackage, HOST_MODULES.get(name)]]);
   const home = realpathSync(mkdtempSync(join(tmpdir(), "dsh-opencode-host-")));
   const restoreKeys = blankAmbientKeys();
   let ctx: Context | undefined;
@@ -1447,9 +1438,10 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
       `${JSON.stringify(
         [
           {
-            insert: BUNDLE_ROWS.filter(
-              (row) => options.plugin !== false || row.id !== name
-            ),
+            insert:
+              options.plugin === false
+                ? HOST_ROWS
+                : [...HOST_ROWS, { id: pluginId, name: pluginPackage }],
           },
         ],
         null,
@@ -1461,7 +1453,7 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
     writeFileSync(
       patchPath,
       options.profilePatchYaml ??
-        profilePatchText(options.providers, options.pluginConfig)
+        profilePatchText(options.providers, options.pluginRow?.config, pluginId)
     );
     const profile: ProfileContext = {
       cwd: home,
@@ -1485,7 +1477,11 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
         if (options.plugin === false) {
           root.loader.internal = stubModuleLoader(HOST_MODULES);
         } else {
-          const ordered = orderedModules(options.order ?? "plugin-first");
+          const ordered = orderedModules(
+            options.order ?? "plugin-first",
+            modules,
+            pluginPackage
+          );
           ordered.watch(root);
           root.loader.internal = stubModuleLoader(ordered.modules);
         }
@@ -1502,7 +1498,8 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
       return found;
     };
     const piEntry = entryFor("llm-pi-ai");
-    const pluginEntry = options.plugin === false ? undefined : entryFor(name);
+    const pluginEntry =
+      options.plugin === false ? undefined : entryFor(pluginId);
     return {
       credentials,
       ctx: booted,

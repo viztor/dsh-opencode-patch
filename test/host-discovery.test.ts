@@ -52,6 +52,7 @@ import {
   s0Providers,
   type TierA,
   type TierB,
+  until,
   waitForPlaneOwner,
 } from "./support/host.ts";
 import {
@@ -178,23 +179,6 @@ const viaGateway = async (
     new AbortController().signal,
   ])) as Row[];
   return { answer, schema: invocation.result.create() };
-};
-
-/** Poll until `predicate` holds, or fail by name. */
-const until = async (
-  predicate: () => boolean | Promise<boolean>,
-  what: string,
-  deadlineMs = 10_000
-): Promise<void> => {
-  const end = Date.now() + deadlineMs;
-  while (!(await predicate())) {
-    if (Date.now() > end) {
-      throw new Error(`never happened: ${what}`);
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
-  }
 };
 
 /** Boot tier B offline with a fresh wire recorder (stubbed before the boot). */

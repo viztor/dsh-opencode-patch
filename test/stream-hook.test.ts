@@ -12,13 +12,22 @@
  *
  * @module test/stream-hook.test
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { projectNameFrom, recordDebug } from "./support/src.ts";
+import {
+  type ActiveTurnState,
+  createStreamHook,
+  getSessionUsage,
+  openCodeSessionIdFor,
+  projectNameFrom,
+  recordDebug,
+  resolveConfig,
+} from "./support/src.ts";
 import { collectUnknown, createMockStream } from "./test-helpers.ts";
 
 // The debug sink is observed rather than written: a negative assertion over a
@@ -103,6 +112,17 @@ describe("stream-hook · projectNameFrom names the repository", () => {
     expect(answer).not.toContain("/");
   });
 
+  it("answers the folder when the repository root's own name is blank", () => {
+    // A root whose name trims to nothing names nothing: the walk stops there
+    // and the folder itself is the attribution, never an empty header.
+    const outer = tree();
+    const blankRoot = join(outer, " ");
+    mkdirSync(join(blankRoot, ".git"), { recursive: true });
+    const sub = join(blankRoot, "inside");
+    mkdirSync(sub);
+    expect(projectNameFrom(sub)).toBe("inside");
+  });
+
   it("reports the root even when the marker sits beside a file", () => {
     // `.git` is a DIRECTORY, but a worktree checkout uses a `.git` FILE. Both
     // mean "repository root", and the walk only asks whether the entry exists.
@@ -123,16 +143,12 @@ describe("stream-hook · the pass-through guards", () => {
   const hookWith = async (
     providers: string[],
     overrides: Record<string, unknown> = {}
-  ) => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
-    return createStreamHook(
+  ) =>
+    createStreamHook(
       { logger: { info: () => {} } } as never,
       resolveConfig({ providers, usageEnabled: false, ...overrides } as never),
       new AsyncLocalStorage()
     );
-  };
 
   it("hands through anything that is not an options object", async () => {
     const hook = await hookWith(["opencode"]);
@@ -184,11 +200,8 @@ describe("stream-hook · the debug gate", () => {
     debug: boolean,
     file: string | undefined,
     info: (...args: unknown[]) => void
-  ) => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
-    return createStreamHook(
+  ) =>
+    createStreamHook(
       { logger: { info } } as never,
       resolveConfig({
         debug,
@@ -198,7 +211,6 @@ describe("stream-hook · the debug gate", () => {
       } as never),
       new AsyncLocalStorage()
     );
-  };
 
   /** Drive one turn through the hook and drain it. */
   const turn = async (
@@ -245,5 +257,141 @@ describe("stream-hook · the debug gate", () => {
     expect(recordDebug).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledTimes(1);
     expect(info.mock.calls[0]).toContain("x-opencode-session");
+  });
+});
+
+describe("stream-hook · what a turn carries", () => {
+  /**
+   * The hook driven with a test-owned store, so what the turn hands the fetch
+   * patch is read where the fetch patch reads it: inside the stream.
+   */
+  const als = new AsyncLocalStorage<ActiveTurnState>();
+
+  const hookOn = (
+    ctx: Record<string, unknown> = {},
+    overrides: Record<string, unknown> = {}
+  ) =>
+    createStreamHook(
+      { logger: { info: () => {} }, ...ctx } as never,
+      resolveConfig({
+        providers: ["opencode"],
+        usageEnabled: false,
+        ...overrides,
+      } as never),
+      als
+    );
+
+  /**
+   * A downstream that yields the store it ran under, once.
+   *
+   * @yields {ActiveTurnState | undefined} the turn store.
+   */
+  const storeReader = async function* storeReader() {
+    yield als.getStore();
+  };
+
+  /** A Host session service answering for one id. */
+  const sessionsFor = (id: string, header: Record<string, unknown>) => ({
+    get: (name: string) =>
+      name === "sessions"
+        ? { get: (asked: string) => (asked === id ? { header } : undefined) }
+        : undefined,
+  });
+
+  const storeOf = async (stream: unknown): Promise<ActiveTurnState> => {
+    const [store] = await collectUnknown(stream as AsyncIterable<unknown>);
+    return store as ActiveTurnState;
+  };
+
+  beforeEach(() => {
+    vi.mocked(recordDebug).mockClear();
+  });
+
+  it("a numeric sessionId and a numeric parentSessionId are stringified before derivation", async () => {
+    const store = await storeOf(
+      hookOn()(
+        { model: "m", parentSessionId: 9, provider: "opencode", sessionId: 7 },
+        storeReader
+      )
+    );
+    expect(store.value).toBe(openCodeSessionIdFor("7"));
+    expect(store.parentValue).toBe(openCodeSessionIdFor("9"));
+  });
+
+  it("a session whose cwd is the filesystem root carries no project", async () => {
+    const store = await storeOf(
+      hookOn(sessionsFor("rooted", { cwd: "/" }))(
+        { model: "m", provider: "opencode", sessionId: "rooted" },
+        storeReader
+      )
+    );
+    expect(store.value).toBe(openCodeSessionIdFor("rooted"));
+    expect(store.project).toBeUndefined();
+  });
+
+  it("the debug entry carries the parent's derived id and the project", async () => {
+    const debugFile = join(tmpdir(), "dsh-stream-debug", "parent.jsonl");
+    await storeOf(
+      hookOn(sessionsFor("child", { cwd: "/home/you/projects/my-app" }), {
+        debug: true,
+        debugFile,
+      })(
+        {
+          model: "m",
+          parentSessionId: "parent",
+          provider: "opencode",
+          sessionId: "child",
+        },
+        storeReader
+      )
+    );
+    expect(recordDebug).toHaveBeenCalledTimes(1);
+    const entry = vi.mocked(recordDebug).mock.calls[0]?.[2];
+    expect(entry).toMatchObject({
+      parentSession: openCodeSessionIdFor("parent"),
+      project: "my-app",
+      session: "child",
+      value: openCodeSessionIdFor("child"),
+    });
+  });
+
+  it("a model that is not a string is recorded as no model at all", async () => {
+    const [, store] = await collectUnknown(
+      hookOn()(
+        { model: 42, provider: "opencode", sessionId: "no-model" },
+        async function* usageThenStore() {
+          yield { type: "usage", usage: { inputTokens: 3, outputTokens: 4 } };
+          yield als.getStore();
+        }
+      ) as AsyncIterable<unknown>
+    );
+    expect((store as ActiveTurnState).model).toBeUndefined();
+    const usage = getSessionUsage("no-model");
+    expect(usage?.turns).toBe(1);
+    // "unknown" is the accumulator's word for no model: never an active one.
+    expect(usage?.activeModel).toBeUndefined();
+    expect(usage?.modelsUsed).toEqual([]);
+  });
+
+  it("a usage chunk carrying only cacheReadTokens is recorded with the other counters absent", async () => {
+    await collectUnknown(
+      hookOn()(
+        { model: "m", provider: "opencode", sessionId: "cache-only" },
+        async function* cacheOnly() {
+          yield {
+            type: "usage",
+            usage: { cacheReadTokens: 12, inputTokens: "x" },
+          };
+        }
+      ) as AsyncIterable<unknown>
+    );
+    const usage = getSessionUsage("cache-only");
+    expect(usage).toMatchObject({
+      cacheReadTokens: 12,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      turns: 1,
+    });
   });
 });

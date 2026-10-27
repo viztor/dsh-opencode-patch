@@ -21,7 +21,10 @@
  * the verdicts depend on, in their order — a vendor move fails here instead of
  * being absorbed by a stale copy.
  *
- * Opt-in (`OPENCODE_E2E=1`), like the sibling header suite: it binds a port.
+ * It binds a loopback port and nothing else, like the sibling header suite,
+ * so it runs in the mock suite on every push.
+ *
+ * @module test/mock/refusal-classification.mock
  */
 
 import assert from "node:assert/strict";
@@ -34,11 +37,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   type ActiveTurnState,
+  openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
 } from "../support/src.ts";
-
-const ENABLED = process.env.OPENCODE_E2E === "1";
 
 /**
  * The first case reads the INSTALLED `@deepseek-ai/dsh-llm-pi-ai` bundle and
@@ -167,14 +169,14 @@ interface Refusal {
   error: { message: string; type: string };
 }
 
-describe.skipIf(!ENABLED)("refusal classification over a real socket", () => {
+describe("refusal classification over a real socket", () => {
   const als = new AsyncLocalStorage<ActiveTurnState>();
   const patched = patchFetch(fetch, als, resolveConfig({}));
 
   const turn = (overrides: Partial<ActiveTurnState> = {}): ActiveTurnState => ({
     model: "gpt-5.4",
     provider: "opencode",
-    value: "ses_e2e00000000",
+    value: openCodeSessionIdFor("e2e-refusal"),
     ...overrides,
   });
 

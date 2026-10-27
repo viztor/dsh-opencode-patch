@@ -318,13 +318,13 @@ So the class has one member left standing rather than a pattern, which is the po
 
 ## Why one document's counts never drifted, and the others' did
 
-`protocol-routing-and-merge.md` states five counts — 28, 30, 18, 8 and 1 of 85 — and every one is correct, which is not luck. The document says why in its own words: _"a count written into prose does not regenerate with the data it counts"_, and it names the test that holds them. `catalog.test.ts` asserts the table against the shipped catalog, so a count that drifts fails the suite rather than sitting in a file.
+`protocol-routing-and-merge.md` states five counts — 28, 30, 18, 8 and 1 of 85 — and every one is correct, which is not luck. The document says why in its own words: _"a count written into prose does not regenerate with the data it counts"_, and it names the test that holds them. `catalog-docs.test.ts` asserts the table against the shipped catalog, so a count that drifts fails the suite rather than sitting in a file.
 
 That is the difference between the counts that were wrong this session and this one. The ones that drifted — Go 31, the Zen total in the plane table, the duplicated 12 and 13, the Chinese README's Google line — were all prose that nothing checked. The fix in each case was to correct it; the fix that would have prevented all of them is the one this document already applies, and it is worth copying rather than rediscovering: put the number where a test can reach it.
 
 ## The prose totals are still unguarded, and the attempt to guard them is recorded
 
-`catalog.test.ts` already parses and asserts the tables in three documents — the README's routing table, `protocol-routing-and-merge.md`'s "N of M" pairs, and `redirect-planes.md`'s per-SDK matrix. Every count this repository has had to correct lived outside them, in a sentence: the README's total, the Chinese README's copy of it, and the plane table's "85 served / 120 listed". The mechanism that would have caught all three exists and is not pointed at them.
+`catalog-docs.test.ts` already parses and asserts the tables in three documents — the README's routing table, `protocol-routing-and-merge.md`'s "N of M" pairs, and `redirect-planes.md`'s per-SDK matrix. Every count this repository has had to correct lived outside them, in a sentence: the README's total, the Chinese README's copy of it, and the plane table's "85 served / 120 listed". The mechanism that would have caught all three exists and is not pointed at them.
 
 An attempt to add that case was made and reverted. The regex had to allow for the number being emphasised (`**85** active`), the escaping survived one round of edits and not the second, and the file ended up with no tests running at all. Reverted rather than left half-working, which is this session's rule and the reason the tree is green.
 
