@@ -56,7 +56,7 @@ These are the rules a correct implementation satisfies. Each one has a test in �
 
 |  | Invariant | What it requires |
 | :-- | :-- | :-- |
-| I1 | Every offered model is routable | If a model appears in the picker, its plane's route serves it on the shape its SDK names. This is the plugin's headline promise; the Go gap broke it once, and one route per plane closed it for good. |
+| I1 | Every offered model is routable | If a model appears in the picker, or in Settings → Models' fetch on a plane, its plane's route serves it on the shape its SDK names. This is the plugin's headline promise; the Go gap broke it once, and one route per plane closed it for good. |
 | I2 | A route carries one plane | Its base URLs, its catalog and its credential all come from the same plane. Mixing them resolves to "model not found" against the route's own endpoint. |
 | I3 | The endpoint is chosen from (plane, SDK) | Never from the SDK alone: the same SDK appears on both planes, on each plane's own base. |
 | I4 | No SDK means completions | A model naming no SDK speaks `openai-completions`, and so does an id no catalog describes (D15), unless the plane entry names an `api` for it. |
@@ -75,6 +75,7 @@ These are the rules a correct implementation satisfies. Each one has a test in �
 | `keyless-matrix.e2e.ts` · live, keyless | I3 | a cell the default sends to answers 404, or a free model is not parsed on the default completions path |
 | `keyed-probes.e2e.ts` · live, keyed | I1, I3 | a default-family cell answers path-gone, wrong-protocol or auth-refused with the plane's own key, a retired model another shape of the same protocol accepted, or nothing readable: `other`, a redirect, a refused session, `transport-error`, `no-model`. Flip evidence only when the cell `endpoint: legacy` dispatches to, a different one, accepted what the default cell refused (§13) |
 | `endpoint-family.test.ts` | I3 | `auto` stops meaning the pinned family, or legacy stops mapping a protocol on a plane |
+| `host-discovery.test.ts` · Settings' fetch on the real host | I1 | a plane's fetch misses a servable catalog model, or offers one the plane adapter does not list, validate and send once saved |
 | coverage ratchet | — | a new branch of the plane model or profile is added without a test (both are held at 100%) |
 
 ## 6. Refactor (done, then superseded)
@@ -102,7 +103,7 @@ One model, every stage. The left column is what a user can see; the right column
 
 | # | The user sees | What runs | Where |
 | --: | :-- | :-- | :-- |
-| 1 | a model in the picker | the generated shim answers before any network call, `models.dev` refreshes it, and the gateway's own listing is merged in additively, so a row is only dropped when the registry marks it deprecated | `catalog-data.ts` → `models-catalog.ts` → `models-discovery.ts` |
+| 1 | a model in the picker | the picker lists the plane's declared models, or its servable catalog when the entry declares none (D3), with the generated shim answering cold and `models.opencode.ai` refreshing it. Settings' fetch offers pi's list plus the catalog models pi lacks | `catalog-data.ts` → `models-catalog.ts` → `utils/plane-profile.ts` (picker) · `models-discovery.ts` (Settings' fetch) |
 | 2 | _(invisible)_ | each row carries the SDK the vendor ships (`provider_npm`). Nothing in the UI names it, and nothing the user sets can contradict it | the catalog |
 | 3 | one model selected | the composer sets `provider` + `model`; no route, protocol or endpoint appears anywhere in the interface | the host |
 | 4 | a turn starts | `llm/stream` fires; the hook claims the turn only for the routes this plugin declares, and leaves every other provider alone | `stream-hook.ts` |

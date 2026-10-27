@@ -12,7 +12,7 @@
  * | {@link installUsageService} | register the Go quota service + remotes     |
  * | {@link installFetchPatch}   | wrap `globalThis.fetch` (returns `false` if none) |
  * | {@link installStreamHook}   | capture turn state on `llm/stream`          |
- * | {@link installModelDiscovery} | publish the canonical catalog to the picker |
+ * | {@link installDiscovery}  | complement Settings' model discovery with the catalog (D3) |
  *
  * Order is load-bearing and documented at the call site in {@link apply}.
  *
@@ -32,14 +32,11 @@ import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
 import { installDescribeGraft } from "./host/describe-graft.ts";
 import { installRouteClaim } from "./host/route-claim.ts";
-import { LEGACY_NAME, LEGACY_PKG, name } from "./identity.ts";
+import { LEGACY_NAME, LEGACY_PKG } from "./identity.ts";
 import {
-  type CatalogModelSpec,
-  getLiveGoCatalog,
-  getLiveZenCatalog,
-  sanitizeModalities,
-} from "./models-catalog.ts";
-import { decorateModelDiscovery } from "./models-discovery.ts";
+  decorateModelDiscovery,
+  type DiscoveryClaim,
+} from "./models-discovery.ts";
 import { STORE_NAMESPACE } from "./opencode-store-contract.ts";
 import { OpencodeStoreService } from "./opencode-store-service.ts";
 import { ModelPurgeService } from "./purge-service.ts";
@@ -47,24 +44,6 @@ import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { GoUsageService } from "./usage.ts";
 import { isFetchFunction, isFunctionLike, isRecord } from "./utils/guards.ts";
-import { isServableSdk } from "./utils/protocols.ts";
-
-/**
- * One catalog row in the shape DSH's model-discovery surface expects.
- *
- * Models whose SDK no route serves are dropped: offering them would be offering
- * a model that cannot work, and the user has no way to tell that from the row.
- */
-const toDiscovered = (specs: readonly CatalogModelSpec[]) =>
-  specs
-    .filter((m) => isServableSdk(m.provider_npm))
-    .map((m) => ({
-      contextWindow: m.context_window,
-      id: m.id,
-      inputModalities: sanitizeModalities(m.input_modalities),
-      maxTokens: m.max_output_tokens,
-      name: m.name,
-    }));
 
 /** Tell a row still configured under the pre-rename id/package to update. */
 const logRenameNotice = (ctx: CordisContext): void => {
@@ -378,94 +357,21 @@ const installStreamHook = (
 };
 
 /**
- * The settings the LATEST activation on a root resolved, which is what every
- * discovery callback answers from.
- *
- * Keyed on the root for the same reason the services are: `apply` runs once per
- * live reload, and the host refuses a second registration under a namespace that
- * is still held. The registrations therefore belong to the process, and only the
- * settings they read move with each activation.
- */
-const discoveryConfigOn = new WeakMap<object, ResolvedPluginConfig>();
-
-/** The namespaces this plugin publishes, and the catalog each one answers with. */
-const DISCOVERY_NAMESPACES: readonly {
-  readonly ns: string;
-  readonly catalog: () => readonly CatalogModelSpec[];
-}[] = [
-  { catalog: () => [...getLiveGoCatalog(), ...getLiveZenCatalog()], ns: name },
-  { catalog: getLiveGoCatalog, ns: "opencode-go" },
-  { catalog: getLiveZenCatalog, ns: "opencode" },
-];
-
-/**
- * Publish the canonical Go/Zen catalog to DSH's model discovery.
- *
- * Model discovery is part of the same "canonical catalog" feature as the
- * gateway listing enrichment, so both sit behind the one `enrichModels`
- * toggle: turning it off leaves DSH's own catalog and the raw gateway
- * listings untouched.
- *
- * Registered once per root and never withdrawn, like the usage service. The
- * earlier shape registered on every activation and swallowed the host's
- * duplicate refusal, so the FIRST activation's settings answered forever: a
- * reload that changed `enrichModels` changed nothing the picker saw. Each
- * namespace is registered on its own, so one refusal no longer skips the
- * others.
- */
-const installModelDiscovery = (
-  scope: CordisContext,
-  config: ResolvedPluginConfig
-): void => {
-  const root: CordisContext = scope.root ?? scope;
-  const registered = discoveryConfigOn.has(root);
-  if (!registered && !config.enrichModels) {
-    return;
-  }
-  discoveryConfigOn.set(root, config);
-  if (registered) {
-    return;
-  }
-  const { llm } = scope;
-  if (typeof llm?.registerModelDiscovery !== "function") {
-    return;
-  }
-  const current = (): ResolvedPluginConfig =>
-    discoveryConfigOn.get(root) ?? config;
-  for (const { ns, catalog } of DISCOVERY_NAMESPACES) {
-    try {
-      llm.registerModelDiscovery(ns, () => {
-        const settings = current();
-        return Promise.resolve(
-          settings.enrichModels ? toDiscovered(catalog()) : []
-        );
-      });
-    } catch (error) {
-      // Non-fatal, and said: a picker missing a plane is otherwise a silence.
-      scope.logger?.warn?.(
-        `[dsh-opencode-patch] model discovery for ${ns} did not register`,
-        error
-      );
-    }
-  }
-};
-
-/**
- * Discovery for one `llm` scope: the catalog namespaces, and the wrapper that
- * merges the catalog into a discovery answer, tied to the scope so an `llm`
- * restart or a disable undoes it.
+ * Settings' model discovery for one `llm` scope: a fetch on a plane the
+ * plugin serves is complemented by the catalog (D3). Tied to the scope, so an
+ * `llm` restart wraps the new service and a disable undoes it.
  */
 const installDiscovery = (
   ctx: CordisContext,
-  config: ResolvedPluginConfig
+  config: ResolvedPluginConfig,
+  claim: DiscoveryClaim
 ): void => {
   ctx.inject?.(["llm"], (scope: unknown) => {
     if (!isRecord(scope)) {
       return;
     }
     const llmScope = scope as CordisContext;
-    installModelDiscovery(llmScope, config);
-    const stop = decorateModelDiscovery(llmScope, config);
+    const stop = decorateModelDiscovery(llmScope, config, claim);
     if (isFunctionLike(llmScope.effect)) {
       llmScope.effect(() => () => stop?.(), "dsh-opencode-patch.discovery");
     }
@@ -487,7 +393,8 @@ const installDiscovery = (
  * 4. the fetch patch, which bails out (warning) when there is nothing to
  *    wrap — the stream hook must not be attached then, or turns would run
  *    without session affinity;
- * 5. the stream hook and model discovery, which only make sense once the
+ * 5. the stream hook, and the Settings discovery wrapper that complements a
+ *    plane's fetch with the catalog (D3), which only make sense once the
  *    request path is patched.
  *
  * The returned promise is the claim's mount: cordis waits for it, which is
@@ -513,7 +420,7 @@ export const apply = async (
 
   if (installFetchPatch(ctx, config, als)) {
     installStreamHook(ctx, config, als);
-    installDiscovery(ctx, config);
+    installDiscovery(ctx, config, claim);
   }
   await claim.mounted;
 };

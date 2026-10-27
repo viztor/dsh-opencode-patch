@@ -28,7 +28,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P-R1  | `feat:` the plugin owns the plane routes      | in review |
 | P-R2  | `test:` the endpoint families, measured       | in review |
 | P-R2b | `fix:` flip the default on §13's evidence     | if needed |
-| P3    | `feat:` Settings complements pi's list        | planned   |
+| P3    | `feat:` Settings complements pi's list        | in review |
 | P-T2  | `test:` suite structure                       | planned   |
 | P-T3  | `ci:` CI and scripts                          | planned   |
 | P5    | `refactor:` installers                        | planned   |
@@ -89,7 +89,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
     - the SDK server (`sdk/server/src/server.ts:423`);
     - the translator (`experimental/translator/src/deepseek.ts:69`).
   - With no hidden routes (P-R1), **no listing patch is needed**; today's exists only to hide them from these readers. (Instance patches do reach Remote calls, because the gateway resolves methods with `Reflect.get` at call time — `api/gateway/src/index.ts:841-843` — which the `discoverModels` wrapper relies on.)
-- **Settings discovery is keyed by the pi-ai entry id** (`llm-pi-ai/src/index.ts:138,156`; `ProviderEditor.tsx:254`; `ModelListEditor.tsx:167,244`). The plugin's own `registerModelDiscovery` namespaces are never asked.
+- **Settings discovery is keyed by the pi-ai entry id** (`llm-pi-ai/src/index.ts:138,156`; `ProviderEditor.tsx:254`; `ModelListEditor.tsx:167,244`). The plugin's own `registerModelDiscovery` namespaces were never asked; P3 deleted them.
   - The host's normalization runs inside the original `discoverModels` (`index.ts:618-631`), so the wrapper must dedupe and whitelist the fields itself.
   - `LlmDiscoveredModel` carries only id, name, contextWindow, maxTokens and inputModalities, with no reasoning field.
 - **D1 representation.** Effort ids must be pi levels (`adapter.ts:170-181`), and two vocabularies mean opposite things by `null`:
@@ -104,7 +104,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | Defect | Where |
 | :-- | :-- |
 | The deprecated wrapper re-exports a `default` that does not exist, an ESM link error. It is published every release. | `scripts/publish-scoped.ts:137`, `release.yml:124` |
-| Settings shows pi's snapshot, not the catalog | `models-discovery.ts:142-198,532-539` |
+| ~~Settings shows pi's snapshot, not the catalog~~ — fixed by P3 (`complementDiscoveredModels`) | `models-discovery.ts` (pre-P3 lines) |
 | Mode merging is done only for Go→Gemini. For the other modes the picker shows catalog levels while dispatch validates against a different profile: toggle models show Minimal…Max with no Off, and Go `minimax-m3` + Xhigh/Max is refused on the internal Anthropic route. | `models-discovery.ts:607-616,735-760,1063-1203`; `pi-provider.ts:351-386`; `responses-provider.ts:111-150` |
 | `isZenProvider("opencode-google")` is false | `utils/request-shape.ts:265-271` |
 | `enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404. | `models-catalog.ts:800-804` |
@@ -124,7 +124,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 
 **The problem, in the owner's words.** A provider defines one backend. Supporting every protocol and the newer catalog meant un-registering the original `opencode`/`opencode-go` provider and registering the plugin's own. Deleting another plugin's registration is unsupported, so the plugin mounted extra routes per protocol instead, merged their models back into the user's provider, and redirected dispatch. This section shows that the host **does** allow the original intent, through supported paths (F11–F13): keep pi-ai from claiming the two ids, and register the plugin's provider under them. A spike on the real host confirmed it (run S0).
 
-**Facts from the host's own code and data.** F1–F5 and F10 are measured: the data files were counted and the resolver read. F6–F9 and F11–F13 are read from the code, and run S0 exercised F11–F13 end to end. P-T1's real-host harness pins the ones the host can answer in-process: P-T1b pins F1, F2, F4, F5, F8, F10–F16, F18 and F20 by number (F3 through its F4 consequence, F7 through F13's register and DUPLICATE halves); F6 (dispatch through a non-pi adapter) and F19's auth half (constructing a `PiAiAdapter`) are first exercised by P-R1, F6 through its mock gateway and the real `LlmRuntime`; F19's export half is pinned in `host-shapes` (`recordKeyFor`); F17 is honoured, not pinned — tier B fixes the apply order and the binary e2e infers it; F9 is a fact about opencode's own client, outside this host. A fact that fails where it is pinned sends the design back to this section.
+**Facts from the host's own code and data.** F1–F5 and F10 are measured: the data files were counted and the resolver read. F6–F9 and F11–F13 are read from the code, and run S0 exercised F11–F13 end to end. P-T1's real-host harness pins the ones the host can answer in-process: P-T1b pins F1, F2, F4, F5, F8, F10–F16, F18 and F20 by number (F3 through its F4 consequence, F7 through F13's register and DUPLICATE halves); F6 (dispatch through a non-pi adapter) and F19's auth half (constructing a `PiAiAdapter`) are first exercised by P-R1, F6 through its mock gateway and the real `LlmRuntime`; F19's export half is pinned in `host-shapes` (`recordKeyFor`); F17 is honoured, not pinned — tier B fixes the apply order and the binary e2e infers it; F9 is a fact about opencode's own client, outside this host. F21 is pinned by P3 in `host-discovery` (the pi-ai restart and contract cases). A fact that fails where it is pinned sends the design back to this section.
 
 | # | Fact | Evidence |
 | :-- | :-- | :-- |
@@ -148,6 +148,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | F18 | **`PiAiAdapter.listModels` answers `[]` on `MISSING_CREDENTIAL`.** | `llm-pi-ai/src/adapter.ts:295-311` |
 | F19 | **`PiAiAdapterOptions.auth` is required.** pi-ai does not export its credential-store or auth-context builders; it does export `PiAiAdapter`, `Config` and `recordKeyFor`. | `llm-pi-ai/src/adapter.ts:98-106`; `index.ts:77-92` |
 | F20 | **The Settings page reads pi-ai's resolved config.** `describe()` builds `value` from `fiber.config`, so once the claim strips the planes they read as unconfigured. The gateway resolves service methods per call (`Reflect.get`), so an instance wrapper on `describe` is seen by `settingsController.describe` and by `write()`. | `settings/settings/src/index.ts:319`; `api/gateway/src/index.ts:841-843`; `api/settings-controller/src/index.ts:98-103,217` |
+| F21 | **A pi-ai restart withdraws its discovery.** Between UNLOADING and the reload, `discoverModels(piNs, …)` answers `NO_DISCOVERY`. The Remote face is `remoteDiscoverModels`, which reads `this.discoverModels` per call. | `llm/src/index.ts:569-661`; measured in tier B (`test/host-discovery.test.ts`, the pi-ai restart case) |
 
 Three corrections to the facts above:
 
@@ -231,10 +232,10 @@ Three corrections to the facts above:
 
 #### `src/host/patch-method.ts`: the two host wrappers that remain
 
-`patch-method.ts` restores a wrapper only if it is still the current one, deletes it when the original was inherited, and re-wraps on `llm/adapters-updated`. It installs two wrappers:
+`patch-method.ts` restores a wrapper only if it is still the current one, deletes it when the original was inherited, and can re-wrap on `llm/adapters-updated` (no site needs it yet). It installs two wrappers:
 
 - **`settings.describe` (D18, F20).** It runs inside `ctx.inject(["settings"])`, and touches only the `llm-pi-ai` descriptor. When `value.providers[plane]` is missing, it sets it to the interpolated, `Config`-normalized committed entry; `base`, `user` and the revision are untouched. A contract test pins that no node under `providers` in pi-ai's `Config` carries `role("secret")`. Today only `apiKeyEnv` has a role, and it is `credential-ref`.
-- **`discoverModels` (P3).** It answers pi's rows plus the catalog's missing ones, deduped and whitelisted. A `NO_DISCOVERY` while pi-ai restarts yields catalog-only rows.
+- **`discoverModels` (P3).** It answers pi's rows plus the catalog's missing ones, deduped and whitelisted. A `NO_DISCOVERY` while pi-ai restarts yields catalog-only rows. Landed as: the complement applies only to a plane route asked on the namespace of the pi-ai row the claim serves, and only while the claim is live (`RouteClaim.claiming()`); every other request the wrapper classifies (another pi-ai row's planes, a custom relay, a gateway-URL draft) keeps the enrich-only merge, now whitelisted, since pi-ai serves those and refuses an id it does not list. No `rewrapOnAdaptersUpdated`: the `ctx.inject(["llm"])` scope already follows the service, and a pi-ai restart never touches the `llm` instance.
 
 #### Deleted
 
@@ -291,8 +292,9 @@ src/
   lifecycle.ts         apply(): installers only
   host/
     patch-method.ts    wrap a host method: restore only if still current; delete when the original
-                       was inherited; re-wrap on llm/adapters-updated (settings.describe, discoverModels)
-    discovery.ts       discoverModels: pi's answer + the catalog's missing models (D3, D8)
+                       was inherited; can re-wrap on llm/adapters-updated (no site needs it yet)
+    discovery.ts       discoverModels: pi's answer + the catalog's missing models (D3, D8);
+                       in src/models-discovery.ts until P10a
     route-claim.ts     prepended internal/config filter: pi-ai never claims the planes; reconcile on
                        commit; mount and teardown ordering (F14-F17)
     plane-provider.ts  PlaneAdapter (extends the host's PiAiAdapter), registered as the declared planes
@@ -404,10 +406,10 @@ What stays private is pinned by contract tests against the real host packages:
    - **The flip rule.** A keyed modern cell that answers path-gone, wrong-protocol or auth-refused with the CI key turns the job red, and so does a modern model-gone beside another shape of the same plane × protocol (same model, same key) that accepted it (`served` or `path-exists`). Flip evidence is a wrong-protocol, path-gone, auth-refused or model-gone on the modern cell while the cell a flip would send the same plane × protocol to (`LEGACY_DISPATCH`'s, when it is not the modern cell itself — never Go's Google) accepted the request (`served` or `path-exists`; beside a refused key or a gone path `account` counts too, as it shows the key read and the path there, but not beside a refused protocol or model, as the account's gate answers before either is read): the evidence for P-R2b, the `fix:` that flips `AUTO_ENDPOINT_FAMILY`, with the copy, `TODAY_DISPATCH` and the re-tagged wire facets. A refusal only the root or Go Google's `/zen/go` cell accepted is red but not flip evidence (no flip reaches either); so are a key refused on every shape that read it (the CI secret), a key no other shape read, and a protocol or a path the flip's cell refused too (a flip would not serve it). Each sibling counts only for what it measured: a protocol or a path the flip's cell answered nothing about (a rate limit, a busy upstream, the account's gate, no answer) is red, not evidence, and a re-run. A busy upstream never counts as a shape accepting the request. The job also fails when a default cell answers nothing readable (`other`, a redirect, a refused session, `transport-error`, `no-model`), which is not flip evidence, and skips a plane none of whose default cells was served (a busy upstream — a 503, a 529 or a 5xx naming an overload — skips like a rate limit; a 500 or 502 stays `other`).
    - **Measured results** live in `docs/redirect-planes.md` §13, pending the first CI run.
    - **The follow-up is P-R2b**, conditional: it pastes the first CI run's tables into §13, and flips `AUTO_ENDPOINT_FAMILY` only if that run (or a later one) shows flip evidence; with none, it closes as a `docs:` change once §13 holds a real run.
-9. **P3 `feat:` Settings complements pi's list.**
-   - The `discoverModels` wrapper answers servable, non-deprecated models, deduped and whitelisted.
-   - Delete `installModelDiscovery` and `toDiscovered`.
-   - Rewrite the "adds nothing" tests, and the docs that say the same.
+9. **P3 `feat:` Settings complements pi's list.** In review. Landed as:
+   - the `discoverModels` wrapper (`src/models-discovery.ts`, through `host/patch-method.ts`): on a plane the plugin serves, pi's rows first in pi's order (ids the OpenCode catalog has retired dropped once a live catalog read has landed — offline, pi's list passes through; each field read from the catalog first and from pi only where the catalog has none, the composer's own D17 order, so a row adopted from the fetch carries what the composer serves), then every servable, non-deprecated catalog model pi lacks (`complementDiscoveredModels`), each id once and whitelisted to `LlmDiscoveredModel`'s five fields; `NO_DISCOVERY` from pi-ai's namespace answers the catalog alone (F21);
+   - `installModelDiscovery`, `toDiscovered`, the `registerModelDiscovery` namespaces and their lifecycle tests deleted;
+   - the "adds nothing" tests and docs rewritten; `test/host-discovery.test.ts` carries the real-host and contract rows, and the binary e2e the Settings fetch row. Refinements: the `RouteClaim.claiming()` seam, so gap rows are offered only while the claim is live and only on the served row's namespace; the whitelist omits a field nobody supplied, unknown modalities included (absent means unknown in the Remote's schema), rather than defaulting it, and narrows a supplied modality list to text/image, omitting the field when nothing survives (as the composer's `catalogInput` does); `verify-catalog` check 3 retargeted from `mergeDiscoveredModels` to `planeProfileFor`, the composer's own source; and the wrapper kept behind `enrichModels`, as the listing enrichment and the old discovery registration were — with it off, Settings' fetch is pi's list and a restart's `NO_DISCOVERY` passes through, the user's opt-out (D8), a reading of D3 for the owner to confirm.
 10. **P-T2 `test:` suite structure.**
     - Move the mock-booting unit files into `test/mock/`.
     - Retire the ad-hoc contexts, `createMockContext` and `HarnessSimulator`.
@@ -597,7 +599,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → (P-R
 **Cells:**
 
 - (a) pi 1.1.0, pinned and patched, on PRs, nightly and on dispatch; it asserts every row;
-- (b) whatever npm installs, nightly and on dispatch. Since P-R1 it skips only the per-model rows (a newer pi's own entry can move a model's metadata); the listings before and after a turn, the save rows and the row that the plane provider is built from the host prefix's own pi are asserted in both cells, since none of them depends on which ids pi describes. Its probe JSON is the record.
+- (b) whatever npm installs, nightly and on dispatch. Since P-R1 it skips the per-model rows (a newer pi's own entry can move a model's metadata) and, since P3, the Settings fetch's order (pi's list first); the listings before and after a turn, the save rows, the row that the plane provider is built from the host prefix's own pi, and (since P3) the Settings fetch row — the whole servable catalog, each id once, in the Remote's five fields — are asserted in both cells, since none of them depends on which ids pi describes. Its probe JSON is the record.
 
 ### The live gateway job (`OPENCODE_API_KEY` / `OPENCODE_GO_API_KEY`)
 

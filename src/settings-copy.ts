@@ -11,7 +11,7 @@ export const en = {
     "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
   enrichModels: "Enrich listings from the OpenCode catalog (default on)",
   enrichModelsHint:
-    "Lets the gateway's /models listing carry the full OpenCode catalog (models.opencode.ai — the same registry models.dev serves) with names, context limits and modalities, and offers that catalog to Settings' model discovery. It does NOT add models to the picker — the picker shows only what you declared; use \"Check catalog\" above for that. A declared model's own info (context, modalities, thinking levels) always comes from your model row and the catalog, whatever this says. Off leaves the gateway listing as the gateway sent it and offers no catalog to discovery.",
+    "Lets the gateway's /models listing carry the full OpenCode catalog (models.opencode.ai — the same registry models.dev serves) with names, context limits and modalities, and offers that catalog to Settings' model discovery. It does NOT add models to the picker by itself — the picker shows the models you declared, or the plane's catalog when its entry declares none, and this switch changes neither. To declare more, use Settings → Models → Fetch on an OpenCode plane: it offers pi's list plus the catalog's models pi lacks, and adopting a row and saving declares it. A declared model's own info (context, modalities, thinking levels) always comes from your model row and the catalog, whatever this says. Off leaves the gateway listing as the gateway sent it and offers no catalog to discovery.",
   endpoint: "API Endpoint",
   endpointAuto: "Automatic (same as Modern)",
   endpointHint:
@@ -182,7 +182,7 @@ export const zh: Record<keyof typeof en, string> = {
     "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
   enrichModels: "用 OpenCode 官方目录补全列表（默认开启）",
   enrichModelsHint:
-    "让网关 /models 列表带上 OpenCode 官方目录（models.opencode.ai，与 models.dev 是同一份注册表）里的完整目录，含名称、上下文上限与模态，并把这份目录提供给设置页的模型发现。它不会往选择器里添加模型——选择器只显示你声明的那些，要添加请用上面的「检查目录」。已声明模型自身的信息（上下文、模态、思考档位）始终来自你的模型行与目录，与此开关无关。关闭后网关列表保持原样，也不向模型发现提供目录。",
+    "让网关 /models 列表带上 OpenCode 官方目录（models.opencode.ai，与 models.dev 是同一份注册表）里的完整目录，含名称、上下文上限与模态，并把这份目录提供给设置页的模型发现。它本身不会往选择器里添加模型——选择器显示你声明的模型；条目未声明任何模型时显示该平面的目录，此开关不改变这两者。要声明更多，请在设置的模型页对 OpenCode 平面使用「获取可用模型」：它会提供 pi 的列表以及 pi 缺少的目录模型，选用一行并保存即完成声明。已声明模型自身的信息（上下文、模态、思考档位）始终来自你的模型行与目录，与此开关无关。关闭后网关列表保持原样，也不向模型发现提供目录。",
   injectCoreTools: "自动补全核心工具（默认开启）",
   injectCoreToolsHint:
     "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。留空沿用默认值。",

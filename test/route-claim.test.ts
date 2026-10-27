@@ -181,6 +181,7 @@ describe("route-claim · standing down", () => {
     await expect(claim.mounted).resolves.toBeUndefined();
     expect(claim.committedEntries()).toEqual({});
     expect(claim.piAiNamespace()).toBe("llm-pi-ai");
+    expect(claim.claiming()).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("offers no on, inject, effect")
     );
@@ -193,13 +194,16 @@ describe("route-claim · standing down", () => {
     });
     const pi = piFiber();
     const host = standIn({ fibers: () => [pi] });
-    await installRouteClaim(host.ctx, config).mounted;
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
     await flush();
     expect(host.llm.registerAdapter).not.toHaveBeenCalled();
     expect(pi.restart).toHaveBeenCalledTimes(1);
     expect(host.warn).toHaveBeenCalledWith(
       expect.stringContaining("unavailable; the plane routes stay pi-ai's")
     );
+    // Stood down: pi-ai takes the planes and their saves again.
+    expect(claim.claiming()).toBe(false);
     // Inert from here: the listener passes through.
     const next = vi.fn(() => "next");
     expect(
@@ -687,6 +691,7 @@ describe("route-claim · reconcile", () => {
     const claim = installRouteClaim(host.ctx, config);
     await claim.mounted;
     await flush();
+    expect(claim.claiming()).toBe(true);
     expect(host.info).toHaveBeenCalledWith(
       expect.stringContaining("still held elsewhere")
     );
@@ -800,13 +805,16 @@ describe("route-claim · teardown", () => {
     useTestModules();
     const pi = piFiber();
     const host = standIn({ fibers: () => [pi] });
-    await installRouteClaim(host.ctx, config).mounted;
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
     await flush();
     expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
+    expect(claim.claiming()).toBe(true);
     const [teardown] = host.cleanups;
     expect(teardown?.()).toBeUndefined();
     expect(host.handle).toHaveBeenCalledTimes(1);
     expect(pi.restart).not.toHaveBeenCalled();
+    expect(claim.claiming()).toBe(false);
   });
 
   it("unsubscribes from the catalog on a reload too, so a reloaded activation leaves nothing behind", async () => {

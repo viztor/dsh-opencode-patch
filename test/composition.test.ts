@@ -26,16 +26,19 @@
 import { Context } from "@deepseek-ai/cordis";
 import { describe, expect, it } from "vitest";
 
-import { type CordisContext, apply, inject } from "./support/src.ts";
+import {
+  type CordisContext,
+  apply,
+  inject,
+  inspectPatch,
+} from "./support/src.ts";
 
-/** The `llm` service, shaped as the plugin reads it, logging discovery registrations. */
-const llmService = (registered: string[] = []) => ({
+/** The `llm` service, shaped as the plugin reads it, with its own discovery. */
+const llmService = () => ({
+  discoverModels: async (): Promise<unknown> => [],
   listModels: async () => [],
   listProviders: () => [],
   registerAdapter: () => () => {},
-  registerModelDiscovery: (ns: string) => {
-    registered.push(ns);
-  },
 });
 
 /**
@@ -50,12 +53,11 @@ const mount = async (
   options: {
     readonly withLlm?: boolean;
     readonly config?: Record<string, unknown>;
-    readonly registered?: string[];
   } = {}
 ) => {
   const ctx = new Context();
   if (options.withLlm !== false) {
-    ctx.provide("llm", llmService(options.registered) as never);
+    ctx.provide("llm", llmService() as never);
   }
   let activated = false;
   const fiber = ctx.plugin({
@@ -79,15 +81,26 @@ describe("composition · a real cordis Context", () => {
     // need `llm` is reached through `ctx.inject`, and runs only once cordis
     // provides it.
     expect(inject).toEqual([]);
-    const registered: string[] = [];
-    const without = await mount({ registered, withLlm: false });
+    const service = llmService();
+    const original = service.discoverModels;
+    const without = await mount({ withLlm: false });
     expect(without.activated, "the root waits for nothing").toBe(true);
-    expect(registered).toEqual([]);
-    without.ctx.provide("llm", llmService(registered) as never);
+    without.ctx.provide("llm", service as never);
     await new Promise((resolve) => {
       setTimeout(resolve, 10);
     });
-    expect(registered).toContain("opencode");
+    // The `llm` scope ran: Settings' discovery is wrapped on the service.
+    const installed = Reflect.getOwnPropertyDescriptor(
+      service,
+      "discoverModels"
+    )?.value;
+    expect(installed).not.toBe(original);
+    expect(inspectPatch(installed, "discoverModels")).toEqual([
+      expect.objectContaining({
+        id: "dsh-opencode-patch/model-discovery",
+        live: true,
+      }),
+    ]);
   });
 
   it("leaves the purge service reachable through ctx.get", async () => {

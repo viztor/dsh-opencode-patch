@@ -302,8 +302,10 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // **The catalog surface seeds, and that is correct here.** `discoverModels`
     // returns its installed catalog for a provider pi ships and only fetches an
     // endpoint for one it does not, so this listing is what the endpoint offers —
-    // the surface a user browses, not the list a picker shows. The picker's own
-    // path (`mergeDiscoveredModels`) still never widens.
+    // the surface a user browses, not the list a picker shows. The picker lists
+    // the plane profile's declared models (`planeProfileFor`, never widened);
+    // Settings' fetch on a served plane is what offers the catalog
+    // (`complementDiscoveredModels`).
     expect(json.data.length).toBe(OPENCODE_GO_CATALOG.length + 1);
 
     const deepseek = json.data.find((m) => m.id === "deepseek-v4.1-flash");

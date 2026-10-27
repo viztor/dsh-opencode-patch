@@ -218,7 +218,9 @@ export {
 
 // models-discovery.ts
 export {
+  complementDiscoveredModels,
   decorateModelDiscovery,
+  type DiscoveryClaim,
   mergeDiscoveredModels,
   resolveDiscoveryProvider,
 } from "../../src/models-discovery.ts";
