@@ -538,8 +538,14 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
  * list and twenty localized strings left with it. A ceiling that stayed at 140
  * would have quietly stopped being a tripwire — 12 KB of slack is more than this
  * guard exists to tolerate.
+ *
+ * Raised 128 -> 132 KB when the store-inspection row's remote descriptor landed:
+ * the row had been calling a namespace the client never mounted, and the fix is
+ * the descriptor plus the whitelist parser its codec runs. Source, not a
+ * dependency — the client measured 132320 bytes against the old line, about
+ * 1.2 KB over, which is this guard's "raise it" case.
  */
-const CLIENT_BUDGET = 128 * 1024;
+const CLIENT_BUDGET = 132 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

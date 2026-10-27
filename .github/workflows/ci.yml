@@ -60,6 +60,29 @@ jobs:
           path: coverage
           retention-days: 7
 
+  # `engines.node` promises >=24 and every other job runs 26, so the floor was a
+  # claim nothing exercised. The suites that depend on the engine (node:sqlite,
+  # Intl.DurationFormat and its ICU strings) are exactly the ones that differ
+  # between majors, so the floor gets its own offline run of the unit and mock
+  # suites. Raise this together with `engines.node`.
+  engine-floor:
+    name: test · node 24 (engines floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Shuffled here, and in order in the main job: the two runs together show a
+      # case that passes only because of what an earlier case left behind. The
+      # seed is printed, so a failure reproduces with `--sequence.seed=<n>`.
+      - run: pnpm run test:shuffle
+      - run: pnpm run test:mock
+
   # The bundled catalog is generated from models.dev, and the one field that went
   # stale before (`provider_npm`) put nine models on an endpoint that cannot
   # serve them — a WRONG answer rather than a missing one, and invisible to the
@@ -67,21 +90,51 @@ jobs:
   # diff to review instead of a bug to diagnose.
   #
   # WHAT THIS GATES, and what it deliberately does not. The failure it exists
-  # for is an OMISSION: someone changes the catalog and forgets to regenerate,
-  # so the wrong `provider_npm` ships. That is fixable before merging, so a
-  # PULL REQUEST fails on a stale shim.
+  # for is an OMISSION: someone changes a generator - or the parser it calls -
+  # and forgets to regenerate, so the wrong `provider_npm` ships. That is a fact
+  # about a pull request's OWN diff, so the diff decides. On a pull request each
+  # of the three checks (`catalog:shim`, `limits:shim`, `cli:version`) GATES
+  # only when the diff touches one of that check's INPUTS: its script and every
+  # local module the script loads, transitively (a type-only import loads
+  # nothing), plus `src/identity.ts`, which `cli:version` reads as data.
+  # Otherwise it REPORTS - a warning, exit 0. One half of `cli:version` gates
+  # every pull request regardless: the offline scan that every copy of the CLI
+  # version in the tree agrees with the pin, which reads only the files the
+  # repository maintains (never the generated tables, which hold vendor data),
+  # so no vendor move can break it.
+  # `scripts/freshness-scope.ts` derives the inputs from the sources themselves
+  # and makes the call, so adding an import to a generator moves its inputs
+  # without anyone editing a list. The generated files are never inputs: a pull
+  # request that only carries a refresh reports drift rather than failing on it,
+  # and one that edits a generated file without touching its generator gets a
+  # warning naming the file, since a hand-edit is forbidden.
   #
-  # A push to main is a different question. `main` was reviewed with a current
-  # shim; the vendor may have rotated rows in the minutes since. The runtime
-  # already refreshes the catalog on its own (SWR, 1h TTL), so a shim a few
-  # hours behind only affects a cold start - it is not a regression the push
-  # introduced. Failing there turned upstream churn into a red main several
-  # times in one afternoon, which is how a signal gets ignored. So on main it
-  # REPORTS (a warning, and the nightly proposes the refresh) rather than
-  # failing.
+  # Why a pull request is not gated on drift alone: the vendor's catalog, its Go
+  # limits page and its CLI version move most days, and each move used to turn
+  # every open pull request red although none of them caused it. Vendor drift
+  # is not a pull request's regression. The nightly run notices all three. For
+  # the two generated tables it regenerates them and proposes the refresh as a
+  # pull request of its own, which is where it is reviewed. For the CLI version
+  # it only warns: the bump is a human pull request to `src/identity.ts` (and
+  # its copies), which gates, because the pin is one of the check's inputs.
   #
-  # Fork PRs are skipped: the job reaches the public internet, and a fork's
-  # copy would answer "stale" for everyone.
+  # The gates FAIL CLOSED. Each runs unless the scope step answered "report",
+  # so a lost answer (the step moved below its readers, an output renamed)
+  # falls back to gating every pull request, which is loud, rather than to
+  # running nothing, which is not.
+  #
+  # A push to main is the same question with the same answer. `main` was
+  # reviewed with a current shim; the vendor may have rotated rows in the
+  # minutes since. The runtime already refreshes the catalog on its own (SWR, 1h
+  # TTL), so a shim a few hours behind only affects a cold start - it is not a
+  # regression the push introduced. Failing there turned upstream churn into a
+  # red main several times in one afternoon, which is how a signal gets
+  # ignored. So on main it REPORTS (a warning, and the nightly proposes the
+  # refresh) rather than failing.
+  #
+  # Fork PRs run the same scoped checks: they read only public sources, and the
+  # job's write access is used by the nightly path alone, which a fork never
+  # triggers.
   catalog:
     name: catalog freshness
     runs-on: ubuntu-latest
@@ -93,62 +146,113 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Two commits: on a pull request HEAD is the merge ref, whose first
+          # parent is the base, so `HEAD^1..HEAD` is exactly the PR's own diff.
+          # The default depth of one would leave `HEAD^1` missing.
+          fetch-depth: 2
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: is src/catalog-data.ts current? (pull requests)
+      - name: which checks does this pull request gate? (pull requests)
+        id: scope
         if: github.event_name == 'pull_request'
         run: |
-          # Exits 1 on a stale shim and prints what would change. A PR is where
-          # a forgotten regeneration is still fixable, so this one is a gate.
+          changed="$RUNNER_TEMP/changed-files"
+          git diff --name-only HEAD^1 HEAD > "$changed"
+          # Printed, so the decision below can be checked against what it read.
+          echo "this pull request changes $(wc -l < "$changed") file(s):"
+          cat "$changed"
+          # decide <output key> <check>: "gate" when the diff touches one of
+          # the check's inputs, "report" otherwise. Any warning the script
+          # raises (a generated file changed without its generator) goes to
+          # stderr, kept apart from the answer and printed after it.
+          decide() {
+            notes="$RUNNER_TEMP/scope-notes"
+            scope=$(node --experimental-strip-types --disable-warning=ExperimentalWarning \
+              scripts/freshness-scope.ts "$2" < "$changed" 2> "$notes") \
+              || { cat "$notes"; exit 1; }
+            cat "$notes"
+            case "$scope" in
+              gate | report) ;;
+              *) echo "::error::freshness-scope answered '$scope' for $2"; exit 1 ;;
+            esac
+            echo "$2: $scope"
+            echo "$1=$scope" >> "$GITHUB_OUTPUT"
+          }
+          decide catalog catalog:shim
+          decide limits limits:shim
+          decide cli cli:version
+      - name: is src/catalog-data.ts current? (pull requests touching its generator)
+        if: github.event_name == 'pull_request' && steps.scope.outputs.catalog != 'report'
+        run: |
+          # Exits 1 on a stale shim and prints what would change. This pull
+          # request changed what generates the shim, so a forgotten
+          # regeneration is its own omission, and still fixable: a gate.
           pnpm run catalog:shim || {
             echo "::error::src/catalog-data.ts is out of date — run 'pnpm run catalog:shim -- --write' and commit the result."
             exit 1
           }
-      - name: report a stale catalog (pushes to main)
-        if: github.event_name == 'push'
+      - name: report a stale catalog (other pull requests, and pushes to main)
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && steps.scope.outputs.catalog == 'report')
         run: |
-          # A warning, not a failure: main was reviewed with a current shim, and
-          # the vendor moving since then is not a regression this push caused.
-          # The nightly run proposes the refresh.
+          # A warning, not a failure. A pull request that touched no input of
+          # the generator, or a push to main: vendor drift is not a regression
+          # of the change under test. The nightly run proposes the refresh.
           pnpm run catalog:shim \
-            || echo "::warning::src/catalog-data.ts is stale - the registry moved since this commit; the nightly refresh will propose it."
+            || echo "::warning::src/catalog-data.ts is stale - the registry moved; this run does not gate on vendor drift, and the nightly refresh will propose it."
       # The Go plan's per-model dollar allowance, from OpenCode's own docs. It
       # moves when THEY move — the page says limits "may change as we learn from
       # early usage and feedback" — and a stale table shows a wrong dollar figure
       # that looks authoritative, which is worse than showing none.
-      - name: is src/go-limits-data.ts current? (pull requests)
-        if: github.event_name == 'pull_request'
+      - name: is src/go-limits-data.ts current? (pull requests touching its generator)
+        if: github.event_name == 'pull_request' && steps.scope.outputs.limits != 'report'
         run: |
           pnpm run limits:shim || {
             echo "::error::src/go-limits-data.ts is out of date — run 'pnpm run limits:shim -- --write' and commit the result."
             exit 1
           }
-      - name: report a stale limits table (pushes to main)
-        if: github.event_name == 'push'
+      - name: report a stale limits table (other pull requests, and pushes to main)
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && steps.scope.outputs.limits == 'report')
         run: |
           pnpm run limits:shim \
-            || echo "::warning::src/go-limits-data.ts is stale - the vendor's docs page moved since this commit."
+            || echo "::warning::src/go-limits-data.ts is stale - the vendor's docs page moved; this run does not gate on vendor drift, and the nightly refresh will propose it."
 
       # The nightly run exists to NOTICE vendor drift, and drift is the normal
       # case - the sources move most days. Failing here meant a red run every
       # night, which trains everyone to ignore the signal. So the nightly path
-      # regenerates and proposes a pull request, and the refresh gates above
-      # run on pull requests (where a forgotten regeneration is still fixable)
-      # while a push to main only reports.
+      # regenerates and proposes a pull request; the refresh gates above run on
+      # a pull request that touches a generator (where a forgotten regeneration
+      # is still fixable); any other pull request, and a push to main, only
+      # reports. A manual dispatch runs neither shim check - only the CLI
+      # version's report below.
       #
       # The User-Agent names the CLI version, and the vendor moves it every few
-      # days - which is the same shape again: a vendor release is not a reason
-      # to go red, so this one warns everywhere except a pull request.
-      - name: the claimed CLI version is the published one (pull requests)
+      # days - which is the same shape again, with one difference: the script
+      # checks two things. Every copy of the version in the tree agreeing with
+      # `src/identity.ts` is offline, and only the repository can break it, so
+      # it gates every pull request. The pin being the published version follows
+      # the vendor, so it gates only a pull request that touches the pin or the
+      # script, and warns everywhere else - quoting the script's own `error:`
+      # line, so the warning names the cause that failed.
+      - name: every copy of the CLI version agrees with the pin (pull requests)
         if: github.event_name == 'pull_request'
+        run: pnpm run cli:version -- --copies
+      - name: the claimed CLI version is the published one (pull requests touching it)
+        if: github.event_name == 'pull_request' && steps.scope.outputs.cli != 'report'
         run: pnpm run cli:version
-      - name: report a stale CLI version (push and nightly)
-        if: github.event_name != 'pull_request'
-        run: pnpm run cli:version || echo "::warning::the pinned opencode CLI version is not the published one"
+      - name: report a stale CLI version (other pull requests, push, nightly and dispatch)
+        if: github.event_name != 'pull_request' || steps.scope.outputs.cli == 'report'
+        run: |
+          # The default shell has no pipefail, without which `tee` would answer
+          # for the check and the warning below could never fire.
+          set -o pipefail
+          log="$RUNNER_TEMP/cli-version.log"
+          pnpm run cli:version 2>&1 | tee "$log" \
+            || echo "::warning::$(grep -m 1 '^error: ' "$log" || echo 'cli:version failed - see the log above')"
 
       - name: propose the refresh (nightly only)
         if: github.event_name == 'schedule'

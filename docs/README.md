@@ -9,6 +9,7 @@ One document per subject. Everything here is engineering material and written in
 | [`protocol-routing-and-merge.md`](./protocol-routing-and-merge.md) | the routing **implementation**: why routing exists, how the route is chosen, the catalog merge, and where the code lives | English |
 | [`engineering-notes.md`](./engineering-notes.md) | vendor findings, and the rules that came out of real failures | English |
 | [`credentials.md`](./credentials.md) | the credential chain: the deployment's own reference, both OAuth logins, refresh semantics, and the zero-configuration guarantee it must not break | English |
+| [`improvement-plan.md`](./improvement-plan.md) | the plan of record: what the audit found, what the host supports, and the phased refactor, with status | English |
 | [`quota-meter.md`](./quota-meter.md) | the composer meter, state by state: what it shows, what each row answers, and where the numbers come from | English |
 | [`quota-meter.zh-CN.md`](./quota-meter.zh-CN.md) | 同一份说明的中文版 | 中文 |
 

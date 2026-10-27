@@ -145,6 +145,25 @@ let refreshPromise:
     }>
   | undefined;
 
+/**
+ * Put the catalog back to the bundled shim, as a fresh process holds it.
+ *
+ * The live maps, the retired-id sets and the refresh bookkeeping are module
+ * state for the life of the process, which is right for the host and wrong for
+ * a test: a case that refreshes from a fixture would otherwise decide what every
+ * later case in the file sees. The sibling resets are `clearCapturedApiKeys` and
+ * `clearSessionUsageStore`.
+ */
+export const resetCatalogState = (): void => {
+  activeGoCatalog = new Map(OPENCODE_GO_CATALOG.map((m) => [m.id, m]));
+  activeZenCatalog = new Map(OPENCODE_ZEN_CATALOG.map((m) => [m.id, m]));
+  deprecatedGoIds.clear();
+  deprecatedZenIds.clear();
+  lastRefreshedAt = 0;
+  lastRefreshSucceeded = false;
+  refreshPromise = undefined;
+};
+
 export interface ParsedCatalogs {
   /**
    * The endpoint each plane's provider declares, read from the catalog itself
@@ -696,7 +715,11 @@ export const enrichModelsResponse = async (
     // If the upstream returned non-JSON, generate the full catalog response.
   }
 
-  const isGo = isGoModelsListingUrl(url);
+  // The plane from the PATH alone. The caller has already decided this is a
+  // listing, against the deployment's own gateway markers; asking
+  // `isGoModelsListingUrl` again applied the DEFAULT markers, so a relay's
+  // `/zen/go/v1/models` was answered with the Zen catalog.
+  const isGo = isGoPlaneUrl(url);
   const catalog = isGo ? getLiveGoCatalog(fetchFn) : getLiveZenCatalog(fetchFn);
   const catalogById = new Map(catalog.map((m) => [m.id, m]));
   const merged = new Map<string, Record<string, unknown>>();

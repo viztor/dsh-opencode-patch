@@ -451,7 +451,12 @@ export const hideResponsesRoute = (
         return [];
       }
       const models = await Reflect.apply(originalListModels, this, [provider]);
-      if (!Array.isArray(models)) {
+      // **Only the routes this plugin claims.** A provider the deployment did
+      // not hand it — a direct `anthropic` or `openai` route — is answered by its
+      // own adapter and nothing else: the servability rule below reads OUR
+      // catalog, and against a foreign route it dropped real rows (a new Claude
+      // or GPT id has no OpenCode route, so it read as "unservable").
+      if (!Array.isArray(models) || !config.providers.has(provider)) {
         return models;
       }
       // **An empty answer from a route that DECLARES models is a credential
@@ -1072,6 +1077,13 @@ export const decorateModelInfo = (
     model: string,
     signal?: AbortSignal
   ): Promise<unknown> => {
+    // A provider this plugin does not claim is answered by its own adapter,
+    // unchanged and un-caught. Our catalog is OpenCode's: substituting it for a
+    // foreign route's failure, or overwriting a foreign route's limits with it,
+    // describes a model the user is not calling.
+    if (!config.providers.has(provider) && !isInternalRoute(provider)) {
+      return Reflect.apply(original, llm, [provider, model, signal]);
+    }
     let resolved: unknown;
     try {
       resolved = await Reflect.apply(original, llm, [provider, model, signal]);

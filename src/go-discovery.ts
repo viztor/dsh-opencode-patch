@@ -582,16 +582,12 @@ export const resolveRoutedKey = async (
       ),
   });
 
-  // Inverse precedence of `recordCapturedApiKey`: here the routed provider is
-  // authoritative, because the resolved key may be a shared or fallback
-  // credential whose prefix says nothing about the route in use.
+  // The routed provider decides, and the key's prefix never does: OpenCode
+  // issues `oc_sk_…` for Go credentials too (see `tierForRequest`).
   let tier: "go" | "zen" | "unknown" = "unknown";
-  if (isGoRoute || (key !== undefined && key.startsWith("sk-"))) {
+  if (isGoRoute) {
     tier = "go";
-  } else if (
-    provider === "opencode" ||
-    (key !== undefined && key.startsWith("oc_sk_"))
-  ) {
+  } else if (provider === "opencode") {
     tier = "zen";
   }
 

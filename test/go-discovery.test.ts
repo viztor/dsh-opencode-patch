@@ -52,11 +52,11 @@ import {
   recordCapturedApiKey,
 } from "../src/key-capture.ts";
 import {
-  createMockContext,
   createOpencodeStore,
   type FixtureCredential,
   type FixtureStore,
-} from "./test-helpers.ts";
+} from "./support/opencode-store-fixture.ts";
+import { createMockContext } from "./test-helpers.ts";
 
 /** The Zen plane, which discovery rewrites onto the Go plane. */
 const ZEN_BASE = "https://opencode.ai/zen/v1";
@@ -947,21 +947,17 @@ describe("resolveRoutedKey", () => {
     expect(routed.provider).toBe("opencode-go");
   });
 
-  it("classifies a renamed route by the key prefix alone", async () => {
-    // The prefix is intrinsic to the credential, so it survives a route rename;
-    // a route id says nothing about the account behind it.
-    recordCapturedApiKey("sk-rotated-key", "my-relay", "https://relay.test/v1");
-    const byGoPrefix = await resolveRoutedKey(composition(), "my-relay");
-    expect(byGoPrefix.tier).toBe("go");
-    clearCapturedApiKeys();
-    recordCapturedApiKey("oc_sk_zen-key", "my-relay", "https://relay.test/v1");
-    const byZenPrefix = await resolveRoutedKey(composition(), "my-relay");
-    expect(byZenPrefix.tier).toBe("zen");
-    clearCapturedApiKeys();
-    recordCapturedApiKey("opaque-token", "my-relay", "https://relay.test/v1");
-    const unknown = await resolveRoutedKey(composition(), "my-relay");
-    expect(unknown.tier).toBe("unknown");
-    expect(unknown.key).toBe("opaque-token");
+  it("does not classify a renamed route by the key's prefix", async () => {
+    // The route decides, and a renamed route names no plane. The prefix used to
+    // decide instead, and it is not OpenCode's: `oc_sk_` is issued for Go keys
+    // too, and `sk-` is every OpenAI key.
+    for (const key of ["sk-rotated-key", "oc_sk_zen-key", "opaque-token"]) {
+      clearCapturedApiKeys();
+      recordCapturedApiKey(key, "my-relay", "https://relay.test/v1");
+      const routed = await resolveRoutedKey(composition(), "my-relay");
+      expect(routed.key).toBe(key);
+      expect(routed.tier).toBe("unknown");
+    }
   });
 
   it("accepts a Zen key for a route that legitimately owns one", async () => {
@@ -976,13 +972,14 @@ describe("resolveRoutedKey", () => {
     ).toBeUndefined();
   });
 
-  it("takes the most recent captured key when the route has none of its own", async () => {
+  it("reports the tier of the route it was asked about", async () => {
     // A non-Go route is not tier-filtered, so a key captured elsewhere can
-    // answer for it — which is why the reported tier comes from the key.
+    // answer for it; the tier reported is still the route's, never a guess
+    // from the key's shape.
     recordCapturedApiKey("sk-go-key-value", "opencode-go", GO_REQUEST);
     const routed = await resolveRoutedKey(composition(), "opencode");
     expect(routed.key).toBe("sk-go-key-value");
-    expect(routed.tier).toBe("go");
+    expect(routed.tier).toBe("zen");
   });
 
   it("uses the route's own declared reference, defaulting each plane differently", async () => {

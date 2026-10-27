@@ -362,6 +362,28 @@ describe("models-discovery · an empty list from a route that declares models", 
     stop?.();
   });
 
+  it("passes a provider it does not claim through untouched", async () => {
+    // A direct `anthropic` or `openai` route is the deployment's, not this
+    // plugin's. Its ids are not in the OpenCode catalog's routing, and the
+    // servability filter used to drop them as "unservable".
+    const foreign = [
+      { id: "claude-opus-9", name: "Claude Opus 9", provider: "anthropic" },
+      { id: "gpt-7", name: "GPT-7", provider: "openai" },
+    ];
+    const ctx = {
+      llm: {
+        listProviders: () => [],
+        listConfigurableProviders: () => [],
+        listModels: async (provider: string) =>
+          foreign.filter((row) => row.provider === provider),
+      },
+    } as unknown as CordisContext;
+    const stop = hideResponsesRoute(ctx, resolveConfig());
+    expect(await ctx.llm?.listModels?.("anthropic")).toEqual([foreign[0]]);
+    expect(await ctx.llm?.listModels?.("openai")).toEqual([foreign[1]]);
+    stop?.();
+  });
+
   it("leaves an adapter's own answer alone", async () => {
     const ctx = {
       llm: {
@@ -553,9 +575,7 @@ describe("models-discovery: I1's second clause, for a model no catalog describes
 
   it("offers Go Gemini through its native bridge", () => {
     // The Go catalog names the Google protocol, served by the Go bridge.
-    expect(isServableModel("gemini-4-argon-contributor", "opencode-go")).toBe(
-      true
-    );
+    expect(isServableModel("gemini-4-argon", "opencode-go")).toBe(true);
   });
 
   it("offers Zen's free tier models normally", () => {
@@ -1099,6 +1119,38 @@ describe("models-discovery: the Effort row a model reports", () => {
       "unknown model"
     );
 
+    stop?.();
+  });
+
+  it("leaves a provider it does not claim to its own adapter", async () => {
+    // The catalog is OpenCode's. A foreign route whose adapter refuses an id the
+    // catalog happens to share must keep its own failure, and one that answers
+    // must keep its own limits rather than OpenCode's.
+    const own = {
+      context: { contextWindow: 200_000 },
+      id: "claude-sonnet-4-5",
+    };
+    const ctx = {
+      llm: {
+        resolveModelInfo: async (provider: string) => {
+          if (provider === "anthropic-broken") {
+            throw new Error("adapter refused");
+          }
+          return own;
+        },
+      },
+    } as never as CordisContext;
+    const stop = decorateModelInfo(ctx, enrichConfig);
+    await expect(
+      patched(ctx)("anthropic-broken", "claude-sonnet-4-5")
+    ).rejects.toThrow("adapter refused");
+    expect(await patched(ctx)("anthropic", "claude-sonnet-4-5")).toBe(own);
+    // The claimed route still answers from the catalog, so the guard is not
+    // simply switching the decorator off.
+    const claimed = (await patched(ctx)("opencode", "claude-sonnet-4-5")) as {
+      context?: { contextWindow?: number };
+    };
+    expect(claimed.context?.contextWindow).not.toBe(200_000);
     stop?.();
   });
 

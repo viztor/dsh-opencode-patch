@@ -1314,9 +1314,10 @@ describe("settings-page: every remote gets a mount", () => {
     const services = mounted.flatMap((contribution) =>
       contribution.descriptors.map((d) => d.service)
     );
-    expect(services).toHaveLength(2);
+    // `opencodeStore` is the inspection row's; it was the one left out.
+    expect(services).toHaveLength(3);
     expect(new Set(services)).toEqual(
-      new Set(["opencodeGoUsage", "opencodeModelPurge"])
+      new Set(["opencodeGoUsage", "opencodeModelPurge", "opencodeStore"])
     );
     expect(mounted).toHaveLength(1);
     expect(mounted[0]?.package).toBe("dsh-opencode-patch");

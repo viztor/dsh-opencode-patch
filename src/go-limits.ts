@@ -20,9 +20,11 @@
  *
  * So it is GENERATED from the vendor's own machine-readable doc
  * (`https://opencode.ai/docs/go.md`, which is the page's markdown source, not a
- * scrape of rendered HTML) by `scripts/generate-go-limits.ts`, and CI fails when
- * it drifts — the same arrangement as `catalog-data.ts` / models.dev, for the
- * same reason.
+ * scrape of rendered HTML) by `scripts/generate-go-limits.ts`, and CI checks it
+ * for drift — the same arrangement as `catalog-data.ts` / models.dev, for the
+ * same reason: a pull request that changes the generator (or a module it
+ * loads) fails on a stale table; any other pull request, and a push to main,
+ * warns, and the nightly run proposes the refresh.
  *
  * ## What still cannot be shown, and why that is not an oversight
  *

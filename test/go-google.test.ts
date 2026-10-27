@@ -48,7 +48,7 @@ const createCredentialsSeam = () => {
   };
 };
 
-const model = "gemini-4-argon-contributor";
+const model = "gemini-4-argon";
 const specs = OPENCODE_GO_CATALOG.filter((spec) => spec.id === model);
 
 describe("Go Gemini native bridge", () => {

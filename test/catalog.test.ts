@@ -35,7 +35,7 @@ import {
   sanitizeModalities,
   type ActiveTurnState,
 } from "../src/index.ts";
-import { findModelSpec } from "../src/models-catalog.ts";
+import { findModelSpec, resetCatalogState } from "../src/models-catalog.ts";
 import { UNSERVED_PLANE_SDKS } from "../src/responses-routes.ts";
 import { createCaptureFetch, headerOf, SESSION_RE } from "./test-helpers.ts";
 
@@ -91,7 +91,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("ships only active, priced models in the bundled Go shim", () => {
-    expect(OPENCODE_GO_CATALOG.length).toBe(28);
+    expect(OPENCODE_GO_CATALOG.length).toBe(30);
     for (const model of OPENCODE_GO_CATALOG) {
       expect(model.id.length).toBeGreaterThan(0);
       expect(model.name.length).toBeGreaterThan(0);
@@ -197,7 +197,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // replacing the whole set — so these counts are the cold-start picker, and a
     // silent drop here is a model nobody can pick. Regenerate with
     // `scripts/regenerate-catalog-shim.ts` rather than editing by hand.
-    expect(OPENCODE_ZEN_CATALOG.length).toBe(82);
+    expect(OPENCODE_ZEN_CATALOG.length).toBe(81);
     const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
     // Only the free tiers the registry still lists as active. The count is the
     // `is_free` flag the shim carries, NOT the `-free` suffix: `big-pickle` is
@@ -371,9 +371,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
       data: Array<{ id: string }>;
     };
     // The GO catalog's own rows are in it…
-    expect(goJson.data.some((m) => m.id === "gemini-4-argon-contributor")).toBe(
-      true
-    );
+    expect(goJson.data.some((m) => m.id === "gemini-4-argon")).toBe(true);
     expect(goJson.data.some((m) => m.id === "muse-spark-1.3-contributor")).toBe(
       true
     );
@@ -721,6 +719,29 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toBe("https://models.opencode.ai/api.json");
     expect(seen[0]).not.toContain("models.dev");
+  });
+
+  it("resetCatalogState puts a refreshed catalog back to the bundled shim", async () => {
+    // The per-test reset in `test/support/` relies on this, and a reset that
+    // restored nothing would let every catalog count depend on run order again.
+    await refreshCatalog(
+      (async () =>
+        Response.json({
+          "opencode-go": {
+            models: { "reset-probe-model": { name: "Reset Probe" } },
+          },
+        })) as unknown as typeof fetch,
+      true
+    );
+    expect(getLiveGoCatalog().some((m) => m.id === "reset-probe-model")).toBe(
+      true
+    );
+    resetCatalogState();
+    expect(getLiveGoCatalog().some((m) => m.id === "reset-probe-model")).toBe(
+      false
+    );
+    expect(getLiveGoCatalog()).toHaveLength(OPENCODE_GO_CATALOG.length);
+    expect(getLiveZenCatalog()).toHaveLength(OPENCODE_ZEN_CATALOG.length);
   });
 
   it("refreshCatalog degrades gracefully on network errors without throwing", async () => {
@@ -1144,11 +1165,7 @@ describe("routing · the plane half of the decision", () => {
 
   it("leaves a model with no protocol alone", () => {
     expect(
-      internalRouteFor(
-        "opencode-go",
-        "gemini-4-argon-contributor",
-        "@ai-sdk/google"
-      )
+      internalRouteFor("opencode-go", "gemini-4-argon", "@ai-sdk/google")
     ).toBe("opencode-go-google");
     expect(internalRouteFor("opencode-go", "grok-4.7")).toBeUndefined();
   });

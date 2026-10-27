@@ -19,6 +19,8 @@ export default defineConfig({
     ...base.test,
     // Only the E2E files; the unit `include` from the base config is replaced.
     include: ["test/e2e/**/*.e2e.ts"],
+    // The base config's offline guard is exactly what this suite must not have.
+    setupFiles: ["test/support/reset-process-state.ts"],
     // These cross the public internet from CI, where 5s is far too tight.
     hookTimeout: 30_000,
     testTimeout: 30_000,

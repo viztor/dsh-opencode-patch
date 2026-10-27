@@ -58,6 +58,43 @@ describe("inspectStore", () => {
     });
   });
 
+  it("keeps only the whitelisted fields, so a stray secret cannot reach the card", async () => {
+    // The seam's rule is "a credential never crosses it". The parser is what
+    // enforces that on this side: a field the host did not mean to send is
+    // dropped, not rendered.
+    const answer = {
+      account: {
+        accessToken: "fixture-token-not-real",
+        email: "someone@example.com",
+        type: "oauth",
+      },
+      found: true,
+      token: "fixture-token-not-real",
+    };
+    const outcome = await inspectStore(scopeWith(async () => answer));
+    expect(outcome).toEqual({
+      inspection: {
+        account: { email: "someone@example.com", type: "oauth" },
+        found: true,
+      },
+      kind: "inspected",
+    });
+    expect(JSON.stringify(outcome)).not.toContain("fixture-token-not-real");
+  });
+
+  it("reports the remote's own failure from an ok:false envelope", async () => {
+    // Read as a shape, this used to surface as "invalid inspection shape" — a
+    // message about the envelope instead of the host's reason.
+    const inspect = vi.fn(async () => ({
+      error: { code: "opencode/store-unavailable", message: "no sqlite here" },
+      ok: false,
+    }));
+    await expect(inspectStore(scopeWith(inspect))).resolves.toEqual({
+      kind: "failed",
+      message: "no sqlite here",
+    });
+  });
+
   it("rejects an answer that is not an inspection", async () => {
     // A shape check, not a wish: the card renders rows off this value, and a
     // half-built answer would print `undefined` beside a label.

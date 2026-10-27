@@ -266,12 +266,20 @@ export const recordTurnUsage = (
     turns: existing.turns + 1,
   };
 
+  // Delete first, so the session moves to the END of the map. `Map.set` on an
+  // existing key keeps its original position, which made "the latest session"
+  // the most recently CREATED one: after sessions A then B, a new turn in A
+  // still read back as B's spend.
+  sessionStore.delete(sessionId);
   sessionStore.set(sessionId, updated);
 
   return toSnapshot(updated);
 };
 
-/** Read accumulated token and dollar usage for a session (or the latest active session). */
+/**
+ * Read accumulated token and dollar usage for a session, or for the session
+ * that most recently ran a turn when the id is absent or unknown.
+ */
 export const getSessionUsage = (
   sessionId?: string
 ): SessionUsageSnapshot | undefined => {

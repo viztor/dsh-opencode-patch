@@ -15,6 +15,7 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 
 import { DEFAULT_PROVIDERS, readStringList } from "./config-values.ts";
+import { storeRemote } from "./opencode-store-contract.ts";
 import { purgeRemote } from "./purge-contract.ts";
 import { OpencodeCard } from "./settings-card.tsx";
 import { en, withBundleCopy, zh, type CopyKey } from "./settings-copy.ts";
@@ -47,14 +48,20 @@ export const PKG = "dsh-opencode-patch";
  *
  * It is a contribution rather than a bare descriptor list because Typert
  * enforces unique package names, and this is the one place the package is
- * registered. The meter's namespace is the only one this build mounts — the
- * sign-in row and its `opencodeLogin` namespace are v2 work.
+ * registered. It carries every namespace the host mounts — the meter, the purge
+ * and the store inspection — and `test/remote-contract.test.ts` fails when a
+ * host service declares a method this list does not. The sign-in row and its
+ * `opencodeLogin` namespace are v2 work.
  */
 export const patchRemote = {
   // ONE contribution, TWO namespaces. Typert enforces a unique package name per
   // contribution, so mounting them separately with the same package throws
   // "already registered" and drops the remote entirely.
-  descriptors: [...usageRemote.descriptors, ...purgeRemote.descriptors],
+  descriptors: [
+    ...usageRemote.descriptors,
+    ...purgeRemote.descriptors,
+    ...storeRemote.descriptors,
+  ],
   package: PKG,
 };
 

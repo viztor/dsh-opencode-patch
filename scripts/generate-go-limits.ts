@@ -14,7 +14,10 @@
  * A hand-typed table would therefore be stale within a release — and a stale
  * dollar figure is worse than none, because it looks authoritative. So the table
  * is generated from `https://opencode.ai/docs/go.md` (the page's own markdown
- * source, served as `text/plain`) and CI fails when it drifts.
+ * source, served as `text/plain`), and CI checks it for drift: a pull request
+ * that changes this generator (or a module it loads) fails on a stale table;
+ * any other pull request, and a push to main, warns, and the nightly run
+ * proposes the refresh.
  *
  * **That URL is gone.** Measured 2026-10-12: it answers 404, the docs live under
  * `/v2/docs/console/go/` now, and the new page serves HTML - the allowance figures
