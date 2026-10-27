@@ -23,7 +23,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P1b   | `chore:` hygiene                              | in review |
 | P2    | `feat:` a smaller public API                  | in review |
 | P-T1a | `build:` pin the host                         | in review |
-| P-T1b | `test:` a harness that is the real host       | planned   |
+| P-T1b | `test:` a harness that is the real host       | in review |
 | P-H   | `refactor:` one way to patch a host method    | planned   |
 | P-R1  | `feat:` the plugin owns the plane routes      | planned   |
 | P-R2  | `fix:` the endpoint family, measured          | planned   |
@@ -123,7 +123,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 
 **The problem, in the owner's words.** A provider defines one backend. Supporting every protocol and the newer catalog meant un-registering the original `opencode`/`opencode-go` provider and registering the plugin's own. Deleting another plugin's registration is unsupported, so the plugin mounted extra routes per protocol instead, merged their models back into the user's provider, and redirected dispatch. This section shows that the host **does** allow the original intent, through supported paths (F11–F13): keep pi-ai from claiming the two ids, and register the plugin's provider under them. A spike on the real host confirmed it (run S0).
 
-**Facts from the host's own code and data.** F1–F5 and F10 are measured: the data files were counted and the resolver read. F6–F9 and F11–F13 are read from the code, and run S0 exercised F11–F13 end to end. P-T1's real-host harness pins them all, and a fact that fails there sends the design back to this section.
+**Facts from the host's own code and data.** F1–F5 and F10 are measured: the data files were counted and the resolver read. F6–F9 and F11–F13 are read from the code, and run S0 exercised F11–F13 end to end. P-T1's real-host harness pins the ones the host can answer in-process: P-T1b pins F1, F2, F4, F5, F8, F10–F16, F18 and F20 by number (F3 through its F4 consequence, F7 through F13's register and DUPLICATE halves); F6 (dispatch through a non-pi adapter) and F19's auth half (constructing a `PiAiAdapter`) are first exercised by P-R1, F6 through its mock gateway and the real `LlmRuntime`; F19's export half is pinned in `host-shapes` (`recordKeyFor`); F17 is honoured, not pinned — tier B fixes the apply order and the binary e2e infers it; F9 is a fact about opencode's own client, outside this host. A fact that fails where it is pinned sends the design back to this section.
 
 | # | Fact | Evidence |
 | :-- | :-- | :-- |
@@ -321,15 +321,16 @@ What stays private is pinned by contract tests against the real host packages:
 - **Pinning phases open with a green pin**, which the PR shows unchanged: P-T1a/b, P-H, P5, P7, P8, P9, P10a and P-T2.
 - **P-T3 and P12 are exempt.**
 
-**Characterization rows are tagged when they are recorded**, so a later phase flips named rows:
+**Characterization rows are tagged when they are recorded**, so a later phase flips named rows. The authoritative per-facet table is `S0_TODAY` in `test/support/host.ts` (each model's info, call-config verdict and wire carry their own tag); a phase's PR body cites the rows it flips from there. The three tags:
 
-- `KNOWN_DEFECT`:
-  - Go Gemini answers `INVALID_CONFIG`;
+- `BASELINE`: right today and must survive every phase. No phase may move a `BASELINE` facet, except that P-R2's measured family flip, if it happens, may move the endpoint-family part of a wire facet; it re-tags each one it moves and names it in its PR body.
+- `KNOWN_DEFECT`, wrong today and a phase fixes it, for example:
+  - Go Gemini answers `INVALID_CONFIG` — in the published host's apply order (`plugin-first`); with pi-ai applying first it validates, so the row is order-dependent (`todayRowsFor`). P-R1 flips it and, in the same diff, drops `todayRowsFor`'s pi-ai-first override and turns the `[KNOWN_DEFECT]` apply-order case into a `[BASELINE]` "no facet depends on the apply order" check;
   - an unknown id is rejected;
   - toggle models show Minimal/Xhigh/Max.
-- `INTENDED_CHANGE`:
+- `INTENDED_CHANGE`, right today and a phase changes it on purpose, for example:
   - completions models move from `/zen(/go)/v1` to `/inference(/go)/openai/v1`;
-  - `decoratePlaneAdapters`' baseUrl repair never reaches the wire.
+  - `decoratePlaneAdapters`' baseUrl repair never reaches the wire — a row of the `pi-ai-first` block only: in `plugin-first` the decoration never runs, and that row is a `KNOWN_DEFECT`.
 
 1. **P1a `fix:` shipped breakage.**
    - The wrapper's broken `export { default }`.
@@ -357,15 +358,24 @@ What stays private is pinned by contract tests against the real host packages:
    - The `@deepseek-ai/*` packages move to rc.2, and the devDependencies gain `dsh-llm`, `dsh-app-boot`, `dsh-config-editor`, `dsh-settings` and `cordis-plugin-loader`.
    - Add `test/support/host-versions.ts`, with a version test: `loadHostPi().version` is 1.1.0, and the root pi is the same copy.
    - Rewrite `mount-protocols.test.ts` as "every catalog SDK maps to a protocol that pi's `api/*` exports implement", keeping the row that pi 1.1.0's Go provider lacks Google.
-5. **P-T1b `test:` the real-host harness.** It is additive only. `test/support/host.ts` provides two tiers that run inside the test process:
-   - **Tier A:** a cordis `Context`, `LlmRuntime`, and pi-ai mounted with `{ providers }`.
-   - **Tier B:** dsh-app-boot's `boot()` with a temporary HOME, and a test bundle that names the loader builtins `llm`, `llm-pi-ai`, `ConfigEditor`, `Settings` and the plugin. It follows the harness's `experimental/speech-to-text/tests/configuration.spec.ts:7-33`, with a fake `credentials` service and a launch-environment snapshot.
+5. **P-T1b `test:` the real-host harness.** Additive only; in review. It landed `test/support/host.ts` (tier A: `Context` + `LlmRuntime` + pi-ai; tier B: app-boot `boot()` with a temporary HOME), the contract tests (`host-waterfall`, `host-shapes`, `host-credentials`, `host-editor-contracts`), the tagged characterization (`host-characterization`, with `S0_TODAY` shared by the binary e2e), the keyless matrix, the probe bundle and the `e2e-host` job. Two departures from the phase as first planned, both deliberate: tier B's rows carry package names through a stub module loader rather than `cordis:` builtins, because the plugin finds pi-ai by `options.name` (`piAiEntry` in `src/responses-provider.ts`); and tier B fixes the apply order (`plugin-first`, the binary's, or `pi-ai-first`), because the loader starts rows in parallel. Two narrower ones: the `e2e-host` PR scope is wider than first named (the job's own inputs, and until P-R1 the `src` modules that install the host patches and mounts whose behaviour depends on the real loader and apply order), and the floating cell skips the rows that depend on which ids pi describes.
 
-   This phase lands:
-   - the contract tests;
-   - the tagged characterization rows;
-   - the S0 assertions, including `settings.describe`, `hasProviderApiKey` and the Models store's join;
-   - the CI additions below.
+   The `hasProviderApiKey` baseline (`api/session-controller/src/catalog.ts:97-116`) is a **restatement**: no installed copy reaches the function (the published `@deepseek-ai/dsh-api-session-controller` entry exports `SessionController`, `buildModelCatalog` and a few classes but not it, its tarball ships `lib/` and no `src/`, and the package is not a dependency here in any case), so `test/support/host.ts` restates it (`providerWithApiKey`) from the real parts tier B holds — `settings.describe({ redactSecrets: true })`, `llm.listConfigurableProviders()` and `credentials.describe` — keeping upstream's `credentialRef` grammar check as a `TypeError` (a host-editor-contracts case pins it), answering the provider id where upstream answers `true`, and omitting the `RemoteError` for a missing service tier B always has; both `host-editor-contracts` and `host-characterization` use it. The cases in `host-editor-contracts` boot WITHOUT the plugin, so they are host contracts that nothing in `src/` can move: with only the plane keys stored it answers true (the Zen plane); under a test-local strip listener it answers false, because the planes' `describe().value` is gone (F20), which upstream makes `initializeDefaultModel` replace the user's default model. That false is the host fact the D18 wrapper exists to counter, not a row any phase flips. The guard on the plugin is the `[BASELINE]` row in `host-characterization`: today's plugin as it ships, with only the plane keys stored, in both apply orders, answers the Zen plane, and pi-ai's `settings.describe` value lists both planes. P-R1 must keep that row green while its own strip is active.
+
+   **What remains:** the Models store's join. It lives in the client package `ui-settings-models`, which is not installed here and has no server-side seam to restate, so P-R1 owns it (its contract list below, unconditionally), measured on the binary or with the package added at the pinned cluster tag.
+
+   The tier-A F11 smoke (`listProviders()` equals pi-ai's resolved keys) lives in `host-waterfall`, beside the other F-numbered contracts; `host-harness` holds the builder-seam cases.
+
+   **Corrections the harness measured** (P-R1 must design for these):
+   - **F8/F12, the save check.** An outermost listener that strips the planes and returns a copy does NOT shield pi-ai's own listener: pi-ai validates the value `next()` returns, which is the raw value the inner chain saw (`llm-pi-ai/src/index.ts:177-186`). Against its stripped previous config every plane entry reads as changed, so the strict check runs on the planes: an editor save is refused while a plane stores any gap id. The claim listener must either keep pi-ai's listener from seeing the planes (run the nested waterfall on the copy, with a re-entrancy guard) or veto the chain for pi-ai's fiber and validate in its place.
+   - **F16, `!!js` in a provider.** pi-ai's listener runs `Config(raw)` on that same un-interpolated value, so a `!!js` node inside `providers` boots (evaluated) but makes every later save of the row fail with `expected string but got [object Object]`. The F16 pin is therefore taken on the plugin's own row.
+   - **`update()` runs the waterfall twice**, both as commits (`raw === _config`): once while ACTIVE with pi-ai's listener present (`fiber.ts:747`), once on the restart without it (`fiber.ts:655`). A first load and a `restart()` run it once, without pi-ai's listener.
+   - **F15 holds** for a plane-only edit under the strip: no `loader/volatile-update`, no `llm/adapters-updated`, no restart. A sibling's edit emits one volatile update and two registry events (route replace and directory replace, `llm/src/index.ts:475,536`).
+   - **The apply order changes today's rows.** On the published binary the plugin applies about 70 ms before pi-ai registers, so `decoratePlaneAdapters` (which wraps only what is registered when its effect runs) never wraps pi-ai's plane adapter. In that order Go `gemini-4-argon-contributor` answers `INVALID_CONFIG` — the plan's `KNOWN_DEFECT` holds — while the turn is still served on the Go Google base through the bridge. With pi-ai first it validates, and the Go plane's repaired base is Zen's (both planes share one adapter instance, wrapped twice).
+   - **Zen `gpt-5.3-codex-spark`** is refused by `resolveCallConfig` (`INVALID_CONFIG`) yet dispatched to `/inference/openai/v1/responses` through the hidden route, and the user's `name`/`contextWindow` never reach `resolveModelInfo` (the catalog's 128000 does).
+   - **Listings.** Before a key is captured the listing patch hides every paid model on both planes (`[]`); after one, only pi-resolved ids are listed and the gap ids are not merged back.
+   - **A stored gap id blocks every edit of its plane**, `displayName` included: the strict check names the stored id first, ahead of the one being saved.
+   - **Shapes.** A resolved profile also carries the profile's pass-through fields (`compat`, `defaultContextWindow`, `defaultInput`, `defaultMaxTokens`, `headers`, `modelOverrides`, `thinkingBudgets`), and a built pi provider exposes `getModels()` but no `api` map, so F10 is pinned by behaviour (pi's own "no API implementation" error) rather than by its keys.
 
 6. **P-H `refactor:` one way to patch a host method.** `host/patch-method.ts` and `test/reload.test.ts` (apply A → apply B → dispose A → B intact → dispose B → originals).
 7. **P-R1 `feat:` the plugin owns the plane routes.**
@@ -385,7 +395,7 @@ What stays private is pinned by contract tests against the real host packages:
    - **The PR body** names every tagged row it flips.
 8. **P-R2 `fix:` the endpoint family, measured.**
    - Probe 3 URL shapes × 4 protocols × 2 planes, keyless, plus keyed probes per family with the CI keys.
-   - Set the default family and pin it with a test. If a `modern` cell fails, flip the default; `endpoint: legacy` still maps every protocol.
+   - Set the default family and pin it with a test. If a `modern` cell fails, flip the default; `endpoint: legacy` still maps every protocol except Go's Google, which stays on `/inference/go/google/v1beta` under every family (`GO_GOOGLE_BASE_URL`). Decide here whether `endpoint: legacy` is a guarded configuration: the keyless matrix records its Responses and Messages cells and Zen's Google cell but does not assert them.
 9. **P3 `feat:` Settings complements pi's list.**
    - The `discoverModels` wrapper answers servable, non-deprecated models, deduped and whitelisted.
    - Delete `installModelDiscovery` and `toDiscovered`.
@@ -461,15 +471,16 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
   - the listener fires for another plugin's fiber, and `prepend` puts it outermost;
   - `raw === _config` holds for `_reload`, `update` and `_commitVolatile`, and not for the editor's candidate (F14);
   - a deep-frozen input is never mutated, and the fiber keeps the return value (F12);
-  - the profile shape, the `Config` defaults, the credential record mapping and `recordKeyFor`;
+  - the profile shape, the `Config` defaults, the credential record mapping (each of `toPiCredential`'s three branches: an api-key record with a key, one carrying `env` too — observable on a plane only in pi's `Models.getAuth` answer, since no plane request reads it — and a non-api-key payload handed through) and `recordKeyFor`;
   - no secret-role nodes;
   - the loader's `interpolate`;
   - pi's public exports.
 - **Real host, tier B:**
   - `configEditor.edit` writes the raw `next` to the YAML;
   - `_commitVolatile` re-resolves through a prepended listener;
-  - baselines for `settings.describe` and `hasProviderApiKey`.
-- **Characterization rows**, tagged, on pi 1.1.0.
+  - the `settings.describe` and `hasProviderApiKey` host contracts, the latter restated from the real parts (above), with the with-plugin `[BASELINE]` row in the characterization; the Models store's join moves to P-R1.
+- **Characterization rows**, tagged, on pi 1.1.0, in both apply orders.
+- **Binary e2e and the keyless matrix**, as below.
 
 **P-R1**
 
@@ -550,23 +561,23 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 ### The `e2e-host` job (`ci.yml`)
 
-**When it runs:** on dispatch, nightly, and on PRs that touch `src/host/**`, `src/lifecycle.ts`, `src/identity.ts` or `cordis.patch.yml`.
+**When it runs:** on dispatch, nightly, and on PRs that touch `src/host/**`, `src/lifecycle.ts`, `src/identity.ts`, the modules that install the host patches and mounts whose behaviour depends on the real loader and apply order, until P-R1 moves them under `src/host/` (`src/responses-provider.ts`, `src/responses-routes.ts`, `src/models-discovery.ts`, `src/google-bridge.ts`, `src/fetch-patch.ts`, `src/pi-provider.ts`, `src/stream-hook.ts`; every other row producer, such as `src/key-capture.ts`, `src/models-catalog.ts` or `src/config.ts`, is covered on each PR by the in-process characterization of the same `S0_TODAY` rows, and by the nightly run), `cordis.patch.yml`, `test/e2e/host/**`, `test/e2e/host-binary.e2e.ts`, `test/support/host.ts`, `test/support/host-versions.ts`, `patches/**`, `.github/workflows/ci.yml`, `vitest.e2e.config.ts` or `vite.config.ts` (the pack config that builds `lib/index.mjs`, which only this job loads into a real host, and the test settings the e2e config inherits) (scoped by a step, since a workflow-level path filter would silence every job).
 
 **What it does:**
 
-1. Installs `@deepseek-ai/dsh@$DSH_VERSION` into a throwaway prefix, cached by host version, with npm `overrides` forcing pi.
-2. Asserts the pi version that resolved.
+1. Installs `@deepseek-ai/dsh@$DSH_VERSION` into a throwaway prefix, cached by host version, with npm `overrides` forcing pi (and, in the pinned cell, cordis and the loader, which the published host declares as tilde ranges).
+2. Asserts the pi version that resolved, and in the pinned cell the cordis and loader versions against `HOST_VERSIONS`.
 3. Builds, and boots a temporary HOME whose profile links the checkout through a relative `link:`.
 4. Runs `test/e2e/host/probe-plugin.mjs` together with `test/e2e/host-binary.e2e.ts`, which runs only when `DSH_HOST_E2E=1`.
 
 **Cells:**
 
-- (a) pi 1.1.0, pinned and patched, on PRs;
-- (b) whatever npm installs, nightly and on dispatch.
+- (a) pi 1.1.0, pinned and patched, on PRs, nightly and on dispatch; it asserts every row;
+- (b) whatever npm installs, nightly and on dispatch. It skips the rows that depend on which ids pi describes (the keyed listing and the per-model rows) and still asserts the save rows. Those assume the floating pi lacks at least one of `ZEN_UNDESCRIBED` and still describes every other declared Zen id, so a pi that learns all of them or retires a declared id turns them red by design. Its probe JSON is the record.
 
 ### The live gateway job (`OPENCODE_API_KEY` / `OPENCODE_GO_API_KEY`)
 
-- **Every PR:** the keyless matrix. A 404 means the path is gone; a 400 "Model is unavailable" or a 410 means the model is gone.
+- **Every PR:** the keyless matrix. A 404 means the path is gone; a 400 "Model is unavailable" or a 410 means the model is gone. It asserts that every cell has a model and was sent, and that no cell today's plugin dispatches to with the default endpoint (`auto`, an alias of `modern`: legacy completions; modern Responses, Messages and Google) nor P-R1's modern completions target answers 404; the other legacy verdicts are P-R2's record. `endpoint: legacy` users dispatch Responses and Messages on both planes, and Zen's Google, to the legacy cells, which are recorded for P-R2, not asserted; Go's Google stays on `/inference/go/google/v1beta` under every family (`GO_GOOGLE_BASE_URL`), the modern cell already asserted.
 - **PRs that touch `src/host/**`, and nightly:** minimal keyed probes, one per plane × protocol, with a small `max_tokens`.
 - **Nightly and on dispatch:** the full keyed suites.
 

@@ -168,6 +168,7 @@ export {
   isDeprecatedModelOn,
   isGoModelsListingUrl,
   isModelsListingUrl,
+  MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
   refreshCatalog,
   resetCatalogState,
@@ -209,6 +210,7 @@ export {
 export {
   BASE_FOR_PROTOCOL,
   baseForProtocol,
+  LEGACY_PLANE_API,
   piModelFor,
   planeBaseFor,
   protocolFor,
