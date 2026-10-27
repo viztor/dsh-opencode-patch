@@ -32,12 +32,12 @@ import {
 } from "vitest";
 
 import {
-  clearCapturedApiKeys,
   OPENCODE_UA,
-  resolveConfig,
   SESSION_HEADER,
-} from "../../src/index.ts";
-import { piModelFor } from "../../src/pi-provider.ts";
+  clearCapturedApiKeys,
+  piModelFor,
+  resolveConfig,
+} from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import {
   collectText,

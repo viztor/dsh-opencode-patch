@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  type ModelCostRate,
   calculateTurnCost,
   clearSessionUsageStore,
   describeModel,
@@ -18,8 +19,7 @@ import {
   formatUsd,
   getSessionUsage,
   recordTurnUsage,
-  type ModelCostRate,
-} from "../src/index.ts";
+} from "./support/src.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();

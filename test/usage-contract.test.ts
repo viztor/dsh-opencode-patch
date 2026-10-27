@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseGoUsage, parseUsageQuery } from "../src/index.ts";
+import { parseGoUsage, parseUsageQuery } from "./support/src.ts";
 
 /** One well-formed quota window, with a single field overridden. */
 const windowRow = (

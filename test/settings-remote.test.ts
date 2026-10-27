@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { remoteNamespace, remoteNamespaceOf } from "../src/settings-remote.ts";
+import { remoteNamespace, remoteNamespaceOf } from "./support/src.ts";
 
 describe("settings-remote · remoteNamespaceOf", () => {
   it("answers the namespace's calls when the remote serves them", () => {

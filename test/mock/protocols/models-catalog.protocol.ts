@@ -12,7 +12,7 @@
 import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-} from "../../../src/catalog-data.ts";
+} from "../../support/src.ts";
 
 export const CATALOG_PROTOCOL = "models-catalog" as const;
 export const CATALOG_KIND = "models" as const;

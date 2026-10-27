@@ -12,10 +12,7 @@ import assert from "node:assert/strict";
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type FieldShellProps,
-  SettingsFieldShell,
-} from "../src/settings-field-shell.tsx";
+import { type FieldShellProps, SettingsFieldShell } from "./support/src.ts";
 import {
   collectText,
   findAll,

@@ -25,19 +25,19 @@ import {
   vi,
 } from "vitest";
 
-import type { FetchPatchHooks } from "../../src/fetch-patch.ts";
 import {
-  clearCapturedApiKeys,
+  type ActiveTurnState,
+  type FetchPatchHooks,
   OPENCODE_UA,
   PARENT_SESSION_ALT_HEADER,
   PARENT_SESSION_HEADER,
-  patchFetch,
-  resolveConfig,
+  type ResolvedPluginConfig,
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
-  type ActiveTurnState,
-  type ResolvedPluginConfig,
-} from "../../src/index.ts";
+  clearCapturedApiKeys,
+  patchFetch,
+  resolveConfig,
+} from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import {
   firstSpecFor,

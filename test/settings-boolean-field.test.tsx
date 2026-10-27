@@ -11,10 +11,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type BooleanFieldProps,
-  SettingsBooleanField,
-} from "../src/settings-boolean-field.tsx";
+import { type BooleanFieldProps, SettingsBooleanField } from "./support/src.ts";
 import { firstOf } from "./test-helpers.ts";
 
 const baseProps = (

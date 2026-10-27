@@ -12,22 +12,21 @@ import assert from "node:assert/strict";
 import { MenuSurface } from "@deepseek-ai/dsh-client-ui-primitives";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionUsageSnapshot } from "../src/session-cost.ts";
-import { en as copyEn, zh as copyZh } from "../src/settings-copy.ts";
-import type { GoUsage } from "../src/usage-contract.ts";
 import {
+  CONSOLE_URL,
+  GO_PLAN_URL,
+  type GoUsage,
+  type RelativeReset,
+  STYLES,
+  type SessionUsageSnapshot,
   UsagePanel,
   type UsagePanelProps,
   UsageTrigger,
   type UsageTriggerProps,
-} from "../src/usage-panel.tsx";
-import {
-  CONSOLE_URL,
-  GO_PLAN_URL,
-  type RelativeReset,
+  en as copyEn,
   resetLabel,
-  STYLES,
-} from "../src/usage-ui.ts";
+  zh as copyZh,
+} from "./support/src.ts";
 import {
   childrenOf,
   collectText,

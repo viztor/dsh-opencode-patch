@@ -69,8 +69,8 @@ export const patchRemote = {
  * The scoped npm name — published from this same tree, and the one a new
  * install gets. It must answer to the SAME pages as `PKG` or the settings card
  * never appears for whoever installed the name we tell them to. The retired
- * `@viztor/dsh-opencode` is deliberately absent: it is a deprecated wrapper
- * with no client half (see AGENTS.md, "Package vs component").
+ * `@viztor/dsh-opencode` is deliberately absent: it is no longer published,
+ * and its last version was a wrapper with no client half.
  */
 export const SCOPED_PKG = "@viztor/dsh-opencode-patch";
 

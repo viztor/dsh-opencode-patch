@@ -20,13 +20,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  enrichModelsResponse,
+  type GoUsage,
   OPENCODE_ZEN_CATALOG,
+  SESSION_HEADER,
+  enrichModelsResponse,
   openCodeSessionIdFor,
   parseGoUsage,
-  SESSION_HEADER,
-  type GoUsage,
-} from "../../src/index.ts";
+} from "../support/src.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 

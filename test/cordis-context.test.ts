@@ -17,7 +17,7 @@ import {
   readCredentialsResolver,
   readEntryOptions,
   readSessionMetaResolver,
-} from "../src/cordis-context.ts";
+} from "./support/src.ts";
 
 describe("cordis-context: readEntryOptions", () => {
   it("reads id and name from fiber.entry.options", () => {

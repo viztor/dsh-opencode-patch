@@ -106,12 +106,6 @@ export const CONFIG_ONLY_FIELDS: readonly {
       "computed, which is a deployment concern rather than a card control",
   },
   {
-    field: "internalRoutes",
-    reason:
-      "whether to mount the per-protocol routes; off is for a deployment that " +
-      "declares its own provider entries for those protocols",
-  },
-  {
     field: "usageBaseURL",
     reason: "endpoint override; auto-discovered from the composition",
   },

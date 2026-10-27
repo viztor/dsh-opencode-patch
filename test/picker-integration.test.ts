@@ -32,11 +32,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type CordisContext,
   decorateModelInfo,
   hideResponsesRoute,
   resolveConfig,
-  type CordisContext,
-} from "../src/index.ts";
+} from "./support/src.ts";
 
 /** What a deployment declared for its parent route. Three ids, no catalog backfill. */
 const DECLARED = [

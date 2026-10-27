@@ -10,20 +10,20 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { readSessionMetaResolver } from "../src/cordis-context.ts";
 import {
+  type ActiveTurnState,
   SESSION_HEADER,
+  fallbackSessionId,
   hasSessionHeader,
   headerValueFor,
   isOpenCodeMessageId,
   isOpenCodeSessionId,
   newOpenCodeMessageId,
-  fallbackSessionId,
   openCodeSessionIdFor,
+  readSessionMetaResolver,
   sessionIdForRequest,
-  type ActiveTurnState,
   withStore,
-} from "../src/index.ts";
+} from "./support/src.ts";
 import { SESSION_RE, createMockStoreStream } from "./test-helpers.ts";
 
 afterEach(() => {

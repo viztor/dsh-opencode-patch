@@ -22,7 +22,7 @@ import {
   clearSessionUsageStore,
   recordCapturedApiKey,
   recordTurnUsage,
-} from "../src/index.ts";
+} from "./support/src.ts";
 import {
   createMockContext,
   headerOf,

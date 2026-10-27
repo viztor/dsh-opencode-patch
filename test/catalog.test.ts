@@ -11,15 +11,18 @@ import { readFile } from "node:fs/promises";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { OPENCODE_FAMILY_API } from "../src/catalog-data.ts";
 import {
+  type ActiveTurnState,
+  OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
   PROTOCOL_FOR_SDK,
   ROUTE_FOR_PROTOCOL,
   SESSION_HEADER,
+  UNSERVED_PLANE_SDKS,
   UNSERVED_SDKS,
   enrichModelsResponse,
+  findModelSpec,
   getLiveGoCatalog,
   getLiveZenCatalog,
   internalRouteFor,
@@ -30,13 +33,10 @@ import {
   parseModelsDevCatalog,
   patchFetch,
   refreshCatalog,
+  resetCatalogState,
   resolveConfig,
-  resolveRoutedKey,
   sanitizeModalities,
-  type ActiveTurnState,
-} from "../src/index.ts";
-import { findModelSpec, resetCatalogState } from "../src/models-catalog.ts";
-import { UNSERVED_PLANE_SDKS } from "../src/responses-routes.ts";
+} from "./support/src.ts";
 import { createCaptureFetch, headerOf, SESSION_RE } from "./test-helpers.ts";
 
 afterEach(() => {
@@ -767,47 +767,6 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(catalog.go.length).toBeGreaterThanOrEqual(
       OPENCODE_GO_CATALOG.length
     );
-  });
-
-  it("resolveRoutedKey identifies routed provider tier and key prefix", async () => {
-    const mockCtx = {
-      loader: {
-        entries: () => [
-          {
-            options: {
-              config: {
-                providers: {
-                  "opencode-go": {
-                    apiKeyEnv: "OPENCODE_GO_API_KEY",
-                  },
-                  opencode: {
-                    apiKeyEnv: "OPENCODE_API_KEY",
-                  },
-                },
-              },
-              id: "llm-pi-ai",
-              name: "@deepseek-ai/dsh-llm-pi-ai",
-            },
-          },
-        ],
-      },
-    };
-
-    process.env.OPENCODE_GO_API_KEY = "sk-68klEy0x2_test_go_key";
-    process.env.OPENCODE_API_KEY = "oc_sk_ac6304e0f930_test_zen_key";
-
-    try {
-      const goDetails = await resolveRoutedKey(mockCtx, "opencode-go");
-      expect(goDetails.tier).toBe("go");
-      expect(goDetails.keyPrefix).toBe("sk-68klEy0");
-
-      const zenDetails = await resolveRoutedKey(mockCtx, "opencode");
-      expect(zenDetails.tier).toBe("zen");
-      expect(zenDetails.keyPrefix).toBe("oc_sk_ac63");
-    } finally {
-      delete process.env.OPENCODE_GO_API_KEY;
-      delete process.env.OPENCODE_API_KEY;
-    }
   });
 
   it("sanitizeModalities restricts modalities strictly to text and image", () => {

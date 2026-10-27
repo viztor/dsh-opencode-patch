@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { resolveConfig } from "../src/config.ts";
-import { decoratePlaneAdapters } from "../src/models-discovery.ts";
+import { decoratePlaneAdapters, resolveConfig } from "./support/src.ts";
 
 const model = "gemini-4-argon";
 const route = "opencode-go-google";

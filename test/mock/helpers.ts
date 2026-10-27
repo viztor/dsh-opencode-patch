@@ -26,16 +26,14 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 
 import {
+  type ActiveTurnState,
+  type FetchPatchHooks,
   OPENCODE_GO_CATALOG,
   OPENCODE_PLANE_API,
   OPENCODE_ZEN_CATALOG,
-} from "../../src/catalog-data.ts";
-import type { FetchPatchHooks } from "../../src/fetch-patch.ts";
-import {
-  patchFetch,
-  type ActiveTurnState,
   type ResolvedPluginConfig,
-} from "../../src/index.ts";
+  patchFetch,
+} from "../support/src.ts";
 import type { GatewayKind } from "./opencode-gateway.ts";
 
 export { MOCK_TEXT } from "./opencode-gateway.ts";

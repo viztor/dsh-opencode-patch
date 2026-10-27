@@ -12,26 +12,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  type CordisContext,
+  PI_THINKING_LEVELS,
+  RESPONSES_ROUTE,
   decorateModelDiscovery,
   decorateModelInfo,
+  decoratePlaneAdapters,
   findModelSpecOn,
   hideResponsesRoute,
-  isRouteRegistered,
-  mergeDiscoveredModels,
   isDeprecatedModelOn,
+  isRouteRegistered,
+  isServableModel,
+  mergeDiscoveredModels,
   parseModelsDevCatalog,
   resolveConfig,
   resolveDiscoveryProvider,
   resolveEffectiveContextWindow,
-  RESPONSES_ROUTE,
-  type CordisContext,
-} from "../src/index.ts";
-import {
-  decoratePlaneAdapters,
-  isServableModel,
-  PI_THINKING_LEVELS,
-} from "../src/models-discovery.ts";
-import { thinkingLevelMapFor } from "../src/pi-provider.ts";
+  thinkingLevelMapFor,
+} from "./support/src.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();

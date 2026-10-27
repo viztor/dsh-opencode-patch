@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parsePurgeResult } from "../src/purge-contract.ts";
+import { parsePurgeResult } from "./support/src.ts";
 
 describe("purge contract · the result codec", () => {
   it("accepts a result and keeps only the fields the card renders", () => {

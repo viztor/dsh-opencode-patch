@@ -20,7 +20,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { describe, expect, it } from "vitest";
 
-import { type ActiveTurnState, withStore } from "../src/index.ts";
+import { type ActiveTurnState, withStore } from "./support/src.ts";
 import { collectUnknown, createMockStoreStream } from "./test-helpers.ts";
 
 /** A fresh store per case: the module has no shared state, and neither should a test. */
