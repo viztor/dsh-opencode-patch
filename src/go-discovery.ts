@@ -283,9 +283,12 @@ type KeySourceStep =
  * then credentials/env, then any captured key. `request` promotes both captured
  * steps above the declared sources; `configured` does the reverse.
  *
- * Tier safety is orthogonal and applies to all three: a step that returns a key
- * for the wrong tier is never consulted, because the Go endpoint rejects a Zen
- * key outright.
+ * The captured steps read only keys filed under the Go plane, in all three
+ * policies — but a key is filed by the plane its request went to, not by what
+ * it is entitled to. Nothing here can tell a Zen key from a Go key: a Go entry
+ * without `apiKeyEnv` sends pi's `OPENCODE_API_KEY` on its turns (D20), that
+ * bearer is filed as a Go key, and `auto` then sends it to the Go usage
+ * endpoint, which refuses it. Naming the reference on the Go entry is the fix.
  *
  * The store is appended to all three, and to none of them in the middle: the
  * policy orders the sources the user declared, and the installation's store is
