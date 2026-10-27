@@ -10,10 +10,14 @@
  * wrapped the leftover wrapper. So the sequence a patch has to survive is:
  * apply A → apply B → dispose A → B intact → dispose B → the originals restored
  * EXACTLY, and the same with the disposals reversed.
- * Two harder shapes follow: a reload whose config (for the listing, its keyless
- * option) CHANGED, where the live answer must be B's alone, which a site that
- * stacked B on A would get wrong; and a foreign wrapper set on top while the
- * newest install is disposed first.
+ * Two harder shapes follow: a reload whose config (for the Settings graft, its
+ * committed entries) CHANGED, where the live answer must be B's alone, which a
+ * site that stacked B on A would get wrong; and a foreign wrapper set on top
+ * while the newest install is disposed first.
+ *
+ * Two sites are left after P-R1: model discovery, and the `settings.describe`
+ * graft. The listing, model-info and plane-adapter wrappers went with the
+ * hidden routes — the planes are the plugin's own registration, not a patch.
  * "Exactly" is two facts: an own method comes back as the same function with
  * the same attributes, and an inherited one leaves no own property behind, so
  * the prototype answers again.
@@ -33,24 +37,23 @@ import {
   adaptersOf,
   type HostLlm,
   mountTierA,
-  planeKeysOnly,
+  PLANES,
+  piAiRestarts,
   s0Providers,
   type TierA,
+  waitForPlaneOwner,
 } from "./support/host.ts";
 import {
   apply,
-  baseForProtocol,
+  Config,
   type CordisContext,
   decorateModelDiscovery,
-  decorateModelInfo,
-  decoratePlaneAdapters,
-  findModelSpecOn,
-  hideResponsesRoute,
+  inject,
   inspectPatch,
+  installDescribeGraft,
   mergeDiscoveredModels,
-  protocolFor,
+  name,
   type ResolvedPluginConfig,
-  RESPONSES_ROUTE,
   resolveConfig,
 } from "./support/src.ts";
 
@@ -63,9 +66,6 @@ afterEach(() => {
 type Shape = "inherited" | "own";
 
 type Method = (...args: never[]) => unknown;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
 
 /**
  * The methods as own data properties of an object literal, or as methods on the
@@ -111,37 +111,8 @@ const ownValues = (
     ])
   );
 
-const contextWindowOf = (value: unknown): unknown =>
-  isRecord(value) && isRecord(value.context)
-    ? value.context.contextWindow
-    : undefined;
-
-const nameOf = (value: unknown): unknown =>
-  isRecord(value) ? value.name : undefined;
-
-const baseUrlOf = (value: unknown): unknown =>
-  isRecord(value) ? value.baseUrl : undefined;
-
-const idsOf = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map((entry: unknown) => (isRecord(entry) ? entry.id : entry))
-    : value;
-
 /** The settings namespace the tier-A discovery probe registers under. */
 const PROBE_NAMESPACE = "reload-probe";
-
-/** The base a plane's catalog dispatches `id` to, under the default endpoint. */
-const planeBase = (
-  route: "opencode" | "opencode-go",
-  id: string
-): string | undefined => {
-  const spec = findModelSpecOn(route === "opencode" ? "zen" : "go", id);
-  const protocol = spec === undefined ? undefined : protocolFor(spec);
-  if (protocol === undefined) {
-    throw new TypeError(`no protocol for ${id} on ${route}`);
-  }
-  return baseForProtocol(route, protocol, resolveConfig().endpoint);
-};
 
 const asContext = (llm: object): CordisContext =>
   ({ llm }) as unknown as CordisContext;
@@ -187,11 +158,11 @@ interface Site {
    * The same site on the real host (tier A), where the stand-in's probe does not
    * apply: a call whose answer through the site's decoration differs from the
    * host's own THERE, so the block's "survivor still decorates" and "last
-   * dispose restores" checks can fail. Without one, the listing would be probed
-   * by a filter with nothing to filter (tier A mounts no hidden route) and
-   * discovery not at all.
+   * dispose restores" checks can fail. Without one, discovery would not be
+   * probed there at all. The `settings.describe` graft has none: tier A has no
+   * settings service, so its stand-in cases above are its cases.
    */
-  readonly tierA: {
+  readonly tierA?: {
     /** The install the block drives, where the site's default decorates nothing there. */
     readonly install?: (llm: object) => (() => void) | undefined;
     /** Host state the probe needs, set before the first install. */
@@ -200,70 +171,70 @@ interface Site {
   };
 }
 
-const LISTED = [
-  { id: "opencode", name: "opencode" },
-  { id: RESPONSES_ROUTE, name: RESPONSES_ROUTE },
-];
+/** A provider listing, for the `apply()` case's stand-in host. */
+const LISTED = [{ id: "opencode", name: "opencode" }];
 
-/** A priced Zen id and a free one, for the keyless filter. */
-const PRICED_AND_FREE = ["gpt-5.4", "beam-free"] as const;
-
-const listingMethods = (): Record<string, Method> => ({
-  listConfigurableProviders: () => [
-    { provider: "opencode" },
-    { provider: RESPONSES_ROUTE },
-  ],
-  listModels: async () => PRICED_AND_FREE.map((id) => ({ id })),
-  listProviders: () => LISTED.map((entry) => ({ ...entry })),
-});
-
-/** The one adapter both plane routes share, as pi-ai registers it. */
-const adapterMethods = (): Record<string, Method> => ({
-  modelOf: () => ({ id: "x", reasoning: false }),
-  prepareCall: async () => ({}),
-  resolveModel: async () => ({}),
-});
-
-const adapterOf = (llm: Record<string, unknown>): object => {
-  const { adapters } = llm;
-  const row: unknown =
-    adapters instanceof Map ? adapters.get("opencode") : undefined;
-  if (!isRecord(row) || !isRecord(row.adapter)) {
-    throw new TypeError("no adapter behind the opencode route");
+/** Poll until `predicate` holds, or fail by name. */
+const until = async (
+  predicate: () => boolean,
+  what: string,
+  deadlineMs = 10_000
+): Promise<void> => {
+  const end = Date.now() + deadlineMs;
+  while (!predicate()) {
+    if (Date.now() > end) {
+      throw new Error(`never happened: ${what}`);
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
   }
-  return row.adapter;
 };
 
+/** pi-ai's descriptor as `settings.describe()` builds it without the planes. */
+const describeMethods = (): Record<string, Method> => ({
+  describe: () => [
+    { ns: "llm-pi-ai", revision: 3, value: { providers: { deepseek: {} } } },
+    { ns: "other", value: {} },
+  ],
+});
+
+/** The committed plane entries the default activation grafts, and A's. */
+const ENTRIES_B = { opencode: { apiKeyEnv: "OPENCODE_API_KEY" } };
+const ENTRIES_A = { opencode: { apiKeyEnv: "ACTIVATION_A_KEY" } };
+
+/**
+ * The graft installed the way `apply` installs it: through a `settings`
+ * scope whose effects are collected and disposed together.
+ */
+const installGraft =
+  (entries: Record<string, unknown>) =>
+  (settings: object): (() => void) => {
+    const cleanups: (() => void)[] = [];
+    installDescribeGraft(
+      {
+        inject: (_deps: string[], callback: (scope: unknown) => void) => {
+          callback({
+            effect: (factory: () => () => void) => {
+              cleanups.push(factory());
+            },
+            settings,
+          });
+        },
+      } as unknown as CordisContext,
+      {
+        committedEntries: () => entries,
+        piAiNamespace: () => "llm-pi-ai",
+      }
+    );
+    return () => {
+      for (const cleanup of cleanups.splice(0).toReversed()) {
+        cleanup();
+      }
+    };
+  };
+
 const SITES: readonly Site[] = [
-  {
-    decorated: [{ id: "opencode", name: "opencode" }],
-    host: (shape) => shaped(shape, listingMethods()),
-    install: (llm) => hideResponsesRoute(asContext(llm), resolveConfig()),
-    keys: ["listProviders", "listConfigurableProviders", "listModels"],
-    name: "listing",
-    probe: (llm) => call(llm, "listProviders"),
-    raw: LISTED,
-    // The keyless filter is per activation: under A (no credential) a priced
-    // id is dropped, under the default (nobody asked) the listing is kept, so
-    // a stacked default install would keep A's narrowing.
-    reconfigured: {
-      installA: (llm) =>
-        hideResponsesRoute(asContext(llm), resolveConfig(), {
-          hasCredential: () => false,
-        }),
-      probe: (llm) => call(llm, "listModels", "opencode"),
-    },
-    // pi-ai lists the plane's catalog once a key is stored; with no credential
-    // the keyless filter drops the priced ids the host's own answer keeps.
-    tierA: {
-      install: (llm) =>
-        hideResponsesRoute(asContext(llm), resolveConfig(), {
-          hasCredential: () => false,
-        }),
-      probe: async (llm) => idsOf(await llm.listModels("opencode")),
-    },
-    targetOf: (llm) => llm,
-  },
   {
     decorated: mergeDiscoveredModels([{ id: "minimax-m3" }], "go"),
     host: (shape) =>
@@ -302,106 +273,27 @@ const SITES: readonly Site[] = [
     targetOf: (llm) => llm,
   },
   {
-    decorated: findModelSpecOn("go", "minimax-m3")?.context_window,
-    host: (shape) => shaped(shape, { resolveModelInfo: async () => ({}) }),
-    install: (llm, config = resolveConfig()) =>
-      decorateModelInfo(asContext(llm), config),
-    keys: ["resolveModelInfo"],
-    name: "model-info",
-    probe: async (llm) =>
-      contextWindowOf(
-        await call(llm, "resolveModelInfo", "opencode-go", "minimax-m3")
-      ),
-    raw: undefined,
-    // A name override is applied only where one is declared, so a stacked
-    // default install would keep the first activation's name.
-    reconfigured: {
-      config: resolveConfig({
-        modelOverrides: { "minimax-m3": { name: "Activation A" } },
-      }),
-      probe: async (llm) =>
-        nameOf(
-          await call(llm, "resolveModelInfo", "opencode-go", "minimax-m3")
-        ),
-    },
-    // pi's installed catalog is an older snapshot than ours for this id, and the
-    // decoration's window is authoritative.
-    tierA: {
-      probe: async (llm) =>
-        contextWindowOf(await llm.resolveModelInfo("opencode", "gpt-5.4")),
-    },
-    targetOf: (llm) => llm,
-  },
-  {
-    decorated: planeBase("opencode", "deepseek-v4-pro"),
-    host: (shape) => {
-      const adapter = shaped(shape, adapterMethods());
-      return {
-        adapters: new Map([
-          ["opencode", { adapter }],
-          ["opencode-go", { adapter }],
-        ]),
-      };
-    },
-    install: (llm, config = resolveConfig()) =>
-      decoratePlaneAdapters(llm as never, config),
-    keys: ["resolveModel", "prepareCall", "modelOf"],
-    name: "plane-adapters",
-    probe: async (llm) =>
-      baseUrlOf(
-        await call(
-          adapterOf(llm),
-          "resolveModel",
-          "opencode",
-          "deepseek-v4-pro"
-        )
-      ),
-    raw: undefined,
-    // The fill keeps a window the adapter already answered, so a stacked
-    // default install would keep the first activation's clamp; and `modelOf`
-    // (its own patch) fills only the levels the adapter refuses, so a stacked
-    // default install would build on A's declared levels instead of the
-    // catalog's.
-    reconfigured: {
-      config: resolveConfig({
-        maxContextWindow: 1000,
-        modelOverrides: { "deepseek-v4-pro": { reasoningEfforts: ["low"] } },
-      }),
-      probe: async (llm) => {
-        const adapter = adapterOf(llm);
-        const resolved = await call(
-          adapter,
-          "resolveModel",
-          "opencode",
-          "deepseek-v4-pro"
-        );
-        const model = await call(
-          adapter,
-          "modelOf",
-          {},
-          "opencode",
-          "deepseek-v4-pro"
-        );
-        return {
-          contextWindow: contextWindowOf(resolved),
-          thinkingLevelMap: isRecord(model)
-            ? model.thinkingLevelMap
-            : undefined,
-        };
+    decorated: [
+      {
+        ns: "llm-pi-ai",
+        revision: 3,
+        value: { providers: { deepseek: {}, ...ENTRIES_B } },
       },
+      { ns: "other", value: {} },
+    ],
+    host: (shape) => shaped(shape, describeMethods()),
+    install: installGraft(ENTRIES_B),
+    keys: ["describe"],
+    name: "settings-describe",
+    probe: (settings) => call(settings, "describe"),
+    raw: describeMethods().describe?.(),
+    // The entries are per activation: A grafts its own, so a stacked default
+    // install would keep showing A's.
+    reconfigured: {
+      installA: installGraft(ENTRIES_A),
+      probe: (settings) => call(settings, "describe"),
     },
-    tierA: {
-      probe: async (llm) =>
-        baseUrlOf(
-          await call(
-            adaptersOf(llm).get("opencode")?.adapter ?? {},
-            "resolveModel",
-            "opencode",
-            "deepseek-v4-pro"
-          )
-        ),
-    },
-    targetOf: adapterOf,
+    targetOf: (settings) => settings,
   },
 ];
 
@@ -601,32 +493,39 @@ describe("reload · on the real host (tier A)", { timeout: 15_000 }, () => {
     tier = undefined;
   });
 
+  // Tier A has no settings service, so the graft's own host stand-ins above
+  // are its cases; every site with a tier-A probe (discovery) runs on the real
+  // `llm` service here.
   it.each(
-    SITES.flatMap((site) => [
-      [site.name, "first disposed first", site, true] as const,
-      [site.name, "last disposed first", site, false] as const,
-    ])
-  )("%s · %s", async (name, _order, site, fifo) => {
-    // Plane keys stored, so pi-ai lists the planes' catalogs (the listing probe).
-    tier = await mountTierA({
-      credentials: planeKeysOnly(),
-      providers: s0Providers(),
-    });
+    SITES.flatMap((site) =>
+      site.tierA === undefined
+        ? []
+        : [
+            [
+              site.name,
+              "first disposed first",
+              site,
+              site.tierA,
+              true,
+            ] as const,
+            [
+              site.name,
+              "last disposed first",
+              site,
+              site.tierA,
+              false,
+            ] as const,
+          ]
+    )
+  )("%s · %s", async (_siteName, _order, site, tierA, fifo) => {
+    tier = await mountTierA({ providers: s0Providers() });
     const { llm } = tier;
-    let target: object = llm;
-    if (name === "plane-adapters") {
-      const shared = adaptersOf(llm).get("opencode")?.adapter;
-      expect(shared).toBeDefined();
-      // pi-ai serves both planes from one instance, which is the nesting the
-      // plane-adapter patch composes over.
-      expect(adaptersOf(llm).get("opencode-go")?.adapter).toBe(shared);
-      target = shared ?? {};
-    }
-    site.tierA.setup?.(llm);
-    const install = site.tierA.install ?? site.install;
+    const target: object = llm;
+    tierA.setup?.(llm);
+    const install = tierA.install ?? site.install;
     const listed = llm.listProviders();
     const info = await llm.resolveModelInfo("opencode", "deepseek-v4-pro");
-    const raw = await site.tierA.probe(llm);
+    const raw = await tierA.probe(llm);
     for (const key of site.keys) {
       expect(Object.hasOwn(target, key), key).toBe(false);
     }
@@ -642,7 +541,7 @@ describe("reload · on the real host (tier A)", { timeout: 15_000 }, () => {
     }
     // The probe has to tell the decoration from the host's own answer here,
     // or the two checks against `raw` below could not fail.
-    const decorated = await site.tierA.probe(llm);
+    const decorated = await tierA.probe(llm);
     expect(decorated).not.toEqual(raw);
 
     (fifo ? a : b)?.();
@@ -653,18 +552,15 @@ describe("reload · on the real host (tier A)", { timeout: 15_000 }, () => {
         `survivor intact: ${key}`
       ).toBe(survivor.get(key));
     }
-    await expect(site.tierA.probe(llm), "survivor decorates").resolves.toEqual(
+    await expect(tierA.probe(llm), "survivor decorates").resolves.toEqual(
       decorated
     );
-    if (name === "plane-adapters") {
-      expect(decorated).toBe(planeBase("opencode", "deepseek-v4-pro"));
-    }
 
     (fifo ? b : a)?.();
     for (const key of site.keys) {
       expect(Object.hasOwn(target, key), `restored: ${key}`).toBe(false);
     }
-    await expect(site.tierA.probe(llm), "restored").resolves.toEqual(raw);
+    await expect(tierA.probe(llm), "restored").resolves.toEqual(raw);
     // Smoke: other calls through the restored receiver still answer as before.
     expect(llm.listProviders()).toEqual(listed);
     await expect(
@@ -673,86 +569,86 @@ describe("reload · on the real host (tier A)", { timeout: 15_000 }, () => {
   });
 });
 
-describe("reload · through apply()", () => {
+describe("reload · through apply()", { timeout: 15_000 }, () => {
+  let tier: TierA | undefined;
+
+  afterEach(async () => {
+    await tier?.dispose();
+    tier = undefined;
+  });
+
   it("apply() twice, the first disposed first: every host method the plugin patched is restored exactly", async () => {
     // The global fetch is patched too, and stacks the same way; it is not a host
     // service method and is not asserted here (P6 owns it).
     vi.stubGlobal("fetch", vi.fn());
     vi.spyOn(console, "info").mockImplementation(() => {
-      // Silenced: the activation line and the hidden-route stand-down.
+      // Silenced: the activation line.
     });
-    class Adapter {
-      modelOf(): unknown {
-        return { id: "x", reasoning: false };
-      }
-      async prepareCall(): Promise<unknown> {
-        return {};
-      }
-      async resolveModel(): Promise<unknown> {
-        return {};
-      }
-    }
-    const adapter = new Adapter();
     class HostLlm {
-      readonly adapters = new Map([
-        ["opencode", { adapter }],
-        ["opencode-go", { adapter }],
-      ]);
       async discoverModels(): Promise<unknown> {
         return [{ id: "minimax-m3" }];
-      }
-      listConfigurableProviders(): unknown {
-        return [{ provider: "opencode" }, { provider: RESPONSES_ROUTE }];
-      }
-      async listModels(): Promise<unknown> {
-        return [{ id: "opencode-model" }];
       }
       listProviders(): unknown {
         return LISTED.map((entry) => ({ ...entry }));
       }
-      async resolveModelInfo(): Promise<unknown> {
-        return {};
+    }
+    class HostSettings {
+      describe(): unknown {
+        return [{ ns: "llm-pi-ai", value: { providers: {} } }];
       }
     }
     const llm = new HostLlm();
-    const llmKeys = [
-      "listProviders",
-      "listConfigurableProviders",
-      "listModels",
-      "discoverModels",
-      "resolveModelInfo",
-    ];
-    const adapterKeys = ["resolveModel", "prepareCall", "modelOf"];
+    const settings = new HostSettings();
+    // The plugin patches `llm.discoverModels` and `settings.describe` now; the
+    // plane routes are its own registration, not a patch (P-R1).
+    const llmKeys = ["discoverModels"];
 
-    const cleanups: (() => void)[] = [];
-    const ctxFor = (): CordisContext =>
-      ({
-        effect: (fn: () => unknown) => {
-          const cleanup = fn();
-          if (typeof cleanup === "function") {
-            cleanups.push(() => {
-              cleanup();
-            });
+    /** One activation: a stand-in whose `inject` hands over a scope with the service. */
+    const activation = (): { ctx: CordisContext; dispose: () => void } => {
+      const cleanups: (() => void)[] = [];
+      const effect = (fn: () => unknown) => {
+        const cleanup = fn();
+        if (typeof cleanup === "function") {
+          cleanups.push(() => {
+            cleanup();
+          });
+        }
+      };
+      const ctx = {
+        effect,
+        fiber: { uid: 1 },
+        inject: (deps: string[], callback: (scope: unknown) => void) => {
+          callback(
+            deps.includes("llm") ? { effect, llm } : { effect, settings }
+          );
+        },
+        on: vi.fn(),
+      } as unknown as CordisContext;
+      return {
+        ctx,
+        dispose: () => {
+          for (const cleanup of cleanups.toReversed()) {
+            cleanup();
           }
         },
-        llm,
-        on: vi.fn(),
-      }) as unknown as CordisContext;
+      };
+    };
 
     const ownBefore = {
-      adapter: new Set(Reflect.ownKeys(adapter)),
       llm: new Set(Reflect.ownKeys(llm)),
+      settings: new Set(Reflect.ownKeys(settings)),
     };
-    apply(ctxFor());
-    apply(ctxFor());
-    expect(cleanups).toHaveLength(2);
+    const a = activation();
+    const b = activation();
+    void apply(a.ctx);
+    void apply(b.ctx);
     // The behavioural tripwire for "patchMethod is the only way": whatever
     // syntax a later site used, every function `apply()` left as an own property
     // of a host object carries the helper's record. A bare `llm.x = wrapped`
     // would leave an own function with none.
     for (const [label, host] of [
       ["llm", llm],
-      ["adapter", adapter],
+      ["settings", settings],
     ] as const) {
       const added = Reflect.ownKeys(host).filter(
         (key) => !ownBefore[label].has(key)
@@ -769,34 +665,70 @@ describe("reload · through apply()", () => {
       }
     }
     const llmB = ownValues(llm, llmKeys);
-    const adapterB = ownValues(adapter, adapterKeys);
     for (const key of llmKeys) {
       expect(llmB.get(key), key).toBeTypeOf("function");
     }
-    for (const key of adapterKeys) {
-      expect(adapterB.get(key), key).toBeTypeOf("function");
-    }
+    const describeB = Reflect.getOwnPropertyDescriptor(
+      settings,
+      "describe"
+    )?.value;
+    expect(describeB).toBeTypeOf("function");
 
-    cleanups[0]?.();
+    a.dispose();
     for (const key of llmKeys) {
       expect(Reflect.getOwnPropertyDescriptor(llm, key)?.value, key).toBe(
         llmB.get(key)
       );
     }
-    for (const key of adapterKeys) {
-      expect(Reflect.getOwnPropertyDescriptor(adapter, key)?.value, key).toBe(
-        adapterB.get(key)
-      );
-    }
-    expect(llm.listProviders()).toEqual([{ id: "opencode", name: "opencode" }]);
+    expect(Reflect.getOwnPropertyDescriptor(settings, "describe")?.value).toBe(
+      describeB
+    );
 
-    cleanups[1]?.();
+    b.dispose();
     for (const key of llmKeys) {
       expect(Object.hasOwn(llm, key), key).toBe(false);
     }
-    for (const key of adapterKeys) {
-      expect(Object.hasOwn(adapter, key), key).toBe(false);
-    }
+    expect(Object.hasOwn(settings, "describe")).toBe(false);
     expect(llm.listProviders()).toEqual(LISTED);
+  });
+
+  it("apply() twice on the real host (tier A): the planes end owned by the second activation, and pi-ai restarts exactly once", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.spyOn(console, "info").mockImplementation(() => {
+      // Silenced: the activation lines.
+    });
+    tier = await mountTierA({ plugin: {}, providers: s0Providers() });
+    await waitForPlaneOwner(tier.llm);
+    const first = tier.pluginFiber;
+    const second = await tier.ctx.plugin(
+      { apply, Config, inject, name } as never,
+      {} as never
+    );
+    const restarts = piAiRestarts(tier.ctx);
+    // The first activation's adapter, which serves the planes until it goes.
+    const firstAdapters = new Map(
+      PLANES.map((plane) => [plane, adaptersOf(tier!.llm).get(plane)?.adapter])
+    );
+    for (const plane of PLANES) {
+      expect(firstAdapters.get(plane)?.constructor.name).toBe("PlaneAdapter");
+    }
+    await first?.dispose();
+    await until(
+      () =>
+        PLANES.every((plane) => {
+          const adapter = adaptersOf(tier!.llm).get(plane)?.adapter;
+          return (
+            adapter?.constructor.name === "PlaneAdapter" &&
+            adapter !== firstAdapters.get(plane)
+          );
+        }),
+      "the second activation's adapter serves both planes"
+    );
+    // The first's teardown restarts pi-ai once so it re-resolves; the second
+    // activation's listener keeps it off the planes, so they go to the second.
+    expect(restarts.count()).toBe(1);
+    await second.dispose();
+    await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
+    restarts.dispose();
   });
 });

@@ -14,13 +14,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type CordisContext,
-  RESPONSES_ROUTE,
   apply,
   clearSessionUsageStore,
   findModelSpecOn,
   getSessionUsage,
-  mountInternalRoutes,
-  resolveConfig,
 } from "./support/src.ts";
 import {
   collectUnknown,
@@ -36,6 +33,18 @@ afterEach(() => {
   delete process.env.OPENCODE_SESSION_ID;
 });
 
+/**
+ * A stand-in whose `inject` hands itself over as the child scope, the way
+ * cordis runs an `inject` callback once the service exists: discovery lives in
+ * the `llm` scope, because the plugin's root injects nothing.
+ */
+const withScope = <T extends object>(ctx: T): T =>
+  Object.assign(ctx, {
+    inject: (_deps: string[], callback: (scope: unknown) => void) => {
+      callback(ctx);
+    },
+  });
+
 describe("apply (plugin lifecycle)", () => {
   it("registers model discovery for both OpenCode routes by default", () => {
     const registered: string[] = [];
@@ -49,60 +58,12 @@ describe("apply (plugin lifecycle)", () => {
       on: () => {},
     } as unknown as CordisContext;
 
-    apply(ctx);
+    void apply(withScope(ctx));
     // The component's own namespace plus one registration per gateway route,
     // so DSH's picker can enumerate Go and Zen independently.
     expect(registered).toContain("dsh-opencode-patch");
     expect(registered).toContain("opencode-go");
     expect(registered).toContain("opencode");
-  });
-
-  it("applies modelOverrides and maxContextWindow to discovered models", async () => {
-    let discoverZen: (() => Promise<unknown>) | undefined;
-    const ctx = {
-      effect: () => {},
-      llm: {
-        registerModelDiscovery: (ns: string, fn: () => Promise<unknown>) => {
-          if (ns === "opencode") {
-            discoverZen = fn;
-          }
-        },
-      },
-      on: () => {},
-    } as unknown as CordisContext;
-
-    apply(ctx, {
-      enrichModels: true,
-      maxContextWindow: 262_144,
-      modelOverrides: {
-        "gpt-5.4": {
-          contextWindow: 131_072,
-          inputModalities: ["text"],
-          maxTokens: 16_384,
-          name: "GPT-5.4 Lifecycle Override",
-        },
-      },
-    });
-
-    expect(discoverZen).toBeDefined();
-    const discovered = (await discoverZen!()) as {
-      contextWindow: number;
-      id: string;
-      inputModalities: string[];
-      maxTokens: number;
-      name: string;
-    }[];
-    const gpt = discovered.find((m) => m.id === "gpt-5.4");
-    expect(gpt).toBeDefined();
-    expect(gpt?.contextWindow).toBe(131_072);
-    expect(gpt?.name).toBe("GPT-5.4 Lifecycle Override");
-    expect(gpt?.maxTokens).toBe(16_384);
-    expect(gpt?.inputModalities).toEqual(["text"]);
-
-    // Another model has its context clamped to maxContextWindow (262,144)
-    const sonnet = discovered.find((m) => m.id === "claude-sonnet-4-5");
-    expect(sonnet).toBeDefined();
-    expect(sonnet?.contextWindow).toBe(262_144);
   });
 
   it("registers the usage service only while the meter is on", () => {
@@ -121,10 +82,10 @@ describe("apply (plugin lifecycle)", () => {
       },
     } as unknown as CordisContext;
 
-    apply(ctx, { usageEnabled: false });
+    void apply(ctx, { usageEnabled: false });
     expect(mounted).not.toContain("GoUsageService");
 
-    apply(ctx, { usageEnabled: true });
+    void apply(ctx, { usageEnabled: true });
     expect(mounted).toContain("GoUsageService");
   });
 
@@ -152,8 +113,8 @@ describe("apply (plugin lifecycle)", () => {
     // The root IS this context: no `root` property means the composition's own.
     ctx.root = ctx;
 
-    apply(ctx, { usageEnabled: true });
-    apply(ctx, { usageEnabled: true });
+    void apply(ctx, { usageEnabled: true });
+    void apply(ctx, { usageEnabled: true });
     expect(mounted.filter((name) => name === "GoUsageService")).toHaveLength(1);
   });
 
@@ -186,7 +147,7 @@ describe("apply (plugin lifecycle)", () => {
     });
 
     // 1. Never registered: `ctx.get` answers nothing for the key.
-    apply(
+    void apply(
       hostWith(() => {
         /* an unregistered name */
       }) as never,
@@ -201,7 +162,7 @@ describe("apply (plugin lifecycle)", () => {
     // 2. Registered, but with no `typertRemote` binding — a provided value, which
     //    the Gateway's service scan cannot see.
     messages.length = 0;
-    apply(hostWith(() => ({ read: async () => ({}) })) as never, {
+    void apply(hostWith(() => ({ read: async () => ({}) })) as never, {
       usageEnabled: true,
     });
     expect(
@@ -220,7 +181,7 @@ describe("apply (plugin lifecycle)", () => {
         serviceKey: "opencodeGoUsage",
       },
     };
-    apply(hostWith(() => bound) as never, { usageEnabled: true });
+    void apply(hostWith(() => bound) as never, { usageEnabled: true });
     expect(
       messages.some(
         (m) => m.includes("reachable") && m.includes("opencodeGoUsage")
@@ -228,7 +189,7 @@ describe("apply (plugin lifecycle)", () => {
     ).toBe(true);
   });
 
-  it("survives a composition with neither mount path, and reports it", () => {
+  it("survives a composition with neither mount path, and reports it", async () => {
     // The fallback's whole job is to not give up: `ctx.provide` reaches the same
     // lookup the client uses, so a composition with one but not the other still
     // publishes both services. A real cordis context is what the service
@@ -243,12 +204,14 @@ describe("apply (plugin lifecycle)", () => {
       on: () => {},
       provide: () => {},
     } as unknown as CordisContext;
-    expect(() => apply(withProvide, { usageEnabled: true })).not.toThrow();
+    await expect(
+      apply(withProvide, { usageEnabled: true })
+    ).resolves.toBeUndefined();
 
     // Neither `plugin` nor `provide`: the installer says so instead of throwing,
     // which is what keeps one service's absence from taking the rest of `apply`
     // down with it.
-    expect(() =>
+    await expect(
       apply(
         {
           effect: () => {},
@@ -258,7 +221,7 @@ describe("apply (plugin lifecycle)", () => {
         } as unknown as CordisContext,
         { usageEnabled: true }
       )
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
     expect(warned.join(" ")).toContain("neither ctx.plugin nor ctx.provide");
   });
 
@@ -288,16 +251,23 @@ describe("apply (plugin lifecycle)", () => {
       return rows.find((row) => row.id === id)?.contextWindow;
     };
 
-    apply(ctx, { maxContextWindow: 262_144 });
-    expect(await contextOf("claude-sonnet-4-5")).toBe(262_144);
-
-    apply(ctx, { maxContextWindow: 65_536 });
-    expect(await contextOf("claude-sonnet-4-5")).toBe(65_536);
+    void apply(withScope(ctx), { enrichModels: true });
+    // The catalog's own window: the row carries no override of its own (D19).
+    const catalogWindow = findModelSpecOn(
+      "zen",
+      "claude-sonnet-4-5"
+    )?.context_window;
+    expect(catalogWindow).toBeGreaterThan(0);
+    expect(await contextOf("claude-sonnet-4-5")).toBe(catalogWindow);
 
     // Turning the feature off on a reload empties the answer rather than
     // leaving the old catalog published.
-    apply(ctx, { enrichModels: false });
+    void apply(withScope(ctx), { enrichModels: false });
     expect(await discover.get("opencode")!()).toEqual([]);
+
+    // And on again: the second reload is answered too, not only the first.
+    void apply(withScope(ctx), { enrichModels: true });
+    expect(await contextOf("claude-sonnet-4-5")).toBeGreaterThan(0);
     expect([...discover.keys()].toSorted()).toEqual(
       ["dsh-opencode-patch", "opencode", "opencode-go"].toSorted()
     );
@@ -321,7 +291,7 @@ describe("apply (plugin lifecycle)", () => {
       on: () => {},
     } as unknown as CordisContext;
 
-    apply(ctx);
+    void apply(withScope(ctx));
     expect(registered.toSorted()).toEqual(["opencode", "opencode-go"]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("model discovery for dsh-opencode-patch"),
@@ -341,7 +311,7 @@ describe("apply (plugin lifecycle)", () => {
       on: () => {},
     } as unknown as CordisContext;
 
-    apply(ctx, { enrichModels: false });
+    void apply(withScope(ctx), { enrichModels: false });
     expect(registered).toEqual([]);
   });
 
@@ -372,7 +342,7 @@ describe("apply (plugin lifecycle)", () => {
       on: () => {},
     };
 
-    apply(ctx);
+    void apply(ctx);
     expect(globalThis.fetch).not.toBe(originalFetch);
 
     if (typeof disposer === "function") {
@@ -390,312 +360,13 @@ describe("apply (plugin lifecycle)", () => {
       },
       on: () => {},
     };
-    apply(ctx);
+    void apply(ctx);
     globalThis.fetch = replacementFetch;
     if (typeof disposer === "function") {
       disposer();
     }
     expect(globalThis.fetch).toBe(replacementFetch);
     globalThis.fetch = originalFetch;
-  });
-
-  it("ties the listing patch to the plugin fiber", () => {
-    // The patch replaces Host methods. Registered OUTSIDE an effect it would
-    // never be undone, so every live reload would stack another wrapper and
-    // disabling the plugin would leave it hiding the route.
-    let cleanup: (() => void) | undefined;
-    const routes = [
-      { id: "opencode", name: "opencode" },
-      { id: RESPONSES_ROUTE, name: RESPONSES_ROUTE },
-    ];
-    const ctx: CordisContext = {
-      effect: (fn: () => unknown) => {
-        cleanup = fn() as (() => void) | undefined;
-      },
-      llm: { listProviders: () => routes },
-      on: () => {},
-    };
-
-    apply(ctx);
-
-    expect(typeof cleanup).toBe("function");
-    expect(ctx.llm?.listProviders?.()).toEqual([routes[0]]);
-    cleanup?.();
-    expect(ctx.llm?.listProviders?.()).toEqual(routes);
-  });
-
-  it("says why a hand-named model cannot be served, once", () => {
-    // The hook is registered through `ctx.on`, not by replacing `llm.stream` - which
-    // is what a first attempt at this test assumed, and why it asserted against an
-    // empty list. The gateway answers a Zen free-tier id with a message that reads as
-    // though the model were broken; measurement says the cause is the model, and none
-    // of credentials, structure, headers or route. So the hook reports the truth, and
-    // reports it once, because it runs on every request.
-    let streamHandler:
-      | ((options: unknown, next: () => unknown) => unknown)
-      | undefined;
-    const warnings: unknown[][] = [];
-    const spy = vi
-      .spyOn(console, "warn")
-      .mockImplementation((...args: unknown[]) => {
-        warnings.push(args);
-      });
-    try {
-      const ctx = {
-        effect: (fn: () => unknown) => {
-          fn();
-        },
-        llm: {
-          listConfigurableProviders: () => [{ provider: "opencode" }],
-          listModels: async () => [{ id: "mistral-large-4" }],
-          listProviders: () => [{ id: "opencode" }],
-          stream: (options: unknown) => options,
-        },
-        on: (
-          _event: string,
-          handler: (options: unknown, next: () => unknown) => unknown
-        ) => {
-          streamHandler = handler;
-        },
-      };
-      apply(ctx as never);
-      if (typeof streamHandler !== "function") {
-        throw new TypeError("stream handler not registered");
-      }
-      const call = (): unknown =>
-        streamHandler?.(
-          { model: "mistral-large-4", provider: "opencode" },
-          () => {
-            // The hook's `next` is never reached for an unservable model.
-          }
-        );
-      call();
-      call();
-      const mine = warnings.filter((args) =>
-        String(args[0]).includes("cannot be served:")
-      );
-      expect(mine).toHaveLength(1);
-      expect(String(mine[0]?.[0])).toContain("mistral-large-4");
-      // And it names the reason it COMPUTED. The message used to blame the Zen
-      // free tier for every unservable id, which was wrong for a Go request and
-      // wrong again once that exclusion was withdrawn; the only reason left is
-      // the shape, and the shape is what this now says.
-      expect(String(mine[0]?.[0])).toContain("@ai-sdk/mistral");
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("serves free-tier models and warns only for truly unservable SDKs", () => {
-    let streamHandler:
-      | ((options: unknown, next: () => unknown) => unknown)
-      | undefined;
-    const warnings: unknown[][] = [];
-    const spy = vi
-      .spyOn(console, "warn")
-      .mockImplementation((...args: unknown[]) => {
-        warnings.push(args);
-      });
-    try {
-      const ctx = {
-        effect: (fn: () => unknown) => {
-          fn();
-        },
-        llm: {
-          listConfigurableProviders: () => [{ provider: "opencode" }],
-          listModels: async () => [{ id: "space-bunny-free" }],
-          listProviders: () => [{ id: "opencode" }],
-          stream: (options: unknown) => options,
-        },
-        on: (
-          _event: string,
-          handler: (options: unknown, next: () => unknown) => unknown
-        ) => {
-          streamHandler = handler;
-        },
-      };
-      apply(ctx as never);
-      if (typeof streamHandler !== "function") {
-        throw new TypeError("stream handler not registered");
-      }
-      streamHandler?.(
-        { model: "space-bunny-free", provider: "opencode" },
-        () => {}
-      );
-      expect(
-        warnings.filter((args) => String(args[0]).includes("space-bunny-free"))
-      ).toHaveLength(0);
-
-      // And the Go plane's free models are not reported as unservable.
-      streamHandler?.({ model: "beam-free", provider: "opencode-go" }, () => {
-        // Served: the Go plane has no free tier to gate.
-      });
-      expect(
-        warnings.filter((args) => String(args[0]).includes("beam-free"))
-      ).toHaveLength(0);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("hands a responses-format model to the responses route", async () => {
-    // The gateway serves muse on /responses and everything else on
-    // /chat/completions, and llm-pi-ai carries one `api` per route. So the call
-    // is re-dispatched to the route whose `api` already names the format rather
-    // than translated at the transport — DSH's own adapter then speaks it.
-    let streamHandler:
-      | ((options: unknown, next: () => unknown) => unknown)
-      | undefined;
-    const dispatched: unknown[] = [];
-    let nextCalls = 0;
-
-    const ctx: CordisContext = {
-      // The redirect asks the hiding patch whether the route is registered, so
-      // the effect has to actually run for this test to mean anything.
-      effect: (fn: () => unknown) => {
-        fn();
-      },
-      llm: {
-        listConfigurableProviders: () => [{ provider: "opencode" }],
-        listModels: async () => [{ id: "muse-spark-1.2" }],
-        listProviders: () => [{ id: "opencode" }, { id: "opencode-responses" }],
-        stream: (options: unknown) => {
-          dispatched.push(options);
-          return createMockStream("from-responses-route");
-        },
-      },
-      on: (
-        _event: string,
-        handler: (options: unknown, next: () => unknown) => unknown
-      ) => {
-        streamHandler = handler;
-      },
-    };
-
-    apply(ctx);
-    if (typeof streamHandler !== "function") {
-      throw new TypeError("stream handler not registered");
-    }
-    const result: unknown = streamHandler(
-      { model: "muse-spark-1.2", provider: "opencode" },
-      () => {
-        nextCalls += 1;
-        return createMockStream("from-opencode-route");
-      }
-    );
-
-    expect(dispatched).toHaveLength(1);
-    expect(dispatched[0]).toMatchObject({
-      model: "muse-spark-1.2",
-      provider: "opencode-responses",
-    });
-    // The redirect replaces the dispatch; running both would bill twice.
-    expect(nextCalls).toBe(0);
-    if (!isAsyncIterableLike(result)) {
-      throw new Error("expected async iterable downstream");
-    }
-    expect(await collectUnknown(result)).toEqual(["from-responses-route"]);
-  });
-
-  it("reads the SDK from the ZEN plane, not a Go-first lookup", async () => {
-    // The measured mis-route: models.dev's `opencode-go` names
-    // `@ai-sdk/anthropic` for `qwen3.8-max` while its `opencode` names the
-    // completions default, and a Go-first lookup therefore sent a ZEN request to
-    // the anthropic route. The live gateway serves `qwen3.8-max` on
-    // `/chat/completions` and answers `400 ModelProtocolUnsupported` on
-    // `/messages`, so the redirect was a hard failure rather than a preference.
-    let streamHandler:
-      | ((options: unknown, next: () => unknown) => unknown)
-      | undefined;
-    const dispatched: unknown[] = [];
-    let nextCalls = 0;
-
-    const ctx: CordisContext = {
-      effect: (fn: () => unknown) => {
-        fn();
-      },
-      llm: {
-        listConfigurableProviders: () => [{ provider: "opencode" }],
-        listModels: async () => [{ id: "qwen3.8-max" }],
-        listProviders: () => [{ id: "opencode" }, { id: "opencode-anthropic" }],
-        stream: (options: unknown) => {
-          dispatched.push(options);
-          return createMockStream("should-not-be-dispatched");
-        },
-      },
-      on: (
-        _event: string,
-        handler: (options: unknown, next: () => unknown) => unknown
-      ) => {
-        streamHandler = handler;
-      },
-    };
-
-    apply(ctx);
-    if (typeof streamHandler !== "function") {
-      throw new TypeError("stream handler not registered");
-    }
-    const result: unknown = streamHandler(
-      { model: "qwen3.8-max", provider: "opencode" },
-      () => {
-        nextCalls += 1;
-        return createMockStream("from-opencode-route");
-      }
-    );
-
-    // The Zen plane declares no SDK for it, so it stays on the route the user
-    // configured — which is the endpoint that actually serves it.
-    expect(dispatched).toHaveLength(0);
-    expect(nextCalls).toBe(1);
-    if (!isAsyncIterableLike(result)) {
-      throw new Error("expected async iterable downstream");
-    }
-    expect(await collectUnknown(result)).toEqual(["from-opencode-route"]);
-  });
-
-  it("dispatches normally when the responses route is not registered", async () => {
-    // A layer that failed to load must not turn the gateway's own error into a
-    // "no adapter for provider" one, which points at the wrong thing.
-    let streamHandler:
-      | ((options: unknown, next: () => unknown) => unknown)
-      | undefined;
-    let nextCalls = 0;
-
-    const ctx: CordisContext = {
-      effect: (fn: () => unknown) => {
-        fn();
-      },
-      llm: {
-        listModels: async () => [],
-        // The route really is absent, so the redirect must stand down.
-        listProviders: () => [{ id: "opencode" }],
-        stream: () => createMockStream("should-not-be-used"),
-      },
-      on: (
-        _event: string,
-        handler: (options: unknown, next: () => unknown) => unknown
-      ) => {
-        streamHandler = handler;
-      },
-    };
-
-    apply(ctx);
-    if (typeof streamHandler !== "function") {
-      throw new TypeError("stream handler not registered");
-    }
-    const result: unknown = streamHandler(
-      { model: "beam-free", provider: "opencode" },
-      () => {
-        nextCalls += 1;
-        return createMockStream("from-opencode-route");
-      }
-    );
-
-    expect(nextCalls).toBe(1);
-    if (!isAsyncIterableLike(result)) {
-      throw new Error("expected async iterable downstream");
-    }
-    expect(await collectUnknown(result)).toEqual(["from-opencode-route"]);
   });
 
   it("attaches to llm/stream and derives session ID", async () => {
@@ -713,7 +384,7 @@ describe("apply (plugin lifecycle)", () => {
       },
     };
 
-    apply(ctx);
+    void apply(ctx);
     expect(typeof streamHandler).toBe("function");
     if (typeof streamHandler !== "function") {
       throw new TypeError("stream handler not registered");
@@ -775,7 +446,7 @@ describe("apply (plugin lifecycle)", () => {
       },
     }) as unknown as CordisContext;
 
-    apply(ctx);
+    void apply(ctx);
     if (typeof streamHandler !== "function") {
       throw new TypeError("stream handler not registered");
     }
@@ -808,7 +479,7 @@ describe("apply (plugin lifecycle)", () => {
         streamHandler = handler;
       },
     };
-    apply(ctx);
+    void apply(ctx);
     if (typeof streamHandler !== "function") {
       throw new TypeError("stream handler not registered");
     }
@@ -871,7 +542,7 @@ describe("apply (plugin lifecycle)", () => {
         streamHandler = handler;
       },
     };
-    apply(ctx);
+    void apply(ctx);
     const model = "deepseek-v4-pro";
     const go = findModelSpecOn("go", model)?.cost?.input;
     const zen = findModelSpecOn("zen", model)?.cost?.input;
@@ -919,7 +590,7 @@ describe("apply (plugin lifecycle)", () => {
         streamHandler = handler;
       },
     };
-    apply(ctx);
+    void apply(ctx);
     if (typeof streamHandler !== "function") {
       throw new TypeError("stream handler not registered");
     }
@@ -952,7 +623,7 @@ describe("apply (plugin lifecycle)", () => {
         throw new Error("on must not be called without fetch");
       },
     };
-    apply(ctx);
+    void apply(ctx);
     expect(
       warnings.some((w) => w.includes("globalThis.fetch is unavailable"))
     ).toBe(true);
@@ -977,7 +648,7 @@ describe("apply (plugin lifecycle)", () => {
         },
       };
 
-      apply(ctx, { debug: true, debugFile });
+      void apply(ctx, { debug: true, debugFile });
       if (typeof streamHandler !== "function") {
         throw new TypeError("stream handler not registered");
       }
@@ -1042,7 +713,7 @@ describe("apply (plugin lifecycle)", () => {
         on: () => {},
       };
       try {
-        apply(ctx, { debug: true, debugFile });
+        void apply(ctx, { debug: true, debugFile });
         const url = "https://opencode.ai/zen/v1/chat/completions";
         const response = await globalThis.fetch(url, {
           body: JSON.stringify({ messages: [] }),
@@ -1097,7 +768,7 @@ describe("apply (plugin lifecycle)", () => {
           streamHandler = handler;
         },
       };
-      apply(ctx, { debug: true, debugFile });
+      void apply(ctx, { debug: true, debugFile });
       if (typeof streamHandler !== "function") {
         throw new TypeError("stream handler not registered");
       }
@@ -1143,7 +814,7 @@ describe("apply (plugin lifecycle)", () => {
       },
     };
 
-    apply(ctx);
+    void apply(ctx);
     if (typeof streamHandler !== "function") {
       throw new TypeError("stream handler not registered");
     }
@@ -1188,7 +859,7 @@ describe("apply (plugin lifecycle)", () => {
           : undefined,
     };
 
-    apply(ctx);
+    void apply(ctx);
     if (typeof streamHandler !== "function") {
       throw new TypeError("stream handler not registered");
     }
@@ -1204,61 +875,5 @@ describe("apply (plugin lifecycle)", () => {
       throw new Error("expected async iterable downstream");
     }
     expect(await collectUnknown(result)).toEqual(["subagent-chunk"]);
-  });
-});
-
-describe("mountInternalRoutes", () => {
-  const config = resolveConfig({});
-  const settle = async (): Promise<void> => {
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-  };
-
-  it("contains a rejected mount instead of leaking an unhandled rejection", async () => {
-    // A `void` IIFE with no catch turned any bridge failure into an unhandled
-    // rejection, which Node's default mode answers by exiting the process.
-    const warn = vi.fn();
-    const ctx = { logger: { warn } } as unknown as CordisContext;
-    const release = mountInternalRoutes(ctx, config, () =>
-      Promise.reject(new Error("DUPLICATE_ADAPTER"))
-    );
-    await settle();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("internal routes did not mount"),
-      expect.objectContaining({ message: "DUPLICATE_ADAPTER" })
-    );
-    expect(() => {
-      release();
-    }).not.toThrow();
-  });
-
-  it("withdraws a mount that settles after its release", async () => {
-    let resolveMount: (stop: () => void) => void = () => {};
-    const stop = vi.fn<() => void>();
-    const release = mountInternalRoutes(
-      {} as CordisContext,
-      config,
-      () =>
-        new Promise((resolve) => {
-          resolveMount = resolve;
-        })
-    );
-    release();
-    resolveMount(stop);
-    await settle();
-    expect(stop).toHaveBeenCalledTimes(1);
-  });
-
-  it("withdraws a settled mount once, however often it is released", async () => {
-    const stop = vi.fn();
-    const release = mountInternalRoutes({} as CordisContext, config, () =>
-      Promise.resolve(stop)
-    );
-    await settle();
-    expect(stop).not.toHaveBeenCalled();
-    release();
-    release();
-    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

@@ -21,12 +21,6 @@ import {
   findModelSpec,
   findModelSpecOn,
 } from "./models-catalog.ts";
-import { isRouteRegistered, isServableModel } from "./models-discovery.ts";
-import {
-  internalRouteFor,
-  UNSERVED_PLANE_SDKS,
-  GO_GOOGLE_INTERNAL_ROUTE,
-} from "./responses-routes.ts";
 import { recordTurnUsage } from "./session-cost.ts";
 import {
   fallbackSessionId,
@@ -36,7 +30,6 @@ import {
 } from "./session.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { withStore } from "./turn-store.ts";
-import { googleHistoryFor, googleReplayStream } from "./utils/google-replay.ts";
 import { isAsyncIterableLike, isRecord } from "./utils/guards.ts";
 
 interface StreamOptions {
@@ -72,12 +65,6 @@ type StreamHandler = (options: unknown, next: () => unknown) => unknown;
  * string — so the full path, username included, would be sent as the project
  * name. This header is for attribution, not for a filesystem layout.
  */
-/**
- * Models already reported as unservable, so the report happens once rather than on
- * every request that names one.
- */
-const warnedUnservable = new Set<string>();
-
 /** Markers whose presence makes a directory a repository root, either kind. */
 const VCS_MARKERS = [".git", ".hg"] as const;
 
@@ -122,9 +109,6 @@ export const projectNameFrom = (cwd: string): string | undefined => {
 
 export const createStreamHook = (
   ctx: DebugContext & {
-    llm?: {
-      stream?: (options: unknown) => unknown;
-    };
     logger?: {
       info?: (msg: string, ...args: unknown[]) => void;
     };
@@ -147,118 +131,6 @@ export const createStreamHook = (
       return next();
     }
 
-    // A model this plugin cannot serve, named by hand - once per pair, because
-    // this hook runs on every request.
-    //
-    // The message states the reason it COMPUTED and nothing it did not. An
-    // earlier version blamed the Zen free tier for every unservable id, which was
-    // wrong twice over: for an `opencode-go` request that plane has no free tier
-    // at all, and the filter's reasons here are about SHAPE - an SDK this plane
-    // has no route for. The filter did spend a round excluding free-tier ids, and
-    // this message computed that half too; the exclusion was withdrawn again when
-    // the decision was made to offer them (a refused free id answers with the
-    // gateway's own words, which is more use than an empty picker), so the shape
-    // reasons below are what remains. A diagnostic that asserts a cause it never
-    // checked is worse than none - it sends the reader to the wrong subsystem,
-    // which is exactly what it did.
-    if (
-      typeof options.model === "string" &&
-      options.model.length > 0 &&
-      !isServableModel(options.model, providerKey) &&
-      !warnedUnservable.has(`${providerKey}/${options.model}`)
-    ) {
-      warnedUnservable.add(`${providerKey}/${options.model}`);
-      const plane = catalogPlaneForRoute(providerKey);
-      const spec = findModelSpecOn(plane, options.model);
-      const sdk = spec?.provider_npm;
-      // Checked in the order the filter itself applies them, so the reason named
-      // is the one that actually decided it. Naming the shape for a model that
-      // was filtered on its tier sends the reader to the routing table for an
-      // entitlement problem.
-      let why: string;
-      if (sdk === undefined) {
-        why = "it names no SDK this plane has a route for";
-      } else if (UNSERVED_PLANE_SDKS.has(`${providerKey} + ${sdk}`)) {
-        why = `its catalog SDK \`${sdk}\` is not served on this plane`;
-      } else {
-        why = `its catalog SDK \`${sdk}\` names a protocol this plane has no route for`;
-      }
-      console.warn(
-        `[dsh-opencode-patch] ${providerKey}/${options.model} cannot be served: ${why}`,
-        "the picker does not offer it for the same reason"
-      );
-    }
-
-    // A model the gateway serves on /responses cannot be dispatched through a
-    // chat-completions route. Rather than translating the protocol at the
-    // transport, hand the call to the route whose `api` already says
-    // `openai-responses`: the adapter then speaks the format natively and
-    // nothing about the response has to be rewritten. Returning here rather than
-    // continuing means the redirected call does the session/debug/turn-state
-    // work exactly once — its own pass through this hook.
-    const redirect = internalRouteFor(
-      providerKey,
-      options.model,
-      // The vendor's own statement of the split: a model naming a different SDK
-      // than the route's is served on a different API. Read from the catalog
-      // rather than from a list we would have to notice changing.
-      //
-      // Read from the plane the REQUEST is on, not from a Go-first lookup. The
-      // two planes declare different SDKs for the same id — models.dev's
-      // `opencode-go` names `@ai-sdk/anthropic` for `qwen3.8-max`,
-      // `minimax-m2.7` and `minimax-m3` while its `opencode` names the default —
-      // so a single lookup answered a Zen question with Go data and sent those
-      // three to `/messages`. Measured: the Zen gateway serves `qwen3.8-max` and
-      // `minimax-m3` on `/chat/completions` and answers
-      // `400 ModelProtocolUnsupported` on `/messages`. The route decides the
-      // plane, because the route is what the user configured.
-      typeof options.model === "string"
-        ? (
-            findModelSpecOn(catalogPlaneForRoute(providerKey), options.model) ??
-            findModelSpec(options.model)
-          )?.provider_npm
-        : undefined,
-      // A route the deployment declared beats the catalog's own answer. The
-      // catalog is a snapshot; the deployment is the one place that can say it is
-      // wrong about a model.
-      typeof options.model === "string"
-        ? config.modelRoutes[options.model]?.api
-        : undefined
-    );
-    // Take the call over only when the target route is really registered.
-    // Without this, a layer that failed to load would replace the gateway's own
-    // error with a "no adapter for provider" one, which is harder to act on and
-    // points at the wrong thing. Asked of the UNFILTERED registry — the route is
-    // deliberately absent from every listing a user sees.
-    const isAvailable = (routeId: string): boolean => {
-      const llm: unknown = ctx.llm;
-      if (
-        isRecord(llm) &&
-        "adapters" in llm &&
-        llm.adapters instanceof Map &&
-        llm.adapters.has(routeId)
-      ) {
-        return true;
-      }
-      return isRouteRegistered(routeId);
-    };
-    if (
-      redirect !== undefined &&
-      typeof ctx.llm?.stream === "function" &&
-      isAvailable(redirect)
-    ) {
-      if (redirect === GO_GOOGLE_INTERNAL_ROUTE) {
-        const stream = ctx.llm.stream({
-          ...options,
-          provider: redirect,
-          messages: googleHistoryFor(options.messages, providerKey, redirect),
-        });
-        return isAsyncIterableLike(stream)
-          ? googleReplayStream(stream, redirect, providerKey)
-          : stream;
-      }
-      return ctx.llm.stream({ ...options, provider: redirect });
-    }
     const sessionProp: unknown = options.sessionId;
     // The session is looked up FIRST: its `createdAt` is what lets the derived
     // id carry the conversation's real creation time instead of hash bits, and
@@ -345,7 +217,7 @@ export const createStreamHook = (
     }
     const modelProp: unknown = options.model;
     const modelName = typeof modelProp === "string" ? modelProp : "unknown";
-    // The ROUTE's plane first, as the dispatch lookup above does: the two planes
+    // The ROUTE's plane first: the two planes
     // price some shared ids differently (deepseek-v4-pro is 0.66/1.98 on Go and
     // 1.74/3.48 on Zen), and a Go-first lookup recorded every Zen turn on those
     // at the Go rate. The Go-first lookup is the fallback for a model neither

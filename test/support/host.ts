@@ -27,15 +27,17 @@
  * namespaces — the harness's own pattern for a composition test
  * (`llm/llm-pi-ai/tests/loader-composition.spec.ts:62-79`). A builtin row is
  * named `cordis:<key>` (the loader's `vendor/loader/src/config/tree.ts:112-115`),
- * and the plugin finds pi-ai's entry by `options.name ===
- * "@deepseek-ai/dsh-llm-pi-ai"` (`piAiEntry` in `src/responses-provider.ts`),
- * so a builtin-named row would silently drop today's hidden-route mount and the
- * Google bridge from everything this harness characterizes.
+ * and the plugin's default host-module source finds pi-ai's entry by
+ * `options.name === "@deepseek-ai/dsh-llm-pi-ai"` (`piAiEntry` in
+ * `src/host/host-modules.ts`), so a builtin-named row would silently leave the
+ * route claim without pi-ai's module and hand the planes back from everything
+ * this harness characterizes.
  *
  * **Tier B fixes the apply order.** The loader starts rows in parallel, and the
  * stub loader resolves every import at once, so which of pi-ai and the plugin
  * applies first would otherwise be an accident of row order. It matters: the
- * plugin's adapter decoration wraps only what is registered when it applies.
+ * route claim restarts pi-ai once when pi-ai applied first, and not at all
+ * when the plugin did.
  * The default is `plugin-first`, the order measured on the published binary
  * ({@link ApplyOrder}); `pi-ai-first` is the other one. The held row is
  * released when the first row's `apply` returns OR its fiber settles in any
@@ -47,8 +49,8 @@
  * snapshot ({@link fakeLaunchEnvironment}) on the root, which is where pi-ai
  * looks first (`launchEnvironmentOf` reads `ctx.get("launchEnvironment")`
  * before it falls back to `process.env`). The plugin itself still reads
- * `process.env.OPENCODE_API_KEY`/`OPENCODE_GO_API_KEY` for its keyless listing
- * filter (`hasPlaneCredential` in `src/lifecycle.ts`), so tier B blanks either
+ * `process.env.OPENCODE_API_KEY`/`OPENCODE_GO_API_KEY` in its fetch patch and
+ * its quota discovery (`src/fetch-patch.ts`, `src/go-discovery.ts`), so tier B blanks either
  * one a contributor's shell exports for the life of the boot and restores it
  * on dispose: the suite measures the keyless deployment whatever the shell
  * holds.
@@ -77,7 +79,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Context, type Fiber } from "@deepseek-ai/cordis";
-import type { Entry, ModuleLoaderV2 } from "@deepseek-ai/cordis-plugin-loader";
+import {
+  type Entry,
+  interpolate,
+  type ModuleLoaderV2,
+} from "@deepseek-ai/cordis-plugin-loader";
 import {
   boot,
   initProfile,
@@ -85,13 +91,42 @@ import {
   readProfilePatches,
 } from "@deepseek-ai/dsh-app-boot";
 import { ConfigEditor } from "@deepseek-ai/dsh-config-editor";
-import { LlmRuntime } from "@deepseek-ai/dsh-llm";
+import {
+  assertUsableApiKey,
+  LlmError,
+  LlmRuntime,
+  resolveRetryPolicy,
+} from "@deepseek-ai/dsh-llm";
 import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import Settings from "@deepseek-ai/dsh-settings";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
+import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
+import { lazyStream } from "@earendil-works/pi-ai/api/lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import {
+  clampThinkingLevel,
+  createProvider,
+} from "@earendil-works/pi-ai/models";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
+import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
+import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
+import { withOpenCodeSessionHeader } from "@earendil-works/pi-ai/providers/opencode-headers";
 
-import { apply, Config, inject, name } from "./src.ts";
+import {
+  apply,
+  Config,
+  type GoogleLevelPieces,
+  type GoogleLevelSource,
+  type HostLibraries,
+  type HostModuleSource,
+  inject,
+  name,
+  type PiAiModule,
+  replaceHostModuleSource,
+} from "./src.ts";
 
-/** The package name the plugin looks pi-ai up by (`PI_AI_PACKAGE` in `src/responses-provider.ts`). */
+/** The package name the plugin looks pi-ai up by (`PI_AI_PACKAGE` in `src/host/host-modules.ts`). */
 export const PI_AI_PACKAGE = "@deepseek-ai/dsh-llm-pi-ai";
 
 /** The `llm` service as the tests read it, private registry included. */
@@ -531,56 +566,45 @@ const tags = (
 ): Readonly<Record<RowFacet, RowTag>> => ({ callConfig, info, wire });
 
 const B = "BASELINE";
-const D = "KNOWN_DEFECT";
-const I = "INTENDED_CHANGE";
 
 /**
- * TODAY's plugin (hidden routes, listing patch, adapter decoration and all) on
- * pi 1.1.0 with {@link CHARACTERIZED_PROFILE} and a key stored for each plane,
- * measured in tier B with the published host's apply order (`plugin-first`,
- * see {@link ApplyOrder}) and shared with the binary e2e so the two cannot
- * drift. Each facet carries its own tag, and the characterization generates
- * one test per row and facet titled with it: P-R1 flips the `KNOWN_DEFECT` and
- * `INTENDED_CHANGE` facets its PR body names, and no `BASELINE` facet moves —
- * except that P-R2's measured family flip, if a `modern` cell fails, may move
- * the endpoint-family part of a `BASELINE` wire facet, re-tagging each one it
- * moves and naming it in its PR body.
+ * What the plugin does with each characterized model on pi 1.1.0, measured in
+ * tier B with {@link CHARACTERIZED_PROFILE} and a key stored for each plane,
+ * and shared with the binary e2e so the two cannot drift. Each facet carries
+ * its own tag, and the characterization generates one test per row and facet
+ * titled with it. P-T1b recorded these against the hidden-route workaround;
+ * P-R1 (the plugin owns the plane routes) flipped the fourteen
+ * `KNOWN_DEFECT`/`INTENDED_CHANGE` facets its PR body names to `BASELINE`, so
+ * every facet here is one no later phase may move — except that P-R2's
+ * measured family flip, if a `modern` cell fails, may move the
+ * endpoint-family part of a wire facet, re-tagging each one it moves and
+ * naming it in its PR body.
  *
- * `context` and `efforts` are copied from the generated catalog
+ * `context` and `efforts` follow D17 and D1: the user's row first (Zen
+ * gpt-5.3-codex-spark's 400000), then the bundled catalog
  * (`src/catalog-data.ts`), which the nightly refresh rewrites. A fixture-sanity
- * case in `test/host-characterization.test.ts` compares each row's context AND
- * effort ids to the bundled catalog's derivation, so a refresh that moves a
- * fixture model fails there by name — update the row here. A phase that
- * moves a non-`BASELINE` `info` facet off the catalog on purpose (D17's user
- * row, D1's toggle efforts) adds that row's key to the case's
- * `INFO_NOT_FROM_CATALOG` set in the same diff. The binary e2e
- * reads the same table, but its job runs on a PR only when this file is in
- * its path scope (`.github/workflows/ci.yml`, `e2e-host`), which it is.
+ * case in `test/host-characterization.test.ts` derives each row's context and
+ * effort ids the same way, so a refresh that moves a fixture model fails there
+ * by name — update the row here. The binary e2e reads the same table, and its
+ * job runs on a PR only when this file is in its path scope
+ * (`.github/workflows/ci.yml`, `e2e-host`), which it is.
  */
 export const S0_TODAY = {
-  /** `listModels` before any turn: the plugin sees no key, so it hides paid models. */
-  keylessListing: { opencode: [], "opencode-go": [] },
-  /** `listModels` once a turn captured a key: pi-resolved ids only. */
-  keyedListing: {
-    opencode: [
-      "deepseek-v4-pro",
-      "gpt-5.4",
-      "claude-haiku-5-5",
-      "gemini-3-flash",
-    ],
-    "opencode-go": [
-      "deepseek-v4-pro",
-      "muse-spark-1.2-contributor",
-      "minimax-m3",
-    ],
-  },
+  /**
+   * `listModels` before any turn, with the keys stored: every declared id
+   * (D21). The keyless boot is `test/host-planes.test.ts`'s declared-listing
+   * case.
+   */
+  listingBeforeTurn: CHARACTERIZED_MODELS,
+  /** `listModels` once a turn ran: the same declared ids. */
+  listingAfterTurn: CHARACTERIZED_MODELS,
   rows: {
     "opencode/deepseek-v4-pro": {
       callConfig: "ok",
       info: { context: 1_000_000, efforts: ["high", "max"] },
       finish: "AUTH",
-      sent: [`${ZEN}/zen/v1/chat/completions`],
-      tags: tags(B, B, I),
+      sent: [`${ZEN}/inference/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
     },
     "opencode/gpt-5.4": {
       callConfig: "ok",
@@ -611,27 +635,28 @@ export const S0_TODAY = {
       ],
       tags: tags(B, B, B),
     },
-    // The user's row (name "My Spark", contextWindow 400000) is ignored.
+    // The user's row (name "My Spark", contextWindow 400000) wins (D17).
     "opencode/gpt-5.3-codex-spark": {
-      callConfig: "INVALID_CONFIG",
-      info: { context: 128_000, efforts: ["low", "medium", "high", "xhigh"] },
+      callConfig: "ok",
+      info: { context: 400_000, efforts: ["low", "medium", "high", "xhigh"] },
       finish: "AUTH",
       sent: [`${ZEN}/inference/openai/v1/responses`],
-      tags: tags(D, D, B),
+      tags: tags(B, B, B),
     },
+    // Neither catalog describes it: served as completions on the defaults (D15, D16).
     "opencode/not-in-any-catalog": {
-      callConfig: "INVALID_CONFIG",
-      finish: "INVALID_CONFIG",
-      info: { error: "INVALID_CONFIG" },
-      sent: [],
-      tags: tags(D, D, D),
+      callConfig: "ok",
+      finish: "AUTH",
+      info: { context: 262_144, efforts: [] },
+      sent: [`${ZEN}/inference/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
     },
     "opencode-go/deepseek-v4-pro": {
       callConfig: "ok",
       info: { context: 1_000_000, efforts: ["high", "max"] },
       finish: "AUTH",
-      sent: [`${ZEN}/zen/go/v1/chat/completions`],
-      tags: tags(B, B, I),
+      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
     },
     "opencode-go/muse-spark-1.2-contributor": {
       callConfig: "ok",
@@ -643,53 +668,48 @@ export const S0_TODAY = {
       sent: [`${ZEN}/inference/go/openai/v1/responses`],
       tags: tags(B, B, B),
     },
-    // A toggle-only model offered Minimal/Xhigh/Max (D1).
+    // A toggle-only model on Messages: Off / On (D1).
     "opencode-go/minimax-m3": {
       callConfig: "ok",
-      info: {
-        context: 1_000_000,
-        efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
-      },
+      info: { context: 1_000_000, efforts: ["off", "high"] },
       finish: "AUTH",
       sent: [`${ZEN}/inference/go/anthropic/v1/messages?beta=true`],
-      tags: tags(D, B, B),
+      tags: tags(B, B, B),
     },
     "opencode-go/gemini-4-argon": {
-      callConfig: "INVALID_CONFIG",
+      callConfig: "ok",
       info: { context: 1_048_576, efforts: ["low", "medium", "high"] },
       finish: "PI_AI_ERROR",
       sent: [
         `${ZEN}/inference/go/google/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse`,
       ],
-      tags: tags(B, D, B),
+      tags: tags(B, B, B),
     },
     "opencode-go/minimax-m3.1-flash": {
-      callConfig: "INVALID_CONFIG",
+      callConfig: "ok",
       info: {
         context: 1_000_000,
         efforts: ["low", "medium", "high", "xhigh", "max"],
       },
-      finish: "INVALID_CONFIG",
-      sent: [],
-      tags: tags(B, D, D),
+      finish: "AUTH",
+      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
     },
     "opencode-go/not-in-any-catalog": {
-      callConfig: "INVALID_CONFIG",
-      finish: "INVALID_CONFIG",
-      info: { error: "INVALID_CONFIG" },
-      sent: [],
-      tags: tags(D, D, D),
+      callConfig: "ok",
+      finish: "AUTH",
+      info: { context: 262_144, efforts: [] },
+      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
     },
   } satisfies Record<string, TodayRow>,
   /**
-   * What appending a new id to `opencode` answers while the plane stores a gap
-   * id: the strict check names the STORED gap id, whatever is being saved.
+   * What appending a new id to `opencode` answers on pi-ai ALONE (the plugin
+   * disposed) while the plane stores a gap id: pi-ai's strict check names the
+   * STORED gap id, whatever is being saved. With the plugin, any id saves (D15).
    */
   saveBlockedByStoredGap:
     /provider "opencode" model "gpt-5\.3-codex-spark" needs an api/u,
-  /** What saving a catalog-unknown id answers once the plane stores no gap. */
-  saveRejectedUnknown:
-    /provider "opencode" model "not-a-real-model" needs an api/u,
 } as const;
 
 /** The id the save rows try to add: unknown to every catalog, and not declared. */
@@ -703,42 +723,24 @@ export const SAVE_CANDIDATE = "not-a-real-model";
 export const ZEN_UNDESCRIBED = ["gpt-5.3-codex-spark", UNKNOWN_ID] as const;
 
 /**
- * TODAY's rows for an apply order. `S0_TODAY.rows` is the `plugin-first`
- * table; with `pi-ai-first` the adapter decoration wraps pi-ai's plane adapter
- * and exactly one facet moves — Go gemini-4-argon validates —
- * measured in `test/host-characterization.test.ts`, which generates one test
- * per row and facet for each order, titled with that order's tags. The moved
- * facet is `BASELINE` in this table: its `"ok"` is already what P-R1 keeps, so
- * there is nothing for a phase to flip in this order. The binary e2e picks the
- * table from the order its probe INFERRED — whether the decoration wrapped
- * pi-ai's plane adapter, which is what the rows depend on — because on a real
- * host the order is a race (F17) the suite must not pin.
+ * The rows for an apply order. With the plugin owning the planes, the apply
+ * order no longer moves any facet, so both orders answer `S0_TODAY.rows`. Only
+ * the in-process characterization calls it, once per order it boots (the binary
+ * e2e reads `S0_TODAY.rows` directly); an order this function does not know is
+ * refused rather than read as one it does.
  *
- * @param order - the apply order, as inferred from the decoration.
+ * @param order - the apply order.
  * @returns the rows, keyed `<route>/<model>`.
  */
 export const todayRowsFor = (
   order: ApplyOrder
 ): Readonly<Record<keyof typeof S0_TODAY.rows, TodayRow>> => {
-  if (order === "plugin-first") {
-    return S0_TODAY.rows;
-  }
   // Exhaustive on purpose: a probe JSON with a missing or renamed field reads
-  // `undefined` here, and must not fall through to the pi-ai-first table.
-  if (order !== "pi-ai-first") {
+  // `undefined` here.
+  if (order !== "plugin-first" && order !== "pi-ai-first") {
     throw new Error(`todayRowsFor: unknown apply order ${String(order)}`);
   }
-  return {
-    ...S0_TODAY.rows,
-    "opencode-go/gemini-4-argon": {
-      ...S0_TODAY.rows["opencode-go/gemini-4-argon"],
-      callConfig: "ok",
-      tags: {
-        ...S0_TODAY.rows["opencode-go/gemini-4-argon"].tags,
-        callConfig: B,
-      },
-    },
-  };
+  return S0_TODAY.rows;
 };
 
 /**
@@ -750,20 +752,6 @@ export const APPLY_ORDERS = Object.keys({
   "pi-ai-first": true,
   "plugin-first": true,
 } satisfies Record<ApplyOrder, true>) as readonly ApplyOrder[];
-
-/**
- * What appending a new id to `opencode` answers while the plane stores ANY of
- * {@link ZEN_UNDESCRIBED}, whichever one the installed pi cannot describe
- * first. The pinned pi always names `gpt-5.3-codex-spark`
- * (`S0_TODAY.saveBlockedByStoredGap`); a floating pi that learned it names the
- * next one, so the floating cell asserts this instead.
- */
-export const SAVE_BLOCKED_BY_ANY_UNDESCRIBED = new RegExp(
-  `provider "opencode" model "(?:${ZEN_UNDESCRIBED.map((id) =>
-    id.replaceAll(".", String.raw`\.`)
-  ).join("|")})" needs an api`,
-  "u"
-);
 
 const PI_DATA = new URL(
   "../../node_modules/@earendil-works/pi-ai/dist/providers/data/",
@@ -868,9 +856,9 @@ export const waterfallSpy = (
 };
 
 /**
- * Poll the registry until every route is present: the plugin mounts its
- * hidden routes asynchronously (`mountInternalRoutes` in
- * `src/lifecycle.ts`).
+ * Poll the registry until every route is present: a route registers after
+ * its owner's config resolves, which is asynchronous. For the two planes,
+ * {@link waitForPlaneOwner} also waits for the plugin to be their owner.
  *
  * @param llm - the `llm` service.
  * @param ids - the routes to wait for.
@@ -901,6 +889,187 @@ export const waitForRoutes = async (
   }
 };
 
+/**
+ * Poll the registry until each plane is served by an adapter of class
+ * `owner`: the plugin registers its plane adapter once its mount settles.
+ *
+ * @param llm - the `llm` service.
+ * @param planes - the routes to wait for.
+ * @param owner - the adapter's class name.
+ * @param deadlineMs - how long to wait before failing by name.
+ */
+export const waitForPlaneOwner = async (
+  llm: HostLlm,
+  planes: readonly string[] = PLANES,
+  owner = "PlaneAdapter",
+  deadlineMs = 10_000
+): Promise<void> => {
+  const until = Date.now() + deadlineMs;
+  for (;;) {
+    const registry = adaptersOf(llm);
+    const wrong = planes.filter(
+      (plane) => registry.get(plane)?.adapter.constructor.name !== owner
+    );
+    if (wrong.length === 0) {
+      return;
+    }
+    if (Date.now() > until) {
+      throw new Error(
+        `host harness: ${wrong.join(", ")} never came to ${owner} (${wrong
+          .map(
+            (plane) =>
+              registry.get(plane)?.adapter.constructor.name ?? "unregistered"
+          )
+          .join(", ")})`
+      );
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+};
+
+/** The adapter class serving a route, or `undefined`. */
+export const ownerOf = (llm: HostLlm, route: string): string | undefined =>
+  adaptersOf(llm).get(route)?.adapter.constructor.name;
+
+/** cordis `FiberState.UNLOADING`. */
+const UNLOADING_STATES: ReadonlySet<number> = new Set([5]);
+
+/**
+ * Count pi-ai's restarts from now on: every UNLOADING transition of a pi-ai
+ * fiber that is not being disposed (a dispose clears `uid` first).
+ *
+ * @param root - the root context.
+ * @returns the live count, and the disposer.
+ */
+export const piAiRestarts = (
+  root: Context
+): { readonly count: () => number; readonly dispose: () => void } => {
+  let count = 0;
+  const off = root.on("internal/status", (fiber: Fiber) => {
+    if (
+      fiber.runtime?.name === "llm-pi-ai" &&
+      UNLOADING_STATES.has(fiber.state) &&
+      fiber.uid !== null
+    ) {
+      count += 1;
+    }
+  });
+  return {
+    count: () => count,
+    dispose: () => {
+      off();
+    },
+  };
+};
+
+/**
+ * Every line any logger writes from now on, at every level.
+ *
+ * cordis's own exporter buffers only up to `info` (its default threshold, so
+ * a `warn` is never kept), and tier B adds no console exporter: nothing a
+ * plugin logs reaches the console or the default buffer reliably. This
+ * exporter takes every level, so an assertion about what was logged reads
+ * what was actually logged. A case should log one line of its own through it
+ * to prove the input is read.
+ *
+ * @param root - the host's root context.
+ * @returns the lines (`<type> <name>: <args>`) and the exporter's removal.
+ */
+export const logLines = (
+  root: Context
+): { readonly lines: () => string[]; readonly dispose: () => void } => {
+  const lines: string[] = [];
+  const logger = root.logger as unknown as {
+    exporter: (exporter: {
+      levels: { default: number };
+      export: (message: {
+        type: string;
+        name: string;
+        args: unknown[];
+      }) => void;
+    }) => () => void;
+  };
+  const off = logger.exporter({
+    export: (message) => {
+      lines.push(
+        `${message.type} ${message.name}: ${message.args.map(String).join(" ")}`
+      );
+    },
+    levels: { default: 3 },
+  });
+  return {
+    dispose: () => {
+      off();
+    },
+    lines: () => [...lines],
+  };
+};
+
+/**
+ * pi's Google level pieces from this repository's install, the Google ones
+ * imported on first use as the plugin's default source imports them.
+ */
+const googleLevelsForTests = (): GoogleLevelSource => ({
+  lazyStream: lazyStream as unknown as GoogleLevelSource["lazyStream"],
+  load: async () => {
+    const [google, shared, simple] = await Promise.all([
+      import("@earendil-works/pi-ai/api/google-generative-ai"),
+      import("@earendil-works/pi-ai/api/google-shared"),
+      import("@earendil-works/pi-ai/api/simple-options"),
+    ]);
+    return {
+      buildBaseOptions: simple.buildBaseOptions,
+      clampThinkingLevel,
+      resolveGoogleThinkingLevel: shared.resolveGoogleThinkingLevel,
+      stream: google.stream,
+      toGoogleSdkThinkingLevel: shared.toGoogleSdkThinkingLevel,
+      toGoogleThinkingLevel: shared.toGoogleThinkingLevel,
+      usesGoogleThinkingLevel: shared.usesGoogleThinkingLevel,
+    } as unknown as GoogleLevelPieces;
+  },
+});
+
+/**
+ * The host modules from this repository's own install, statically imported:
+ * what the plugin reads through its loader on a real host, handed in through
+ * the seam where there is no loader (tier A).
+ *
+ * @returns the source.
+ */
+export const hostModulesForTests = (): HostModuleSource => {
+  const libraries: HostLibraries = {
+    apis: {
+      "anthropic-messages": anthropicMessagesApi,
+      "google-generative-ai": googleGenerativeAIApi,
+      "openai-completions": openAICompletionsApi,
+      "openai-responses": openAIResponsesApi,
+    },
+    assertUsableApiKey,
+    builtinModels: (route) =>
+      getBuiltinModels(route as never) as unknown as ReturnType<
+        HostLibraries["builtinModels"]
+      >,
+    createProvider:
+      createProvider as unknown as HostLibraries["createProvider"],
+    googleLevels: googleLevelsForTests(),
+    interpolate: interpolate as HostLibraries["interpolate"],
+    LlmError: LlmError as unknown as HostLibraries["LlmError"],
+    opencodeAuth: opencodeProvider().auth,
+    opencodeGoAuth: opencodeGoProvider().auth,
+    resolveRetryPolicy:
+      resolveRetryPolicy as unknown as HostLibraries["resolveRetryPolicy"],
+    version: "1.1.0",
+    withOpenCodeSessionHeader:
+      withOpenCodeSessionHeader as unknown as HostLibraries["withOpenCodeSessionHeader"],
+  };
+  return {
+    libraries: () => Promise.resolve(libraries),
+    piAi: () => Promise.resolve(LlmPiAi as unknown as PiAiModule),
+  };
+};
+
 /** One drained `llm.stream` call: the chunk types and the final finish. */
 export interface DrainedStream {
   readonly types: string[];
@@ -908,6 +1077,8 @@ export interface DrainedStream {
     | { readonly kind: string | undefined; readonly code: string | undefined }
     | undefined;
   readonly error: string | undefined;
+  /** The finish's failure message, when it carried one. */
+  readonly failureMessage: string | undefined;
 }
 
 /**
@@ -921,21 +1092,27 @@ export interface DrainedStream {
 export const drainStream = async (
   llm: HostLlm,
   provider: string,
-  model: string
+  model: string,
+  extra: Readonly<Record<string, unknown>> = {}
 ): Promise<DrainedStream> => {
   const types: string[] = [];
   let finish: DrainedStream["finish"];
   let failed: string | undefined;
+  let failureMessage: string | undefined;
   try {
     for await (const chunk of llm.stream({
       messages: [{ content: [{ text: "hi", type: "text" }], role: "user" }],
       model,
       provider,
       signal: AbortSignal.timeout(10_000),
+      ...extra,
     } as never)) {
       const typed = chunk as {
         type: string;
-        reason?: { kind?: string; failure?: { code?: string } };
+        reason?: {
+          kind?: string;
+          failure?: { code?: string; message?: string };
+        };
       };
       types.push(typed.type);
       if (typed.type === "finish") {
@@ -943,13 +1120,14 @@ export const drainStream = async (
           code: typed.reason?.failure?.code,
           kind: typed.reason?.kind,
         };
+        failureMessage = typed.reason?.failure?.message;
       }
     }
   } catch (error) {
     const failure = error as { code?: unknown; message?: unknown };
     failed = `${typeof failure.code === "string" ? `${failure.code} ` : ""}${String(failure.message ?? error)}`;
   }
-  return { error: failed, finish, types };
+  return { error: failed, failureMessage, finish, types };
 };
 
 // ---------------------------------------------------------------------------
@@ -965,18 +1143,23 @@ export interface TierAOptions {
   /**
    * Mount this plugin too, with this row config. Stub `fetch` first (its fetch
    * patch captures `globalThis.fetch` at effect time). Tier A has no loader,
-   * so the plugin cannot find pi-ai's entry: it applies and patches fetch, but
-   * mounts NO hidden route and no Google bridge: the bridge's `PiAiAdapter`
-   * comes from the loader's pi-ai entry (`loadPiAiAdapterHost`), which tier A
-   * cannot answer. `test/host-harness.test.ts` pins both — the stand-down line
-   * and empty hidden routes, and `loadPiAiAdapterHost` answering `undefined`.
-   * Characterize the real plugin in tier B.
+   * so the plugin's default source cannot find pi-ai's module: the harness
+   * swaps in {@link hostModulesForTests} (the `hostModules` option, `null` to
+   * keep the default), which answers the statically imported modules, so the
+   * route claim serves the planes here as it does on the real host.
+   * Characterize the plugin as it ships in tier B.
    */
   readonly plugin?: Record<string, unknown>;
   readonly credentials?: FakeCredentials;
   readonly launchEnvironment?: FakeLaunchEnvironment;
   /** Runs on the root before pi-ai mounts (a listener to register first). */
   readonly before?: (ctx: Context) => void;
+  /**
+   * Where the plugin finds the host's modules. Tier A has no loader, so a
+   * plugin mounted here reads them from {@link hostModulesForTests} by
+   * default; `null` leaves the plugin's own default source in place.
+   */
+  readonly hostModules?: HostModuleSource | null;
 }
 
 /** A mounted tier A. */
@@ -1001,6 +1184,12 @@ export const mountTierA = async (options: TierAOptions): Promise<TierA> => {
   const credentials = options.credentials ?? fakeCredentials();
   const launchEnvironment =
     options.launchEnvironment ?? fakeLaunchEnvironment();
+  const restoreSource =
+    options.plugin === undefined || options.hostModules === null
+      ? (): void => {
+          // The default source stands: nothing was replaced.
+        }
+      : replaceHostModuleSource(options.hostModules ?? hostModulesForTests());
   try {
     ctx.provide("credentials", credentials.service);
     ctx.provide("launchEnvironment", launchEnvironment.snapshot);
@@ -1021,7 +1210,11 @@ export const mountTierA = async (options: TierAOptions): Promise<TierA> => {
       credentials,
       ctx,
       dispose: async () => {
-        await ctx.fiber.dispose();
+        try {
+          await ctx.fiber.dispose();
+        } finally {
+          restoreSource();
+        }
       },
       launchEnvironment,
       llm: ctx.llm,
@@ -1029,7 +1222,11 @@ export const mountTierA = async (options: TierAOptions): Promise<TierA> => {
       pluginFiber,
     };
   } catch (error) {
-    await ctx.fiber.dispose();
+    try {
+      await ctx.fiber.dispose();
+    } finally {
+      restoreSource();
+    }
     throw error;
   }
 };
@@ -1208,8 +1405,8 @@ export const AMBIENT_KEYS = [
 ] as const;
 
 /**
- * Blank the keys the plugin reads directly (`hasPlaneCredential` in
- * `src/lifecycle.ts`) for the life of one boot, so a contributor's exported
+ * Blank the keys the plugin reads directly (`src/fetch-patch.ts`,
+ * `src/go-discovery.ts`) for the life of one boot, so a contributor's exported
  * key cannot turn the keyless rows into keyed ones. An empty value is what the
  * plugin reads as "no key". Only a key that IS set is touched, and the
  * returned restore puts back exactly what was there.
@@ -1444,4 +1641,49 @@ export const providerWithApiKey = async (
     }
   }
   return undefined;
+};
+
+/** What the Models page shows for one plane: whether it is configured, under which key. */
+export interface ModelsPageRow {
+  readonly configured: boolean;
+  readonly apiKeyEnv: string | undefined;
+}
+
+/**
+ * The Models page's join, restated (`client/ui-settings-models/src/client/store.ts`
+ * `joinProviderDirectory` and `read`, `:45-77`, `:174-182`, `:250-269`): each
+ * plane's directory entry, looked up in `settings.describe({ redactSecrets:
+ * true })` at its `settingsPath`. The client package is not installed here,
+ * so the join is rebuilt from the real parts tier B holds.
+ *
+ * @param tier - the booted host.
+ * @returns per plane, whether the page reads it configured and its `apiKeyEnv`.
+ */
+export const modelsPageRows = (tier: TierB): Record<string, ModelsPageRow> => {
+  const views = tier.ctx.settings.describe({ redactSecrets: true });
+  const rows: Record<string, ModelsPageRow> = {};
+  for (const entry of tier.llm.listConfigurableProviders()) {
+    if (!(PLANES as readonly string[]).includes(entry.provider)) {
+      continue;
+    }
+    const view = views.find((namespace) => namespace.ns === entry.settingsNs);
+    let profile: unknown = view?.value;
+    for (const key of entry.settingsPath) {
+      profile =
+        typeof profile === "object" && profile !== null
+          ? Reflect.get(profile, key)
+          : undefined;
+    }
+    const ref: unknown =
+      typeof profile === "object" && profile !== null
+        ? Reflect.get(profile, "apiKeyEnv")
+        : undefined;
+    rows[entry.provider] = {
+      apiKeyEnv: typeof ref === "string" && ref.length > 0 ? ref : undefined,
+      configured:
+        view !== undefined &&
+        (entry.settingsPath.length === 0 || profile !== undefined),
+    };
+  }
+  return rows;
 };

@@ -5,7 +5,7 @@
  * (Zen, Go) crossed with every protocol it speaks (Responses, Completions,
  * Messages, Google) crossed with both endpoint families (`auto`, the
  * catalog's address; `legacy`, the older one still entitled separately). The
- * request is built exactly as production builds it — `piModelFor` for the
+ * request is built exactly as production builds it — `planeModelFor` for the
  * model, pi's own per-protocol API factory for the stream — and travels the
  * full path: `patchFetch` claims it, shapes it, and the mock gateway either
  * accepts it and streams back, or refuses with the reason.
@@ -35,7 +35,8 @@ import {
   OPENCODE_UA,
   SESSION_HEADER,
   clearCapturedApiKeys,
-  piModelFor,
+  OPENCODE_FAMILY_API,
+  planeModelFor,
   resolveConfig,
 } from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
@@ -114,7 +115,25 @@ describe("plane × protocol × family", () => {
       const text = await harness.als.run(
         sessionTurn({ model: spec.id, provider: plane }),
         async () => {
-          const model = piModelFor(plane, spec, protocol, undefined, family);
+          const { model, error } = planeModelFor({
+            defaults: {
+              contextWindow: 262_144,
+              input: ["text"],
+              maxTokens: 32_768,
+            },
+            endpoint: family,
+            entry: { id: spec.id },
+            familyApi:
+              plane === "opencode"
+                ? OPENCODE_FAMILY_API.zen
+                : OPENCODE_FAMILY_API.go,
+            route: plane,
+            spec,
+          });
+          if (model === undefined) {
+            throw new Error(`${plane}/${spec.id}: ${error}`);
+          }
+          expect(model.api).toBe(protocol);
           return collectText(openStream(api, model, keyFor(plane)));
         }
       );

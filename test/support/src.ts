@@ -71,20 +71,27 @@ export {
   DEFAULT_USAGE_KEY_ENV,
   resolveConfig,
 } from "../../src/config.ts";
-export type {
-  ModelOverrideConfig,
-  PluginConfig,
-  ResolvedPluginConfig,
-} from "../../src/config.ts";
+export type { PluginConfig, ResolvedPluginConfig } from "../../src/config.ts";
 
 // cordis-context.ts
 export {
+  loadHostModules,
   loaderOfContext,
+  PI_AI_RUNTIME,
+  piAiFibers,
   readCredentialsResolver,
   readEntryOptions,
+  readLaunchEnvironment,
   readSessionMetaResolver,
+  replaceHostModuleSource,
 } from "../../src/cordis-context.ts";
-export type { CordisContext } from "../../src/cordis-context.ts";
+export type {
+  CordisContext,
+  HostLibraries,
+  HostModules,
+  HostModuleSource,
+  PiAiModule,
+} from "../../src/cordis-context.ts";
 
 // debug.ts
 export { recordDebug } from "../../src/debug.ts";
@@ -99,7 +106,6 @@ export type { FetchPatchHooks } from "../../src/fetch-patch.ts";
 
 // go-discovery.ts
 export {
-  declaredProviderModels,
   discoverGoConfig,
   effectiveGoKeyRef,
   resolveGoApiKey,
@@ -124,17 +130,42 @@ export {
   WINDOW_SHARE,
 } from "../../src/go-limits.ts";
 
-// google-bridge.ts
+// host/describe-graft.ts
 export {
-  ambientAuthContext,
-  emptyCredentialStore,
-  GO_GOOGLE_BASE_URL,
-  googleProviderFor,
+  graftPlaneEntries,
+  installDescribeGraft,
+} from "../../src/host/describe-graft.ts";
+
+// host/host-modules.ts
+export {
+  asPiAiModule,
+  defaultHostModuleSource,
   loadHostPi,
-  registerGoogleBridge,
-  resolveGatewayKey,
-} from "../../src/google-bridge.ts";
-export type { GoogleBridgeInputs, PiRuntime } from "../../src/google-bridge.ts";
+  loadLibrariesFrom,
+  loadPiAiModule,
+  wrapperEntryFor,
+} from "../../src/host/host-modules.ts";
+export type { HostPi } from "../../src/host/host-modules.ts";
+
+// host/google-levels.ts
+export { withCatalogThinkingLevels } from "../../src/host/google-levels.ts";
+export type {
+  GoogleLevelPieces,
+  GoogleLevelSource,
+} from "../../src/host/google-levels.ts";
+
+// host/plane-provider.ts
+export {
+  buildPlaneProvider,
+  createPlaneAdapter,
+  hostError,
+  planeApiKeyResolver,
+  planeAuth,
+  relabelEfforts,
+} from "../../src/host/plane-provider.ts";
+
+// host/route-claim.ts
+export { installRouteClaim } from "../../src/host/route-claim.ts";
 
 // host/patch-method.ts
 export {
@@ -162,10 +193,12 @@ export {
 } from "../../src/key-capture.ts";
 
 // lifecycle.ts
-export { apply, mountInternalRoutes } from "../../src/lifecycle.ts";
+export { apply } from "../../src/lifecycle.ts";
 
 // models-catalog.ts
 export {
+  catalogGeneration,
+  catalogListenerCount,
   catalogPlaneForRoute,
   enrichModelsResponse,
   findModelSpec,
@@ -176,6 +209,7 @@ export {
   isGoModelsListingUrl,
   isModelsListingUrl,
   MODELS_OPENCODE_URL,
+  onCatalogChange,
   parseModelsDevCatalog,
   refreshCatalog,
   resetCatalogState,
@@ -185,15 +219,8 @@ export {
 // models-discovery.ts
 export {
   decorateModelDiscovery,
-  decorateModelInfo,
-  decoratePlaneAdapters,
-  hideResponsesRoute,
-  isRouteRegistered,
-  isServableModel,
   mergeDiscoveredModels,
-  PI_THINKING_LEVELS,
   resolveDiscoveryProvider,
-  resolveEffectiveContextWindow,
 } from "../../src/models-discovery.ts";
 
 // opencode-paths.ts
@@ -213,17 +240,6 @@ export {
   summarizeCredential,
 } from "../../src/opencode-store.ts";
 
-// pi-provider.ts
-export {
-  BASE_FOR_PROTOCOL,
-  baseForProtocol,
-  LEGACY_PLANE_API,
-  piModelFor,
-  planeBaseFor,
-  protocolFor,
-  thinkingLevelMapFor,
-} from "../../src/pi-provider.ts";
-
 // purge-contract.ts
 export { parsePurgeResult } from "../../src/purge-contract.ts";
 
@@ -232,42 +248,6 @@ export {
   ModelPurgeService,
   stripRetiredReferences,
 } from "../../src/purge-service.ts";
-
-// responses-provider.ts
-export {
-  inheritedCredentialRef,
-  loadPiAi,
-  loadPiAiAdapterHost,
-  loadPiAiModule,
-  modelsForSdk,
-  narrowToDeclared,
-  reasoningEffortsFor,
-  registerResponsesProvider,
-  undescribedDeclaredModels,
-  unroutedDeclaredModels,
-} from "../../src/responses-provider.ts";
-
-// responses-routes.ts
-export {
-  ANTHROPIC_ROUTE,
-  ANTHROPIC_SDK,
-  GO_GOOGLE_INTERNAL_ROUTE,
-  GO_RESPONSES_ROUTE,
-  GOOGLE_INTERNAL_ROUTE,
-  GOOGLE_SDK,
-  INTERNAL_ROUTES,
-  internalRouteFor,
-  isServableSdk,
-  MISTRAL_SDK,
-  PROTOCOL_FOR_SDK,
-  RESPONSES_ROUTE,
-  RESPONSES_SDK,
-  ROUTE_FOR_PLANE_PROTOCOL,
-  ROUTE_FOR_PROTOCOL,
-  SELF_MOUNTED_ROUTES,
-  UNSERVED_PLANE_SDKS,
-  UNSERVED_SDKS,
-} from "../../src/responses-routes.ts";
 
 // session-cost.ts
 export {
@@ -411,13 +391,6 @@ export type { RelativeReset } from "../../src/usage-ui.ts";
 // usage.ts
 export { GoUsageService } from "../../src/usage.ts";
 
-// utils/google-replay.ts
-export {
-  googleHistoryFor,
-  googleReplayFor,
-  googleReplayStream,
-} from "../../src/utils/google-replay.ts";
-
 // utils/guards.ts
 export {
   getAsyncIterator,
@@ -428,6 +401,59 @@ export {
   isRecord,
   isUnknownArray,
 } from "../../src/utils/guards.ts";
+
+// utils/model-metadata.ts
+export {
+  canDisableReasoning,
+  effortName,
+  PI_LEVELS,
+  piReasoningFromEfforts,
+  reasoningFor,
+  usesCatalogThinkingLevels,
+} from "../../src/utils/model-metadata.ts";
+
+// utils/plane-model.ts
+export { baseUrlFor, planeModelFor } from "../../src/utils/plane-model.ts";
+export type {
+  PlaneCatalogSpec,
+  PlaneModelInput,
+  PlanePiModel,
+} from "../../src/utils/plane-model.ts";
+
+// utils/plane-profile.ts
+export {
+  hasPlaneEntries,
+  planeEntriesOf,
+  planeProfileFor,
+  withoutPlaneProviders,
+} from "../../src/utils/plane-profile.ts";
+export type { PlaneProfileInput } from "../../src/utils/plane-profile.ts";
+
+// utils/protocols.ts
+export {
+  allOfferedCompatFields,
+  ANTHROPIC_SDK,
+  COMPAT_GATES,
+  compatProtocols,
+  FAMILY_SDK_KEY,
+  GO_GOOGLE_BASE_URL,
+  GOOGLE_SDK,
+  isGatedCompatField,
+  isPlaneRoute,
+  isProtocol,
+  isServableSdk,
+  LEGACY_BASE,
+  LEGACY_PLANE_API,
+  MISTRAL_SDK,
+  MODERN_FALLBACK,
+  OFFERED_COMPAT,
+  PLANE_ROUTES,
+  PROTOCOL_FOR_SDK,
+  protocolForSdk,
+  PROTOCOLS,
+  RESPONSES_SDK,
+} from "../../src/utils/protocols.ts";
+export type { PlaneRoute, Protocol } from "../../src/utils/protocols.ts";
 
 // utils/request-shape.ts
 export {

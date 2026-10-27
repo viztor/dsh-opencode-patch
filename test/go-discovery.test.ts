@@ -6,10 +6,9 @@
  * plane, and which of the four credential sources (composition literal,
  * captured route key, credentials/env reference, any captured key) the row's
  * `keySource` policy lets win. Every other consumer — the meter's
- * `resolveGoApiKey`, `patchFetch`'s Authorization fallback, the mounted
- * Responses routes' `inheritedCredentialRef` — inherits its answer from here,
- * so a wrong answer sends the wrong key to the wrong endpoint and fails as an
- * outage the user cannot act on.
+ * `resolveGoApiKey` and `patchFetch`'s Authorization fallback — inherits its
+ * answer from here, so a wrong answer sends the wrong key to the wrong
+ * endpoint and fails as an outage the user cannot act on.
  *
  * The cases are written around the *absences*, because that is where the policy
  * lives: what each source contributes when it is missing, which reference a
@@ -39,7 +38,6 @@ import {
   type DiscoveredGoConfig,
   KEY_SOURCE_POLICIES,
   clearCapturedApiKeys,
-  declaredProviderModels,
   discoverGoConfig,
   effectiveGoKeyRef,
   getCapturedApiKey,
@@ -1237,80 +1235,5 @@ describe("go-discovery: the installation's own store, and where it sits", () => 
     await expect(
       resolveGoApiKey(composition(), undefined, "auto", true)
     ).resolves.toBeUndefined();
-  });
-});
-
-describe("go-discovery · the declaration in the loader", () => {
-  // **A GENERATOR, because that is what the host returns.** The first version of
-  // this reader guarded with `Array.isArray` and rejected a working loader —
-  // measured as the routes still not mounting after the fix that was supposed to
-  // mount them.
-  const loaderWith = (providers: unknown) => ({
-    loader: {
-      *entries() {
-        yield { options: { config: { providers } } };
-      },
-    },
-  });
-
-  it("reads the declared ids and names for one route", () => {
-    const ctx = loaderWith({
-      opencode: { models: [{ id: "gpt-5.4", name: "GPT-5.4" }, { id: "" }] },
-      "opencode-go": { models: [{ id: "deepseek-v4.1-flash" }] },
-    });
-    expect(declaredProviderModels(ctx, "opencode")).toEqual([
-      { id: "gpt-5.4", name: "GPT-5.4" },
-    ]);
-    // A route the loader does not describe is UNDEFINED, not empty: "cannot
-    // read" and "declares nothing" must stay distinguishable.
-    expect(declaredProviderModels(ctx, "nvidia")).toBeUndefined();
-  });
-
-  it("answers an empty list for a row that declares no models", () => {
-    expect(
-      declaredProviderModels(loaderWith({ opencode: {} }), "opencode")
-    ).toEqual([]);
-  });
-
-  it("survives a context it cannot read at all", () => {
-    // Not an object, no loader anywhere, and a `get` that throws: each is
-    // "cannot read", never an exception out of a boot path.
-    expect(declaredProviderModels(undefined, "opencode")).toBeUndefined();
-    expect(declaredProviderModels({}, "opencode")).toBeUndefined();
-    expect(
-      declaredProviderModels(
-        {
-          get: () => {
-            throw new Error("no loader");
-          },
-        },
-        "opencode"
-      )
-    ).toBeUndefined();
-    // A `get` that answers nothing falls through to the property, which here
-    // does not exist either.
-    expect(
-      declaredProviderModels({ get: () => {} }, "opencode")
-    ).toBeUndefined();
-  });
-
-  it("survives entries that are not an array or not shaped like rows", () => {
-    expect(
-      declaredProviderModels({ loader: { entries: () => "nope" } }, "opencode")
-    ).toBeUndefined();
-    expect(
-      declaredProviderModels(
-        {
-          loader: {
-            entries: () => [
-              null,
-              { options: null },
-              { options: { config: {} } },
-            ],
-          },
-        },
-        "opencode"
-      )
-    ).toBeUndefined();
   });
 });

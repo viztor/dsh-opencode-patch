@@ -1,37 +1,41 @@
 /**
- * TODAY's plugin on the real host, characterized (tier B, pi 1.1.0).
+ * The plugin on the real host, characterized (tier B, pi 1.1.0).
  *
  * The plugin is mounted as it ships — its row carries no config, so the
- * shipped defaults apply: the hidden ids in `providers`, `enrichModels` on,
- * `endpoint: auto` — beside pi-ai holding the characterization profile (S0
- * plus a declared catalog-unknown id on each plane) with a key stored for each
- * plane. Every row asserts what was MEASURED, and is tagged so a later phase
- * flips named rows (docs/improvement-plan.md, "Phases"):
+ * shipped defaults apply (`enrichModels` on, `endpoint: auto`) — beside pi-ai
+ * holding the characterization profile (S0 plus a declared catalog-unknown id
+ * on each plane) with a key stored for each plane. Every row asserts what was
+ * MEASURED, and is tagged so a later phase flips named rows
+ * (docs/improvement-plan.md, "Phases"):
  *
- * - `[KNOWN_DEFECT]` is wrong today, and a phase fixes it;
- * - `[INTENDED_CHANGE]` is right today, and a phase changes it on purpose;
+ * - `[KNOWN_DEFECT]` is wrong, and a phase fixes it;
+ * - `[INTENDED_CHANGE]` is right, and a phase changes it on purpose;
  * - `[BASELINE]` must survive every phase.
  *
- * The per-model expectations live in `S0_TODAY` (`support/host.ts`), which
- * the binary e2e reads too, so the in-process host and the published binary
- * cannot drift apart unnoticed. Each model's three facets (model info, the
+ * P-T1b recorded these rows against the hidden-route workaround; P-R1, where
+ * the plugin owns the `opencode` and `opencode-go` routes, flipped the
+ * fourteen named cases and fourteen `S0_TODAY` facets its PR body lists, so
+ * every row here is now `[BASELINE]`.
+ *
+ * The per-model expectations live in `S0_TODAY` (`support/host.ts`), which the
+ * binary e2e reads too, so the in-process host and the published binary cannot
+ * drift apart unnoticed. Each model's three facets (model info, the
  * call-config verdict, the wire) carry their own tag there, and this file
  * generates one test per model and facet titled with that tag, in each apply
  * order (`todayRowsFor(order)` carries that order's tags), so the tag is what
  * a reader and a phase's diff go by. Where a measurement contradicted the
  * plan's expectation the row keeps the measurement and says so.
  *
- * Every case boots its own host, so a key the fetch patch captured in one case
- * cannot change another's listing. The main block boots in the published
- * host's apply order (`plugin-first`: the plugin applies before pi-ai
- * registers, measured on the binary); a second block boots `pi-ai-first` and
- * records the rows that change with the order — the adapter decoration only
- * wraps what was registered when the plugin applied.
+ * Every case boots its own host. The main block boots in the published host's
+ * apply order (`plugin-first`: the plugin applies before pi-ai registers,
+ * measured on the binary); a second block boots `pi-ai-first`, where the claim
+ * restarts pi-ai once, and shows that no facet depends on the order any more.
  *
  * @module test/host-characterization.test
  */
 import { readFileSync } from "node:fs";
 
+import { readProfilePatches } from "@deepseek-ai/dsh-app-boot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -40,10 +44,12 @@ import {
   APPLY_ORDERS,
   bootTierB,
   CHARACTERIZED_MODELS,
+  CHARACTERIZED_PROFILE,
   characterizedProviders,
   drainStream,
   fakeCredentials,
   PLANES,
+  piAiRestarts,
   piKnows,
   providerWithApiKey,
   recordingFetch,
@@ -51,27 +57,29 @@ import {
   type RowFacet,
   S0_TODAY,
   s0Providers,
-  SAVE_BLOCKED_BY_ANY_UNDESCRIBED,
   SAVE_CANDIDATE,
   type TierB,
   todayRowsFor,
   type TodayRow,
   UNKNOWN_ID,
-  waitForRoutes,
-  ZEN_UNDESCRIBED,
+  waitForPlaneOwner,
 } from "./support/host.ts";
 import {
-  INTERNAL_ROUTES,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-  PI_THINKING_LEVELS,
-  thinkingLevelMapFor,
+  protocolForSdk,
+  reasoningFor,
 } from "./support/src.ts";
+
+/** The ids of a listing, in order. */
+const modelIds = (models: readonly { id: string }[]): string[] =>
+  models.map((model) => model.id);
 
 type RowKey = keyof typeof S0_TODAY.rows;
 
 let tier: TierB | undefined;
 let wire: RecordingFetch;
+let restarts: ReturnType<typeof piAiRestarts> | undefined;
 
 /** Boot the characterization profile with a key stored for each plane, the plugin as it ships. */
 const bootS0 = async (order: ApplyOrder): Promise<void> => {
@@ -85,17 +93,54 @@ const bootS0 = async (order: ApplyOrder): Promise<void> => {
       },
     }),
     order,
+    prepare: (root) => {
+      restarts = piAiRestarts(root);
+    },
     providers: characterizedProviders(),
   });
-  // The plugin mounts its hidden routes asynchronously (mountInternalRoutes).
-  await waitForRoutes(tier.llm, INTERNAL_ROUTES);
+  // The plugin registers its plane adapter once its mount settles.
+  await waitForPlaneOwner(tier.llm);
 };
 
 afterEach(async () => {
+  restarts?.dispose();
+  restarts = undefined;
   await tier?.dispose();
   tier = undefined;
   vi.unstubAllGlobals();
 });
+
+/** Poll until `predicate` holds: a committed edit reaches the plane on a microtask. */
+const until = async (
+  predicate: () => boolean | Promise<boolean>,
+  what: string,
+  deadlineMs = 5_000
+): Promise<void> => {
+  const end = Date.now() + deadlineMs;
+  while (!(await predicate())) {
+    if (Date.now() > end) {
+      throw new Error(`never happened: ${what}`);
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+};
+
+/** pi-ai's row as the profile file holds it. */
+const savedPiRow = (
+  host: TierB
+): Record<string, { models?: { id: string }[] }> => {
+  const row = readProfilePatches("dsh", host.profile).findLast(
+    (patch) => patch.id === "llm-pi-ai" && patch.config !== undefined
+  );
+  if (row === undefined) {
+    throw new Error("no pi-ai row in the profile");
+  }
+  return (
+    row.config as { providers: Record<string, { models?: { id: string }[] }> }
+  ).providers;
+};
 
 const booted = (): TierB => {
   if (tier === undefined) {
@@ -118,14 +163,9 @@ const sentBy = async (route: string, model: string) => {
   };
 };
 
-/** pi-ai's plane adapter, private methods included. */
-const planeAdapter = () =>
-  adaptersOf(booted().llm).get("opencode")?.adapter as unknown as {
-    prepareCall: (
-      route: string,
-      model: string
-    ) => Promise<{ baseUrl?: string; api?: string }>;
-  };
+/** The adapter serving a route, as the registry holds it. */
+const adapterOf = (route: string) =>
+  adaptersOf(booted().llm).get(route)?.adapter;
 
 /** `resolveCallConfig`'s verdict: "ok", or the code it rejected with. */
 const callConfigOf = async (route: string, model: string): Promise<string> => {
@@ -209,28 +249,6 @@ const appendTo =
     };
   };
 
-/** A config-editor mutation dropping `ids` from a plane's models. */
-const dropFrom =
-  (plane: string, ids: readonly string[]) =>
-  (current: Record<string, unknown>): Record<string, unknown> => {
-    const providers = current.providers as Record<
-      string,
-      { models?: { id: string }[] }
-    >;
-    return {
-      ...current,
-      providers: {
-        ...providers,
-        [plane]: {
-          ...providers[plane],
-          models: (providers[plane]?.models ?? []).filter(
-            (model) => !ids.includes(model.id)
-          ),
-        },
-      },
-    };
-  };
-
 const FACETS = ["info", "callConfig", "wire"] as const;
 
 /**
@@ -256,13 +274,13 @@ const providerKeys = (side: unknown): string[] =>
   Object.keys((side as { providers?: object } | undefined)?.providers ?? {});
 
 /**
- * The `[BASELINE]` session-controller reads after a Sign-in, on today's plugin
- * with only the two plane keys stored (what `bootS0` stores): the Zen plane
- * answers `hasProviderApiKey`, and pi-ai's `settings.describe` value lists
- * both planes. P-R1 strips the planes from pi-ai's resolved config, which on
+ * The `[BASELINE]` session-controller reads after a Sign-in, with only the two
+ * plane keys stored (what `bootS0` stores): the Zen plane answers
+ * `hasProviderApiKey`, and pi-ai's `settings.describe` value lists both
+ * planes. The claim strips the planes from pi-ai's resolved config, which on
  * the host alone turns this false (F20, the plugin-less contract in
- * `test/host-editor-contracts.test.ts`); its D18 wrapper is what must keep
- * this case green.
+ * `test/host-editor-contracts.test.ts`); the D18 graft is what keeps this case
+ * green.
  */
 const expectSignInReadsTheZenPlane = async (): Promise<void> => {
   const host = booted();
@@ -283,8 +301,17 @@ const expectSignInReadsTheZenPlane = async (): Promise<void> => {
   ]);
 };
 
+/** Both planes are the plugin's adapter, one instance, and not pi-ai's. */
+const expectPlanesOwned = (): void => {
+  const zen = adapterOf("opencode");
+  expect(zen?.constructor.name).toBe("PlaneAdapter");
+  expect(adapterOf("opencode-go")).toBe(zen);
+  expect(adapterOf("deepseek")?.constructor.name).toBe("PiAiAdapter");
+  expect(adapterOf("deepseek")).not.toBe(zen);
+};
+
 describe(
-  "characterization · today's plugin on pi 1.1.0, the published host's order (tier B)",
+  "characterization · the plugin on pi 1.1.0, the published host's order (tier B)",
   { timeout: 30_000 },
   () => {
     beforeEach(() => bootS0("plugin-first"), 30_000);
@@ -318,25 +345,28 @@ describe(
           CHARACTERIZED_MODELS[plane].map((id) => `${plane}/${id}`)
         )
       );
-      expect(INTERNAL_ROUTES).toHaveLength(6);
+      // No hidden route: the only opencode routes are the two planes.
+      expect(
+        booted()
+          .llm.listProviders()
+          .map((provider) => provider.id)
+          .filter((id) => id.startsWith("opencode"))
+          .toSorted()
+      ).toEqual([...PLANES]);
     });
 
-    it("fixture: each row's context and efforts are the bundled catalog's, so a catalog refresh that moves a fixture model fails here by name", () => {
+    it("fixture: each row's context and efforts are what D17 and D1 derive from the profile row and the bundled catalog, so a catalog refresh that moves a fixture model fails here by name", () => {
       // S0_TODAY copies context windows AND effort lists from the generated
-      // catalog, which the nightly refresh rewrites: decorateModelInfo makes
-      // the catalog authoritative for both (src/models-discovery.ts, the
-      // `thinkingLevelMapFor` → effortsFromLevelMap derivation, re-stated
-      // here from its two exported halves). A refresh that changes one of
-      // these ids must update S0_TODAY (and with it the binary e2e) — and must
-      // fail HERE, by name, not as a baseline facet that seems to regress.
+      // catalog, which the nightly refresh rewrites, except where the user's
+      // row names its own context window (D17: the row wins). The efforts are
+      // `reasoningFor` over the catalog spec, on the protocol its SDK names
+      // (D1, D16). A refresh that changes one of these ids must update
+      // S0_TODAY (and with it the binary e2e) — and must fail HERE, by name,
+      // not as a baseline facet that seems to regress.
       //
-      // Two rows' `info` facets are KNOWN_DEFECT today and still copy the
-      // catalog (Zen gpt-5.3-codex-spark's context, Go minimax-m3's efforts);
-      // the plan moves them OFF the catalog on purpose (D17: the user's row
-      // wins; D1: a toggle model offers Off/On). The phase that flips such a
-      // facet adds its key to INFO_NOT_FROM_CATALOG in the same diff — and only
-      // a non-BASELINE `info` facet may be exempted, since a BASELINE one is
-      // meant to stay the catalog's across phases.
+      // A phase that moves an `info` facet off this derivation on purpose adds
+      // its key to INFO_NOT_FROM_CATALOG in the same diff; only a
+      // non-BASELINE facet may be exempted, and today none is.
       const INFO_NOT_FROM_CATALOG = new Set<RowKey>();
       for (const key of INFO_NOT_FROM_CATALOG) {
         expect(ROW_KEYS, `${key} is not a characterized row`).toContain(key);
@@ -350,30 +380,36 @@ describe(
         if (INFO_NOT_FROM_CATALOG.has(key)) {
           continue;
         }
-        const [, id] = split(key);
+        const [plane, id] = split(key);
         const spec = catalogFor(key).find((model) => model.id === id);
         if (spec === undefined) {
           expect(id, key).toBe(UNKNOWN_ID);
           continue;
         }
         const stale =
-          `S0_TODAY's info for ${key} no longer matches the bundled catalog: ` +
-          "either a catalog refresh moved it (update the row in " +
-          "test/support/host.ts), or a phase flipped this facet off the " +
-          "catalog (add the key to INFO_NOT_FROM_CATALOG here)";
+          `S0_TODAY's info for ${key} no longer matches the profile row and ` +
+          "the bundled catalog: either a catalog refresh moved it (update the " +
+          "row in test/support/host.ts), or a phase flipped this facet off " +
+          "them (add the key to INFO_NOT_FROM_CATALOG here)";
+        const row = (
+          CHARACTERIZED_PROFILE[plane as (typeof PLANES)[number]]
+            .models as readonly {
+            id: string;
+            contextWindow?: number;
+          }[]
+        ).find((model) => model.id === id);
         const info = S0_TODAY.rows[key].info as {
           context?: number;
           efforts?: readonly string[];
         };
-        expect(spec.context_window, stale).toEqual(info.context);
-        if (info.efforts === undefined) {
-          continue;
-        }
-        const map = thinkingLevelMapFor(spec);
+        expect(row?.contextWindow ?? spec.context_window, stale).toEqual(
+          info.context
+        );
+        const protocol = protocolForSdk(spec.provider_npm);
+        expect(protocol, key).toBeDefined();
+        const reasoning = reasoningFor(spec, protocol ?? "openai-completions");
         expect(
-          map === undefined
-            ? []
-            : PI_THINKING_LEVELS.filter((level) => map[level] !== null),
+          reasoning?.efforts.map((effort) => effort.id) ?? [],
           stale
         ).toEqual(info.efforts);
         compared += 1;
@@ -383,32 +419,24 @@ describe(
       expect(compared).toBeGreaterThan(0);
     });
 
-    it("fixture: the binary e2e's cell-aware helpers — the floating save-block pattern names any undescribed id and only those, todayRowsFor refuses an order it does not know, and a facet its pi-ai-first table moves is retagged with it, from KNOWN_DEFECT to BASELINE", () => {
-      // The pinned message is one the floating pattern accepts, so the two
-      // cells cannot disagree on a pinned run.
+    it("fixture: the handback's save-block pattern (test/host-planes.test.ts) names the stored gap id, todayRowsFor answers both orders the same and refuses one it does not know, and a facet whose value moves between the orders is exactly a facet whose tag moves", () => {
       const pinned =
         'provider "opencode" model "gpt-5.3-codex-spark" needs an api';
       expect(pinned).toMatch(S0_TODAY.saveBlockedByStoredGap);
-      expect(pinned).toMatch(SAVE_BLOCKED_BY_ANY_UNDESCRIBED);
-      // A floating pi that learned gpt-5.3-codex-spark names the next one.
-      expect(`provider "opencode" model "${UNKNOWN_ID}" needs an api`).toMatch(
-        SAVE_BLOCKED_BY_ANY_UNDESCRIBED
-      );
-      // A described id, or the dot read as a wildcard, is not a match.
-      for (const other of ["deepseek-v4-pro", "gpt-5x3-codex-spark"]) {
-        expect(`provider "opencode" model "${other}" needs an api`).not.toMatch(
-          SAVE_BLOCKED_BY_ANY_UNDESCRIBED
-        );
-      }
+      // The dot is a dot, not a wildcard.
+      expect(
+        'provider "opencode" model "gpt-5x3-codex-spark" needs an api'
+      ).not.toMatch(S0_TODAY.saveBlockedByStoredGap);
       for (const order of APPLY_ORDERS) {
         expect(Object.keys(todayRowsFor(order))).toEqual(ROW_KEYS);
+        expect(todayRowsFor(order)).toEqual(S0_TODAY.rows);
       }
       // Structural, so no phase has to edit it: a facet whose VALUE differs
       // between the orders is exactly a facet whose TAG differs, and each one
-      // is a defect in the published order whose pi-ai-first value is already
-      // what P-R1 keeps. Which facets those are today is pinned by the
-      // [KNOWN_DEFECT] apply-order case below; once P-R1 collapses the
-      // override, both sets are empty and this still holds.
+      // would be a defect in the published order whose pi-ai-first value is
+      // already the behaviour to keep. P-R1 collapsed the override, so both
+      // sets are empty (the [BASELINE] apply-order case below pins that), and
+      // this keeps a future override honest.
       const piAiFirst = todayRowsFor("pi-ai-first");
       const moved = ROW_KEYS.flatMap((key) =>
         FACETS.filter(
@@ -437,7 +465,7 @@ describe(
         }
       }
       // A probe JSON missing the field reads `undefined`; it must not select
-      // the pi-ai-first table.
+      // any table.
       expect(() => todayRowsFor(undefined as unknown as ApplyOrder)).toThrow(
         /unknown apply order/u
       );
@@ -447,71 +475,50 @@ describe(
       await expectSignInReadsTheZenPlane();
     });
 
-    it("[INTENDED_CHANGE] registry: both planes are pi-ai's, and six hidden routes are registered and hidden from listProviders (P-R1 claims the planes)", () => {
+    it("[BASELINE] registry: both planes are the plugin's adapter, pi-ai keeps its other route, no hidden route exists, and Settings still addresses the planes under pi-ai's namespace (D13)", () => {
       const { llm } = booted();
       const registry = adaptersOf(llm);
-      expect([...registry.keys()].toSorted()).toEqual(
-        ["deepseek", "opencode", "opencode-go", ...INTERNAL_ROUTES].toSorted()
-      );
+      expect([...registry.keys()].toSorted()).toEqual([
+        "deepseek",
+        "opencode",
+        "opencode-go",
+      ]);
       expect(
         llm
           .listProviders()
           .map((provider) => provider.id)
           .toSorted()
       ).toEqual(["deepseek", "opencode", "opencode-go"]);
-      for (const route of [...PLANES, ...INTERNAL_ROUTES]) {
-        expect(registry.get(route)?.adapter.constructor.name).toBe(
-          "PiAiAdapter"
-        );
-      }
-      // pi-ai's own adapter serves the planes; the hidden routes are not it.
-      const piAdapter = registry.get("opencode")?.adapter;
-      expect(registry.get("opencode-go")?.adapter).toBe(piAdapter);
-      for (const route of INTERNAL_ROUTES) {
-        expect(registry.get(route)?.adapter).not.toBe(piAdapter);
-      }
+      expectPlanesOwned();
       const directory = llm.listConfigurableProviders();
       for (const plane of PLANES) {
-        expect(
-          directory.find((entry) => entry.provider === plane)
-        ).toMatchObject({
+        const entry = directory.find((row) => row.provider === plane);
+        expect(entry).toMatchObject({
           settingsNs: "llm-pi-ai",
           settingsPath: ["providers", plane],
         });
+        // pi-ai no longer resolves the planes, so it reports no gap id.
+        expect(entry?.error).toBeUndefined();
       }
-      // The directory reports each plane's first stored gap id.
-      expect(
-        directory.find((entry) => entry.provider === "opencode")?.error
-      ).toMatch(/model "gpt-5\.3-codex-spark" needs an api/u);
-      expect(
-        directory.find((entry) => entry.provider === "opencode-go")?.error
-      ).toMatch(/model "gemini-4-argon" needs an api/u);
     });
 
-    it("[INTENDED_CHANGE] keyless listing: before a key is captured, the listing patch hides every paid model on both planes (D21)", async () => {
+    it("[BASELINE] listing before any turn: every declared id is listed on both planes (D21)", async () => {
       const { llm } = booted();
       for (const plane of PLANES) {
-        expect(await llm.listModels(plane)).toEqual(
-          S0_TODAY.keylessListing[plane]
+        expect(modelIds(await llm.listModels(plane))).toEqual(
+          S0_TODAY.listingBeforeTurn[plane]
         );
       }
     });
 
-    it("[KNOWN_DEFECT] keyed listing: once a turn captured a key, only pi-resolved ids are listed — every gap id and the declared unknown id are missing (G1)", async () => {
+    it("[BASELINE] listing after a turn on each plane: every declared id is listed, gap ids and the unknown id included (G1)", async () => {
       const { llm } = booted();
       await sentBy("opencode", "deepseek-v4-pro");
       await sentBy("opencode-go", "deepseek-v4-pro");
-      const listed: Record<string, string[]> = {};
       for (const plane of PLANES) {
-        const models = await llm.listModels(plane);
-        listed[plane] = models.map((model) => model.id);
-      }
-      expect(listed).toEqual(S0_TODAY.keyedListing);
-      expect(listed.opencode).not.toContain("gpt-5.3-codex-spark");
-      expect(listed["opencode-go"]).not.toContain("gemini-4-argon");
-      expect(listed["opencode-go"]).not.toContain("minimax-m3.1-flash");
-      for (const plane of PLANES) {
-        expect(listed[plane]).not.toContain(UNKNOWN_ID);
+        const listed = modelIds(await llm.listModels(plane));
+        expect(listed).toEqual(S0_TODAY.listingAfterTurn[plane]);
+        expect(listed).toContain(UNKNOWN_ID);
       }
     });
 
@@ -524,7 +531,7 @@ describe(
       }
     );
 
-    it("[KNOWN_DEFECT] the toggle-only model is offered Minimal/Xhigh/Max (D1)", async () => {
+    it("[BASELINE] the toggle-only model is offered Off / On, and a level it does not take is refused (D1)", async () => {
       // Chosen from the bundled catalog, not by name: on/off reasoning, no levels.
       const spec = OPENCODE_GO_CATALOG.find(
         (model) => model.id === "minimax-m3"
@@ -534,20 +541,33 @@ describe(
         "opencode-go",
         "minimax-m3"
       );
-      const efforts = info.reasoning?.efforts?.map((effort) => effort.id) ?? [];
-      expect(efforts).toEqual(
-        S0_TODAY.rows["opencode-go/minimax-m3"].info.efforts
-      );
-      expect(efforts).toEqual(
-        expect.arrayContaining(["minimal", "xhigh", "max"])
-      );
-      expect(efforts).not.toContain("off");
+      expect(info.reasoning?.efforts?.map((effort) => effort.id)).toEqual([
+        "off",
+        "high",
+      ]);
+      expect(info.reasoning?.efforts?.map((effort) => effort.name)).toEqual([
+        "Off",
+        "On",
+      ]);
+      await expect(
+        booted().llm.resolveCallConfig({
+          model: "minimax-m3",
+          provider: "opencode-go",
+          reasoningEffort: "minimal",
+        } as never)
+      ).rejects.toMatchObject({ code: "UNSUPPORTED_REASONING_EFFORT" });
     });
 
-    it("[INTENDED_CHANGE] completions models dispatch to pi 1.1.0's legacy bases", async () => {
+    it("[BASELINE] completions models dispatch to the modern (per-protocol inference) family on both planes", async () => {
       for (const [route, wireUrl] of [
-        ["opencode", "https://opencode.ai/zen/v1/chat/completions"],
-        ["opencode-go", "https://opencode.ai/zen/go/v1/chat/completions"],
+        [
+          "opencode",
+          "https://opencode.ai/inference/openai/v1/chat/completions",
+        ],
+        [
+          "opencode-go",
+          "https://opencode.ai/inference/go/openai/v1/chat/completions",
+        ],
       ] as const) {
         const { drained, requests } = await sentBy(route, "deepseek-v4-pro");
         expect(requests.map((request) => request.url)).toEqual([wireUrl]);
@@ -555,60 +575,53 @@ describe(
       }
     });
 
-    it("[KNOWN_DEFECT] in this order the adapter decoration never runs: pi-ai's plane adapter is not wrapped, so its prepared call carries no repaired base (decoratePlaneAdapters in src/models-discovery.ts)", async () => {
-      // decoratePlaneAdapters wraps the adapters the registry holds when the
-      // plugin's effect runs, and here pi-ai has not registered yet.
-      const adapter = planeAdapter();
-      expect(Object.hasOwn(adapter, "prepareCall")).toBe(false);
-      expect(Object.hasOwn(adapter, "resolveModel")).toBe(false);
-      const prepared = await adapter.prepareCall("opencode", "deepseek-v4-pro");
-      expect(prepared.baseUrl).toBeUndefined();
+    it("[BASELINE] the plugin patches nothing on its adapter: it is its own PlaneAdapter, whose methods are its class's", () => {
+      const adapter = adapterOf("opencode");
+      expect(adapter?.constructor.name).toBe("PlaneAdapter");
+      expect(Object.hasOwn(adapter ?? {}, "prepareCall")).toBe(false);
+      expect(Object.hasOwn(adapter ?? {}, "resolveModel")).toBe(false);
     });
 
-    it("[KNOWN_DEFECT] Zen gpt-5.3-codex-spark: the user's row is ignored and resolveCallConfig refuses what dispatch serves through the hidden Responses route", async () => {
+    it("[BASELINE] Zen gpt-5.3-codex-spark: the user's row reaches model info, resolveCallConfig accepts it, and it is sent on Responses (D17)", async () => {
       const { llm } = booted();
       const info = await llm.resolveModelInfo(
         "opencode",
         "gpt-5.3-codex-spark"
       );
-      // The row declares name "My Spark" and contextWindow 400000.
-      expect(info.context?.contextWindow).toBe(128_000);
-      expect(info.name).not.toBe("My Spark");
+      expect(info.name).toBe("My Spark");
+      expect(info.context?.contextWindow).toBe(400_000);
       await expect(
         llm.resolveCallConfig({
           model: "gpt-5.3-codex-spark",
           provider: "opencode",
         } as never)
-      ).rejects.toMatchObject({ code: "INVALID_CONFIG" });
+      ).resolves.toBeDefined();
       const { requests } = await sentBy("opencode", "gpt-5.3-codex-spark");
       expect(requests.map((request) => request.url)).toEqual([
         "https://opencode.ai/inference/openai/v1/responses",
       ]);
     });
 
-    it("[KNOWN_DEFECT] Go minimax-m3.1-flash answers INVALID_CONFIG 'needs an api' and sends nothing (F4)", async () => {
+    it("[BASELINE] Go minimax-m3.1-flash validates and is sent once as completions on Go's modern base (G1)", async () => {
       const { llm } = booted();
       await expect(
         llm.resolveCallConfig({
           model: "minimax-m3.1-flash",
           provider: "opencode-go",
         } as never)
-      ).rejects.toMatchObject({
-        code: "INVALID_CONFIG",
-        message: expect.stringMatching(/"minimax-m3\.1-flash" needs an api/u),
-      });
+      ).resolves.toBeDefined();
       const { drained, requests } = await sentBy(
         "opencode-go",
         "minimax-m3.1-flash"
       );
-      expect(requests).toEqual([]);
-      expect(drained.finish).toEqual({ code: "INVALID_CONFIG", kind: "error" });
+      expect(requests.map((request) => request.url)).toEqual([
+        "https://opencode.ai/inference/go/openai/v1/chat/completions",
+      ]);
+      expect(drained.finish).toEqual({ code: "AUTH", kind: "error" });
     });
 
-    it("[KNOWN_DEFECT] Go gemini-4-argon: resolveCallConfig refuses it (INVALID_CONFIG) while the turn is served on the Go Google base through the bridge", async () => {
-      expect(await callConfigOf("opencode-go", "gemini-4-argon")).toBe(
-        "INVALID_CONFIG"
-      );
+    it("[BASELINE] Go gemini-4-argon validates and is sent on Go's Google base with the Go key (F10)", async () => {
+      expect(await callConfigOf("opencode-go", "gemini-4-argon")).toBe("ok");
       const { drained, requests } = await sentBy(
         "opencode-go",
         "gemini-4-argon"
@@ -621,42 +634,53 @@ describe(
       expect(drained.finish).toEqual({ code: "PI_AI_ERROR", kind: "error" });
     });
 
-    it("[KNOWN_DEFECT] a stored gap id blocks every save of its plane: appending a new id and a displayName change are both refused naming the STORED id, and the file is unchanged (F4; llm-pi-ai config.ts:364-368, catalog.ts:917-921)", async () => {
-      const { ctx, piEntry, profile } = booted();
-      const before = readFileSync(profile.patchPath);
-      await expect(
-        ctx.configEditor.edit(piEntry, appendTo("opencode", SAVE_CANDIDATE))
-      ).rejects.toThrow(S0_TODAY.saveBlockedByStoredGap);
-      await expect(
-        ctx.configEditor.edit(piEntry, (current) => {
-          const providers = current.providers as Record<string, object>;
-          return {
-            ...current,
-            providers: {
-              ...providers,
-              opencode: { ...providers.opencode, displayName: "Zen (edited)" },
-            },
-          };
-        })
-      ).rejects.toThrow(S0_TODAY.saveBlockedByStoredGap);
-      expect(readFileSync(profile.patchPath)).toEqual(before);
-    });
-
-    it("[KNOWN_DEFECT] the probe's save sequence: dropping the plane's undescribed ids is accepted, then the catalog-unknown id itself is what the check names", async () => {
-      // The binary e2e's probe runs exactly this, so its rows isolate the
-      // unknown id although every plane of the profile stores a gap id.
-      const { ctx, piEntry, profile } = booted();
+    it("[BASELINE] a stored gap id blocks no save: a catalog-unknown id is appended and a displayName changed, the file holds both, and the new id is listed, validates and is sent as completions (D15)", async () => {
+      const host = booted();
+      const { ctx, llm, piEntry } = host;
       await ctx.configEditor.edit(
         piEntry,
-        dropFrom("opencode", ZEN_UNDESCRIBED)
+        appendTo("opencode", SAVE_CANDIDATE)
       );
-      const cleared = readFileSync(profile.patchPath, "utf8");
-      expect(cleared).not.toContain("gpt-5.3-codex-spark");
-      expect(cleared).toContain("gemini-4-argon");
-      await expect(
-        ctx.configEditor.edit(piEntry, appendTo("opencode", SAVE_CANDIDATE))
-      ).rejects.toThrow(S0_TODAY.saveRejectedUnknown);
-      expect(readFileSync(profile.patchPath, "utf8")).toBe(cleared);
+      expect(
+        savedPiRow(host).opencode?.models?.map((model) => model.id)
+      ).toEqual([...CHARACTERIZED_MODELS.opencode, SAVE_CANDIDATE]);
+      await ctx.configEditor.edit(piEntry, (current) => {
+        const providers = current.providers as Record<string, object>;
+        return {
+          ...current,
+          providers: {
+            ...providers,
+            opencode: { ...providers.opencode, displayName: "Zen (edited)" },
+          },
+        };
+      });
+      await until(
+        () =>
+          llm.listProviders().find((provider) => provider.id === "opencode")
+            ?.name === "Zen (edited)",
+        "the displayName edit reaches the registry"
+      );
+      expect(modelIds(await llm.listModels("opencode"))).toContain(
+        SAVE_CANDIDATE
+      );
+      expect(await callConfigOf("opencode", SAVE_CANDIDATE)).toBe("ok");
+      const { requests } = await sentBy("opencode", SAVE_CANDIDATE);
+      expect(requests.map((request) => request.url)).toEqual([
+        "https://opencode.ai/inference/openai/v1/chat/completions",
+      ]);
+    });
+
+    it("[BASELINE] the probe's save sequence: the first append of the catalog-unknown id is accepted, with no gap id dropped first", async () => {
+      // The binary e2e's probe runs exactly this.
+      const host = booted();
+      await host.ctx.configEditor.edit(
+        host.piEntry,
+        appendTo("opencode", SAVE_CANDIDATE)
+      );
+      const saved = readFileSync(host.profile.patchPath, "utf8");
+      expect(saved).toContain(SAVE_CANDIDATE);
+      expect(saved).toContain("gpt-5.3-codex-spark");
+      expect(saved).toContain(UNKNOWN_ID);
     });
   }
 );
@@ -671,42 +695,29 @@ describe(
       await expectSignInReadsTheZenPlane();
     });
 
-    it("[INTENDED_CHANGE] the adapter decoration runs, and the base it repairs never reaches the wire", async () => {
-      const adapter = planeAdapter();
-      expect(Object.hasOwn(adapter, "prepareCall")).toBe(true);
+    it("[BASELINE] pi-ai held the planes first, so the claim restarted it exactly once; both planes are the plugin's, and completions reach each plane's own modern base", async () => {
+      expect(restarts?.count()).toBe(1);
+      expectPlanesOwned();
       for (const [route, wireUrl] of [
-        ["opencode", "https://opencode.ai/zen/v1/chat/completions"],
-        ["opencode-go", "https://opencode.ai/zen/go/v1/chat/completions"],
+        [
+          "opencode",
+          "https://opencode.ai/inference/openai/v1/chat/completions",
+        ],
+        [
+          "opencode-go",
+          "https://opencode.ai/inference/go/openai/v1/chat/completions",
+        ],
       ] as const) {
-        // Measured: the Go plane's repaired base is ZEN's. pi-ai serves both
-        // planes from ONE adapter instance, which decoratePlaneAdapters wraps
-        // once per route, so the Go wrapper runs over the Zen one and keeps the
-        // base it already filled.
-        const decorated = "https://opencode.ai/inference/openai/v1";
-        const prepared = await adapter.prepareCall(route, "deepseek-v4-pro");
-        expect(prepared).toMatchObject({
-          api: "openai-completions",
-          baseUrl: decorated,
-        });
         const { drained, requests } = await sentBy(route, "deepseek-v4-pro");
         expect(requests.map((request) => request.url)).toEqual([wireUrl]);
-        // Measured, not compared as literals: the URL the turn sent does not
-        // start with the base the decorated adapter prepared.
-        expect(requests[0]?.url.startsWith(String(prepared.baseUrl))).toBe(
-          false
-        );
         expect(drained.finish).toEqual({ code: "AUTH", kind: "error" });
       }
     });
 
-    // The plan expected INVALID_CONFIG for Go Gemini; that holds in the
-    // published host's order (the plugin-first block, where the case is
-    // [KNOWN_DEFECT]) and not in this one, where the wrapped plane adapter
-    // delegates to opencode-go-google (decoratePlaneAdapters in
-    // src/models-discovery.ts), so here it is [BASELINE]. todayRowsFor is the
-    // table the binary e2e picks when its probe infers this order; these cases
-    // measure every facet of it, and the apply-order case below pins that
-    // only that one facet moves.
+    // With the plugin owning the planes the claim answers the same in this
+    // order, so this order's table is S0_TODAY's (todayRowsFor), every facet
+    // of it is measured here under its own tag, and the apply-order case below
+    // pins that no facet moves.
     it.each(facetCasesFor("pi-ai-first"))(
       "[$tag] $key · $facet",
       async ({ facet, key }) => {
@@ -719,25 +730,26 @@ describe(
 );
 
 describe("characterization · the apply order (no host)", () => {
-  // Pure: it reads the two tables the binary e2e picks between, and boots
-  // nothing. Each order's generated facet cases measure its table; this case
-  // pins WHERE they differ today. The dependence on the order is the defect:
-  // when P-R1 flips this row it drops todayRowsFor's pi-ai-first override in
-  // the same diff, and this case becomes "[BASELINE] no facet depends on the
-  // apply order" (CONTRIBUTING.md, "Tags").
-  it("[KNOWN_DEFECT] the apply order decides exactly one facet today: Go gemini-4-argon's callConfig is INVALID_CONFIG in the published order and \"ok\" with pi-ai first (P-R1 drops todayRowsFor's pi-ai-first override with this row's flip)", () => {
+  // Pure: it reads the two tables the binary e2e and the two booted blocks
+  // pick between, and boots nothing. Each order's generated facet cases
+  // measure its table; this case pins that they no longer differ. P-T1b held
+  // it as "[KNOWN_DEFECT] the apply order decides exactly one facet" (Go
+  // gemini-4-argon's callConfig); P-R1 flipped that row and
+  // dropped todayRowsFor's pi-ai-first override in the same diff
+  // (CONTRIBUTING.md, "Tags").
+  it("[BASELINE] no facet depends on the apply order: todayRowsFor answers S0_TODAY's rows, with S0_TODAY's tags, in both orders", () => {
     const piAiFirst = todayRowsFor("pi-ai-first");
+    expect(todayRowsFor("plugin-first")).toEqual(S0_TODAY.rows);
+    expect(piAiFirst).toEqual(S0_TODAY.rows);
     const moved = ROW_KEYS.flatMap((key) =>
       FACETS.filter(
         (facet) =>
           JSON.stringify(expectedFacet(facet, key, piAiFirst)) !==
-          JSON.stringify(expectedFacet(facet, key))
+            JSON.stringify(expectedFacet(facet, key)) ||
+          piAiFirst[key].tags[facet] !== S0_TODAY.rows[key].tags[facet]
       ).map((facet) => `${key} · ${facet}`)
     );
-    expect(moved).toEqual(["opencode-go/gemini-4-argon · callConfig"]);
-    const key = "opencode-go/gemini-4-argon";
-    expect(expectedFacet("callConfig", key)).toBe("INVALID_CONFIG");
-    expect(expectedFacet("callConfig", key, piAiFirst)).toBe("ok");
+    expect(moved).toEqual([]);
   });
 });
 
@@ -745,7 +757,7 @@ describe(
   "characterization · a gap-free plane (tier B)",
   { timeout: 30_000 },
   () => {
-    it("[KNOWN_DEFECT] the unknown id itself is what the save check names when the plane stores no other gap", async () => {
+    it("[BASELINE] the catalog-unknown id is accepted by the save check, and the file holds it (D15)", async () => {
       // Plain S0 (no declared unknown id) minus Zen's stored gap id.
       const providers = s0Providers();
       const zen = providers.opencode as { models: { id: string }[] };
@@ -757,12 +769,13 @@ describe(
       wire = recordingFetch();
       vi.stubGlobal("fetch", wire.fetch);
       tier = await bootTierB({ providers });
+      await waitForPlaneOwner(tier.llm);
       const { ctx, piEntry, profile } = tier;
-      const before = readFileSync(profile.patchPath);
-      await expect(
-        ctx.configEditor.edit(piEntry, appendTo("opencode", SAVE_CANDIDATE))
-      ).rejects.toThrow(S0_TODAY.saveRejectedUnknown);
-      expect(readFileSync(profile.patchPath)).toEqual(before);
+      await ctx.configEditor.edit(
+        piEntry,
+        appendTo("opencode", SAVE_CANDIDATE)
+      );
+      expect(readFileSync(profile.patchPath, "utf8")).toContain(SAVE_CANDIDATE);
     });
   }
 );

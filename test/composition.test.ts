@@ -28,37 +28,41 @@ import { describe, expect, it } from "vitest";
 
 import { type CordisContext, apply, inject } from "./support/src.ts";
 
-/** The one service the plugin declares, shaped as the plugin reads it. */
-const llmService = () => ({
+/** The `llm` service, shaped as the plugin reads it, logging discovery registrations. */
+const llmService = (registered: string[] = []) => ({
   listModels: async () => [],
   listProviders: () => [],
   registerAdapter: () => () => {},
-  registerModelDiscovery: () => {},
+  registerModelDiscovery: (ns: string) => {
+    registered.push(ns);
+  },
 });
 
 /**
  * Mount the plugin the way the Loader does.
  *
- * `inject` is the plugin's OWN declaration, so cordis keeps it inactive until
- * `llm` exists — exactly the ordering a real host provides and a hand-built
- * context could not.
+ * `inject` is the plugin's OWN declaration — empty, so the root activates
+ * before `llm` exists and everything that needs `llm` waits in a child scope —
+ * and cordis itself decides when each part runs, which a hand-built context
+ * could not.
  */
 const mount = async (
   options: {
     readonly withLlm?: boolean;
     readonly config?: Record<string, unknown>;
+    readonly registered?: string[];
   } = {}
 ) => {
   const ctx = new Context();
   if (options.withLlm !== false) {
-    ctx.provide("llm", llmService() as never);
+    ctx.provide("llm", llmService(options.registered) as never);
   }
   let activated = false;
   const fiber = ctx.plugin({
     inject,
     apply: (scope: unknown) => {
       activated = true;
-      apply(scope as CordisContext, options.config ?? {});
+      return apply(scope as CordisContext, options.config ?? {});
     },
   });
   await fiber.await?.();
@@ -69,17 +73,21 @@ const mount = async (
 };
 
 describe("composition · a real cordis Context", () => {
-  it("activates only once its declared service is provided", async () => {
-    // The reason `inject` is a declaration and not a convention: without `llm`
-    // cordis must NOT run the plugin, because everything the plugin installs
-    // decorates that service.
-    const without = await mount({ withLlm: false });
-    expect(without.activated, "activated without its declared `llm`").toBe(
-      false
-    );
-
-    const withService = await mount();
-    expect(withService.activated).toBe(true);
+  it("activates without `llm`, and what needs `llm` waits in a child scope until it is provided", async () => {
+    // The root declares nothing (`inject` is []), so its `internal/config`
+    // listener is in place before `llm` — and before pi-ai — exists. What does
+    // need `llm` is reached through `ctx.inject`, and runs only once cordis
+    // provides it.
+    expect(inject).toEqual([]);
+    const registered: string[] = [];
+    const without = await mount({ registered, withLlm: false });
+    expect(without.activated, "the root waits for nothing").toBe(true);
+    expect(registered).toEqual([]);
+    without.ctx.provide("llm", llmService(registered) as never);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+    expect(registered).toContain("opencode");
   });
 
   it("leaves the purge service reachable through ctx.get", async () => {

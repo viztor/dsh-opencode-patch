@@ -517,6 +517,18 @@ const sessionLow12 = (id: string): number | undefined => {
   return Number.parseInt(hex, 16) % 0x1000;
 };
 
+/**
+ * The Google models measured to think only in levels: each refuses a token
+ * `thinkingBudget` (on the enabled path or `0` on the disabled one) with 400
+ * INVALID_ARGUMENT. Keyed on the MEASURED ids, never on a re-derivation of the
+ * catalog rule the plugin applies (`usesCatalogThinkingLevels`), so the mock
+ * does not mirror the rule under test.
+ */
+const MEASURED_LEVEL_ONLY: ReadonlySet<string> = new Set(["gemini-4-argon"]);
+
+const THINKING_BUDGET_MESSAGE =
+  "Thinking budget is not supported for this model. Use thinking level instead.";
+
 export const handleGatewayRequest = (
   exchange: GatewayExchange,
   options: OpenCodeGatewayOptions = {}
@@ -769,6 +781,24 @@ export const handleGatewayRequest = (
       "invalid_request",
       "contents"
     );
+  }
+
+  // **A level model refuses a budget.** Measured live on Go gemini-4-argon:
+  // a `generationConfig.thinkingConfig.thinkingBudget` answers 400
+  // INVALID_ARGUMENT, whatever its value.
+  if (endpoint.kind === "google" && MEASURED_LEVEL_ONLY.has(model)) {
+    const generation = requestBody.generationConfig;
+    const thinking = isRecord(generation)
+      ? generation.thinkingConfig
+      : undefined;
+    if (isRecord(thinking) && "thinkingBudget" in thinking) {
+      return refuse(
+        400,
+        THINKING_BUDGET_MESSAGE,
+        "INVALID_ARGUMENT",
+        "thinking_budget"
+      );
+    }
   }
 
   // **A free-tier call must carry tools.** Measured: the same body with and

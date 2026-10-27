@@ -4,52 +4,45 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Measured 2026-10-17:
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Measured 2026-10-17, shown on the default (modern) family:
 
-| API shape | Wire endpoint | Which models | Signal in the catalog |
+| API shape | Wire endpoint (Zen) | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
-| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default**: 24 of 81 | the model names **no** SDK |
-| OpenAI **Responses** | `POST /zen/v1/responses` | 31 of 81 | `@ai-sdk/openai` |
-| Anthropic **Messages** | `POST /zen/v1/messages` | 17 of 81 | `@ai-sdk/anthropic` |
-| Google **Generative AI** | `POST /zen/v1/models/<id>:streamGenerateContent` | 8 of 81 | `@ai-sdk/google` |
-| Mistral **Conversations** | `POST /zen/v1/chat/completions` | 1 of 81 | `@ai-sdk/mistral` |
+| OpenAI **Chat Completions** | `POST /inference/openai/v1/chat/completions` | **the default**: 24 of 81 | the model names **no** SDK |
+| OpenAI **Responses** | `POST /inference/openai/v1/responses` | 31 of 81 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /inference/anthropic/v1/messages` | 17 of 81 | `@ai-sdk/anthropic` |
+| Google **Generative AI** | `POST /inference/google/v1beta/models/<id>:streamGenerateContent` | 8 of 81 | `@ai-sdk/google` |
+| OpenAI **Chat Completions** (as pi files it) | `POST /inference/openai/v1/chat/completions` | 1 of 81 | `@ai-sdk/mistral` |
 
-Counts are the shipped catalog. They are asserted against this table by `catalog.test.ts`, because a count written into prose does not regenerate with the data it counts.
+Counts are the shipped catalog. They are asserted against this table by `catalog.test.ts`, because a count written into prose does not regenerate with the data it counts. Go's endpoints are the same paths under `/inference/go/…`; `endpoint: legacy` sends every protocol to `/zen/v1` (`/zen/go/v1` on Go), except Go's Google, which only the inference family serves.
 
-**The original route's own format is the case that does nothing.** A model that speaks the route's protocol names no SDK, because that protocol IS the default; the route the user configured already speaks it, so the call stays there. No hidden route, no redirect, no merge — which is why a deployment whose models are all completions mounts nothing at all, and why the whole apparatus below exists only for the models that are not.
+**"OpenAI" is two of the four served shapes.** Chat Completions and Responses are different wire formats, and a model that needs Responses does not work on the completions endpoint. The gateway does not fall back; it answers `500`. So each model has to be sent to the endpoint its own SDK names, without asking the user to configure anything.
 
-**"OpenAI" is two of the four served shapes.** Chat Completions and Responses are different wire formats, and a model that needs Responses does not work on the completions endpoint. The default is not "OpenAI" either. It is whatever api the route itself was registered with, and a model that names no SDK speaks it.
+**Mistral is completions (D16).** `@ai-sdk/mistral` was once kept unserved for want of a measured dialect. pi's own installed data files `mistral-large-4` under `openai-completions`, so the plugin follows pi, and no SDK is withheld any more.
 
-DSH picks a transport from the provider row's protocol. If that protocol is not the one the model is served on, the gateway does not fall back. It answers `500`. So the plugin's job is to send each model to the endpoint its own SDK names, without asking the user to configure anything.
+## 2. How a model is served: one route per plane (D13)
 
-**One SDK is deliberately not served, and it is Mistral.** Its models post to the completions path while speaking a different body, so path alone would route them wrongly, and the dialect the gateway answers with has not been measured — an earlier probe could not observe the request it produces. They stay unoffered rather than being sent somewhere invented, and `UNSERVED_SDKS` records the decision.
+Since P-R1 the plugin serves `opencode` and `opencode-go` itself, with **one adapter for both planes**, and every protocol rides on the plane's own route. There is no hidden route, no redirect and no listing hide.
 
-`@ai-sdk/google` used to be in that position, and is not any more: pi implements `google-generative-ai`, the plugin serves it through its own adapter on the route `opencode-google`, and the live suite probes that path on every run. The two mechanisms that serve the four shapes are described below.
-
-**Mistral shares the completions PATH but not its protocol.** `@ai-sdk/mistral` posts to `/chat/completions`, the same URL the completions models use, while speaking a different body and reading different responses. Path alone would therefore route it wrongly, which is why the route is chosen from the SDK and the protocol, and why the e2e probe has to send a real request before any of it counts as supported.
-
-## 2. How the route is chosen
-
-Three steps, all data-driven:
-
-1. The catalog carries the SDK. Every model row in `src/catalog-data.ts` has a `provider_npm` field (`@ai-sdk/openai`, `@ai-sdk/anthropic`, …), generated from models.dev by `scripts/regenerate-catalog-shim.ts`.
-2. The SDK names a protocol. `src/responses-routes.ts` holds the only table that maps one to the other:
+1. **The catalog carries the SDK.** Every model row in `src/catalog-data.ts` has a `provider_npm` field, generated from models.dev by `scripts/regenerate-catalog-shim.ts`.
+2. **The SDK names a protocol.** `PROTOCOL_FOR_SDK` in `src/utils/protocols.ts` is the only table that maps one to the other, and a row naming no SDK speaks completions:
 
    ```ts
    const PROTOCOL_FOR_SDK = {
      "@ai-sdk/openai": "openai-responses",
      "@ai-sdk/anthropic": "anthropic-messages",
      "@ai-sdk/google": "google-generative-ai",
+     "@ai-sdk/mistral": "openai-completions",
    };
    ```
 
-3. The protocol names a route. `internalRouteFor(provider, model, providerNpm)` answers which route serves that model (`opencode-responses`, `opencode-anthropic`, `opencode-google`), and only for providers in `COMPLETIONS_ROUTES`, the routes this plugin claims. Anything else returns `undefined` and is left alone.
+3. **The plane builds the model.** `planeModelFor` (`src/utils/plane-model.ts`) folds one declared model into the pi model object the adapter serves: its protocol from the catalog, then pi's installed entry, then the plane entry's `api`, then completions (D16); its base per protocol on the chosen endpoint family; its name, window, limits, modalities and cost from the user's row first, then the catalog, then pi (D17); and its reasoning from the user's `reasoningEfforts`, then the catalog (D1). `planeProfileFor` (`src/utils/plane-profile.ts`) does the same for the whole plane entry, with `llm-pi-ai`'s own defaults and its own validation messages, and never throws.
+4. **The plane adapter serves it.** `src/host/plane-provider.ts` builds `PlaneAdapter`, a subclass of the host's own `PiAiAdapter`, over a provider made with pi's own `createProvider` and all four of pi's protocol implementations, each wrapped with pi's session header. pi's provider dispatches per model (`model.api`), so one route speaks every protocol.
+5. **The route claim keeps `llm-pi-ai` off the planes.** `src/host/route-claim.ts` prepends an `internal/config` listener that hands pi-ai's fiber a copy of its configuration without the two plane entries, so pi-ai never registers them; it then registers `PlaneAdapter` for exactly the planes the profile declares, and `handle.replace`s the set when it changes. An edit of a plane in Settings is validated with `llm-pi-ai`'s own checks before it is written, and `src/host/describe-graft.ts` grafts the committed plane entries back into `settings.describe()`, so _Settings → Models_ still reads and writes them where they always were (D18).
 
-`src/responses-provider.ts` then **mounts the host's own `llm-pi-ai`** under isolated auth scopes to serve those routes. That is the piece with four host contracts to survive; read its header before touching it. The plugin registers the routes, so the user configures nothing.
+### Why a pi-ai route cannot serve mixed protocols, and why the plugin's can
 
-### Why a provider cannot serve mixed protocols, in the harness's own terms
-
-Traced through `dsh-llm-pi-ai` and pi-ai, because "one provider, many protocols" keeps looking like it should work and never does:
+Traced through `dsh-llm-pi-ai` and pi-ai, because "one provider, many protocols" keeps looking like it should work on pi-ai's own route and never does:
 
 ```
 profile → PiAiProviderProfile
@@ -60,44 +53,11 @@ profile → PiAiProviderProfile
   → dispatch                                            @earendil-works/pi-ai/dist/models.js:553
 ```
 
-`createProvider` calls `input.api.stream(model, …)` — the ROUTE's implementation, so a route with an `api` speaks exactly one protocol and `model.api` is ignored. pi's own provider _does_ dispatch per model (`apiFor = single ?? byApi[model.api]`), and pi ships `opencode` with an api MAP of four protocols (`providers/opencode.js`), so the reused-catalog path genuinely supports mixed protocols — for models the installed catalog describes.
+`createProvider` with a single `api` calls the ROUTE's implementation, so a route with an `api` speaks exactly one protocol. pi's own provider _does_ dispatch per model (`apiFor = single ?? byApi[model.api]`), and pi ships `opencode` with an api MAP of four protocols, so the reused-catalog path supports mixed protocols — for models the installed catalog describes.
 
-**The wall is model materialization** (`lib/index.js:663-690`):
+**The wall is model materialization** (`lib/index.js:663-690`): a hand-written id resolves to `request.api ?? base?.api ?? routeApi`, and `routeApi` is the one protocol the route's shipped models agree on — `undefined` for `opencode`, because they do not agree — so a hand-written id with no `api` is `INVALID_CONFIG`.
 
-```js
-const base = defaults.get(entry.id); // the installed catalog entry
-const api = request.api ?? base?.api ?? routeApi;
-if (api === void 0) invalid(provider, "… needs an api …");
-```
-
-with `routeApi = sharedCatalogApi(defaults)`, which answers the one protocol the route's shipped models agree on — **and `undefined` when they disagree**, which is always the case for `opencode`.
-
-| declared model | protocol it gets | outcome |
-| :-- | :-- | :-- |
-| described by the installed catalog | `base.api` (its own) | per-model dispatch, no help needed |
-| hand-written, not described | `request.api`, else `routeApi` | **INVALID_CONFIG** when both are absent |
-
-So: a route that names `api` pins every model on it; a route that does not name one gives hand-written models no protocol at all. That is why this plugin's answer is the three steps it implements rather than a single mixed-protocol provider:
-
-1. **declare the route again, hidden** — an internal route per protocol, with the right `api` and `baseURL` (`registerResponsesProvider`);
-2. **hide the mount** — `hideResponsesRoute` drops it from every listing, including the configurable-provider set and the browser catalog;
-3. **merge at the presentation layer** — discovery and `/models` enrichment describe the models on the route the user actually selected, never on the hidden ones.
-
-### When the automatic path is enough, and when it never is
-
-pi-ai's own `opencode` provider carries a four-protocol api map, so it dispatches per model natively. Reusing it instead of mounting routes needs three things at once, and a deployment loses the argument if it fails any of them:
-
-| condition | note |
-| :-- | :-- |
-| every declared id is in pi's installed snapshot | a hand-written id has no `base.api` |
-| the route declares no `api` | a declared `api` pins every model on the route |
-| pi's per-model `baseUrl` is current | the installed snapshot still says `…/zen` |
-
-The third is ours to fix and is fixed: the adapter decoration writes `baseUrl` (and `api`) on the model it answers, and pi passes that exact object down (`provider.streamSimple(requestModel, …)`), so the override reaches the wire.
-
-The first two cannot be fixed from a plugin. A hand-written id resolves to `request.api ?? base?.api ?? routeApi`, and `routeApi` is `sharedCatalogApi` — the one protocol the route's shipped models agree on, which is `undefined` for `opencode` because they do not agree. A route that names `api` pins every model on it instead. So: **any deployment that hand-writes a model needs a route that speaks its protocol**, which is why the hidden-route mechanism is structural rather than a workaround, and why the mount narrows to the declared ids — a deployment whose ids all speak the route's protocol mounts nothing at all.
-
-And the consequence for anything built on top: a model's protocol is not a property of the model object alone. It is the route's, chosen at profile resolution, so a model that needs a different protocol needs a route that speaks it.
+The plane adapter goes around the wall rather than through it: it builds its own provider with the four-protocol api map (the shape pi's `opencode` provider has), and its own model objects, so a model's protocol comes from the catalog for every id, described or not. That is also why any saved id is served (D15): one the catalog does not describe is completions unless its row says otherwise.
 
 ### Why it is a table and not a model list
 
@@ -105,9 +65,9 @@ An earlier version kept a hand-written list of which models redirect. A hand-pat
 
 ### The end-to-end test is the only real check
 
-`test/e2e/protocol-routing.e2e.ts` asks the gateway which endpoint recognises each shipped model. The unit tests read the same mapping they verify, so they cannot catch a stale mapping. Only the live gateway can. A wrong-endpoint cell answering `500` is what pins the route; a `403 FreeTierError` only proves the gateway parsed the model.
+`test/e2e/protocol-routing.e2e.ts` asks the gateway which endpoint recognises each shipped model, and reads the protocol and base it expects from `planeModelFor`. The unit tests read the same mapping they verify, so they cannot catch a stale mapping. Only the live gateway can. A wrong-endpoint cell answering `500` is what pins the protocol; a `403 FreeTierError` only proves the gateway parsed the model.
 
-### One base URL per plane is one base too many
+### The base URL is per protocol, not per plane
 
 pi builds each protocol's request differently. The OpenAI protocols append `/chat/completions` or `/responses` to a base that already carries `/v1`; the Anthropic one hands its base straight to the Anthropic SDK, which appends `/v1/messages` itself.
 
@@ -118,38 +78,33 @@ Measured both halves. Asking the SDK which URL a base produces:
 | `https://opencode.ai/zen` | `…/zen/v1/messages` | `400`, upstream reached |
 | `https://opencode.ai/zen/v1` | `…/zen/v1/v1/messages` | `404` |
 
-So an internal route mounted on its plane's base asked for `/v1/v1/messages` and could not answer — which is every model whose protocol is `anthropic-messages`, the ids the two planes disagree about. The mount takes its base per protocol from the table that records this, and the test that guards it names the route, the protocol and both URLs when it fails.
+So `baseUrlFor` strips a trailing `/v1` from every Anthropic base, on both families and on a foreign `baseURL` alike; pi's own catalog agrees (`…/zen` for `anthropic-messages`, `…/zen/v1` for the rest). The table is pinned cell by cell in `test/plane-model.test.ts`, and every cell is sent to the offline gateway mock by `test/mock/plane-dispatch.mock.ts`.
 
-pi's own catalog agrees, which is the reason a table of bases is worth keeping rather than deriving: for `opencode` it says `…/zen` for `anthropic-messages` and `…/zen/v1` for the rest.
+### What the layers of testing each prove
 
-### What the two layers of testing each prove
+They are different checks, and none stands in for another:
 
-They are different checks, and neither stands in for the other:
-
-- The **live suite** asks the gateway which endpoint recognises each shipped model, with a hand-written body per protocol. It proves the endpoint answers and what the gateway rejects. Its bodies are written by the test, not produced by the plugin — the first Google probe was missing a `role` the Gemini body needs, and the gateway's refusal of that probe was a fact about the probe.
-- The **unit suite** runs the plugin's own request path with the network intercepted: the real `PiAiAdapter`, this plugin's profile, pi's protocol implementation and the resolved credential, asserting the URL, the auth header and the body. It proves the request the plugin builds is one the endpoint accepts.
-
-Between them, a wrong endpoint and a wrong request are separate failures instead of one blurred claim.
+- The **live suite** asks the gateway which endpoint recognises each shipped model, with a hand-written body per protocol. It proves the endpoint answers and what the gateway rejects.
+- The **mock-gateway suite** runs `llm.stream` through the real `LlmRuntime` and the plane adapter, with the plugin's fetch patch, against a local gateway that refuses a request whose shape its endpoint would not accept. It proves the request the plugin builds is one the endpoint accepts, for every characterized model on both planes and both families.
+- The **real-host suites** (`test/host-characterization.test.ts`, `test/host-planes.test.ts`) run the plugin beside `llm-pi-ai` on the real host, in both apply orders, and pin ownership, restarts, the Settings flow, credentials and isolation.
 
 ### How we support API endpoints in different formats
 
-The user sees a single OpenCode provider and a single model list. Nothing in the interface names a route, a protocol or an endpoint, and there is no per-model setting to get wrong. That consistency is the product, and everything below it exists to keep it.
-
-What makes it possible is that the routing is **derived, never stored**:
+The user sees a single OpenCode provider per plane and a single model list. Nothing in the interface names a protocol or an endpoint, and there is no per-model setting to get wrong.
 
 | Property | Why it holds |
 | :-- | :-- |
-| One list | The merge (§3) appends canonical rows to whatever the adapter returned. A model's route is not part of what the user picks, so it cannot fall out of sync with the picker. |
-| Computed per turn | From the model id: `provider_npm` → protocol → route. Nothing caches the decision, so a catalog refresh changes routing with no migration and no stored state. |
-| Registered by the plugin, not the profile | `responses-provider.ts` mounts the host's own `llm-pi-ai` once per protocol under an isolated auth scope, so a profile that declares none of these routes still gets every endpoint. |
+| One list | A plane lists the models its entry declares, and the whole catalog when it declares none (D3). A model's protocol is not part of what the user picks, so it cannot fall out of sync with the picker. |
+| Computed from data | `provider_npm` → protocol → base, rebuilt whenever the plane entry changes. Nothing is stored, so a catalog refresh changes routing with no migration. |
+| Registered by the plugin, configured in pi-ai | The plane entries stay in `llm-pi-ai`'s `providers` block; the plugin claims the two routes and leaves every other route to pi-ai. |
 | One place adds the headers | `fetch-patch.ts` writes the origin proof, the session id and the project attribution for every claimed route, so those do not vary by protocol. |
 
 Two guards keep the invisible half honest, because **a mechanism that silently drops a model looks exactly like a model that does not exist**:
 
 | Guard | What it catches |
 | :-- | :-- |
-| `catalog.test.ts` | A generated catalog that names an SDK which is neither mapped nor listed as deliberately unserved. It fails and names the SDK. What it prevents is a vendor addition reaching the picker as a _missing_ model, which is how `mistral-large-4` disappeared once. |
-| `protocol-routing.e2e.ts` | A protocol called routable without a live probe: a path and an auth convention it really sends. Mapping `mistral-conversations` failed this test before it failed anything else, which is the intended order: the table cannot outrun the evidence. |
+| `catalog.test.ts` | A generated catalog that names an SDK `PROTOCOL_FOR_SDK` does not map, or a catalog model that resolves off its own plane. It fails and names the model. |
+| `protocol-routing.e2e.ts` | A protocol called servable without a live probe: a path and an auth convention it really sends. |
 
 ## 3. The catalog merge
 
@@ -180,8 +135,8 @@ What belongs here is only the part that is a routing consequence: the meter is a
 
 | Concern | Module |
 | :-- | :-- |
-| Which endpoint a model is served on | `responses-routes.ts` |
-| Serving that endpoint | `responses-provider.ts` |
+| Which protocol and endpoint a model is served on | `utils/protocols.ts`, `utils/plane-model.ts`, `utils/plane-profile.ts` |
+| Serving the planes | `host/route-claim.ts`, `host/plane-provider.ts`, `host/google-levels.ts`, `host/describe-graft.ts` |
 | Catalog merge | `models-catalog.ts`, `models-discovery.ts`, `catalog-data.ts` |
 | Allowance table | `go-limits-data.ts` (generated) |
 | Credentials and the `/usage` endpoint | `go-discovery.ts`, `key-capture.ts` |

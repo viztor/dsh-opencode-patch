@@ -27,11 +27,18 @@ import {
   adaptersOf,
   drainStream,
   fakeCredentials,
+  hostModulesForTests,
   mountTierA,
   recordingFetch,
   s0Providers,
   type TierA,
 } from "./support/host.ts";
+import {
+  buildPlaneProvider,
+  OPENCODE_FAMILY_API,
+  OPENCODE_ZEN_CATALOG,
+  planeProfileFor,
+} from "./support/src.ts";
 
 /** A schemastery node, as far as the role walk reads it. */
 interface SchemaNode {
@@ -528,5 +535,61 @@ describe("host · pi 1.1.0's public exports (package.json exports ./providers/*,
       headers: { "X-OpenCode-Session": "mine" },
       sessionId: "ses_x",
     });
+  });
+});
+
+describe("host · parity of the plane profile with pi-ai's own resolution", () => {
+  it("planeProfileFor resolves a catalog-known plane entry's scalar fields exactly as pi-ai resolves them", async () => {
+    const entry = {
+      apiKeyEnv: "OPENCODE_API_KEY",
+      displayName: "Zen",
+      headers: { "x-a": "1" },
+      maxRequestImageBytes: 1024,
+      models: [{ id: "deepseek-v4-pro", maxTokens: 9 }],
+      reasoning: "high",
+      retryPolicy: { maxRetries: 2, mode: "normal" },
+      streamIdleTimeoutMs: 1000,
+      thinkingBudgets: { high: 7 },
+    };
+    tier = await mountTierA({
+      providers: { opencode: structuredClone(entry) },
+    });
+    const piAi = profileOf(tier, "opencode");
+    const libraries = await hostModulesForTests().libraries();
+    if (libraries === undefined) {
+      throw new Error("no libraries");
+    }
+    const { profile } = planeProfileFor({
+      buildProvider: buildPlaneProvider(libraries),
+      catalog: OPENCODE_ZEN_CATALOG,
+      endpoint: "auto",
+      entry,
+      familyApi: OPENCODE_FAMILY_API.zen,
+      normalize: (raw) =>
+        (
+          LlmPiAi.Config({
+            providers: { opencode: raw },
+          } as never) as unknown as {
+            providers: { get: () => Record<string, unknown> };
+          }
+        ).providers.get().opencode,
+      piModels: libraries.builtinModels("opencode"),
+      resolveRetryPolicy: libraries.resolveRetryPolicy,
+      route: "opencode",
+    });
+    const scalar = (resolved: Record<string, unknown>) => {
+      const {
+        configuredMaxTokens,
+        modelErrors,
+        piProvider: _provider,
+        ...rest
+      } = resolved;
+      return {
+        ...rest,
+        configuredMaxTokens: [...(configuredMaxTokens as Map<string, number>)],
+        modelErrors: [...(modelErrors as Map<string, string>)],
+      };
+    };
+    expect(scalar(profile)).toEqual(scalar(piAi));
   });
 });

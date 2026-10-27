@@ -1171,12 +1171,12 @@ describe("patchFetch", () => {
     );
   });
 
-  it("resolves a credential for the Zen free model that gets redirected to /responses", async () => {
+  it("fills a captured key for the Zen free model the plane sends on /responses", async () => {
     // The reported symptom: a Go-plane free model works, Zen free models do not.
     // `muse-spark-1.2-contributor-free` is the ONE Zen free model naming
-    // `@ai-sdk/openai`, so the stream hook redirects it to `opencode-responses` -
-    // a route the plugin mounts itself, which therefore carries pi's
-    // `Bearer unused` placeholder and depends on THIS injection to authenticate.
+    // `@ai-sdk/openai`, so it is sent on Responses. Before P-R1 that went out
+    // through a route the plugin mounted itself, carrying pi's `Bearer unused`
+    // placeholder; a placeholder is still never forwarded (P6 owns the fill).
     //
     // A key captured from the user's own plane route, on the endpoint family the
     // catalog now names.
@@ -1193,7 +1193,7 @@ describe("patchFetch", () => {
     await als.run({ provider: "opencode", value: "ses_x" }, async () => {
       await patched("https://opencode.ai/inference/v1/responses", {
         body: JSON.stringify({ model: "muse-spark-1.2-contributor-free" }),
-        // The sentinel the mounted route declares; a placeholder must be
+        // pi's sentinel for a route with no key; a placeholder must be
         // replaced, never forwarded.
         headers: { authorization: "Bearer unused" },
         method: "POST",
