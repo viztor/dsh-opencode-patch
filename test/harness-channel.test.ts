@@ -10,7 +10,13 @@
  * makes it visible.
  *
  * The rule is not "the newest channel": it is "the channel the host runs". The
- * running host is `dsh@0.2.1-alpha.5`, so the tools follow alpha.
+ * host publishes the harness on the rc track (`0.2.1-rc.4`), so the tools follow
+ * rc.
+ *
+ * `cordis` is the one harness surface with no prerelease channel to track: the
+ * host vendors it as source at a stable release (`4.0.5`), so it is pinned
+ * exactly and to a stable version — an exact pin is still required, because a
+ * range would float it.
  *
  * @module test/harness-channel
  */
@@ -35,7 +41,12 @@ const channelOf = (spec: string): string | undefined => {
 };
 
 describe("harness channel alignment", () => {
-  const HOST_CHANNEL = "alpha";
+  const HOST_CHANNEL = "rc";
+
+  // The packages that move together on the harness's `0.2.x` line. `cordis`
+  // has its own line (see below) and `schemastery` is a plain library with an
+  // independent version, so neither is one of these.
+  const HARNESS_LINE_PREFIX = "@deepseek-ai/dsh-";
 
   it("every harness dependency is pinned on the host's channel", () => {
     const deps = {
@@ -43,16 +54,10 @@ describe("harness channel alignment", () => {
       ...manifest().devDependencies,
     };
     const harness = Object.entries(deps).filter(([name]) =>
-      name.startsWith("@deepseek-ai/")
+      name.startsWith(HARNESS_LINE_PREFIX)
     );
     expect(harness.length).toBeGreaterThan(0);
     for (const [name, spec] of harness) {
-      // `schemastery` is a plain library rather than a harness surface, and its
-      // version is an independent line; the check is about the harness packages
-      // whose releases move together.
-      if (name === "@deepseek-ai/schemastery") {
-        continue;
-      }
       const channel = channelOf(spec);
       expect(channel, `${name} is pinned with no channel: ${spec}`).toBe(
         HOST_CHANNEL
@@ -61,9 +66,9 @@ describe("harness channel alignment", () => {
   });
 
   it("no pinned spec can float onto another channel", () => {
-    // A caret range written against alpha resolves to rc, because rc sorts
-    // higher. Every spec whose channel matters is therefore EXACT, and the peer
-    // range names alpha at both bounds.
+    // A caret range written against the host's channel resolves to the other
+    // one, because rc sorts above alpha. Every spec whose channel matters is
+    // therefore EXACT.
     const deps = {
       ...manifest().dependencies,
       ...manifest().devDependencies,
@@ -72,8 +77,16 @@ describe("harness channel alignment", () => {
       if (!name.startsWith("@deepseek-ai/") || name.endsWith("schemastery")) {
         continue;
       }
+      if (name.startsWith(HARNESS_LINE_PREFIX)) {
+        expect(spec, `${name} must be exact, not a range: ${spec}`).toMatch(
+          new RegExp(`^\\d+\\.\\d+\\.\\d+-${HOST_CHANNEL}\\.\\d+$`, "u")
+        );
+        continue;
+      }
+      // `cordis`: the host vendors a stable release, so the pin is exact and
+      // stable — a prerelease of a future line would not be the host's.
       expect(spec, `${name} must be exact, not a range: ${spec}`).toMatch(
-        /^\d+\.\d+\.\d+-alpha\.\d+$/u
+        /^\d+\.\d+\.\d+$/u
       );
     }
   });
