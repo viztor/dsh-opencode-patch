@@ -1097,7 +1097,7 @@ describe("apply (plugin lifecycle)", () => {
           streamHandler = handler;
         },
       };
-      apply(ctx, { debugFile });
+      apply(ctx, { debug: true, debugFile });
       if (typeof streamHandler !== "function") {
         throw new TypeError("stream handler not registered");
       }

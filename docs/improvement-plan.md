@@ -19,7 +19,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | Phase | Title                                         | State     |
 | :---- | :-------------------------------------------- | :-------- |
 | P0    | suite hardening, 12 defect fixes, this plan   | in review |
-| P1a   | `fix:` shipped breakage                       | planned   |
+| P1a   | `fix:` shipped breakage                       | in review |
 | P1b   | `chore:` hygiene                              | planned   |
 | P2    | `feat:` a smaller public API                  | planned   |
 | P-T1a | `build:` pin the host                         | planned   |

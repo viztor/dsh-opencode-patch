@@ -76,10 +76,10 @@ export const isKeySourcePolicy = (value: unknown): value is KeySourcePolicy =>
  * The gateway answers on two families and the user, not the catalog, is the one
  * who knows which their account is entitled to:
  *
- * - `auto` follows the catalog — the `api` the vendor's own entry names, which
- *   today is the `inference` family.
- * - `legacy` forces the older `/zen/v1` pair.
- * - `modern` forces the newer `/inference/v1` pair.
+ * - `auto` — an alias of `modern` (the default).
+ * - `legacy` — the older single base per plane, `/zen/v1` and `/zen/go/v1`.
+ * - `modern` — the per-protocol `inference` family,
+ *   `/inference/{openai,anthropic,google}/…` and `/inference/go/…` on Go.
  *
  * Declared here rather than in `config.ts` so the client card can read the same
  * list without importing schemastery.

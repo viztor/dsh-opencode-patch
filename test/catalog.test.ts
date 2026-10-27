@@ -378,6 +378,8 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // …and the Zen catalog's are not.
     expect(goJson.data.some((m) => m.id === "claude-opus-4-6")).toBe(false);
     expect(goJson.data.length).toBe(getLiveGoCatalog().length);
+    // The fill is the listing, so it answers as one.
+    expect(goResponse.status).toBe(200);
   });
 
   it("keeps the Muse 1.2 rows the zen plane actually serves", async () => {
@@ -866,6 +868,72 @@ describe("findModelSpec", () => {
     expect(findModelSpec("")).toBeUndefined();
     // Case matters: model ids are exact.
     expect(findModelSpec("DeepSeek-V4.1-Flash")).toBeUndefined();
+  });
+});
+
+describe("enrichModelsResponse: the gateway's verdict passes through", () => {
+  const url = "https://opencode.ai/zen/v1/models";
+
+  it("enrichModelsResponse: a 401, a 403, a 429 and a 5xx reach the caller as the gateway sent them", async () => {
+    // A refused key, a refused tier and an outage are answers about the
+    // REQUEST. Filling them with the catalog told discovery the listing had
+    // succeeded, and the reason the gateway gave never reached anyone.
+    const rows = [
+      {
+        body: JSON.stringify({ error: { message: "Missing API key" } }),
+        status: 401,
+        type: "application/json",
+      },
+      {
+        body: JSON.stringify({ error: { type: "FreeTierError" } }),
+        status: 403,
+        type: "application/json",
+      },
+      // Not an auth answer and not an outage: the rule is "every non-2xx but
+      // 404", and this row records that a rate limit is the gateway's too.
+      {
+        body: JSON.stringify({ error: { type: "RateLimitError" } }),
+        headers: { "retry-after": "30" },
+        status: 429,
+        type: "application/json",
+      },
+      { body: "upstream down", status: 503, type: "text/plain" },
+    ];
+    for (const row of rows) {
+      const extra: Record<string, string> =
+        "headers" in row && row.headers !== undefined ? row.headers : {};
+      const upstream = new Response(row.body, {
+        headers: { "content-type": row.type, ...extra },
+        status: row.status,
+      });
+      const out = await enrichModelsResponse(url, upstream);
+      expect(out.status).toBe(row.status);
+      expect(await out.text()).toBe(row.body);
+      expect(out.headers.get("content-type")).toBe(row.type);
+      for (const [name, value] of Object.entries(extra)) {
+        expect(out.headers.get(name)).toBe(value);
+      }
+    }
+  });
+
+  it("fills a Zen-plane 404 with the Zen catalog, as it does the Go plane's", async () => {
+    const out = await enrichModelsResponse(
+      url,
+      new Response("Not Found", { status: 404 })
+    );
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(getLiveZenCatalog().length);
+  });
+
+  it("still answers a 200 whose body is not JSON with the full catalog", async () => {
+    const out = await enrichModelsResponse(
+      url,
+      new Response("not json", { status: 200 })
+    );
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(getLiveZenCatalog().length);
   });
 });
 

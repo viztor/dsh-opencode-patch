@@ -214,8 +214,8 @@ export interface ResolvedPluginConfig {
    * Which endpoint family the gateway's requests go to.
    *
    * The two families are independently entitled and both are still served, so
-   * the choice is the user's: `auto` follows the catalog, and `legacy` /
-   * `modern` pin one. See {@link ENDPOINT_FAMILIES}.
+   * the choice is the user's: `auto` is an alias of `modern` (the default), and
+   * `legacy` pins the older single base per plane. See {@link ENDPOINT_FAMILIES}.
    */
   endpoint: EndpointFamily;
   /** `*` when the core-tool fallback should run for every model. */
@@ -276,8 +276,8 @@ const resolvedKeySource = (raw: unknown): KeySourcePolicy => {
  * A row's endpoint family, or the default when it names something else.
  *
  * Lenient for the same reason {@link resolvedKeySource} is: a typo in a
- * hand-edited row degrades to `auto`, which follows the catalog and is the
- * answer that cannot be wrong about which family is current.
+ * hand-edited row degrades to `auto`, the default, so a typo cannot select a
+ * family the user never named.
  */
 const resolvedEndpoint = (raw: unknown): EndpointFamily => {
   const value = readString(raw);
@@ -563,10 +563,13 @@ export const Config = z.object({
     .string()
     .default(CONFIG_DEFAULTS.endpoint)
     .description(
-      "Which endpoint family the gateway's requests go to. auto: follow the " +
-        "catalog's own address (today the inference family). legacy: force " +
-        "https://opencode.ai/zen/v1. modern: force " +
-        "https://opencode.ai/inference/v1. The two families are separately " +
+      "Which endpoint family the gateway's requests go to. modern: the " +
+        "per-protocol inference family, " +
+        "https://opencode.ai/inference/{openai,anthropic,google}/... on Zen " +
+        "and https://opencode.ai/inference/go/{openai,anthropic,google}/... " +
+        "on Go. auto: an alias of modern, and the default. legacy: the older " +
+        "single base per plane, https://opencode.ai/zen/v1 and " +
+        "https://opencode.ai/zen/go/v1. The two families are separately " +
         "entitled and both still answer, so this is a choice rather than a " +
         "migration; an unrecognised value falls back to auto."
     )
@@ -619,5 +622,7 @@ export const Config = z.object({
     .description("Log injected streamed calls."),
   debugFile: z
     .string()
-    .description("Server-side path for JSONL stream-debug entries."),
+    .description(
+      "Server-side path for JSONL stream-debug entries; written only while debug is on."
+    ),
 });

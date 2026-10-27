@@ -154,6 +154,17 @@ export interface UsageSummaryViewProps {
 }
 
 /**
+ * The one rule this surface carries: the refresh glyph's keyframes.
+ *
+ * The meter declares the same `dsh-oc-spin` in its own stylesheet, but the
+ * meter is not on the settings page, and an animation naming keyframes nobody
+ * declared does not animate. The declaration mirrors the meter's
+ * `dsh-oc-spin` rule in `usage-ui.ts`.
+ */
+export const USAGE_SUMMARY_STYLES =
+  "@keyframes dsh-oc-spin { to { transform: rotate(360deg); } }";
+
+/**
  * The summary itself: pure, so a test can invoke it and read the tree without
  * mounting — the same contract the meter's panel keeps.
  */
@@ -170,6 +181,8 @@ export const UsageSummaryView = ({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* Component-local, so it leaves with the view — as the meter's does. */}
+      <style>{USAGE_SUMMARY_STYLES}</style>
       <div
         style={{
           alignItems: "baseline",
@@ -191,8 +204,9 @@ export const UsageSummaryView = ({
             The note is an explanation, so it lives behind this affordance — the
             same rule the composer panel's billing note follows. A paragraph
             under the rows made the caveat the loudest thing on a summary that
-            is meant to be read at a glance. Inline styles because this surface
-            has no stylesheet: the meter's classes are not rendered here.
+            is meant to be read at a glance. Inline styles because the meter's
+            stylesheet is not on this page; the spinner's keyframes are the one
+            rule this surface carries itself (USAGE_SUMMARY_STYLES).
           */}
           <Tooltip label={t("usageSummaryNote")} portal side="top">
             <span

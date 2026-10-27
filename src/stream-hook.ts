@@ -324,7 +324,11 @@ export const createStreamHook = (
       return downstream;
     }
 
-    if (debug || debugFile !== undefined) {
+    // `debug` is the switch and `debugFile` is only where the switch writes —
+    // the fetch patch is gated the same way (lifecycle.ts), and the manifest
+    // documents `debugFile` as the append target for stream debug, not a
+    // switch of its own.
+    if (debug) {
       const entry = {
         header: SESSION_HEADER,
         model: options.model,
@@ -338,14 +342,12 @@ export const createStreamHook = (
       if (debugFile !== undefined) {
         void recordDebug(ctx, debugFile, entry);
       }
-      if (debug) {
-        ctx.logger?.info?.(
-          '[dsh-opencode-patch] streaming provider "%s" with %s=%s',
-          providerKey,
-          SESSION_HEADER,
-          value
-        );
-      }
+      ctx.logger?.info?.(
+        '[dsh-opencode-patch] streaming provider "%s" with %s=%s',
+        providerKey,
+        SESSION_HEADER,
+        value
+      );
     }
     const modelProp: unknown = options.model;
     const modelName = typeof modelProp === "string" ? modelProp : "unknown";

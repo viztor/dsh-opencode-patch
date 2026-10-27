@@ -23,7 +23,12 @@ import { findAllOf } from "./test-helpers.ts";
 
 const t = (key: string): string => zh[key as keyof typeof zh] ?? key;
 
-/** Every string in the tree, joined — the tree is unmounted, so no DOM. */
+/**
+ * Every string of COPY in the tree, joined — the tree is unmounted, so no DOM.
+ *
+ * A `<style>` element's children are a stylesheet, not anything a user reads,
+ * so they are skipped: a copy assertion must not pass or fail on CSS.
+ */
 const text = (node: ReactNode): string => {
   if (typeof node === "string" || typeof node === "number") {
     return String(node);
@@ -32,9 +37,24 @@ const text = (node: ReactNode): string => {
     return node.map((child) => text(child)).join(" ");
   }
   if (React.isValidElement<{ children?: ReactNode }>(node)) {
-    return text(node.props.children);
+    return node.type === "style" ? "" : text(node.props.children);
   }
   return "";
+};
+
+/** The stylesheet a `<style>` element carries. */
+const cssOf = (node: unknown): string =>
+  React.isValidElement<{ children?: unknown }>(node)
+    ? String(node.props.children)
+    : "";
+
+/** A mounted container's visible copy: its text without any `<style>` text. */
+const copyOf = (container: HTMLElement): string => {
+  const clone = container.cloneNode(true) as HTMLElement;
+  for (const style of clone.querySelectorAll("style")) {
+    style.remove();
+  }
+  return clone.textContent ?? "";
 };
 
 const usage = (overrides: Partial<GoUsage> = {}): GoUsage => ({
@@ -85,7 +105,7 @@ describe("settings: Go usage summary", () => {
     // affordance, so a row of zeroes would read as a real reading.
     const body = text(UsageSummaryView({ locale: "zh", t, usage: undefined }));
     expect(body).toContain(t("usageSummaryUnavailable"));
-    expect(body).not.toContain("%");
+    expect(body).not.toMatch(/\d/u);
   });
 
   it("says refreshing when a refresh is actively running", () => {
@@ -96,6 +116,34 @@ describe("settings: Go usage summary", () => {
       usage: undefined,
     });
     expect(text(refreshing)).toContain(t("usageRefreshing"));
+  });
+
+  it("carries the spinner's keyframes itself, so the glyph turns without the meter on the page", () => {
+    // The spinner animates `dsh-oc-spin`, and the only other declaration of it
+    // is the meter's stylesheet — which the settings page does not render. An
+    // animation naming keyframes nobody declared is no animation at all.
+    const tree = UsageSummaryView({
+      locale: "zh",
+      onRefresh: () => {},
+      refreshing: true,
+      t,
+      usage: undefined,
+    });
+    const styles = findAllOf(tree, new Set(["style"]));
+    expect(styles).toHaveLength(1);
+    const css = cssOf(styles[0]);
+    expect(css).toContain("@keyframes dsh-oc-spin");
+    const declared = /@keyframes\s+([\w-]+)/u.exec(css)?.[1];
+    const spinner = findAllOf(tree, new Set(["span"])).find(
+      (node) =>
+        typeof (node.props.style as { animation?: unknown } | undefined)
+          ?.animation === "string"
+    );
+    expect(spinner, "the refreshing glyph must animate").toBeDefined();
+    const style = spinner?.props.style as { animation?: unknown } | undefined;
+    const animation =
+      typeof style?.animation === "string" ? style.animation : "";
+    expect(/^([\w-]+)/u.exec(animation)?.[1]).toBe(declared);
   });
 
   it("states the monthly allowance as a total, for both tiers", () => {
@@ -213,7 +261,7 @@ describe("settings: the summary container", () => {
       />
     );
     await waitFor(() => {
-      expect(view.container.textContent).toContain("72%");
+      expect(copyOf(view.container)).toContain("72%");
     });
   });
 
@@ -221,7 +269,8 @@ describe("settings: the summary container", () => {
     const view = render(
       <UsageSummary getLocale={() => "zh"} readUsage={undefined} t={t} />
     );
-    expect(view.container.textContent).toBe("");
+    // Structural, not copy: a stylesheet or an empty wrapper is still a render.
+    expect(view.container.childNodes).toHaveLength(0);
   });
 
   it("shows the unavailable state when the read rejects", async () => {
@@ -235,9 +284,7 @@ describe("settings: the summary container", () => {
       />
     );
     await waitFor(() => {
-      expect(view.container.textContent).toContain(
-        t("usageSummaryUnavailable")
-      );
+      expect(copyOf(view.container)).toContain(t("usageSummaryUnavailable"));
     });
   });
 
@@ -251,7 +298,7 @@ describe("settings: the summary container", () => {
       <UsageSummary getLocale={() => "zh"} readUsage={read} t={t} />
     );
     await waitFor(() => {
-      expect(view.container.textContent).toContain("72%");
+      expect(copyOf(view.container)).toContain("72%");
     });
     expect(calls).toBe(1);
 

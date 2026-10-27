@@ -156,7 +156,7 @@ const PurgeRow: React.FC<{
         <div
           style={{
             color: state.warn
-              ? "var(--dsw-alias-label-warning, var(--dsw-alias-label-caption))"
+              ? "var(--dsw-alias-state-warn-label)"
               : "var(--dsw-alias-label-caption)",
             fontSize: 12,
             marginTop: 6,
