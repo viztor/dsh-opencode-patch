@@ -575,10 +575,10 @@ const B = "BASELINE";
  * titled with it. P-T1b recorded these against the hidden-route workaround;
  * P-R1 (the plugin owns the plane routes) flipped the fourteen
  * `KNOWN_DEFECT`/`INTENDED_CHANGE` facets its PR body names to `BASELINE`, so
- * every facet here is one no later phase may move — except that P-R2's
- * measured family flip, if a `modern` cell fails, may move the
- * endpoint-family part of a wire facet, re-tagging each one it moves and
- * naming it in its PR body.
+ * every facet here is one no later phase may move — except that the `fix:`
+ * that flips `AUTO_ENDPOINT_FAMILY` on P-R2's measured evidence
+ * (`docs/redirect-planes.md` §13) may move the endpoint-family part of a wire
+ * facet, re-tagging each one it moves and naming it in its PR body.
  *
  * `context` and `efforts` follow D17 and D1: the user's row first (Zen
  * gpt-5.3-codex-spark's 400000), then the bundled catalog

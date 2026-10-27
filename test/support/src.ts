@@ -413,8 +413,13 @@ export {
 } from "../../src/utils/model-metadata.ts";
 
 // utils/plane-model.ts
-export { baseUrlFor, planeModelFor } from "../../src/utils/plane-model.ts";
+export {
+  AUTO_ENDPOINT_FAMILY,
+  baseUrlFor,
+  planeModelFor,
+} from "../../src/utils/plane-model.ts";
 export type {
+  EndpointChoice,
   PlaneCatalogSpec,
   PlaneModelInput,
   PlanePiModel,

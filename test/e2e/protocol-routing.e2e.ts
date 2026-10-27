@@ -51,7 +51,12 @@
  * for a negative control — the modern `/inference/…` family since P-R1, Go's
  * Google included. So a model that the gateway serves on the legacy `/zen`
  * family but refuses on the one the plugin dispatches to turns a case red.
- * Probing the legacy family per protocol is P-R2's record.
+ * The keyed probe of every URL shape per plane and protocol, the legacy family
+ * included, is `keyed-probes.e2e.ts`.
+ *
+ * The keyed cases spend a key only on the `full` tier of `OPENCODE_E2E_KEYED`
+ * (the default when it is unset; CI runs it nightly and on dispatch), and skip
+ * otherwise. The keyless cases run on every tier.
  *
  * **The last block sends through the plugin's own provider.** The probes above
  * write their bodies and headers by hand, which is what makes them an exact
@@ -85,6 +90,7 @@ import {
   mountTierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
+import { armedKey, keyedTierOf } from "../support/keyed-probes.ts";
 import { isModelGoneMessage } from "../support/keyless-matrix.ts";
 import {
   accessDisabled,
@@ -116,13 +122,15 @@ import {
 } from "../support/src.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
-const ZEN_KEY = process.env.OPENCODE_API_KEY;
+/** What may spend a key: the keyed cases here run on the `full` tier only. */
+const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
+const ZEN_KEY = armedKey(TIER, "full", process.env.OPENCODE_API_KEY);
 
 /**
  * The Go plane. A different base URL AND a different credential — which is why
  * probing its models against the Zen base proves nothing about them.
  */
-const GO_KEY = process.env.OPENCODE_GO_API_KEY;
+const GO_KEY = armedKey(TIER, "full", process.env.OPENCODE_GO_API_KEY);
 
 /** A base to probe instead of the plugin's own, per plane (a mirror or a stub). */
 const BASE_OVERRIDE: Readonly<Record<"go" | "zen", string | undefined>> = {

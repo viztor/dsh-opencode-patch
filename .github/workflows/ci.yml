@@ -293,17 +293,91 @@ jobs:
   # The live gateway contract: the only job that talks to OpenCode itself, so a
   # vendor payload change fails here rather than in a user's meter.
   #
-  # Secrets are not exposed to fork or Dependabot PRs, and every credentialed
-  # case skips when its key is absent — so this stays green there while still
-  # checking that the endpoints answer. Add OPENCODE_API_KEY (Zen) and
-  # OPENCODE_GO_API_KEY (Go plan) under Settings → Secrets → Actions to arm the
-  # keyed cases.
+  # What may spend a key is a tier (OPENCODE_E2E_KEYED), decided per event by
+  # the `tier` step:
+  #
+  # - `none`: spends no key, so only the keyless cases run — the keyless
+  #   matrix, the keyless free-model probe, and the keyless cases of
+  #   protocol-routing and opencode-live. Every pull request that does not
+  #   touch the scope below, and a push to main.
+  # - `probes`: adds the minimal keyed probes (keyed-probes.e2e.ts), one
+  #   request of a few tokens per plane × protocol × URL shape. A pull request
+  #   that touches src/host/**; src/utils/protocols.ts, which decides the
+  #   legacy URLs the probes send and the protocol each probe model speaks;
+  #   src/utils/plane-model.ts, which decides the family the plugin
+  #   dispatches to (AUTO_ENDPOINT_FAMILY), which the probes must keep
+  #   matching; src/identity.ts, whose CLI version is in the user agent the
+  #   probes carry; src/utils/request-shape.ts, the anthropic-version every
+  #   Messages probe sends; or the probes' own inputs. Nothing else arms
+  #   them. Left out, and covered by the offline suite and the nightly run,
+  #   which arms everything: the generated catalog (src/catalog-data.ts) and
+  #   the live model choice (src/models-catalog.ts), which pick the probes'
+  #   modern URLs and models and whose paths the keyless matrix checks on
+  #   every pull request; and the OPENCODE_UA alias in src/session.ts, which
+  #   a turn and a probe share, so test/keyed-probes.test.ts holds the
+  #   probe's identity to the real fetch patch offline.
+  # - `full`: adds the full keyed suites (protocol-routing, opencode-live,
+  #   dispatch-levels). Nightly and on dispatch.
+  #
+  # The keys are passed only when the tier is not `none`, and the tier is
+  # always set explicitly: unset means `full` (so a local run with keys arms
+  # everything), and a dropped env line would arm the full suites on every
+  # pull request that arms the probes. Secrets are not exposed to fork or Dependabot PRs, and every
+  # credentialed case skips when its key is absent, so this stays green there
+  # while still checking that the endpoints answer. Add OPENCODE_API_KEY (Zen)
+  # and OPENCODE_GO_API_KEY (Go plan) under Settings → Secrets → Actions to arm
+  # the keyed cases.
+  #
+  # Both probe suites write a dated table of what each URL shape answered
+  # (docs/redirect-planes.md §13); the job appends them to the run summary and
+  # uploads them as the `endpoint-families` artifact.
   e2e:
     name: e2e · live gateway
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: which keyed tier does this run arm?
+        id: tier
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            schedule|workflow_dispatch) tier=full ;;
+            pull_request)
+              # Its own command, so a diff that cannot be computed fails the
+              # step rather than reading as "nothing changed".
+              changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+              # The listed modules, and nothing else: the host seam, the
+              # legacy URLs and protocols the probes send (protocols.ts), the
+              # family the plugin dispatches to (plane-model.ts), the CLI
+              # version in the user agent the probes carry (identity.ts), the
+              # anthropic-version every Messages probe sends
+              # (request-shape.ts), and the probes' own inputs, CI arming
+              # included. Left out, and covered by the offline suite and the
+              # nightly `full` run: the generated catalog (catalog-data.ts)
+              # and the live model choice (models-catalog.ts), which the
+              # keyless matrix checks on every pull request, and the
+              # OPENCODE_UA alias (session.ts), which the turn and the probe
+              # share and test/keyed-probes.test.ts holds offline.
+              # test/keyed-probes.test.ts compiles this pattern and checks
+              # it. grep reads a here-string, not a pipe: under
+              # pipefail, `grep -q` exiting on an early match could kill the
+              # writer with SIGPIPE on a long path list and read as a miss.
+              if grep -Eq '^(src/host/|src/utils/protocols\.ts$|src/utils/plane-model\.ts$|src/identity\.ts$|src/utils/request-shape\.ts$|test/e2e/keyed-probes\.e2e\.ts$|test/support/keyed-probes\.ts$|test/support/keyless-matrix\.ts$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
+                tier=probes
+              else
+                tier=none
+              fi
+              ;;
+            *) tier=none ;;
+          esac
+          echo "keyed tier: $tier"
+          echo "keyed=$tier" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -313,8 +387,29 @@ jobs:
       - run: pnpm run test:e2e
         env:
           OPENCODE_E2E: "1"
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          OPENCODE_E2E_KEYED: ${{ steps.tier.outputs.keyed }}
+          OPENCODE_E2E_RECORD_DIR: ${{ runner.temp }}/endpoint-families
+          OPENCODE_API_KEY: ${{ steps.tier.outputs.keyed != 'none' && secrets.OPENCODE_API_KEY || '' }}
+          OPENCODE_GO_API_KEY: ${{ steps.tier.outputs.keyed != 'none' && secrets.OPENCODE_GO_API_KEY || '' }}
+      - name: publish the endpoint-family record to the run summary
+        if: always()
+        env:
+          RECORD_DIR: ${{ runner.temp }}/endpoint-families
+        run: |
+          for file in keyless.md keyed.md; do
+            if [ -f "$RECORD_DIR/$file" ]; then
+              cat "$RECORD_DIR/$file" >> "$GITHUB_STEP_SUMMARY"
+              echo >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+      - name: upload the endpoint-family record
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: endpoint-families
+          path: ${{ runner.temp }}/endpoint-families
+          if-no-files-found: ignore
+          retention-days: 30
 
   # The published host binary with this checkout linked into a throwaway
   # profile: the only run that boots `dsh` itself rather than the host packages
@@ -388,8 +483,8 @@ jobs:
           # models-catalog.ts, config.ts, the generated catalog) is covered on
           # each pull request by the in-process characterization of the same
           # S0_TODAY rows, and here by the nightly run.
-          if printf '%s\n' "$changed" \
-            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
+          # A here-string, not a pipe: see the e2e job's tier step.
+          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|patches/|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

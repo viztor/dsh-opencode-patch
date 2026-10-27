@@ -16,7 +16,7 @@
  *
  * @module test/support/live-probe
  */
-import { OPENCODE_PATCH_USER_AGENT } from "./src.ts";
+import { OPENCODE_UA } from "./src.ts";
 
 /**
  * The path each protocol uses against an OVERRIDDEN base, which is read as a
@@ -87,10 +87,14 @@ export const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
   "openai-responses": { input: "hi", max_output_tokens: 16 },
 };
 
-/** Headers the plugin injects, so a probe looks like the traffic we actually send. */
+/**
+ * Headers the plugin injects, so a probe looks like the traffic we actually
+ * send: a turn's user agent is `OPENCODE_UA`, which the fetch patch stamps —
+ * `OPENCODE_PATCH_USER_AGENT` signs only the plugin's own requests.
+ */
 export const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "application/json",
-  "user-agent": OPENCODE_PATCH_USER_AGENT,
+  "user-agent": OPENCODE_UA,
   "x-opencode-client": "cli",
   "x-opencode-project": "global",
   "x-opencode-session": "ses_e2e0000000000abcdefghij",
