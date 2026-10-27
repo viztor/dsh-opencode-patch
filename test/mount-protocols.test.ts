@@ -3,10 +3,13 @@ import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generati
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 
+import { HOST_VERSIONS } from "./support/host-versions.ts";
 import {
+  GOOGLE_SDK,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
   PROTOCOL_FOR_SDK,
+  protocolFor,
   ROUTE_FOR_PLANE_PROTOCOL,
   SELF_MOUNTED_ROUTES,
   UNSERVED_PLANE_SDKS,
@@ -15,20 +18,24 @@ import {
 
 /**
  * The protocols this plugin mounts must be ones the harness's own pi-ai layer
- * can build.
+ * can build, and every SDK the catalog names must map to one of them.
  *
- * `dsh-llm-pi-ai` constructs a hand-declared route from `PROTOCOLS`, and that
- * table has three entries. A route naming anything else is refused outright, so
- * the plugin's whole routing layer is bounded by this list - and nothing checked
- * it: the unit suite mounts against a stand-in that accepts any `api`, and the
- * e2e suite talks to the gateway without going through the mount at all.
+ * Two claims, each against the real package rather than a stand-in:
  *
- * That is how `mistral-conversations` shipped. It is in `COMPAT_GATES`, which
- * looks like a protocol registry and is not one, and the real table refuses it.
+ * - The routes the WRAPPER mounts may only name a protocol in
+ *   `dsh-llm-pi-ai`'s own `PROTOCOLS` table, which refuses anything else
+ *   outright. That is how `mistral-conversations` once shipped: it is in
+ *   `COMPAT_GATES`, which looks like a protocol registry and is not one.
+ * - Every catalog row resolves, through `protocolFor` (which reads
+ *   `GATEWAY_PROTOCOL_FOR_SDK`), to a protocol pi's exported `api/*` modules
+ *   implement — independent of which models any of pi's own gateway providers
+ *   happen to list. The plugin's own SDK table, `PROTOCOL_FOR_SDK`
+ *   (`src/responses-routes.ts`), is checked against the same modules as a
+ *   second step. In this file "the wrapper's table" means only
+ *   `dsh-llm-pi-ai`'s `PROTOCOLS`.
  *
- * `it.fails` while that route is still declared: it passes only while the gap is
- * real, and turns red the moment the mapping is corrected, which is the signal
- * to make it a plain assertion.
+ * The pi and harness versions these run against are named once, in
+ * `test/support/host-versions.ts`.
  */
 describe("mount · the protocols the harness can build", () => {
   it("names only protocols dsh-llm-pi-ai supports, for the routes it mounts", () => {
@@ -114,63 +121,161 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
       expect(apis.size).toBeGreaterThan(1);
     }
   });
+
+  it(`characterization (F10): pi ${HOST_VERSIONS.pi}'s opencode-go provider has no google-generative-ai`, () => {
+    // A characterization of the pinned pi (`HOST_VERSIONS.pi`), not a
+    // requirement: its Go provider lists no model on the Google protocol,
+    // while the gateway's Go catalog does carry one. That gap is what the
+    // bridge serves today. pi 1.3.0 added a Go Google row
+    // (`gemini-4-argon-contributor`), which is why the provider-based routing
+    // check that used to stand below passed on the newer pi and not this one.
+    const go = providers.find((p) => p.id === "opencode-go");
+    const apis = [
+      ...new Set((go?.getModels() ?? []).map((model) => model.api)),
+    ].toSorted();
+    expect(apis).toEqual([
+      "anthropic-messages",
+      "openai-completions",
+      "openai-responses",
+    ]);
+    expect(OPENCODE_GO_CATALOG.some((m) => m.provider_npm === GOOGLE_SDK)).toBe(
+      true
+    );
+  });
 });
 
 /**
- * Every catalogued model, against the protocols its plane's provider implements.
+ * Every catalogued model, against the protocols pi's own `api/*` modules
+ * implement.
  *
  * The per-model `api` in our catalog is the vendor's own SDK (`@ai-sdk/…`), and
- * `PROTOCOL_FOR_SDK` turns it into a wire protocol. This walks the whole catalog
+ * `protocolFor` turns it into a wire protocol — `openai-completions` for a row
+ * that names no SDK, the provider's own default. This walks the whole catalog
  * rather than a sample, because the failure this catches is one model in a
  * refreshed catalog naming an SDK nobody has a protocol for - and a picker that
  * offers it looks exactly like a picker that does not.
  *
- * A model is fine when its plane's pi-ai provider has at least one model on the
- * same protocol, since a provider only carries protocols it can speak. Models
- * whose SDK is a recorded decision (`UNSERVED_SDKS`) are skipped: that is the
- * plugin saying so, not a gap.
+ * The claim is against pi's exported implementations, resolved from pi itself
+ * (`@earendil-works/pi-ai/api/<protocol>.lazy`), not a provider's model list
+ * and not a table kept here. An earlier version asked each plane's pi provider
+ * whether it carried a model on the same protocol, which made the answer a
+ * fact about pi's catalog: pi 1.3.0 listed a Go Gemini model and so passed,
+ * while the pinned pi 1.1.0 lists none (characterized above, F10) although the
+ * bridge serves those models through the same `google-generative-ai` module.
+ * Models whose SDK is a recorded decision (`UNSERVED_SDKS`) are skipped: that
+ * is the plugin saying so, not a gap. Plane-level decisions in
+ * `UNSERVED_PLANE_SDKS` likewise, so the rows here are the rows the picker
+ * offers (`isServableModel`, src/models-discovery.ts) and `test/catalog.test.ts`
+ * walks.
  */
-describe("routing · every catalogued model has a protocol its plane can serve", () => {
-  const protocolsOf = (id: string): Set<string> =>
-    new Set(
-      (
-        builtinProviders()
-          .find((p) => p.id === id)
-          ?.getModels() ?? []
-      ).map((model) => model.api)
+describe("routing · every catalog SDK maps to a protocol pi's api/* modules implement", () => {
+  /**
+   * Whether pi ships `api/<protocol>.lazy` with one `*Api` factory whose
+   * implementation has both stream entry points the adapter delegates to.
+   */
+  const implemented = async (protocol: string): Promise<boolean> => {
+    let module: Record<string, unknown>;
+    try {
+      module = (await import(
+        /* @vite-ignore */ `@earendil-works/pi-ai/api/${protocol}.lazy`
+      )) as Record<string, unknown>;
+    } catch {
+      return false;
+    }
+    const factories = Object.entries(module)
+      .filter(([name]) => name.endsWith("Api"))
+      .map(([, value]) => value);
+    const [factory] = factories;
+    if (factories.length !== 1 || typeof factory !== "function") {
+      return false;
+    }
+    const api = (factory as () => unknown)() as {
+      stream?: unknown;
+      streamSimple?: unknown;
+    };
+    return (
+      typeof api.stream === "function" && typeof api.streamSimple === "function"
+    );
+  };
+
+  /** Every catalog row the plugin offers, with the protocol it resolves to. */
+  const served = () =>
+    (
+      [
+        ["opencode", OPENCODE_ZEN_CATALOG],
+        ["opencode-go", OPENCODE_GO_CATALOG],
+      ] as const
+    ).flatMap(([plane, catalog]) =>
+      catalog
+        .filter(
+          (model) =>
+            model.provider_npm === undefined ||
+            // The `${plane} + ${sdk}` key is the one `isServableModel` reads
+            // (the route ids `opencode` / `opencode-go`). The set is empty
+            // today; an entry that withholds a protocol on every plane then
+            // turns the "four protocols" constant below red, for review.
+            !(
+              UNSERVED_SDKS.has(model.provider_npm) ||
+              UNSERVED_PLANE_SDKS.has(`${plane} + ${model.provider_npm}`)
+            )
+        )
+        .map((model) => ({ model, plane, protocol: protocolFor(model) }))
     );
 
-  const planes = [
-    { catalog: OPENCODE_ZEN_CATALOG, id: "opencode" },
-    { catalog: OPENCODE_GO_CATALOG, id: "opencode-go" },
-  ];
-
-  it("names no protocol its plane's provider cannot speak", () => {
-    const unsupported: string[] = [];
-    let checked = 0;
-    for (const { catalog, id } of planes) {
-      const protocols = protocolsOf(id);
-      for (const model of catalog) {
-        const sdk = model.provider_npm;
-        // No SDK means the provider's own default, which is always servable.
-        if (
-          sdk === undefined ||
-          UNSERVED_SDKS.has(sdk) ||
-          UNSERVED_PLANE_SDKS.has(`${id} + ${sdk}`)
-        ) {
-          continue;
-        }
-        checked += 1;
-        const protocol = PROTOCOL_FOR_SDK[sdk];
-        if (protocol === undefined || !protocols.has(protocol)) {
-          unsupported.push(
-            `${id} ${model.id}: ${sdk} -> ${protocol ?? "no protocol"}`
-          );
-        }
-      }
-    }
+  it("names no SDK whose protocol pi does not implement", async () => {
+    const rows = served();
     // A check that read no models would otherwise pass by finding nothing.
-    expect(checked).toBeGreaterThan(0);
+    expect(rows.length).toBeGreaterThan(0);
+    const protocols = [
+      ...new Set(
+        [
+          ...rows.map((row) => row.protocol),
+          ...Object.values(PROTOCOL_FOR_SDK),
+        ].filter((name) => name !== undefined)
+      ),
+    ];
+    const verdicts = new Map(
+      await Promise.all(
+        protocols.map(async (name) => [name, await implemented(name)] as const)
+      )
+    );
+    const unsupported = rows
+      .filter(
+        (row) =>
+          row.protocol === undefined || verdicts.get(row.protocol) !== true
+      )
+      .map(
+        (row) =>
+          `${row.plane} ${row.model.id}: ${row.model.provider_npm ?? "(default)"} -> ${row.protocol ?? "no protocol"}`
+      );
     expect(unsupported).toEqual([]);
+    // The plugin's own SDK table (`PROTOCOL_FOR_SDK`, src/responses-routes.ts)
+    // names nothing pi lacks either.
+    expect(
+      Object.values(PROTOCOL_FOR_SDK).filter(
+        (protocol) => verdicts.get(protocol) !== true
+      )
+    ).toEqual([]);
+  });
+
+  it("reaches the four protocols the plugin serves (a constant, labelled as one)", () => {
+    // The set the catalog resolves to today, including the SDK-less default.
+    // A fifth protocol is a deliberate change, reviewed here; whether pi
+    // implements it is the case above, which reads pi rather than this list.
+    expect(
+      [...new Set(served().map((row) => row.protocol))].toSorted((a, b) =>
+        (a ?? "").localeCompare(b ?? "")
+      )
+    ).toEqual([
+      "anthropic-messages",
+      "google-generative-ai",
+      "openai-completions",
+      "openai-responses",
+    ]);
+  });
+
+  it("answers false for a protocol pi does not ship", async () => {
+    // The negative control: an unknown module is not read as implemented.
+    expect(await implemented("no-such-protocol")).toBe(false);
   });
 });

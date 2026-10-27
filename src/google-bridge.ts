@@ -30,9 +30,10 @@
  * and deliberately not declared as a dependency.
  *
  * **Why not a dependency.** The harness wrapper (`dsh-llm-pi-ai`) already
- * depends on `@earendil-works/pi-ai` with a RANGE (`^1.1.0`), so the host
- * installs exactly the pi its own release was tested against — 1.3.0 for
- * `0.2.1-alpha.5`, whatever the next harness line moves it to. Declaring the
+ * depends on `@earendil-works/pi-ai` with a RANGE (`^1.1.0`). The harness's
+ * own lockfile pins that to 1.1.0 plus its patch; a registry install of the
+ * published host resolves the range to the newest 1.x; this repo's dev install
+ * pins 1.1.0 (`test/support/host-versions.ts`). Declaring the
  * same package as an exact dependency here puts a SECOND pi in the tree and
  * turns every harness bump into a version-skew bug: the worst measured shape is
  * a degraded Google route whose error names the model rather than the version.
