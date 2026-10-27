@@ -20,8 +20,12 @@
 #                               model discovery; off leaves both raw (default true).
 #   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
 #   usageEnabled: boolean       enable host-side OpenCode Go usage querying (default true).
-#   showUsagePrice: boolean     show session spend + active model rate in the meter (default true).
 #   keySource: string           which credential source wins: auto | request | configured (default 'auto').
+#   readOpencodeStore: boolean  read the credential an OpenCode installation already holds, as the LAST
+#                               resort after every declared one (default false).
+#   endpoint: string            endpoint family: auto | modern | legacy (default 'auto', an alias of
+#                               modern). modern = the per-protocol inference family; legacy = one base
+#                               per plane.
 #
 # Config-only overrides — the card deliberately hides these, because each is a
 # literal, a marker, or a reference whose default fits every documented setup.
@@ -33,10 +37,18 @@
 #   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
 #   originClient: string        x-opencode-client value (default 'cli').
 #   sessionIdEnv: string        env var carrying a caller-supplied session id (default 'OPENCODE_SESSION_ID').
-#   freeModelMarker: string     model-id substring getting the core-tool fallback ('*' = all, '' = none; default 'free').
+#   freeModelMarker: string     model-id substring getting the core-tool fallback ('*' = all; a blank
+#                               value inherits the default 'free'; models the catalog marks free always
+#                               qualify).
 #   gatewayUrls: [string]       URL substrings marking OpenCode gateway traffic (default both
 #                               families: ['opencode.ai/zen', 'opencode.ai/inference']).
 #   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
+#   credentialOrg: string       org id (wrk_...) sent with an account credential that came from elsewhere.
+#   maxContextWindow: number    optional ceiling clamping model context windows (e.g. 131072).
+#   modelOverrides: object      per-model overrides for contextWindow, maxTokens and metadata (default {}).
+#   modelRoutes: object         per-model wire routing: { <id>: { api, baseURL } } (default {}).
+#   internalRoutes: boolean     mount the internal per-protocol routes; off for a deployment that
+#                               declares its own providers for the other protocols (default true).
 #   debug: true|false           log every streamed call that receives the header.
 #   debugFile: path             optional append target for stream debug JSONL; written only while debug is on.
 - insert:
@@ -58,5 +70,4 @@
         injectCoreTools: true
         enrichModels: true
         usageEnabled: true
-        showUsagePrice: true
         debug: false

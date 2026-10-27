@@ -9,7 +9,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import type { ActiveTurnState } from "../src/index.ts";
+import type { ActiveTurnState } from "./support/src.ts";
 
 export const SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 

@@ -360,7 +360,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 | `userAgent` | 空（= 规范 CLI UA） | 字面覆盖；默认值就是网关所期望的值 |
 | `originClient` | `cli` | `x-opencode-client` 的字面值 |
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | 指定一个仅当调用方提供会话 id 时才使用的环境变量名 |
-| `freeModelMarker` | `free` | 模型 id 子串；`*` 强制启用回退，`''` 关闭回退 |
+| `freeModelMarker` | `free` | 模型 id 子串；`*` 强制启用回退；留空则沿用默认值；目录标记为免费的模型始终适用 |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | 端点覆盖；从组合中自动发现 |
 | `debug` / `debugFile` | `false` / — | 诊断用 JSONL 日志，不是谁会在 UI 里调节的行为；仅在 `debug` 开启时才写入该文件 |
 
