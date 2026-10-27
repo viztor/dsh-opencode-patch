@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  baseForProtocol,
   type CordisContext,
   PI_THINKING_LEVELS,
   RESPONSES_ROUTE,
@@ -25,6 +26,7 @@ import {
   isServableModel,
   mergeDiscoveredModels,
   parseModelsDevCatalog,
+  protocolFor,
   resolveConfig,
   resolveDiscoveryProvider,
   resolveEffectiveContextWindow,
@@ -319,6 +321,44 @@ describe("decorateModelDiscovery", () => {
     stop?.();
     expect(ctx.llm?.discoverModels).toBe(original);
   });
+
+  it("calls the host's method with the service as its receiver", async () => {
+    // The real registry is a class whose `discoverModels` reads its own
+    // discoveries through `this`, so a wrapper that calls it detached fails
+    // before any adapter is asked.
+    class DiscoveryHost {
+      readonly discoveries = new Map([
+        ["llm-pi-ai", async () => [{ id: "adapter-model" }]],
+      ]);
+      async discoverModels(ns: string, _request?: unknown): Promise<unknown> {
+        return this.discoveries.get(ns)?.();
+      }
+    }
+    const llm = new DiscoveryHost();
+    const stop = decorateModelDiscovery(
+      { llm } as unknown as CordisContext,
+      resolveConfig()
+    );
+
+    await expect(
+      llm.discoverModels("llm-pi-ai", { provider: "other" })
+    ).resolves.toEqual([{ id: "adapter-model" }]);
+    stop?.();
+  });
+
+  it("leaves a wrapper installed on top of it in place on dispose", () => {
+    const original = async () => [{ id: "adapter-model" }];
+    const llm: Record<string, unknown> = { discoverModels: original };
+    const stop = decorateModelDiscovery(
+      { llm } as unknown as CordisContext,
+      resolveConfig()
+    );
+    const foreign = async () => [];
+    llm.discoverModels = foreign;
+    stop?.();
+
+    expect(llm.discoverModels).toBe(foreign);
+  });
 });
 
 describe("models-discovery · an empty list from a route that declares models", () => {
@@ -514,6 +554,123 @@ describe("models-discovery: hiding the internal Responses route", () => {
   it("degrades to a no-op when the Host exposes no listing at all", () => {
     const ctx = { llm: {} } as unknown as CordisContext;
     expect(hideResponsesRoute(ctx, resolveConfig())).toBeUndefined();
+  });
+
+  it("restores each listing method it replaced, by identity, on dispose", () => {
+    const { ctx } = hostWith();
+    const llm = ctx.llm as Record<string, unknown>;
+    const keys = [
+      "listProviders",
+      "listConfigurableProviders",
+      "listModels",
+    ] as const;
+    const orig = Object.fromEntries(keys.map((key) => [key, llm[key]]));
+    const stop = hideResponsesRoute(ctx, resolveConfig());
+    for (const key of keys) {
+      expect(llm[key], key).not.toBe(orig[key]);
+    }
+
+    stop?.();
+    for (const key of keys) {
+      expect(llm[key], key).toBe(orig[key]);
+    }
+  });
+
+  it("patches only the listing methods the host has", () => {
+    const listModels = async () => [];
+    const llm: Record<string, unknown> = { listModels };
+    const stop = hideResponsesRoute(
+      { llm } as unknown as CordisContext,
+      resolveConfig()
+    );
+    expect(stop).toBeTypeOf("function");
+    expect("listProviders" in llm).toBe(false);
+    expect("listConfigurableProviders" in llm).toBe(false);
+    expect(llm.listModels).not.toBe(listModels);
+
+    stop?.();
+    expect(llm.listModels).toBe(listModels);
+  });
+
+  it("the patched listing passes the caller's receiver to the host's method", async () => {
+    // Both methods read their state through `this`, so either would throw if
+    // the patch called the host's method detached.
+    const registry = {
+      routes: [
+        { id: "opencode", name: "opencode" },
+        { id: RESPONSES_ROUTE, name: RESPONSES_ROUTE },
+      ],
+      listProviders(this: { routes: unknown[] }): unknown[] {
+        return [...this.routes];
+      },
+      async listModels(
+        this: { routes: unknown[] },
+        provider: string
+      ): Promise<unknown[]> {
+        return this.routes.length > 0 ? [{ id: `${provider}-model` }] : [];
+      },
+    };
+    const stop = hideResponsesRoute(
+      { llm: registry } as unknown as CordisContext,
+      resolveConfig()
+    );
+
+    expect(registry.listProviders()).toEqual([
+      { id: "opencode", name: "opencode" },
+    ]);
+    await expect(registry.listModels("opencode")).resolves.toEqual([
+      { id: "opencode-model" },
+    ]);
+    stop?.();
+  });
+
+  it("keeps every listing when the host refuses one of them", () => {
+    // All or nothing, a deliberate change in P-H: the three listings must agree
+    // on what is hidden, so a host that will not take the `listModels` wrapper
+    // keeps all three as they were. Before, a THROWING refusal already rolled
+    // back like this, but a SILENT one (`Reflect.set` answering false on a
+    // non-writable method) left the other two filtered and returned a disposer.
+    const { ctx } = hostWith();
+    const llm = ctx.llm as Record<string, unknown>;
+    const { listConfigurableProviders, listModels, listProviders } = llm;
+    Object.defineProperty(llm, "listModels", {
+      configurable: false,
+      value: listModels,
+      writable: false,
+    });
+
+    expect(hideResponsesRoute(ctx, resolveConfig())).toBeUndefined();
+    expect(llm.listProviders).toBe(listProviders);
+    expect(llm.listConfigurableProviders).toBe(listConfigurableProviders);
+    expect(llm.listModels).toBe(listModels);
+    expect(ctx.llm?.listProviders?.()).toHaveLength(2);
+  });
+
+  it("a reinstall still reads the host's own listing, so the redirect keeps firing", () => {
+    // A deliberate change in P-H. Before, the second install destructured the
+    // first install's filtered `listProviders` into `registeredRoutes`, so
+    // `isRouteRegistered` answered false. A reload's second install is handed
+    // the UNPATCHED listing, not the first install's filtered one, so
+    // `isRouteRegistered` keeps seeing the hidden route. A second install that stacked on the first would capture the
+    // filtered listing, and the redirect would never find its route. (The host
+    // here has no `adapters` map, so the listing is the only evidence.)
+    const { ctx } = hostWith();
+    const a = hideResponsesRoute(ctx, resolveConfig());
+    const b = hideResponsesRoute(ctx, resolveConfig());
+    expect(ctx.llm?.listProviders?.()).toHaveLength(1);
+    expect(isRouteRegistered(RESPONSES_ROUTE)).toBe(true);
+
+    a?.();
+    expect(ctx.llm?.listProviders?.()).toHaveLength(1);
+    expect(isRouteRegistered(RESPONSES_ROUTE)).toBe(true);
+    b?.();
+    expect(ctx.llm?.listProviders?.()).toHaveLength(2);
+  });
+
+  it("stands down without an llm service", () => {
+    expect(
+      hideResponsesRoute({} as CordisContext, resolveConfig())
+    ).toBeUndefined();
   });
 });
 
@@ -837,6 +994,58 @@ describe("models-discovery: the adapter behind a plane route", () => {
     );
   });
 
+  it("stands down on a frozen adapter: nothing installed, nothing thrown", () => {
+    // A deliberate change in P-H. Before, `adapter[method] = wrapped` threw a
+    // TypeError out of the fetch-patch effect on a frozen adapter; now a refused
+    // method is skipped, and with every method refused there is nothing to
+    // dispose.
+    const adapter = Object.freeze({
+      modelOf: () => ({}),
+      prepareCall: async () => ({}),
+      resolveModel: async () => ({}),
+    });
+    const before = { ...adapter };
+    const llm = { adapters: new Map([["opencode-go", { adapter }]]) };
+
+    expect(
+      decoratePlaneAdapters(llm as never, resolveConfig({ enrichModels: true }))
+    ).toBeUndefined();
+    expect({ ...adapter }).toEqual(before);
+  });
+
+  it("skips one method the adapter refuses and patches the rest, per method", () => {
+    // A deliberate change in P-H. Before, `adapter[method] = wrapped` threw a
+    // TypeError on the non-writable `prepareCall`. Each adapter fill is
+    // independent, so a refused method costs only itself: unlike the listings,
+    // which must agree and are all or nothing.
+    const prepareCall = async () => ({});
+    const adapter: Record<string, unknown> = {
+      modelOf: () => ({}),
+      resolveModel: async () => ({}),
+    };
+    Object.defineProperty(adapter, "prepareCall", {
+      configurable: false,
+      enumerable: true,
+      value: prepareCall,
+      writable: false,
+    });
+    const { modelOf, resolveModel } = adapter;
+    const llm = { adapters: new Map([["opencode-go", { adapter }]]) };
+    const stop = decoratePlaneAdapters(
+      llm as never,
+      resolveConfig({ enrichModels: true })
+    );
+
+    expect(stop).toBeTypeOf("function");
+    expect(adapter.prepareCall).toBe(prepareCall);
+    expect(adapter.resolveModel).not.toBe(resolveModel);
+    expect(adapter.modelOf).not.toBe(modelOf);
+    stop?.();
+    expect(adapter.resolveModel).toBe(resolveModel);
+    expect(adapter.modelOf).toBe(modelOf);
+    expect(adapter.prepareCall).toBe(prepareCall);
+  });
+
   it("calls the original on the adapter, because it is a class method that reads `this`", async () => {
     // The registry holds CLASS instances, not bags of arrows: pi-ai's real
     // `resolveModel` opens with `this.current()`. A wrapper that calls the
@@ -1058,6 +1267,84 @@ describe("models-discovery: the adapter behind a plane route", () => {
     );
 
     stop?.();
+  });
+
+  it("one adapter serving both planes: the later plane's fill wraps the earlier one, in registry order", async () => {
+    // pi-ai serves both plane routes from ONE adapter instance, so the wrap is
+    // applied once per route and the later route's fill runs over the earlier
+    // one's answer. The base the earlier plane wrote is not a retired one, so
+    // the later fill keeps it: in registry order [opencode, opencode-go] both
+    // routes answer Zen's base. The host characterization's pi-ai-first
+    // `[INTENDED_CHANGE]` row pins the same nesting on the real host.
+    const specOn = (plane: "go" | "zen") => {
+      const spec = findModelSpecOn(plane, "deepseek-v4-pro");
+      const protocol = spec === undefined ? undefined : protocolFor(spec);
+      if (protocol === undefined) {
+        throw new TypeError(`no protocol for deepseek-v4-pro on ${plane}`);
+      }
+      return protocol;
+    };
+    const { endpoint } = resolveConfig();
+    const zen = baseForProtocol("opencode", specOn("zen"), endpoint);
+    const go = baseForProtocol("opencode-go", specOn("go"), endpoint);
+    expect(zen).not.toBe(go);
+
+    const baseFor = async (
+      order: readonly string[]
+    ): Promise<{ calls: number; bases: unknown[] }> => {
+      const prepareCall = vi.fn(async () => ({}));
+      const adapter: Record<string, unknown> = { prepareCall };
+      const llm = {
+        adapters: new Map(order.map((route) => [route, { adapter }])),
+      };
+      const stop = decoratePlaneAdapters(llm as never, resolveConfig());
+      const call = adapter.prepareCall as (
+        provider: string,
+        model: string
+      ) => Promise<{ baseUrl?: unknown }>;
+      const onGo = await call("opencode-go", "deepseek-v4-pro");
+      const onZen = await call("opencode", "deepseek-v4-pro");
+      const bases = [onGo.baseUrl, onZen.baseUrl];
+      stop?.();
+      return { bases, calls: prepareCall.mock.calls.length };
+    };
+
+    await expect(baseFor(["opencode", "opencode-go"])).resolves.toEqual({
+      bases: [zen, zen],
+      calls: 2,
+    });
+    await expect(baseFor(["opencode-go", "opencode"])).resolves.toEqual({
+      bases: [go, go],
+      calls: 2,
+    });
+  });
+
+  it("a class adapter answers from its prototype again after dispose", async () => {
+    // A deliberate change in P-H. Before, the disposer assigned the prototype's
+    // method back as an OWN property, which answered the same but shadowed the
+    // prototype for good; now the own property is deleted.
+    class Adapter {
+      async resolveModel(_provider: string, model: string): Promise<unknown> {
+        return { id: model, marker: "raw" };
+      }
+    }
+    const adapter = new Adapter();
+    const llm = { adapters: new Map([["opencode-go", { adapter }]]) };
+    const stop = decoratePlaneAdapters(llm as never, resolveConfig());
+
+    const decorated = (await adapter.resolveModel(
+      "opencode-go",
+      "beam-free"
+    )) as {
+      context?: { contextWindow?: number };
+    };
+    expect(decorated.context?.contextWindow).toBeGreaterThan(0);
+
+    stop?.();
+    expect(Object.hasOwn(adapter, "resolveModel")).toBe(false);
+    await expect(
+      adapter.resolveModel("opencode-go", "beam-free")
+    ).resolves.toEqual({ id: "beam-free", marker: "raw" });
   });
 
   it("stands down when the host exposes no adapter registry", () => {
@@ -1308,6 +1595,52 @@ describe("models-discovery: the Effort row a model reports", () => {
 
     expect(patched(ctx)).not.toBe(before);
     stop?.();
+    expect(patched(ctx)).toBe(before);
+  });
+
+  it("calls the host's method with the service as its receiver", async () => {
+    class InfoHost {
+      answers = new Map([
+        ["hand-declared-model", { id: "hand-declared-model", name: "Mine" }],
+      ]);
+      async resolveModelInfo(
+        _provider: string,
+        model: string
+      ): Promise<unknown> {
+        return this.answers.get(model);
+      }
+    }
+    const llm = new InfoHost();
+    const stop = decorateModelInfo(
+      { llm } as unknown as CordisContext,
+      enrichConfig
+    );
+
+    // Uncatalogued, so the answer passes through - read off `this`.
+    await expect(
+      llm.resolveModelInfo("opencode", "hand-declared-model")
+    ).resolves.toEqual({ id: "hand-declared-model", name: "Mine" });
+    stop?.();
+  });
+
+  it("leaves a wrapper installed on top of it in place on dispose", () => {
+    const before = async () => ({ id: "x" });
+    const ctx = { llm: { resolveModelInfo: before } } as never as CordisContext;
+    const stop = decorateModelInfo(ctx, enrichConfig);
+    const foreign = async () => ({ id: "foreign" });
+    (ctx.llm as Record<string, unknown>).resolveModelInfo = foreign;
+    stop?.();
+
+    expect(patched(ctx)).toBe(foreign);
+  });
+
+  it("leaves a non-extensible service installed", () => {
+    const before = async () => ({ id: "x" });
+    const ctx = {
+      llm: Object.freeze({ resolveModelInfo: before }),
+    } as never as CordisContext;
+
+    expect(decorateModelInfo(ctx, enrichConfig)).toBeUndefined();
     expect(patched(ctx)).toBe(before);
   });
 

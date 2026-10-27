@@ -520,6 +520,112 @@ describe("architecture · the host bundle mutates no registry it does not own", 
   });
 });
 
+describe("architecture · host methods are wrapped only through patchMethod", () => {
+  /** The host half's composition root: everything `apply()` can run. */
+  const ENTRY = "lifecycle.ts";
+  /** The one module that may write a method onto a host object. */
+  const HELPER = "host/patch-method.ts";
+
+  /**
+   * A write onto a host object by any route but the helper: a
+   * `Reflect.set`/`defineProperty`/`deleteProperty`/`setPrototypeOf`; an
+   * `Object.assign`/`defineProperty`/`defineProperties`/`setPrototypeOf` whose
+   * target is `llm`, an adapter, `settings` (the next site, P-R1's
+   * `settings.describe`) or `globalThis`, bare or reached through a property
+   * path (`registration?.adapter`, `this.llm`); a dotted or bracketed
+   * assignment onto one of the first three, through `?.` or `!` too; or
+   * `globalThis.x =`. A prototype swap is listed because it shadows a method
+   * without leaving the own property the behavioural half inspects.
+   * A textual rule, so a write through a local alias or a cast receiver
+   * escapes it. The behavioural half is the `apply()`-twice case in
+   * `test/reload.test.ts`, which requires a patch record on every own function
+   * `apply()` leaves on its stand-in `llm` and adapter (P-R1 adds `settings` to
+   * the stand-in together with its site).
+   */
+  const HOST_WRITES = [
+    /\bReflect\.(?:set|defineProperty|deleteProperty|setPrototypeOf)\s*\(/gu,
+    /\bObject\.(?:assign|defineProperty|defineProperties|setPrototypeOf)\(\s*(?:[\w$]+[?!]?\.)*(?:llm|adapter|settings|globalThis)\b/gu,
+    /\b(?:llm|adapter|settings)[!?]?\.\w+\s*=(?![=>])/gu,
+    /\b(?:llm|adapter|settings)!?\[[^\]\n]+\]\s*=(?![=>])/gu,
+    /\bglobalThis\.\w+\s*=(?![=>])/gu,
+  ];
+
+  /**
+   * Named exemptions, each `<file>: <the write as matched>`. The global `fetch`
+   * patch stacks the same way but is a global, not a host service method, and
+   * P6 owns it (docs/improvement-plan.md).
+   */
+  const EXEMPT = new Set(["lifecycle.ts: globalThis.fetch ="]);
+
+  /** Every host write in `source`, as `<file>: <match>`. */
+  const hostWritesIn = (file: string, source: string): string[] =>
+    HOST_WRITES.flatMap((pattern) =>
+      [...source.matchAll(pattern)].map((match) => `${file}: ${match[0]}`)
+    );
+
+  it("flags a planted violation of each kind, so a pass means something", () => {
+    const planted = [
+      "llm.listModels = wrapped;",
+      "ctx.llm.resolveModelInfo = async () => ({});",
+      'adapter["resolveModel"] = wrapped;',
+      "settings.describe = describe;",
+      "Reflect.set(llm, key, wrapped);",
+      "Reflect.defineProperty(adapter, key, { value: wrapped });",
+      "Reflect.deleteProperty(llm, key);",
+      "globalThis.fetch = patched;",
+      "ctx.llm!.listModels = wrapped;",
+      "adapter![key] = wrapped;",
+      'Object.defineProperty(settings, "describe", { value: wrapped });',
+      "Object.assign(ctx.llm, { listModels: wrapped });",
+      "Object.defineProperties(adapter, { modelOf: { value: wrapped } });",
+      // A prototype swap shadows a method without leaving an own property.
+      "Reflect.setPrototypeOf(llm, proto);",
+      "Object.setPrototypeOf(adapter, proto);",
+      // The receiver reached through a property path, as decoratePlaneAdapters
+      // reaches the adapter.
+      "Object.assign(registration?.adapter, { modelOf: wrapped });",
+      'Object.defineProperty(this.llm, "listModels", { value: wrapped });',
+    ].join("\n");
+    expect(hostWritesIn("planted.ts", planted)).toHaveLength(17);
+    // Reads, comparisons and a define onto the plugin's own prototype are not
+    // host writes.
+    expect(
+      hostWritesIn(
+        "planted.ts",
+        "if (llm.listModels === x) {}\nconst f = (adapter) => adapter.modelOf;\nconst g = llm.x == null;\n" +
+          'Object.defineProperty(UsageService.prototype, "inspect", marker);'
+      )
+    ).toEqual([]);
+  });
+
+  it("walks a graph that contains the helper and the sites it serves", () => {
+    const graph = runtimeGraph(ENTRY);
+    expect(graph.has(HELPER)).toBe(true);
+    expect(graph.has("models-discovery.ts")).toBe(true);
+    // The helper itself is what the rule exempts, and it does match it.
+    expect(hostWritesIn(HELPER, graph.get(HELPER) ?? "")).not.toEqual([]);
+  });
+
+  it("nothing reachable from lifecycle.ts but the helper writes a method onto a host object", () => {
+    const violations = [...runtimeGraph(ENTRY)]
+      .filter(([file]) => file !== HELPER)
+      .flatMap(([file, source]) => hostWritesIn(file, source))
+      .filter((write) => !EXEMPT.has(write));
+    expect(violations).toEqual([]);
+  });
+
+  it("every named exemption is still there, so a stale one is noticed", () => {
+    const writes = new Set(
+      [...runtimeGraph(ENTRY)].flatMap(([file, source]) =>
+        hostWritesIn(file, source)
+      )
+    );
+    for (const exempt of EXEMPT) {
+      expect(writes.has(exempt), exempt).toBe(true);
+    }
+  });
+});
+
 describe("architecture · tests reach src through one door", () => {
   const SUPPORT = join(import.meta.dirname, "support", "src.ts");
 

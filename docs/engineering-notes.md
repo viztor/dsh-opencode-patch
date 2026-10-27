@@ -572,3 +572,21 @@ Two properties decided the blast radius, and both pointed the same way:
 The fix is `Reflect.apply(original, adapter, [provider, model, signal])`, the idiom `decorateModelInfo` already used for the service method, plus a `route in PLANES` gate on the loop. The shared pi-ai adapter still receives the wrap through its plane routes, so the fill keeps applying to its models on every route; an adapter behind no plane route keeps its own methods. The regressions are two cases that fail on the previous code: a class-based adapter whose method reads `this`, and a foreign route that must stay unwrapped.
 
 Measured on the running deployment after the rebuild: `session/modelCatalog` answers with every group populated and `failures: []`.
+
+## A service method read through cordis is a new function every time
+
+Every disposer for the three `llm`-level patches (the listing, discovery and model-info wrappers) checked that it was still installed by reading the property back and comparing: `llm.discoverModels === decorated`. On the real host that comparison is never true. `ctx.llm` is cordis's traceable proxy: `createTraceable` answers each read of a function-valued property with `createShadowMethod`, a NEW `Proxy` around the function (the harness's `vendor/cordis/src/utils.ts`), and only a tracker marked `noShadow` is exempt, which a `Service`'s is not (`vendor/cordis/src/service.ts`, where the tracker is built). So the read is a fresh proxy every time, the check fails, and the disposer silently restores nothing.
+
+Measured with a real `LlmRuntime` and pi-ai mounted (tier A): after every dispose each wrapper was still an own property of the service, and a second activation's wrapper wrapped a shadow of the first's, so a live reload stacked one more layer each time. The plain-object fixtures the unit suite used could not see it, because a plain object's read IS the function. The plane adapters had a different form of the same defect: their disposer assigned the original back without checking, so disposing the first of two activations wrote the prototype's method over the second's, and every dispose left an own property shadowing the class method.
+
+What can be trusted on that proxy is what it does not trap. Its handler has `get`, `set` and `apply` and nothing else, so `Object.hasOwn`, `Reflect.getOwnPropertyDescriptor`, `Reflect.getPrototypeOf`, `Reflect.defineProperty` and `Reflect.deleteProperty` reach the instance itself.
+
+The rule that followed is `src/host/patch-method.ts`, the one way the plugin wraps a host method:
+
+- **Compare descriptors, not reads.** A dispose restores only when the own descriptor still holds the exact function it defined; otherwise someone wrapped on top, and ours turns into a pass-through.
+- **Delete when the original was inherited.** Assigning the prototype's method back is not a restore: it leaves an own property that shadows the prototype for good.
+- **A same-site install replaces instead of wrapping.** A second activation wraps the true unpatched method (the prototype's, or the recorded own original), and remembers the install it replaced, so either disposal order ends at the exact original.
+
+One limit is kept on purpose. A foreign plugin that reads one of these methods through `ctx.llm`, wraps it, and later puts back what it read puts back a shadow proxy, not our function. The helper finds its records by exact identity, so it treats the proxy as foreign: the proxy stays an own property and passes the call through correctly, and a later install wraps it. A symbol tag would see through the shadow proxy, but it would equally see through a foreign `new Proxy(ours, { apply })` that decorates ours, and a dispose would then remove that live wrapper. One extra pass-through is the cheaper failure. `test/patch-method.test.ts` pins it on tier A.
+
+`test/reload.test.ts` drives apply A, apply B, dispose A, dispose B (and the reverse) on every site, on own and inherited shapes and on the real host; it drives `apply()` itself twice, first disposed first, on a stand-in context. On the code before the helper, all four sites failed it.
