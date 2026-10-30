@@ -74,6 +74,48 @@ export const isRemoteCall = (value: unknown): value is RemoteCall =>
   typeof value === "function";
 
 /**
+ * The zero-argument refusal DSH answers when it validates a call's arity.
+ *
+ * The endpoint is deliberately not named: both reads this bundle makes go
+ * through it, and the wording is the harness's. A message it stops emitting
+ * simply means no fallback, and the original error surfaces — the safe way to
+ * be wrong.
+ */
+const ARITY_REFUSAL = /^client api: \S+ expected 0 argument\(s\), got \d+$/u;
+
+/**
+ * Call `opencodeGoUsage.read`, tolerating the sibling registration.
+ *
+ * `dsh-opencode-go` declares the same endpoint with no parameters, and DSH
+ * validates the argument count against whichever registration the CLIENT holds
+ * — which need not be the service the Host resolves for the call. When the
+ * sibling's declaration wins, a scoped read is refused before it leaves the
+ * browser (`client api: opencodeGoUsage/read expected 0 argument(s), got 1`) and
+ * the meter reports "refresh failed" for a Host that is answering.
+ *
+ * Retrying unscoped reads the account the configured route selects, which is the
+ * only account one meter can price anyway.
+ *
+ * @param call - the namespace's `read`.
+ * @param query - the arguments this bundle would like to pass.
+ * @returns the call's answer.
+ */
+export const callUsageRead = async (
+  call: RemoteCall,
+  query: Record<string, string>
+): Promise<unknown> => {
+  try {
+    return await call(query);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!ARITY_REFUSAL.test(message)) {
+      throw error;
+    }
+    return await call();
+  }
+};
+
+/**
  * Read a namespace through the CONTEXT rather than the remote face.
  *
  * **This is the read that works for a namespace this bundle mounts itself.**

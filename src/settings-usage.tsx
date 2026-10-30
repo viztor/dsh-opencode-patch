@@ -25,6 +25,7 @@ import React from "react";
 import { formatUsd } from "./go-limits.ts";
 import type { Translate } from "./settings-copy.ts";
 import {
+  callUsageRead,
   isRemoteCall,
   remoteNamespace,
   remoteNamespaceOf,
@@ -107,7 +108,7 @@ export const readGoUsage = async (
     );
     return undefined;
   }
-  const result: unknown = await call({ provider: "opencode-go" });
+  const result: unknown = await callUsageRead(call, { provider: "opencode-go" });
   if (isRecord(result) && typeof result.ok === "boolean") {
     if (!result.ok) {
       throw "error" in result ? result.error : new Error("usage call failed");

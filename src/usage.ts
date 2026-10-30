@@ -41,6 +41,7 @@ import {
   type SessionUsageSnapshot,
 } from "./session-cost.ts";
 import {
+  parseAccountRef,
   parseGoUsage,
   type GoUsage,
   type ModelAllowanceSnapshot,
@@ -441,6 +442,40 @@ export class GoUsageService extends TypertRemoteService {
       );
     }
   }
+
+  /**
+   * Account-scoped reading for the sibling `dsh-opencode-go` account page.
+   *
+   * Both plugins mount a remote service under `opencodeGoUsage`, and the Typert
+   * gateway resolves the ROOT-context one — this instance, because
+   * `installUsageService` mounts it on the root on purpose. That page calls
+   * `readAccount(ref)` against the namespace, so a namespace offering only
+   * `read` fails it with `active Service "opencodeGoUsage" has no callable
+   * method "readAccount"` while the meter itself keeps working.
+   *
+   * The ref names a credential in that plugin's own account manager, which this
+   * plugin does not enumerate: the reading it can answer is the one for the
+   * account the configured route selects — the same reading while a single
+   * account is configured. The shape check keeps a malformed ref out of the
+   * credential lookup. A per-ref resolution belongs here the day this plugin
+   * lists accounts itself.
+   */
+  readAccount(ref: string): Promise<GoUsage> {
+    try {
+      parseAccountRef(ref);
+    } catch {
+      // A malformed ref is the caller's mistake, not an unavailable account:
+      // the typed bad request keeps it from reading as "no credential".
+      return Promise.reject(
+        new RemoteError(
+          "gateway/bad-request",
+          "Invalid OpenCode Go account reference",
+          {}
+        )
+      );
+    }
+    return this.read();
+  }
 }
 
 /**
@@ -451,7 +486,8 @@ const REMOTE_METHOD_DESCRIPTOR_KEY =
   "@deepseek-ai/dsh-typert-protocol/remote-methods";
 
 /**
- * Declare `read` as a Remote method — exactly what `@Remote()` does.
+ * Declare `read` and `readAccount` as Remote methods — exactly what
+ * `@Remote()` does.
  *
  * The decorator cannot be used: this build transform is oxc/rolldown based and
  * rejects TC39 decorator syntax outright ("SyntaxError: Invalid or unexpected
@@ -467,6 +503,9 @@ Object.defineProperty(GoUsageService.prototype, REMOTE_METHOD_DESCRIPTOR_KEY, {
     version: 1,
     methods: Object.freeze([
       { method: "read", invocation: { kind: "direct" } },
+      // A sibling plugin's account page reads through this spelling, and this
+      // root-mounted instance is the one the gateway resolves for the namespace.
+      { method: "readAccount", invocation: { kind: "direct" } },
     ]),
   }),
 });

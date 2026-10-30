@@ -901,3 +901,44 @@ describe("usage service: the read that a silent meter depends on", () => {
     }
   });
 });
+
+describe("GoUsageService account-scoped read", () => {
+  it("declares `readAccount` as a Remote method", async () => {
+    // The sibling `dsh-opencode-go` account page calls this spelling. The marker
+    // is hand-written (see `usage.ts`), and a method the gateway cannot see
+    // fails exactly like one that throws, so the declaration is what is tested.
+    const { remoteMethods } = await import("@deepseek-ai/dsh-typert-protocol");
+    const declared = remoteMethods(serviceWithKey("sk-live-key")).map(
+      (method: { method: string }) => method.method
+    );
+    expect(declared).toContain("read");
+    expect(declared).toContain("readAccount");
+  });
+
+  it("answers the account-scoped read with the route's reading", async () => {
+    // The ref selects an account in the sibling's manager, which this plugin
+    // does not enumerate; the reading it can answer is the configured route's.
+    const capture = stubFetch(() => new Response(okBody()));
+    const service = serviceWithKey("sk-live-key");
+
+    const usage = await service.readAccount("DSH_OPENCODE_GO_ACCOUNT_AB12");
+
+    expect(capture.url).toBe(GO_USAGE_URL);
+    expect(usage.rolling.percent).toBe(15);
+    expect(usage.weekly.percent).toBe(42);
+  });
+
+  it("rejects a ref that is not an identifier without reading anything", async () => {
+    // A malformed ref is a bad request, not an empty account: letting it reach
+    // the credential lookup would report the caller's mistake as a missing key.
+    const capture = stubFetch(() => new Response(okBody()));
+    const service = serviceWithKey("sk-live-key");
+
+    for (const bad of ["", "has space", "0leading", "with-dash", "a/b"]) {
+      await expect(service.readAccount(bad)).rejects.toThrow(
+        "Invalid OpenCode Go account reference"
+      );
+    }
+    expect(capture.url).toBe("");
+  });
+});
