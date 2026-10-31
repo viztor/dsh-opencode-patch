@@ -202,25 +202,33 @@ const toolNames = (
   return { hasBash, hasRead, isOpenAiFormat };
 };
 
-/** Whether `modelId` is in scope for the core-tool fallback. */
-export const isCoreToolModel = (
+/**
+ * The decision, given the row it is about.
+ *
+ * **Pure, so the row can be constructed.** The plane-aware lookup that produces
+ * `row` cannot be exercised against a divergence the vendor has not produced
+ * yet — see `test/fixtures/catalogs.ts` — so the decision takes the row and the
+ * lookup moves to the caller.
+ *
+ * @param row - the model's row on ITS plane, or `undefined` when that plane's
+ * catalogue does not describe it.
+ * @param modelId - the id the request named.
+ * @param marker - the configured free-tier marker.
+ * @returns whether the free tier's tools are injected into this request.
+ */
+export const coreToolDecision = (
+  row: { readonly is_free?: boolean } | undefined,
   modelId: string,
-  marker: string,
-  plane?: CatalogPlane
+  marker: string
 ): boolean => {
-  // The catalog's free-tier flag is the authority: it catches free models
-  // whose ids carry no marker (big-pickle), where a substring test goes blind.
+  // The catalog's free-tier flag is the authority: it catches free models whose
+  // ids carry no marker (big-pickle), where a substring test goes blind.
   //
-  // **The flag is the PLANE's, when the plane knows the model.** A model can be
-  // free on one plane and not on the other, and the free tier's tools are the
-  // free tier's business: injecting `read` + `bash` into a request the account
-  // pays for gives a model tools it will not be given. The flags happen to agree
-  // for every model in the catalog today, which is exactly why a lookup that
-  // ignores the plane looks right until it does not.
-  const spec =
-    (plane === undefined ? undefined : findModelSpecOn(plane, modelId)) ??
-    findModelSpec(modelId);
-  if (spec?.is_free === true) {
+  // **The flag is the PLANE's row.** A model can be free on one plane and paid
+  // on the other, and the free tier's tools are the free tier's business:
+  // injecting `read` + `bash` into a request the account pays for gives a model
+  // tools it will not be given.
+  if (row?.is_free === true) {
     return true;
   }
   if (marker === ALL_MODELS_MARKER) {
@@ -230,6 +238,24 @@ export const isCoreToolModel = (
     return false;
   }
   return modelId.includes(marker);
+};
+
+/**
+ * Whether `modelId` is in scope for the core-tool fallback.
+ *
+ * The row comes from the PLANE the request is going to, when that plane is
+ * known — and the plane-agnostic row is the fallback for a model the plane's
+ * own catalogue does not describe.
+ */
+export const isCoreToolModel = (
+  modelId: string,
+  marker: string,
+  plane?: CatalogPlane
+): boolean => {
+  const row =
+    (plane === undefined ? undefined : findModelSpecOn(plane, modelId)) ??
+    findModelSpec(modelId);
+  return coreToolDecision(row, modelId, marker);
 };
 
 /**

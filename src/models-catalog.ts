@@ -404,13 +404,24 @@ export const findModelSpecOn = (
   plane === "go" ? activeGoCatalog.get(modelId) : activeZenCatalog.get(modelId);
 
 /**
- * Look up model specifications and pricing rates by model ID, preferring the Go
- * plane.
+ * Look up model specifications by model ID, preferring the Go plane.
  *
- * Correct for "does either plane know this model" — pricing and limits, which
- * agree across the planes for every shared id. **Not** correct for routing: see
- * {@link findModelSpecOn}. Anywhere the answer decides which ENDPOINT serves a
- * model, the plane has to come from the route in play.
+ * Answers "does either plane know this model" — which is all some callers need.
+ * It is **not** correct for anything the planes can disagree about:
+ *
+ * - **Routing.** See {@link findModelSpecOn}: `qwen3.8-max` and `minimax-m3`
+ *   name `@ai-sdk/anthropic` on Go and nothing (completions) on Zen, so a
+ *   Go-first read sent Zen requests to `/messages`, where the gateway answers
+ *   `400 ModelProtocolUnsupported`.
+ * - **Pricing.** This doc used to claim the two planes agree on price "for
+ *   every shared id", and that stopped being true: `deepseek-v4.1-flash` costs
+ *   $0.30/$1.20 per million on Zen and $0.15/$0.60 on Go, and
+ *   `deepseek-v4-pro` differs too. A Zen turn priced through here came out at
+ *   exactly half of what it cost. `test/catalog.test.ts` measures the
+ *   disagreement, so the claim cannot go stale in silence again.
+ *
+ * The plane has to come from the route in play; this function is the fallback
+ * for a model the plane's OWN row does not describe.
  */
 export const findModelSpec = (modelId: string): CatalogModelSpec | undefined =>
   activeGoCatalog.get(modelId) ?? activeZenCatalog.get(modelId);

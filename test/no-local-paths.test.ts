@@ -137,6 +137,31 @@ describe("AGENTS.md · the repo map", () => {
     );
     expect(unnamed, "modules the repo map does not name").toEqual([]);
   });
+
+  it("names no module the tree does not have", async () => {
+    // **The other direction, and it is the one that rotted.** The check above
+    // catches an omission; this one catches a map that describes a tree it is
+    // not in. Nine `src/login-*.ts` entries stayed in the map after the login
+    // stack moved to the `v2` bookmark — a reader following them found nothing,
+    // and nothing in the suite said so, because a map is read for what it says.
+    const map = await readFile(
+      new URL("../AGENTS.md", import.meta.url),
+      "utf8"
+    );
+    const dir = new URL("../src/", import.meta.url);
+    const present = new Set(await readdir(dir));
+
+    const named = new Set(
+      [...map.matchAll(/\bsrc\/([A-Za-z0-9_.-]+\.tsx?)\b/gu)].map(
+        (match) => match[1] ?? ""
+      )
+    );
+    expect(named.size).toBeGreaterThan(0);
+    const missing = [...named].filter((file) => !present.has(file)).toSorted();
+    expect(missing, "modules the repo map names but the tree lacks").toEqual(
+      []
+    );
+  });
 });
 
 describe("the READMEs · the settings control count", () => {
