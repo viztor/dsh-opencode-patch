@@ -228,6 +228,40 @@ describe("OpenCode Model Catalog & Enrichment", () => {
    * that every model the shim carries, and every model naming an SDK we have a
    * route for, is carried WITH that field.
    */
+  it("prices the same id differently on the two planes, and agrees about free", () => {
+    // **The two planes are not the same catalog.** Sixteen ids are on both, and
+    // two of them are priced differently: `deepseek-v4.1-flash` is $0.30/$1.20
+    // per million on Zen and $0.15/$0.60 on Go, and `deepseek-v4-pro` differs
+    // too. A lookup that does not know the plane answers with the Go price —
+    // the plane-agnostic one searches Go first — so a Zen turn came out at
+    // exactly half of what it cost, and the meter showed the half.
+    //
+    // This is the shape of the correction: the price and the free flag are the
+    // PLANE's, and the plane is the route's.
+    const zen = new Map(OPENCODE_ZEN_CATALOG.map((m) => [m.id, m]));
+    const go = new Map(OPENCODE_GO_CATALOG.map((m) => [m.id, m]));
+    const shared = [...zen.keys()].filter((id) => go.has(id));
+
+    const pricedDifferently = shared.filter(
+      (id) =>
+        JSON.stringify(zen.get(id)?.cost) !== JSON.stringify(go.get(id)?.cost)
+    );
+    expect(pricedDifferently.length).toBeGreaterThan(0);
+
+    // **The free flag agrees everywhere today**, which is why the free-model
+    // lookups are plane-aware as a precaution rather than a correction. The day
+    // the vendor breaks that, this fails and names the case: a model that is
+    // free on one plane and paid on the other decides whether a credential is
+    // required, and the free tier's tools are the free tier's business.
+    const freeDiffers = shared.filter(
+      (id) => (zen.get(id)?.is_free === true) !== (go.get(id)?.is_free === true)
+    );
+    expect(
+      freeDiffers,
+      `the planes disagree about free: ${freeDiffers.join(", ")}`
+    ).toEqual([]);
+  });
+
   it("carries the SDK on every Zen shim entry that names one", () => {
     const buckets = new Map<string, string[]>();
     for (const spec of OPENCODE_ZEN_CATALOG) {
@@ -351,6 +385,41 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     };
     expect(zenJson.data.length).toBe(getLiveZenCatalog().length);
     expect(zenJson.data.some((m) => m.id === "beam-free")).toBe(true);
+  });
+
+  it("passes a refusal through untouched, and fills only a 404", async () => {
+    // **A refusal is not a listing.** The enrichment answered every upstream
+    // response with a 200 and the whole catalog, so a 401 (no credential), a
+    // 403 (access denied), a 429 (rate limited) and a 500 all became "here are
+    // 80 models, all of them yours" — a caller that cannot call the endpoint
+    // was told it offers everything, and an outage looked like a listing.
+    //
+    // The one status the catalog answers for is 404, because the Go plane's
+    // modern base serves no `/models` route at all.
+    for (const status of [401, 403, 429, 500, 502]) {
+      const upstream = Response.json(
+        { error: { message: "refused" } },
+        { status }
+      );
+      const enriched = await enrichModelsResponse(
+        "https://opencode.ai/inference/openai/v1/models",
+        upstream
+      );
+      expect(enriched.status, `status ${status}`).toBe(status);
+      const body = (await enriched.json()) as { data?: unknown[] };
+      expect(body.data, `status ${status} must not carry a catalog`).toBe(
+        undefined
+      );
+    }
+
+    // And a 404 IS filled — the Go plane's modern base answers exactly that.
+    const missing = await enrichModelsResponse(
+      "https://opencode.ai/inference/go/openai/v1/models",
+      Response.json({ error: { message: "not found" } }, { status: 404 })
+    );
+    expect(missing.status).toBe(200);
+    const filled = (await missing.json()) as { data: Array<{ id: string }> };
+    expect(filled.data.length).toBeGreaterThan(0);
   });
 
   it("answers the modern Go listing with the Go catalog, not the Zen one", async () => {

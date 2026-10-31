@@ -676,16 +676,31 @@ export const isGoModelsListingUrl = (
 /**
  * Merge and enrich a gateway `/models` response with the complete OpenCode Go or Zen catalog.
  *
+ * **A refusal is not a listing.** The enrichment used to answer EVERY
+ * upstream response with a 200 and the full catalog, which turned a 401 (no
+ * credential), a 403 (access denied), a 429 (rate limited) and a 500 into "here
+ * are 80 models, all of them yours". A caller that cannot call the endpoint was
+ * told it offers everything, and a gateway that was down looked like a listing.
+ *
+ * The one status the catalog answers for is **404**, and it is not a
+ * politeness: the Go plane's base is the `inference` family, and that family
+ * serves no `/models` route at all — the listing lives on the older `zen/go`
+ * route. So the Go plane's modern base 404s, and the catalog is what fills it.
+ *
  * @param url - the request URL
  * @param response - the upstream fetch Response
  * @param fetchFn - optional fetch implementation for SWR background refresh
- * @returns an enriched Response with all models and complete metadata
+ * @returns an enriched Response with all models and complete metadata, or the
+ * upstream response untouched when it refused.
  */
 export const enrichModelsResponse = async (
   url: string,
   response: Response,
   fetchFn: typeof fetch = globalThis.fetch
 ): Promise<Response> => {
+  if (!response.ok && response.status !== 404) {
+    return response;
+  }
   let existingData: Record<string, unknown>[] = [];
   try {
     const raw: unknown = await response.clone().json();
