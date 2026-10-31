@@ -12,7 +12,6 @@ import assert from "node:assert/strict";
 import { MenuSurface } from "@deepseek-ai/dsh-client-ui-primitives";
 import { describe, expect, it, vi } from "vitest";
 
-import { GO_MODEL_LIMITS } from "../src/go-limits-data.ts";
 import type { SessionUsageSnapshot } from "../src/session-cost.ts";
 import { en as copyEn, zh as copyZh } from "../src/settings-copy.ts";
 import type { GoUsage } from "../src/usage-contract.ts";
@@ -52,11 +51,42 @@ const usage = (overrides: Partial<GoUsage> = {}): GoUsage => ({
   ...overrides,
 });
 
-it("renders unknown Gemini allowances before and after the JSON transport", () => {
-  const model = "gemini-4-argon-contributor";
-  const limits = GO_MODEL_LIMITS[model]!;
+it("names the allowance after the model it belongs to, not the session's", () => {
+  // The picker is on one model and the session's last turn ran another — that is
+  // what a picker IS. The allowance is the picked model's, so the row has to
+  // name the picked model: with the session's name in that slot, a free model
+  // reads "Beam Free — Go $100" and the money is stated about the wrong model.
+  // The name arrives with the figure (the Host resolves it — the client ships
+  // neither the catalog nor the table), so the panel simply shows it.
+  const tree = UsagePanel(
+    panelProps({
+      usage: usage({
+        allowance: { model: "DeepSeek V4.1 Flash", go: 100, goPlus: 200 },
+        session: session({ activeModelName: "Beam Free" }),
+      }),
+    })
+  );
+  const text = collectText(tree);
+  expect(text).toContain("DeepSeek V4.1 Flash");
+  expect(text).not.toContain("Beam Free");
+  expect(text).toContain("$100");
+  expect(text).toContain("$200");
+});
+
+it("renders an unknown allowance before and after the JSON transport", () => {
+  // **The subject is a model with no published allowance**, which is what the
+  // panel actually meets: the vendor's table lists the paid tiers' allowances,
+  // and a FREE model is not in it — its row would be "$0 of a paid plan", which
+  // is not a figure. The panel has to say "—" rather than "$0" or "$NaN".
+  //
+  // It used to be `gemini-4-argon-contributor`, which the vendor retired in
+  // favour of `gemini-4-argon` — and the successor DOES have a published
+  // allowance, so the old subject had quietly stopped being an example of
+  // anything. The table's contents are the Host's business; the panel renders
+  // what it is given, so the allowance is stated here rather than looked up.
+  const model = "beam-free";
   const raw = usage({
-    allowance: { model, go: limits.go, goPlus: limits.goPlus },
+    allowance: { model, go: Number.NaN, goPlus: Number.NaN },
   });
   // JSON turns the catalog's NaN into null across the host/client boundary.
   // oxlint-disable-next-line unicorn/prefer-structured-clone -- exercise the host's JSON transport
