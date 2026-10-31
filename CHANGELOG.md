@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.4.2](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.1...v1.4.2) (2026-10-31)
+
+
+### Fixes
+
+* the plane decides the price, the flag and the refusal ([#133](https://github.com/viztor/dsh-opencode-patch/issues/133)) ([1133ad0](https://github.com/viztor/dsh-opencode-patch/commit/1133ad0311aec76f56244702e02866c64e23e23c))
+
 ## [1.4.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.0...v1.4.1) (2026-10-22)
 
 
