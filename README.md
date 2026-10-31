@@ -425,19 +425,19 @@ These exist in the schema but render no control — each is a literal, a marker,
 
 ## 📜 Compatibility & Verification
 
-**Verified on DeepSeek Harness `0.2.1` — both the `alpha` and `rc` channels (Node 24+)**
+**Verified on DeepSeek Harness `0.2.1` and `0.2.2` — `alpha` and `rc` channels alike (Node 24+)**
 
-The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. Both channels' latest is **`0.2.1`**, and that line is this plugin's target — it is tested against every published `0.2.1` build in both channels, and the `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
+The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. This plugin targets **both channels of the lines it supports** — the latest `rc` (`0.2.1-rc.5`) and the latest `alpha` (`0.2.2-alpha.2`) alike — because a host may be running either one, and narrowing to the channel that happens to be pinned is how a plugin silently stops loading on the other track. The pins are the one place a single version is named (only one can be installed); the `@deepseek-ai/dsh-typert-protocol` peer range is where the code states what it actually supports:
 
 ```
->=0.2.1-alpha.1 <0.2.2
+>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
 ```
 
-One range covers the whole line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. A plain `<0.2.2` would **not** work — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, which is how a range written against one channel silently excludes the other.
+The first clause covers the whole `0.2.1` line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of that line, so rc needs no separate entry. The second clause is not redundant — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, so `<0.3.0` alone would silently drop every `0.2.2-*` build, alpha and rc alike. Both clauses stop at `0.3.0`, which leaves the next line a separate decision rather than a silent widening.
 
 | Surface | Target |
 | :-- | :-- |
-| **Harness line** | **`0.2.1`**, `alpha` and `rc` channels alike (peer: `>=0.2.1-alpha.1 <0.2.2`) |
+| **Harness line** | **`0.2.1` and `0.2.2`**, `alpha` and `rc` channels alike (peer: `>=0.2.1-alpha.1 <0.3.0 \|\| >=0.2.2-0 <0.3.0`) |
 | **Plugin package** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
 | **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` |
