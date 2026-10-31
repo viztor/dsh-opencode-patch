@@ -12,7 +12,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseGoUsage, parseUsageQuery } from "../src/index.ts";
+import {
+  parseAccountRef,
+  parseGoUsage,
+  parseUsageQuery,
+} from "../src/index.ts";
 
 /** One well-formed quota window, with a single field overridden. */
 const windowRow = (
@@ -313,5 +317,34 @@ describe("parseUsageQuery", () => {
         sessionId: "s-1",
       })
     ).toEqual({ provider: "opencode-go", sessionId: "s-1" });
+  });
+});
+
+describe("parseAccountRef", () => {
+  it("accepts the identifier the sibling account manager names a credential", () => {
+    // `dsh-opencode-go` spells a ref as its `apiKeyEnv` name, so this is the
+    // shape its account page sends on every read.
+    expect(parseAccountRef("DSH_OPENCODE_GO_ACCOUNT_FD96F79E")).toBe(
+      "DSH_OPENCODE_GO_ACCOUNT_FD96F79E"
+    );
+    expect(parseAccountRef("_ref")).toBe("_ref");
+  });
+
+  it("refuses anything that is not an identifier", () => {
+    // The ref indexes a credential lookup on the caller's side; free text, an
+    // empty string and a non-string must not get that far.
+    for (const bad of [
+      "",
+      "has space",
+      "0leading",
+      "with-dash",
+      "a/b",
+      42,
+      null,
+    ]) {
+      expect(() => parseAccountRef(bad)).toThrow(
+        "Invalid OpenCode Go account reference"
+      );
+    }
   });
 });

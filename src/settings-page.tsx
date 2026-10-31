@@ -20,7 +20,11 @@ import { OpencodeCard } from "./settings-card.tsx";
 import { en, withBundleCopy, zh, type CopyKey } from "./settings-copy.ts";
 import { SPECS } from "./settings-fields.ts";
 import { purgeDeprecatedModels } from "./settings-purge.ts";
-import { remoteNamespace, remoteNamespaceOf } from "./settings-remote.ts";
+import {
+  callUsageRead,
+  remoteNamespace,
+  remoteNamespaceOf,
+} from "./settings-remote.ts";
 import { inspectStore } from "./settings-store.ts";
 import { readGoUsage } from "./settings-usage.tsx";
 import { usageRemote } from "./usage-contract.ts";
@@ -431,6 +435,9 @@ export const apply = (ctx: ClientContext): void => {
           reason: "no usage service: remote.opencodeGoUsage.read is missing",
         };
       }
+      // Captured once, narrowed by the guard above: the read stays reachable
+      // from the meter closure without re-testing the namespace per call.
+      const { read } = usage;
       const markers = usageMarkers();
       // The id the Host must price; the pill also names the active provider,
       // which is how the Host knows which account is on screen.
@@ -438,9 +445,11 @@ export const apply = (ctx: ClientContext): void => {
       return {
         directory,
         ...markers,
-        readUsage: async (provider?: string, model?: string) => {
-          const read = usage.read as (query?: unknown) => Promise<unknown>;
-          const res: unknown = await read({
+        readUsage: async (
+          provider?: string,
+          model?: string
+        ): Promise<unknown> => {
+          const res: unknown = await callUsageRead(read, {
             ...(provider === undefined || provider.length === 0
               ? {}
               : { provider }),
