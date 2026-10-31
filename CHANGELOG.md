@@ -6,6 +6,18 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.6.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.5.0...v1.6.0) (2026-10-31)
+
+
+### Features
+
+* **test:** gate the language pairs, and lift the live-run rules out of the e2e ([#140](https://github.com/viztor/dsh-opencode-patch/issues/140)) ([21d4d68](https://github.com/viztor/dsh-opencode-patch/commit/21d4d683d3c6c798c1157cd7375fb2d4b78257bf))
+
+
+### Documentation
+
+* **testing:** the scripts' pure halves, and why they moved out ([#145](https://github.com/viztor/dsh-opencode-patch/issues/145)) ([af4e1ff](https://github.com/viztor/dsh-opencode-patch/commit/af4e1ff8bf020a688dd7f0a6b0807b310b4d3053))
+
 ## [1.5.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.3...v1.5.0) (2026-10-31)
 
 
