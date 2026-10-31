@@ -349,7 +349,18 @@ export const createStreamHook = (
     }
     const modelProp: unknown = options.model;
     const modelName = typeof modelProp === "string" ? modelProp : "unknown";
-    const spec = findModelSpec(modelName);
+    // **The plane's own price, not the other plane's.** The two planes price the
+    // same id differently — `deepseek-v4.1-flash` is $0.30/$1.20 on Zen and
+    // $0.15/$0.60 on Go — and the plane-agnostic lookup searches Go FIRST, so a
+    // Zen turn was priced at the Go rate: half of what it cost. The plane
+    // decides, because the route is what the user configured.
+    //
+    // The fallback is for a model the plane's own catalog does not describe,
+    // where any price is better than none — and the turn is still attributed to
+    // the plane it ran on.
+    const spec =
+      findModelSpecOn(catalogPlaneForRoute(providerKey), modelName) ??
+      findModelSpec(modelName);
 
     const wrappedStream = async function* wrappedStream() {
       for await (const chunk of downstream) {
