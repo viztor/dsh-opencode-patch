@@ -538,8 +538,19 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
  * list and twenty localized strings left with it. A ceiling that stayed at 140
  * would have quietly stopped being a tripwire — 12 KB of slack is more than this
  * guard exists to tolerate.
+ *
+ * Raised 128 -> 132 KB when the usage contract grew: the client's one helper
+ * for the sibling's zero-argument \`read\` (the meter's scoped read and the
+ * settings card's quota row both go through it now, instead of each spelling its
+ * own call), the account row's \`readAccount\` answer, and the codec that
+ * validates the reference before it can reach a credential lookup. The client
+ * measured 132541 bytes against the old line.
+ *
+ * That is the kind of growth the last four raises were: a surface the HOST
+ * answers, not a dependency that should have stayed external — which is the case
+ * this tripwire exists to catch, and which the ceiling is not raised for.
  */
-const CLIENT_BUDGET = 128 * 1024;
+const CLIENT_BUDGET = 132 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

@@ -128,6 +128,7 @@ export {
 } from "./go-discovery.ts";
 export { GoUsageService } from "./usage.ts";
 export {
+  parseAccountRef,
   parseGoUsage,
   parseUsageQuery,
   type GoUsage,
