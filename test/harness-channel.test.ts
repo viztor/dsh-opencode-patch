@@ -1,22 +1,30 @@
 /**
- * Every harness package this repository compiles or peers against stays on ONE
- * distribution channel.
+ * Every harness package this repository compiles or peers against is pinned to
+ * ONE exact version, and the peer range it declares covers BOTH distribution
+ * channels of the lines this plugin supports.
  *
- * The alpha and `next`/rc channels are parallel tracks, not a version ordering:
+ * The alpha and `rc` channels are parallel tracks, not a version ordering:
  * `0.2.1-rc.2` sorts ABOVE `0.2.1-alpha.5` in semver, so a caret range written
  * against the alpha line silently resolves to the rc line — which is exactly how
- * this repository ended up with `dsh-llm-pi-ai` on alpha and three other harness
- * packages on rc. Compile-time deps made that invisible; the test below is what
- * makes it visible.
+ * this repository once ended up with `dsh-llm-pi-ai` on alpha and three other
+ * harness packages on rc. Compile-time deps made that invisible; the tests below
+ * are what make it visible.
  *
- * The rule is not "the newest channel": it is "the channel the host runs". The
- * host publishes the harness on the rc track (`0.2.1-rc.4`), so the tools follow
- * rc.
+ * Two rules, deliberately separate:
  *
- * `cordis` is the one harness surface with no prerelease channel to track: the
- * host vendors it as source at a stable release (`4.0.5`), so it is pinned
- * exactly and to a stable version — an exact pin is still required, because a
- * range would float it.
+ * 1. PINS are exact and name the version the host runs. Only one version can be
+ *    installed, so the pin is a fact about the host, not a preference — and it
+ *    must be exact, because a range would float it onto a version nobody
+ *    verified.
+ * 2. PEERS describe the code, and the code targets the whole `0.2.x` line on
+ *    BOTH channels — the latest `rc` and the latest `alpha` alike — because a
+ *    host may be running either one. Narrowing a peer range to the channel that
+ *    happens to be pinned is the mistake this file exists to catch.
+ *
+ * `cordis` has its own line. The host vendors it as source at an exact version
+ * which may or may not carry a channel tag (`4.0.5`, then `4.0.6-alpha.1`), so
+ * the pin is exact either way and its peer range covers the same both-channel
+ * spread.
  *
  * @module test/harness-channel
  */
@@ -34,100 +42,86 @@ interface Manifest {
 const manifest = (): Manifest =>
   JSON.parse(readFileSync("package.json", "utf8")) as Manifest;
 
-/** The channel of a version string, or `undefined` for an untagged release. */
-const channelOf = (spec: string): string | undefined => {
-  const match = /-([a-z]+)\./u.exec(spec);
-  return match?.[1];
-};
+const EXACT = /^\d+\.\d+\.\d+(-[a-z]+\.\d+)?$/u;
+
+const harnessPins = (): [string, string][] =>
+  Object.entries({
+    ...manifest().dependencies,
+    ...manifest().devDependencies,
+  }).filter(([name]) => name.startsWith("@deepseek-ai/"));
 
 describe("harness channel alignment", () => {
-  const HOST_CHANNEL = "rc";
-
-  // The packages that move together on the harness's `0.2.x` line. `cordis`
-  // has its own line (see below) and `schemastery` is a plain library with an
-  // independent version, so neither is one of these.
-  const HARNESS_LINE_PREFIX = "@deepseek-ai/dsh-";
-
-  it("every harness dependency is pinned on the host's channel", () => {
-    const deps = {
-      ...manifest().dependencies,
-      ...manifest().devDependencies,
-    };
-    const harness = Object.entries(deps).filter(([name]) =>
-      name.startsWith(HARNESS_LINE_PREFIX)
-    );
-    expect(harness.length).toBeGreaterThan(0);
-    for (const [name, spec] of harness) {
-      const channel = channelOf(spec);
-      expect(channel, `${name} is pinned with no channel: ${spec}`).toBe(
-        HOST_CHANNEL
-      );
-    }
-  });
-
-  it("no pinned spec can float onto another channel", () => {
-    // A caret range written against the host's channel resolves to the other
-    // one, because rc sorts above alpha. Every spec whose channel matters is
-    // therefore EXACT.
-    const deps = {
-      ...manifest().dependencies,
-      ...manifest().devDependencies,
-    };
-    for (const [name, spec] of Object.entries(deps)) {
-      if (!name.startsWith("@deepseek-ai/") || name.endsWith("schemastery")) {
-        continue;
-      }
-      if (name.startsWith(HARNESS_LINE_PREFIX)) {
-        expect(spec, `${name} must be exact, not a range: ${spec}`).toMatch(
-          new RegExp(`^\\d+\\.\\d+\\.\\d+-${HOST_CHANNEL}\\.\\d+$`, "u")
-        );
-        continue;
-      }
-      // `cordis`: the host vendors a stable release, so the pin is exact and
-      // stable — a prerelease of a future line would not be the host's.
+  it("every harness dependency is an exact pin, never a range", () => {
+    const pins = harnessPins();
+    expect(pins.length).toBeGreaterThan(0);
+    for (const [name, spec] of pins) {
+      if (name.endsWith("schemastery")) continue;
       expect(spec, `${name} must be exact, not a range: ${spec}`).toMatch(
-        /^\d+\.\d+\.\d+$/u
+        EXACT
       );
     }
   });
 
-  it("the typert peer range covers the 0.2.1 line on BOTH channels", () => {
+  it("the pins are on a channel the peer range admits", () => {
+    // The pin is whatever version the host runs; the range is the surface the
+    // code claims. A pin outside its own range would mean the code was compiled
+    // against a version it does not admit — the two have to agree even as the
+    // host moves between channels.
+    const peers = manifest().peerDependencies ?? {};
+    for (const [name, spec] of harnessPins()) {
+      const peer = peers[name];
+      if (peer === undefined) continue;
+      expect(
+        semver.satisfies(spec, peer),
+        `${name}@${spec} is pinned outside its own peer range ${peer}`
+      ).toBe(true);
+    }
+  });
+
+  it("the typert peer range covers BOTH channels of every supported line", () => {
     // A peer range is a statement about the CODE, and the code is verified
-    // against every published 0.2.x build: all nine load, and `apply` plus the
-    // remote-service symbols exist on each. The delta between them is purely
-    // ADDITIVE (alpha.5 adds `createTypertRemoteInfo`, `isTypertRemoteMethod`,
-    // `principalOf`; nothing the remote services import is removed or changed).
+    // against the `0.2.1` and `0.2.2` lines on both channels: all of them load,
+    // and `apply` plus the remote-service symbols exist on each. The delta
+    // between them is purely ADDITIVE.
     //
-    // Both channels' latest is 0.2.1, so the target is that LINE, not a
-    // channel. One range says so exactly: `>=0.2.1-alpha.1 <0.2.2`. Its lower
-    // bound is alpha.1, which sorts below every rc of the same line, so rc is
-    // admitted without enumerating it - and a plain `<0.2.2` alone would NOT
-    // work, because semver excludes prereleases unless a comparator in the same
-    // `major.minor.patch` tuple carries one. (That is why the old
-    // `>=0.2.0-rc.1 <0.3.0` silently excluded the entire alpha channel.)
+    // The range is `>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0`. The first
+    // clause covers the 0.2.1 line on both channels — its lower bound alpha.1
+    // sorts below every rc of that line, so rc needs no separate entry. The
+    // second is not redundant: semver excludes a prerelease unless a comparator
+    // in the SAME `major.minor.patch` tuple carries one, so `<0.3.0` alone
+    // silently drops every `0.2.2-*` build, alpha and rc alike. Both clauses
+    // stop at 0.3.0, which leaves the next line a separate decision rather than
+    // a silent widening.
     const peer =
       manifest().peerDependencies?.["@deepseek-ai/dsh-typert-protocol"];
     expect(peer).toBeDefined();
 
     const admitted = [
+      // 0.2.1 line, both channels, and the stable release both channels lead to.
       "0.2.1-alpha.1",
       "0.2.1-alpha.5",
       "0.2.1-rc.1",
-      "0.2.1-rc.2",
+      "0.2.1-rc.5",
+      "0.2.1",
+      // 0.2.2 line, both channels, and its stable release.
+      "0.2.2-alpha.2",
+      "0.2.2-rc.1",
+      "0.2.2",
     ];
     for (const version of admitted) {
       expect(
         semver.satisfies(version, peer ?? ""),
-        `${version} is a published 0.2.1 build the code runs on`
+        `${version} is a published build on a line this plugin supports`
       ).toBe(true);
     }
-    // And it stops at the line's edges: an older line and a newer patch are
+
+    // And it stops at the line's edges: an older line and the next one are
     // untested surfaces, which is a separate decision rather than a silent
     // widening.
-    for (const version of ["0.2.0-rc.2", "0.2.2", "0.3.0"]) {
+    for (const version of ["0.2.0-rc.2", "0.3.0", "0.3.0-alpha.1"]) {
       expect(
         semver.satisfies(version, peer ?? ""),
-        `${version} is outside the 0.2.1 line`
+        `${version} is outside the 0.2.1/0.2.2 lines`
       ).toBe(false);
     }
   });
