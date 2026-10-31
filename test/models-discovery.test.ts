@@ -553,9 +553,7 @@ describe("models-discovery: I1's second clause, for a model no catalog describes
 
   it("offers Go Gemini through its native bridge", () => {
     // The Go catalog names the Google protocol, served by the Go bridge.
-    expect(isServableModel("gemini-4-argon-contributor", "opencode-go")).toBe(
-      true
-    );
+    expect(isServableModel("gemini-4-argon", "opencode-go")).toBe(true);
   });
 
   it("offers Zen's free tier models normally", () => {
