@@ -8,7 +8,7 @@
  * revision exists because the first version of it "refuted" the claim by porting
  * the vendor's generator WITHOUT its `direction` step.
  *
- * `packages/opencode/src/id/id.ts` at v1.19.4:
+ * `packages/opencode/src/id/id.ts` at v1.19.5:
  *
  *   now = BigInt(Date.now()) * 4096n + BigInt(++counter)   // counter resets每毫秒
  *   now = direction === "descending" ? ~now : now

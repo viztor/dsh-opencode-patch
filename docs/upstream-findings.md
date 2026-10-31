@@ -12,7 +12,7 @@ The payload we send is negotiated with whatever gateway the account is on, and b
 
 |  | 1.19.x (primary) | 2.0.x (tracked) |
 | :-- | :-- | :-- |
-| Latest at time of writing | 1.19.4 | 2.0.32 |
+| Latest at time of writing | 1.19.5 | 2.0.32 |
 | Session id generator | `packages/opencode/src/id/id.ts` **and** `packages/schema/src/identifier.ts` | `packages/schema/src/identifier.ts` only (`packages/opencode/` is gone) |
 | Header assembly | `packages/core/src/session/runner/llm.ts` | `packages/core/src/session/model-request.ts` |
 | Gateway shape | `opencode.ai/zen/v1/…` | `opencode.ai/inference/<proto>/v1/…` |
@@ -26,7 +26,7 @@ The sibling checkout cannot `git fetch` under the DSH sandbox: git writes `.git/
 git clone --filter=blob:none --no-checkout --single-branch --branch dev --depth 40 \
   https://github.com/anomalyco/opencode.git
 # then, for a specific version's file:
-git fetch --depth 1 origin tag v1.19.4
+git fetch --depth 1 origin tag v1.19.5
 ```
 
 Note the remote is `anomalyco/opencode`, **not** `opencode-ai/opencode`.
@@ -37,7 +37,7 @@ Note the remote is `anomalyco/opencode`, **not** `opencode-ai/opencode`.
 
 ### 1.1 The session id generator — unchanged across both lines
 
-Read in full from both `packages/schema/src/identifier.ts` (present in 1.19.4 and 2.0.32, byte-identical) and `packages/opencode/src/id/id.ts` (1.19.4 only, same arithmetic):
+Read in full from both `packages/schema/src/identifier.ts` (present in 1.19.5 and 2.0.32, byte-identical) and `packages/opencode/src/id/id.ts` (1.19.5 only, same arithmetic):
 
 ```ts
 let lastTimestamp = 0;
@@ -70,7 +70,7 @@ Three facts, each of which contradicts something this plugin once assumed:
 
 **Implication for the rate-limit claim** — see §3.1.
 
-### 1.2 The header contract — 1.19.4
+### 1.2 The header contract — 1.19.5
 
 `packages/core/src/session/runner/llm.ts`, the authoritative assembly:
 
@@ -91,7 +91,7 @@ const request = LLM.request({
   …
 ```
 
-Five headers, all carrying **`session.id`** — the plain session id, with no derivation, no hash and no band. 1.19.4 does **not** send `x-opencode-session`, `x-opencode-client`, `x-opencode-project` or `User-Agent` from this path.
+Five headers, all carrying **`session.id`** — the plain session id, with no derivation, no hash and no band. 1.19.5 does **not** send `x-opencode-session`, `x-opencode-client`, `x-opencode-project` or `User-Agent` from this path.
 
 ### 1.3 The header contract — 2.0.32
 
@@ -128,7 +128,7 @@ Differences that matter to us:
 
 ### 1.4 The gateway path table — identical in both lines
 
-`packages/console/app/src/lib/inference-proxy.ts`, present and identical in 1.19.4 and 2.0.32:
+`packages/console/app/src/lib/inference-proxy.ts`, present and identical in 1.19.5 and 2.0.32:
 
 | Zen path                                   | Inference path                 |
 | :----------------------------------------- | :----------------------------- |
@@ -146,7 +146,7 @@ Differences that matter to us:
 
 ### 1.5 Free-tier access — `allowAnonymous`, and it does NOT gate on a session band
 
-1.19.4, `packages/console/app/src/routes/zen/util/handler.ts`:
+1.19.5, `packages/console/app/src/routes/zen/util/handler.ts`:
 
 ```ts
 const zenApiKey = rawZenApiKey === "public" ? undefined : rawZenApiKey
@@ -179,12 +179,12 @@ const ModelSchema = z.object({
 
 - A free model is admitted with **no key at all**, or with the literal key `public`. (Admitted into the proxy's forwarding path — not the same as served: see `docs/credentials.md` for what the Zen free tier actually answers.)
 - The gate is a **per-model boolean in the vendor's own model registry**, not a property of the session id, the request headers, or the endpoint family.
-- With `anonymous`, the proxy strips `authorization`, `x-api-key` and `x-goog-api-key` and forwards keyless; 1.19.4 has an extra rule 2.x drops — `if (anonymous && !generation?.anonymous) return undefined` — so **1.19.4 requires the gateway's own generation path to declare the model anonymous**, while 2.x forwards any keyless request straight through.
+- With `anonymous`, the proxy strips `authorization`, `x-api-key` and `x-goog-api-key` and forwards keyless; 1.19.5 has an extra rule 2.x drops — `if (anonymous && !generation?.anonymous) return undefined` — so **1.19.5 requires the gateway's own generation path to declare the model anonymous**, while 2.x forwards any keyless request straight through.
 - `billingSource` is `"anonymous"`, `"free"`, `"byok"`, `"subscription"`, `"lite"` or `"balance"`, and `"anonymous"` skips accounting entirely.
 
 **The session id's low bits are not part of the `allowAnonymous` rule** — that gate is per model and says nothing about sessions. It is a SEPARATE rule, and §3.1 records it: the gateway does enforce a band on the session id's low twelve bits, and it is enforced independently of what the body carries and of which credential is present.
 
-`allowAnonymous` is **not present in the 2.x snapshot** (`packages/core/src/models-dev/snapshot.txt` carries no such flag, and the 2.x handler file no longer has the key). How a 2.x account decides free access is **unverified**; the 1.19.4 rule is the one we implement against.
+`allowAnonymous` is **not present in the 2.x snapshot** (`packages/core/src/models-dev/snapshot.txt` carries no such flag, and the 2.x handler file no longer has the key). How a 2.x account decides free access is **unverified**; the 1.19.5 rule is the one we implement against.
 
 ---
 
@@ -192,7 +192,7 @@ const ModelSchema = z.object({
 
 ### 2.1 A per-turn message id — `x-opencode-request` is sent again (2026-10-18)
 
-Recorded in [`docs/engineering-notes.md`](./engineering-notes.md). OpenCode 1.19.4 sent `x-opencode-request` carrying the user message's id (`input.user.id` in `packages/opencode/src/session/llm/request.ts`, in the same branch as `x-opencode-client` and `x-opencode-project`); 2.x dropped it. This was blocked for a round because the turn state carries no message id — `value` is the session's derived id, a different object — and the hook's options carry none either, because the adapter builds the body after the hook returns.
+Recorded in [`docs/engineering-notes.md`](./engineering-notes.md). OpenCode 1.19.5 sent `x-opencode-request` carrying the user message's id (`input.user.id` in `packages/opencode/src/session/llm/request.ts`, in the same branch as `x-opencode-client` and `x-opencode-project`); 2.x dropped it. This was blocked for a round because the turn state carries no message id — `value` is the session's derived id, a different object — and the hook's options carry none either, because the adapter builds the body after the hook returns.
 
 **Lifted by minting rather than by plumbing a host value**: `newOpenCodeMessageId` in `src/session.ts` produces a fresh `msg_` + 12 hex + 14 base62 value per turn (clock + counter in the hex field, `randomBytes` in the suffix), `stream-hook.ts` stores it as `requestValue` in the turn state, and `fetch-patch.ts` sends it beside the client and project headers. A minted id is not literally the user's message id, and the trade is deliberate: nothing in either released tree reads the value back the way session affinity reads a session id — the console forwards it to the inference service as `x-opencode-request-id` for per-request accounting — so a well-formed value with the client's own lifecycle is as much as a request can honestly carry. Deriving it from message content was rejected rather than overlooked: a digest of the user's own text travelling in a header is a guessable fingerprint, and the vendor's ids are random.
 
@@ -299,7 +299,7 @@ A throw out of the entry is a meter that disappears with no message. The guard i
 
 ## 3.7 The Go quota endpoint has exactly one public route — VERIFIED
 
-`packages/console/app/src/routes/zen/go/v1/usage.ts` is the **only** quota route in either major version (checked 1.19.4 and 2.0.32), and the inference proxy's path table (`packages/console/app/src/lib/inference-proxy.ts`) lists `"GET /zen/go/v1/usage": "/go/v1/usage"` with **no** `/inference/.../usage` counterpart.
+`packages/console/app/src/routes/zen/go/v1/usage.ts` is the **only** quota route in either major version (checked 1.19.5 and 2.0.32), and the inference proxy's path table (`packages/console/app/src/lib/inference-proxy.ts`) lists `"GET /zen/go/v1/usage": "/go/v1/usage"` with **no** `/inference/.../usage` counterpart.
 
 That matters because the live catalog names the INFERENCE family for the `opencode` provider (`api: https://opencode.ai/inference/openai/v1`). `toGoBaseURL` rewrote only the `zen/v1` form, so a base discovered from a provider row passed through untouched and the meter asked `…/inference/openai/v1/usage` — a path that does not exist, which is an unavailable meter with no explanation. Both families now resolve to `https://opencode.ai/zen/go/v1`.
 
@@ -317,7 +317,7 @@ https://opencode.ai/inference/go/openai/v1/usage    404
 
 Reading the source for the answer to "which endpoint does OpenCode use for usage" turns up something the plugin should record, because it changes what the endpoint _is_.
 
-**Nothing in the vendor's client fetches it.** A full-text sweep of the 1.19.4 tree for `usage` finds exactly one reference to the path, and it is the SERVER side:
+**Nothing in the vendor's client fetches it.** A full-text sweep of the 1.19.5 tree for `usage` finds exactly one reference to the path, and it is the SERVER side:
 
 ```
 packages/console/app/src/routes/zen/go/v1/usage.ts:18   "GET /zen/go/v1/usage": "/go/v1/usage"
@@ -327,7 +327,7 @@ The console's dashboard does not go through the gateway for this number either �
 
 So the route is not "how the client asks for usage". It is a **key-facing** endpoint: the route authenticates with `authorization: Bearer <key>`, looks the key up in the key table, and answers `403 EntitlementError` ("OpenCode Go subscription required.") when its workspace has no Go subscription. That is exactly the shape this plugin uses — a key in hand, the windows in hand — and it is why the endpoint is so sparse: it exists for key holders, not for the dashboard.
 
-The two versions differ in where the number comes from, and the shape does not change: 1.19.4 tries the inference proxy first and falls back to its own database when the proxy is unavailable (`.catch(inferenceUnavailable)`), while 2.0.32 forwards the request outright (`return proxyInference(input.request)`).
+The two versions differ in where the number comes from, and the shape does not change: 1.19.5 tries the inference proxy first and falls back to its own database when the proxy is unavailable (`.catch(inferenceUnavailable)`), while 2.0.32 forwards the request outright (`return proxyInference(input.request)`).
 
 The answer, in one line: **`GET https://opencode.ai/zen/go/v1/usage`**, and it is the only such endpoint on the gateway — the Zen plane has no counterpart, because the Zen plan's credits are a console concept and the dashboard reads them with a cookie.
 

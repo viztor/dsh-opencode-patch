@@ -228,6 +228,18 @@ const nameModel = (
  * Both tiers travel together. The plan is not discoverable — `/limits`, `/plan`,
  * `/subscription`, `/account` all 404 — so choosing one here would mean
  * guessing, and a wrong tier misstates the money by 2-3x.
+ *
+ * **The row names the model the allowance BELONGS TO, and that is the picked
+ * one.** The session's own model is a different model: `model` in the query is
+ * what the picker is ON, which is not what priced the turns so far. So the
+ * panel used to label the allowance with the session's model — "Beam Free — Go
+ * $100" for a free model, beside a $100 figure that was another model's
+ * allowance. The name travels from here, where the catalog is, for the same
+ * reason the rate does: the client cannot know it.
+ *
+ * The name comes from the GO catalog, because the table is the Go plan's table
+ * — a figure of the Go plan is named by the Go catalog, whichever route the
+ * picker happens to be on.
  */
 const attachAllowance = (
   query: UsageQuery | undefined
@@ -243,7 +255,11 @@ const attachAllowance = (
   if (row === undefined) {
     return undefined;
   }
-  return { go: row.go, goPlus: row.goPlus, model };
+  // The catalog's spelling of the model, when it knows it. A model the catalog
+  // does not describe keeps the id the picker gave — an id is still better than
+  // another model's name.
+  const name = catalogFor("go", model)?.name ?? model;
+  return { go: row.go, goPlus: row.goPlus, model: name };
 };
 
 /** Normalize a base URL to the Go `/usage` endpoint, without a trailing slash. */

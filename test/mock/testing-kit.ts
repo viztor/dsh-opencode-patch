@@ -264,7 +264,7 @@ export const AuthSimulator = {
 /*                              Client Simulator                              */
 /* -------------------------------------------------------------------------- */
 
-export type ClientGeneration = "1.19.4" | "2.x";
+export type ClientGeneration = "1.19.5" | "2.x";
 
 export interface ClientSimulatorOptions {
   channel?: string;
@@ -284,7 +284,7 @@ export class ClientSimulator {
   constructor(options: ClientSimulatorOptions = {}) {
     this.options = options;
     this.sessionId = options.sessionId ?? MOCK_SESSION;
-    this.generation = options.generation ?? "1.19.4";
+    this.generation = options.generation ?? "1.19.5";
   }
 
   /**

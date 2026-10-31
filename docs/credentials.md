@@ -339,7 +339,7 @@ Every combination below was sent to `https://opencode.ai/zen/v1` against a Zen `
 | :-- | :-- |
 | credential | bare API key (`oc_sk_…`, 51 chars) · account session token (`st_…`, 39 chars) · the token **with** its org (`wrk_…`) · **no credential at all** · the literal `public`, the client's own keyless value |
 | structure | bare body · with the `read` and `bash` tool schemas the fallback injects |
-| headers | `x-opencode-client: cli` · `user-agent: opencode/1.19.4` · a valid `x-opencode-session-id` (`ses_…`) · **the complete set captured from the client**, `x-opencode-request` included |
+| headers | `x-opencode-client: cli` · `user-agent: opencode/1.19.5` · a valid `x-opencode-session-id` (`ses_…`) · **the complete set captured from the client**, `x-opencode-request` included |
 | endpoint | `/chat/completions` · `/responses` · `/inference/openai/v1` |
 | runtime | Node's fetch · Python's urllib · **Bun**, the runtime the real client ships on |
 

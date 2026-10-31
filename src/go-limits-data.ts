@@ -6,7 +6,7 @@
  * OpenCode's own Go documentation; `pnpm run limits:shim` reports staleness and
  * `--write` rewrites this file.
  *
- * 27 models.
+ * 28 models.
  */
 
 import type { ModelAllowance } from "./go-limits.ts";
@@ -23,14 +23,14 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     name: "DeepSeek V4 Pro (Off-Peak)",
   },
   "deepseek-v4.1-flash": {
-    go: 80,
-    goPlus: 160,
+    go: 100,
+    goPlus: 200,
     name: "DeepSeek V4.1 Flash (Off-Peak)",
   },
-  "gemini-4-argon-contributor": {
-    go: Number.NaN,
-    goPlus: Number.NaN,
-    name: "Gemini 4 Argon Contributor",
+  "gemini-4-argon": {
+    go: 30,
+    goPlus: 120,
+    name: "Gemini 4 Argon (50% off)",
   },
   "glm-5.2": {
     go: 60,
@@ -82,6 +82,11 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     goPlus: 60,
     name: "Kimi K3",
   },
+  "kimi-k3.1-pro": {
+    go: 15,
+    goPlus: 60,
+    name: "Kimi K3.1 Pro",
+  },
   "longcat-2.0": {
     go: 60,
     goPlus: 240,
@@ -110,7 +115,7 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
   "minimax-m3": {
     go: 60,
     goPlus: 180,
-    name: "MiniMax M3",
+    name: "MiniMax M3 (≤ 512K tokens)",
   },
   "minimax-m3.1-flash": {
     go: 20,

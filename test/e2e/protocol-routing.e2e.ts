@@ -276,6 +276,24 @@ const accessDisabled = (result: Probe): boolean =>
   result.status === 0;
 
 /**
+ * The gateway says this model is retired.
+ *
+ * **The registry does not always know.** The catalog's deprecation flag is the
+ * vendor's own bookkeeping, and the gateway's answer is the authority: a model
+ * can still be listed, still be priced, and still be in the catalog's active
+ * slice while the gateway answers `410 ModelDeprecated` for it. Measured: the
+ * registry listed `gemini-3-flash` as active while the gateway refused it.
+ *
+ * Such a model is not a subject to assert on — the case would fail on a
+ * retirement the plugin had nothing to do with — so the picker walks past it.
+ */
+const retiredAtTheGateway = (result: Probe): boolean =>
+  result.status === 410 || result.summary.includes("ModelDeprecated");
+
+/** The gateway is busy: it answered, but not about the route. */
+const gatewayBusy = (result: Probe): boolean => result.status === 429;
+
+/**
  * The protocol the model is SERVED ON, per the shipped catalog on the Zen plane.
  *
  * `undefined` only when the model is not in the Zen catalog at all. A model with
@@ -346,7 +364,14 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
   ): Promise<string | undefined> => {
     for (const model of candidates) {
       const answer = await probe(protocol, model, key, base);
-      if (!accessDisabled(answer) && answer.status !== 0) {
+      // A model the gateway has retired is walked past too: it answers, so it is
+      // not an access refusal, but asserting on it would fail on a retirement
+      // the plugin had nothing to do with.
+      if (
+        !accessDisabled(answer) &&
+        answer.status !== 0 &&
+        !retiredAtTheGateway(answer)
+      ) {
         return model;
       }
     }
@@ -833,6 +858,7 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         (m) => m.id
       );
       let answered: { model: string; status: number } | undefined;
+      let busy = false;
       for (const model of candidates) {
         const response = await probe(
           servedProtocolFor(model) ?? "openai-completions",
@@ -841,10 +867,21 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         if (freeTierClosed(response)) {
           continue;
         }
+        if (gatewayBusy(response)) {
+          // The gateway answered, but about its own load. That is neither a
+          // completion nor a dead tier, and it must not be reported as one.
+          busy = true;
+          continue;
+        }
         answered = { model, status: response.status };
         break;
       }
       if (answered === undefined) {
+        if (busy) {
+          // Every candidate was busy, which says nothing about the tier.
+          context.skip();
+          return;
+        }
         // Reported rather than skipped: the account (or the vendor) closed the
         // whole free tier, and that is worth a line in the run's output.
         console.log(

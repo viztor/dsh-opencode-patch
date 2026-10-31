@@ -19,7 +19,14 @@ export interface ModelAllowanceSnapshot {
   go: number;
   /** Go Plus, the $40/month plan. */
   goPlus: number;
-  /** The model this allowance is for, as the picker spells it. */
+  /**
+   * The model this allowance is for, **as the catalog spells it**.
+   *
+   * It is the model the PICKER is on, which is not the model that priced the
+   * turns so far, and the Host resolves the name because the client cannot
+   * know it. A row that pairs this figure with another model's name states
+   * something false about the money.
+   */
   model: string;
 }
 

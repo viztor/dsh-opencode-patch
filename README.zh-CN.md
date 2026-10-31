@@ -137,18 +137,18 @@ DSH 能说其中四种，插件就把这四种都路由掉。**Google Generative
 
 ### 1. OpenCode Zen (`provider: opencode`) — 按量计费与免费额度
 
-- **Anthropic Messages** (`https://opencode.ai/zen/v1/messages`)：`claude-sonnet-4-5`、`claude-opus-4-7`、`claude-haiku-4-5`、`qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/zen/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`space-bunny-free`，以及免费层的 `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/zen/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `nemotron-3-ultra-free`、`ling-3.0-flash-fin-free`、`mimo-v2.6-flash-free`
-- **Google Generative AI** (`https://opencode.ai/zen/v1/models/*:streamGenerateContent`)：`gemini-3.8-flash`、`gemini-3.1-pro`、`gemini-3.5-flash-lite`
+- **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`)：`claude-sonnet-4-5`、`claude-opus-4-7`、`claude-haiku-4-5`、`qwen3.8-flash`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`grok-4.7`、`muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `mimo-v2.6-flash-free`、`nemotron-3.5-lightning-free`、`deepseek-v4.1-flash-free`
+- **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`)：`gemini-3.8-flash`、`gemini-3.1-pro`、`gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — 订阅额度
 
-- **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon-contributor`，由内部适配器 `opencode-go-google` 服务。在现有 `opencode-go` 提供商下配置该模型即可，适配器继承该提供商的 API Key 引用（默认 `OPENCODE_GO_API_KEY`），支持图片附件和带签名的工具调用回放。只挂载已配置的模型，可用范围仍由 Go 套餐决定。Go 没有旧版 Google 接口，因此 `endpoint: legacy` 也使用此地址。
+- **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon`，由内部适配器 `opencode-go-google` 服务。在现有 `opencode-go` 提供商下配置该模型即可，适配器继承该提供商的 API Key 引用（默认 `OPENCODE_GO_API_KEY`），支持图片附件和带签名的工具调用回放。只挂载已配置的模型，可用范围仍由 Go 套餐决定。Go 没有旧版 Google 接口，因此 `endpoint: legacy` 也使用此地址。
 
-- **OpenAI Chat Completions**（`https://opencode.ai/zen/go/v1/chat/completions`）：`deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses**（`https://opencode.ai/zen/go/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages**（`https://opencode.ai/zen/go/v1/messages`）：`claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
 
 ### 3. 模型的协议是怎么定的 —— 以及为什么你什么都不用配
@@ -163,7 +163,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _（本插件不服务的方言）_ | **不提供** |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 82 个**在用**模型，统计于 2026-10-23 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 82 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
+数量为 `models.opencode.ai` 中 `opencode` 的 80 个**在用**模型，统计于 2026-10-23 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 80 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
@@ -414,19 +414,19 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 ## 📜 兼容性与验证
 
-**已在 DeepSeek Harness `0.2.1` 与 `0.2.2` 上验证 —— `alpha` 与 `rc` 两个通道（Node 24+）**
+**已在 DeepSeek Harness `0.2.1` 上验证 —— `alpha` 与 `rc` 两个通道（Node 24+）**
 
-Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件针对**所支持版本线的两个通道**——最新的 `rc`（`0.2.1-rc.5`）与最新的 `alpha`（`0.2.2-alpha.2`）一视同仁——因为宿主可能跑在任一通道上，而只盯着当前钉住的那个通道，正是插件在另一条轨道上悄悄停止加载的原因。只有版本钉选处会写出单一版本（毕竟只能装一个）；`@deepseek-ai/dsh-typert-protocol` 的 peer 范围才是代码声明自己真正支持什么的地方：
+Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。两个通道的最新版本都是 **`0.2.1`**，本插件针对这条线——对两个通道中每一个已发布的 `0.2.1` 构建都做过验证，`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
 
 ```
->=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
+>=0.2.1-alpha.1 <0.2.2
 ```
 
-第一段覆盖了 `0.2.1` 线的两个通道：下界 `alpha.1` 排序低于同线的所有 `rc`，因此无需单独枚举 rc。第二段不是冗余——除非同一 `major.minor.patch` 的某个比较符带有预发布号，semver 会把预发布版本排除在外，所以只写 `<0.3.0` 会悄悄丢掉每一个 `0.2.2-*` 构建，alpha 与 rc 都一样。两段都止于 `0.3.0`，下一条线因此是一个单独的决定，而不是悄悄的放宽。
+一个范围就覆盖了两个通道的整条线：下界 `alpha.1` 排序低于同线的所有 `rc`，因此无需单独枚举 rc。反之，只写 `<0.2.2` **不行**——除非同一 `major.minor.patch` 的某个比较符带有预发布号，semver 会把预发布版本排除在外，这正是"按一个通道写的范围会悄悄排除另一个通道"的原因。
 
 | 层面 | 目标 |
 | :-- | :-- |
-| **Harness 版本线** | **`0.2.1` 与 `0.2.2`**，`alpha` 与 `rc` 通道均可（peer：`>=0.2.1-alpha.1 <0.3.0 \|\| >=0.2.2-0 <0.3.0`） |
+| **Harness 版本线** | **`0.2.1`**，`alpha` 与 `rc` 通道均可（peer：`>=0.2.1-alpha.1 <0.2.2`） |
 | **插件包** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **宿主 profile** | DSH Web profile（`patchReload: live`） |
 | **声明的路由** | `opencode`、`opencode-go`、`opencode-responses`、`opencode-anthropic` |

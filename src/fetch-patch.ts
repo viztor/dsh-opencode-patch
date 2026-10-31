@@ -319,11 +319,11 @@ export const patchFetch = (
 
     // 1. Session headers, as the version this plugin emulates sends them.
     //
-    // Read from the 1.x line's last release, v1.19.4, in
+    // Read from the 1.x line's last release, v1.19.5, in
     // `packages/opencode/src/session/llm/request.ts`: `x-opencode-session-id`
     // and `x-opencode-session` both carry `sessionID`, and the affinity pair
     // belongs to relays. 2.x splits the first of those into an affinity id; the
-    // plugin emulates 1.19.4, so it follows 1.19.4.
+    // plugin emulates 1.19.5, so it follows 1.19.5.
     //
     // Which ENDPOINT the request goes to is the deployment's, not this block's:
     // measured, either key serves a paid model on either endpoint - they are two
@@ -342,7 +342,7 @@ export const patchFetch = (
     );
     headers.set("x-opencode-session-id", sessionVal);
     headers.set(SESSION_HEADER, sessionVal);
-    // The affinity pair belongs to the OTHER branch in 1.19.4: for a provider
+    // The affinity pair belongs to the OTHER branch in 1.19.5: for a provider
     // that does not start with `opencode` - a relay a deployment claimed by URL -
     // the client sends `x-session-affinity` and `X-Session-Id`; for an OpenCode
     // plane it sends `x-opencode-session` instead and nothing else. This plugin
@@ -381,7 +381,7 @@ export const patchFetch = (
       headers.set("x-opencode-client", config.originClient);
 
       // The message id, the one header of the captured set this block omitted.
-      // Read from v1.19.4's `request.ts`: `"x-opencode-request": input.user.id`,
+      // Read from v1.19.5's `request.ts`: `"x-opencode-request": input.user.id`,
       // in the same branch as the client and project headers. The console reads
       // it for per-request metrics and rewrites it to `x-opencode-request-id`
       // before the request reaches the inference service
