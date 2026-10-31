@@ -65,73 +65,13 @@ import {
   GO_LIMITS_DOC_URL,
   parseGoLimitsDoc,
 } from "../src/go-limits.ts";
+import { GO_LIMITS_DOC_MOVED_TO, htmlToDoc } from "./go-limits-html.ts";
 
 const TARGET = new URL("../src/go-limits-data.ts", import.meta.url);
 const argv = process.argv.slice(2);
 const shouldWrite = argv.includes("--write");
 const fromIndex = argv.indexOf("--from");
 const fromPath = fromIndex === -1 ? undefined : argv[fromIndex + 1];
-
-/** Where the docs moved to, named in the failure so it is actionable. */
-const GO_LIMITS_DOC_MOVED_TO = "https://opencode.ai/v2/docs/console/go/";
-
-/**
- * Strip tags from a table's cells, row by row.
- *
- * @param html - one `<table>` element's inner HTML.
- * @returns one array of cell strings per `<tr>`.
- */
-const tableRows = (html: string): string[][] =>
-  [...html.matchAll(/<tr[^>]*>(.*?)<\/tr>/gsu)].map((row) =>
-    [...(row[1] ?? "").matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/gsu)].map((cell) =>
-      (cell[1] ?? "").replaceAll(/<[^>]+>/gu, "").trim()
-    )
-  );
-
-/**
- * Turn the moved page's HTML into the markdown the parser above reads.
- *
- * The vendor moved the docs and the new page serves HTML, so the reader needs a
- * shape it recognises rather than a parser of its own. The page carries one
- * `Model | Input | Output | Cached Read | Cached Write | Monthly limit` table per
- * plan - Go first, Go Plus second, measured - and the request-estimate tables
- * below them repeat model names with no dollar column at all, which is exactly
- * what the parser is written to stop before. So the two dollar tables become two
- * `<TabItem>` sections and nothing else is passed on.
- *
- * @param html - the page's HTML.
- * @returns markdown in the shape `parseGoLimitsDoc` expects.
- * @throws {Error} when neither dollar table is present, because an empty document
- * would silently read as "no models" rather than as a broken source.
- */
-const htmlToDoc = (html: string): string => {
-  const dollarTables = [...html.matchAll(/<table[^>]*>(.*?)<\/table>/gsu)]
-    .map((table) => tableRows(table[1] ?? ""))
-    .filter((rows) =>
-      (rows[0] ?? []).at(-1)?.toLowerCase().includes("monthly limit")
-    );
-  if (dollarTables.length < 2) {
-    throw new Error(
-      `go-limits: ${GO_LIMITS_DOC_MOVED_TO} carried ${dollarTables.length} monthly-limit table(s), expected 2`
-    );
-  }
-  const [go, goPlus] = dollarTables;
-  const section = (label: string, rows: string[][]): string =>
-    [
-      `<TabItem label="${label}">`,
-      "| Model | Input | Output | Cached Read | Cached Write | Monthly limit |",
-      "| --- | --- | --- | --- | --- | --- |",
-      ...(rows ?? [])
-        .slice(1)
-        .filter((cells) => cells.length >= 6 && cells[0] !== undefined)
-        .map(
-          (cells) =>
-            `| ${cells[0]} | ${cells.slice(1, -1).join(" | ")} | **${cells.at(-1) ?? ""}** |`
-        ),
-      "</TabItem>",
-    ].join("\n");
-  return [section("Go", go ?? []), section("Go Plus", goPlus ?? [])].join("\n");
-};
 
 const readDoc = async (): Promise<string> => {
   if (fromPath !== undefined) {
