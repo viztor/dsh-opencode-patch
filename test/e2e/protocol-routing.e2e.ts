@@ -64,6 +64,12 @@ import {
   internalRouteFor,
   isServableSdk,
 } from "../../src/index.ts";
+import {
+  accessDisabled,
+  freeTierClosed,
+  gatewayBusy,
+  usableAsSubject,
+} from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 const ZEN_KEY = process.env.OPENCODE_API_KEY;
@@ -165,10 +171,7 @@ const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
   "x-opencode-session": "ses_e2e0000000000abcdefghij",
 };
 
-interface Probe {
-  readonly status: number;
-  readonly summary: string;
-}
+import type { Probe } from "./verdict.ts";
 
 /** Ask one endpoint about one model, optionally with a credential. */
 const probe = async (
@@ -241,57 +244,6 @@ const otherProtocols = (expected: string) =>
  * A skip is the honest answer in both: it says the routing was not verified,
  * which is not the same as saying it was verified and passed.
  */
-/**
- * Whether the gateway is refusing the FREE TIER rather than the route.
- *
- * Measured, one request each, on `step-5-preview-free` — which was the canonical
- * free-tier id when those runs were made and has since been retired, so the
- * cases below now sample `beam-free`: the deployment's `oc_…` key answers
- * `403 FreeTierError` on both `…/zen/v1` and the new `…/inference/openai/v1`,
- * with and without `x-opencode-org-id`; the literal `public` answers the same;
- * and the real client — whose captured request carries an `st_…` session token —
- * is served.
- *
- * **Read that as a statement about the CLIENT, not the credential.** The
- * gateway's own message is "OpenCode's free tier can only be used from within
- * OpenCode", and presenting as that client is what this plugin does — so a free
- * model is OFFERED now, and a refusal names its own reason rather than being
- * pre-empted by an exclusion. What the older runs establish still holds: an
- * org id and a key do not unlock it.
- *
- * `docs/opencode-1.19-api.md` has the endpoints, the captured headers and the
- * login flow.
- */
-const freeTierClosed = (result: Probe): boolean =>
-  result.summary.includes("FreeTierError");
-
-const accessDisabled = (result: Probe): boolean =>
-  result.status === 402 ||
-  result.summary.includes("Insufficient account funds") ||
-  (result.status === 403 &&
-    result.summary.includes("Model access is disabled")) ||
-  result.status === 429 ||
-  // No answer at all is the third shape of "cannot tell": the gateway is busy,
-  // so nothing about the route was observed either way.
-  result.status === 0;
-
-/**
- * The gateway says this model is retired.
- *
- * **The registry does not always know.** The catalog's deprecation flag is the
- * vendor's own bookkeeping, and the gateway's answer is the authority: a model
- * can still be listed, still be priced, and still be in the catalog's active
- * slice while the gateway answers `410 ModelDeprecated` for it. Measured: the
- * registry listed `gemini-3-flash` as active while the gateway refused it.
- *
- * Such a model is not a subject to assert on — the case would fail on a
- * retirement the plugin had nothing to do with — so the picker walks past it.
- */
-const retiredAtTheGateway = (result: Probe): boolean =>
-  result.status === 410 || result.summary.includes("ModelDeprecated");
-
-/** The gateway is busy: it answered, but not about the route. */
-const gatewayBusy = (result: Probe): boolean => result.status === 429;
 
 /**
  * The protocol the model is SERVED ON, per the shipped catalog on the Zen plane.
@@ -364,14 +316,10 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
   ): Promise<string | undefined> => {
     for (const model of candidates) {
       const answer = await probe(protocol, model, key, base);
-      // A model the gateway has retired is walked past too: it answers, so it is
-      // not an access refusal, but asserting on it would fail on a retirement
-      // the plugin had nothing to do with.
-      if (
-        !accessDisabled(answer) &&
-        answer.status !== 0 &&
-        !retiredAtTheGateway(answer)
-      ) {
+      // The rule is in `verdict.ts`, where it is unit-tested: a refusal and a
+      // retirement are both vendor-side facts, and a case built on either fails
+      // for a reason that is not its own.
+      if (usableAsSubject(answer)) {
         return model;
       }
     }

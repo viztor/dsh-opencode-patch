@@ -753,6 +753,37 @@ describe("models-discovery: the adapter behind a plane route", () => {
     stop?.();
   });
 
+  it("leaves a model the catalog does not describe exactly as the adapter answered", async () => {
+    // The deployment's own model — a relay's id, a private deployment — is not in
+    // the catalog, and the wrapper has nothing to add to it: no context window,
+    // no reasoning levels, and above all no ROUTING fields. A `baseUrl` invented
+    // for it would send it to an endpoint the catalog guessed at, which is worse
+    // than the adapter's own answer.
+    const own = {
+      context: { contextWindow: 4096 },
+      defaultMaxTokens: 1024,
+      id: "acme-private-model",
+      inputModalities: ["text"],
+      name: "Acme Private",
+      provider: "opencode",
+    };
+    const llm = llmWithAdapters(() => own);
+    const stop = decoratePlaneAdapters(
+      llm as never,
+      resolveConfig({ enrichModels: true })
+    );
+    const resolved = (await resolveOn(llm, "opencode")(
+      "opencode",
+      "acme-private-model"
+    )) as Record<string, unknown>;
+    // Passed through whole: the field set is the adapter's, and the plugin added
+    // nothing to it.
+    expect(resolved).toEqual(own);
+    expect(resolved.api).toBeUndefined();
+    expect(resolved.baseUrl).toBeUndefined();
+    stop?.();
+  });
+
   it("applies modelOverrides in decoratePlaneAdapters when declared", async () => {
     const raw = {
       context: { contextWindow: 1_000_000 },
