@@ -11,8 +11,13 @@
  */
 
 import { ALL_MODELS_MARKER } from "./config-values.ts";
-import { findModelSpec } from "./models-catalog.ts";
+import {
+  type CatalogPlane,
+  findModelSpec,
+  findModelSpecOn,
+} from "./models-catalog.ts";
 import { isRecord, isUnknownArray } from "./utils/guards.ts";
+import { isGoPlaneUrl } from "./utils/request-shape.ts";
 
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
@@ -198,10 +203,24 @@ const toolNames = (
 };
 
 /** Whether `modelId` is in scope for the core-tool fallback. */
-export const isCoreToolModel = (modelId: string, marker: string): boolean => {
+export const isCoreToolModel = (
+  modelId: string,
+  marker: string,
+  plane?: CatalogPlane
+): boolean => {
   // The catalog's free-tier flag is the authority: it catches free models
   // whose ids carry no marker (big-pickle), where a substring test goes blind.
-  if (findModelSpec(modelId)?.is_free === true) {
+  //
+  // **The flag is the PLANE's, when the plane knows the model.** A model can be
+  // free on one plane and not on the other, and the free tier's tools are the
+  // free tier's business: injecting `read` + `bash` into a request the account
+  // pays for gives a model tools it will not be given. The flags happen to agree
+  // for every model in the catalog today, which is exactly why a lookup that
+  // ignores the plane looks right until it does not.
+  const spec =
+    (plane === undefined ? undefined : findModelSpecOn(plane, modelId)) ??
+    findModelSpec(modelId);
+  if (spec?.is_free === true) {
     return true;
   }
   if (marker === ALL_MODELS_MARKER) {
@@ -267,7 +286,11 @@ export const maybeInjectCoreTools = (
   if (typeof modelProp !== "string") {
     return body;
   }
-  if (!isCoreToolModel(modelProp, options.modelMarker)) {
+  // The plane is the PATH's, not the route's: a relay serves its Go plane
+  // under a path of the same shape, and the route id there is the user's own
+  // name.
+  const plane: CatalogPlane = isGoPlaneUrl(url) ? "go" : "zen";
+  if (!isCoreToolModel(modelProp, options.modelMarker, plane)) {
     return body;
   }
   const toolsProp: unknown = parsed.tools;

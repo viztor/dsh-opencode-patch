@@ -566,7 +566,7 @@ export const Config = z.object({
       "Which endpoint family the gateway's requests go to. auto: follow the " +
         "catalog's own address (today the inference family). legacy: force " +
         "https://opencode.ai/zen/v1. modern: force " +
-        "https://opencode.ai/inference/v1. The two families are separately " +
+        "https://opencode.ai/inference/<protocol>. The two families are separately " +
         "entitled and both still answer, so this is a choice rather than a " +
         "migration; an unrecognised value falls back to auto."
     )

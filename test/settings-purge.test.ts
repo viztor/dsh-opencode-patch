@@ -81,6 +81,48 @@ describe("purgeDeprecatedModels: the paths a scope can take", () => {
     });
   });
 
+  it("shows the host's own failure, and parses the result through the contract", async () => {
+    // The host answers a failure as `{ ok: false, … }`, and reading that as
+    // "not a purge result" replaced the message that says WHY with a sentence
+    // about shape — which tells the reader nothing they can act on.
+    const refused = await purgeDeprecatedModels(
+      scopeWith(async () => ({
+        ok: false,
+        message: "the profile is read-only",
+      }))
+    );
+    expect(refused).toEqual({
+      kind: "failed",
+      message: "the profile is read-only",
+    });
+
+    // And the result is PARSED, not cast: the contract's whitelist is the
+    // client's only statement about what it is told, and a cast is no statement
+    // at all. A row the whitelist rejects is not a result.
+    const malformed = await purgeDeprecatedModels(
+      scopeWith(async () => ({
+        catalogRead: true,
+        removed: [{ id: "a", provider: "opencode", extra: "ignored" }],
+      }))
+    );
+    expect(malformed).toEqual({
+      kind: "purged",
+      result: {
+        catalogRead: true,
+        // The whitelist keeps only the fields it renders.
+        removed: [{ id: "a", provider: "opencode" }],
+      },
+    });
+
+    const notAResult = await purgeDeprecatedModels(
+      scopeWith(async () => ({ removed: [{ id: 42, provider: "opencode" }] }))
+    );
+    expect(notAResult).toEqual({
+      kind: "failed",
+      message: "the host answered something that is not a purge result",
+    });
+  });
+
   it("reports a thrown non-Error as its string form", async () => {
     // A remote rejection is not always an Error - a cross-realm throw or a bare
     // string crosses the seam - and the card must still have something to show.

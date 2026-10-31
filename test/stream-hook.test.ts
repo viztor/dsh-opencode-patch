@@ -159,3 +159,72 @@ describe("stream-hook · the pass-through guards", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("stream-hook · a turn is priced at ITS plane's rate", () => {
+  /**
+   * The two planes price the same id differently, and the plane-agnostic
+   * catalog lookup searches Go FIRST — so a Zen turn was priced at the Go rate.
+   *
+   * `deepseek-v4.1-flash` costs $0.30 per million input tokens on Zen and
+   * $0.15 on Go: a Zen turn came out at exactly half of what it cost, and the
+   * meter showed the half.
+   */
+  const hookWith = async (providers: string[]) => {
+    const { createStreamHook } = await import("../src/stream-hook.ts");
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    const { resolveConfig } = await import("../src/config.ts");
+    return createStreamHook(
+      { logger: { info: () => {} } } as never,
+      resolveConfig({ providers, usageEnabled: true } as never),
+      new AsyncLocalStorage()
+    );
+  };
+
+  /**
+   * A stream that reports one turn's usage, the way the gateway reports it.
+   *
+   * @yields {unknown} one usage chunk
+   */
+  const usageStream = async function* usageStream() {
+    yield {
+      type: "usage",
+      usage: {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        totalTokens: 1_000_000,
+      },
+    };
+  };
+
+  it("prices a Zen turn at the Zen rate, and a Go turn at the Go rate", async () => {
+    const { clearSessionUsageStore, getSessionUsage } =
+      await import("../src/session-cost.ts");
+    clearSessionUsageStore();
+    const hook = await hookWith(["opencode", "opencode-go"]);
+
+    // One million input tokens: $0.30 on Zen, $0.15 on Go.
+    for (const [provider, sessionId, expected] of [
+      ["opencode", "s-zen", 0.3],
+      ["opencode-go", "s-go", 0.15],
+    ] as const) {
+      const result = hook(
+        {
+          model: "deepseek-v4.1-flash",
+          provider,
+          sessionId,
+        },
+        () => usageStream()
+      );
+      // The hook returns the downstream's value, and the usage is recorded while
+      // the stream is consumed.
+      for await (const _chunk of result as AsyncGenerator) {
+        void _chunk;
+      }
+      const snapshot = getSessionUsage(sessionId);
+      expect(snapshot?.costUsd, `${provider} priced a Zen-rate turn`).toBe(
+        expected
+      );
+    }
+    clearSessionUsageStore();
+  });
+});
