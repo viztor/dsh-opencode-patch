@@ -27,20 +27,18 @@
 
 import { readdir, readFile } from "node:fs/promises";
 
+import {
+  bareLiteral,
+  CLI_LITERAL as LITERAL,
+  disagreements,
+  pinnedVersion,
+} from "./vendor-version.ts";
+
 /** Where a copy may appear. Extensions are listed because the scan is recursive. */
 const ROOTS = ["src", "test", "docs", "scripts", "README.md"];
 const EXTENSIONS = /\.(?:ts|tsx|md|json|ya?ml)$/;
 
-/** The constant every other copy must agree with. */
-const CONSTANT = /OPENCODE_CLI_VERSION\s*=\s*"(\d+\.\d+\.\d+)"/;
 const CONSTANT_FILE = "src/identity.ts";
-
-/** A literal that names the CLI. */
-const LITERAL = /\bopencode\/(\d+\.\d+\.\d+)\b/g;
-
-/** A bare (or `v`-prefixed) literal of the pinned series: the form above cannot see it. */
-const bareLiteral = (series: string): RegExp =>
-  new RegExp(String.raw`(?<!opencode/)\bv?(${series}\.\d+)\b`, "g");
 
 /** Every literal version found, and the files that say it. */
 const literals = async (pattern: RegExp): Promise<Map<string, string[]>> => {
@@ -71,7 +69,7 @@ const literals = async (pattern: RegExp): Promise<Map<string, string[]>> => {
 
 const main = async (): Promise<void> => {
   const identity = await readFile(CONSTANT_FILE, "utf8");
-  const pinned = CONSTANT.exec(identity)?.[1];
+  const pinned = pinnedVersion(identity);
   if (pinned === undefined) {
     throw new Error(
       `no OPENCODE_CLI_VERSION in ${CONSTANT_FILE} - the check read nothing, which is not the same as passing`
@@ -79,15 +77,11 @@ const main = async (): Promise<void> => {
   }
 
   const copies = await literals(LITERAL);
-  const series = pinned.split(".").slice(0, 2).join("\\.");
-  const mentions = await literals(bareLiteral(series));
-  const disagree = [
-    ...[...copies].filter(([version]) => version !== pinned),
-    ...[...mentions].filter(([version]) => version !== pinned),
-  ];
+  const mentions = await literals(bareLiteral(pinned));
+  const disagree = disagreements(pinned, copies, mentions);
   if (disagree.length > 0) {
     const detail = disagree
-      .map(([version, files]) => `  ${version} in ${files.join(", ")}`)
+      .map(({ files, version }) => `  ${version} in ${files.join(", ")}`)
       .join("\n");
     throw new Error(
       `these copies do not say ${pinned}, which is what ${CONSTANT_FILE} declares:\n${detail}`
