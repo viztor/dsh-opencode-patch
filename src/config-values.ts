@@ -78,8 +78,12 @@ export const isKeySourcePolicy = (value: unknown): value is KeySourcePolicy =>
  *
  * - `auto` follows the catalog — the `api` the vendor's own entry names, which
  *   today is the `inference` family.
- * - `legacy` forces the older `/zen/v1` pair.
- * - `modern` forces the newer `/inference/v1` pair.
+ * - `legacy` forces the older pair, which really is one base per plane
+ *   (`…/zen/v1`, `…/zen/go/v1`).
+ * - `modern` forces the newer `inference` family, whose base is PER PROTOCOL
+ *   (`…/inference/openai/v1`, `…/inference/anthropic/v1`,
+ *   `…/inference/google/v1beta`, and the `go/` variants) — so "inference/v1" is
+ *   not an address the plugin ever sends, and the copy says `inference/…`.
  *
  * Declared here rather than in `config.ts` so the client card can read the same
  * list without importing schemastery.

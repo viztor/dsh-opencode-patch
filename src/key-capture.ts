@@ -92,7 +92,7 @@ export const tierForRequest = (
     // **The path is read as a path**, by the one predicate that answers for
     // every caller. The substring checks this replaces each got a piece of the
     // newer family wrong: `/inference/go` is a PREFIX of `/inference/google`,
-    // so the ZEN google family was filed as a Go key, and `/inference/v1` is
+    // so the ZEN google family was filed as a Go key, and `/inference/go` is
     // not in `/inference/openai/v1`, so the ZEN openai family was filed under
     // no account at all. A key filed under the wrong account is worse than one
     // filed under none: it is used, and it is the wrong one.

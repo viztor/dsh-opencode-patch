@@ -249,7 +249,7 @@ Nine controls in four sections — the decisions a user actually makes. Everythi
 | **Models & Free Tier** | Enrich model metadata from the OpenCode catalog | `on` | Fills catalog context limits, modalities and thinking levels into model info, and lets the gateway `/models` listing carry the full catalog. Does **not** add models to the picker — the picker shows declared models only; use the card's **Check catalog** row to declare more |
 | **Models & Free Tier** | Inject Core Tools | `on` | Adds the `read` + `bash` schemas free-tier `/responses` bodies require |
 | **Quota Meter** | Enable Composer Usage Meter | `on` | Mounts the live meter in the composer dock — the Go quota ring, or the Zen session spend |
-| **Account & Endpoint** | API Endpoint | `auto` | Which endpoint family requests go to: **Automatic** (follow the catalog) · **Legacy** (`zen/v1`) · **Modern** (`inference/v1`) |
+| **Account & Endpoint** | API Endpoint | `auto` | Which endpoint family requests go to: **Automatic** (follow the catalog) · **Legacy** (`zen/v1`) · **Modern** (`inference/…`) |
 | **Account & Endpoint** | Credential Source | `auto` | Which key wins when several are known: **Automatic** · **Live request first** · **Declared key first** |
 | **Account & Endpoint** | Read the OpenCode installation's key | `off` | Lets the plugin read the credential OpenCode itself stored, as the LAST resort — off by default |
 
@@ -257,7 +257,7 @@ Nine controls in four sections — the decisions a user actually makes. Everythi
 
 Two questions decide where a request goes, and the **Account & Endpoint** section is where you answer them.
 
-**Which endpoint family.** The gateway answers on two families — the older `/zen/v1` and the newer `/inference/v1` — and they are entitled **separately**: an account that works on one is not guaranteed to work on the other. `auto` follows the gateway's own catalog, which today names the newer family, so a catalog move carries you along; `legacy` and `modern` pin one, which is what you want when your account only works on the older one, or when you are checking that the newer one does.
+**Which endpoint family.** The gateway answers on two families — the older `/zen/v1` and the newer `inference` family, whose base is per protocol (`…/inference/openai/v1`, `…/inference/anthropic/v1`, `…/inference/google/v1beta`) — and they are entitled **separately**: an account that works on one is not guaranteed to work on the other. `auto` follows the gateway's own catalog, which today names the newer family, so a catalog move carries you along; `legacy` and `modern` pin one, which is what you want when your account only works on the older one, or when you are checking that the newer one does.
 
 **Which credential wins.** `keySource` orders the sources the plugin can see — `auto` prefers a key you declared, then one captured from a live request, then the declared reference; `request` promotes a captured key first; `configured` does the reverse. Below it, `readOpencodeStore` lets the plugin read the credential OpenCode itself stored, as the **last** resort only. Both are `off`/`auto` by default, so nothing changes until you say so.
 
