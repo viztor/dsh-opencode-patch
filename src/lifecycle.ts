@@ -358,13 +358,23 @@ const installFetchPatch = (
     // asked for debugging. It is the only way to see a request that was patched
     // wrongly: the gateway's answer for a malformed session id reads exactly
     // like its answer for a bad credential.
-    ...(config.debug && config.debugFile !== undefined
-      ? {
+    // **The FILE is written when the deployment named a file.** `debug` is the
+    // console switch ("Log injected streamed calls"), and `debugFile` is the
+    // path — so a deployment that set only the path asked for the file, and
+    // the two halves of one JSONL log must not have different gates.
+    //
+    // They did: the stream hook wrote its entries whenever a path was set, and
+    // this one required `debug` as well. So the README's own example — `debug:
+    // false` beside a `debugFile` path — produced a file holding the stream
+    // entries and none of the per-request ones, which is the half that says
+    // what the interceptor did.
+    ...(config.debugFile === undefined
+      ? {}
+      : {
           debug: (entry: Record<string, unknown>) => {
             void recordDebug(ctx, config.debugFile ?? "", entry);
           },
-        }
-      : {}),
+        }),
   });
 
   ctx.effect?.(() => {

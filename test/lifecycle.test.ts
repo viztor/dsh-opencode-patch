@@ -958,6 +958,59 @@ describe("apply (plugin lifecycle)", () => {
     }
   }, 15_000);
 
+  it("writes the request entries when only a debugFile is configured", async () => {
+    // **The two halves of one JSONL log had different gates.** The stream hook
+    // wrote its entries whenever a path was set; this half required `debug` as
+    // well. So the README's own example — `debug: false` beside a `debugFile`
+    // path — produced a file holding the stream entries and none of the
+    // per-request ones, which are the half that says what the interceptor did.
+    //
+    // `debug` is the CONSOLE switch ("Log injected streamed calls") and
+    // `debugFile` is the path, so naming a file is the request for the file.
+    const tmpDir = await mkdtemp(path.join(tmpdir(), "dsh-opencode-fileonly-"));
+    try {
+      const debugFile = path.join(tmpDir, "requests.jsonl");
+      const originalFetch = globalThis.fetch;
+      const answering = vi.fn(async () => Response.json({ ok: true }));
+      globalThis.fetch = answering as unknown as typeof fetch;
+      let disposer: unknown;
+      const ctx: CordisContext = {
+        effect: (fn: () => unknown) => {
+          disposer = fn();
+        },
+        logger: { info: () => {} },
+        on: () => {},
+      };
+      try {
+        apply(ctx, { debugFile });
+        const url = "https://opencode.ai/zen/v1/chat/completions";
+        const response = await globalThis.fetch(url, {
+          body: JSON.stringify({ messages: [] }),
+          headers: {},
+          method: "POST",
+        });
+        expect(response.status).toBe(200);
+
+        const content = await waitForFileContent(debugFile, 1, 12_000);
+        const entries = content
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter(isRecord);
+        expect(entries.filter((entry) => entry.claimed === true)).toHaveLength(
+          1
+        );
+      } finally {
+        if (typeof disposer === "function") {
+          disposer();
+        }
+        globalThis.fetch = originalFetch;
+      }
+    } finally {
+      await rm(tmpDir, { force: true, recursive: true });
+    }
+  }, 15_000);
+
   it("keeps session affinity across turns for the same DSH session", async () => {
     const tmpDir = await mkdtemp(path.join(tmpdir(), "dsh-opencode-aff-"));
     try {
