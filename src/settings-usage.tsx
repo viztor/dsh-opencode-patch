@@ -35,6 +35,18 @@ import { isRecord } from "./utils/guards.ts";
 import { retryUntilAnswered } from "./utils/retry.ts";
 
 /** The three windows, in the order the panel lists them. */
+/**
+ * The refresh button's spin, as a standalone declaration.
+ *
+ * The meter's stylesheet defines the same animation; this copy is here so the
+ * settings summary does not depend on the meter being mounted.
+ */
+const SPIN_KEYFRAMES = `
+@keyframes dsh-oc-spin {
+  to { transform: rotate(360deg); }
+}
+`;
+
 const WINDOWS = [
   { copy: "usage_rolling", key: "rolling" },
   { copy: "usage_weekly", key: "weekly" },
@@ -170,6 +182,15 @@ export const UsageSummaryView = ({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {/*
+        The spinner's own keyframes. The meter's stylesheet carries them, and
+        that stylesheet is rendered by the METER — so the settings summary's
+        refresh button turned only while the meter happened to be on screen.
+        The animation is the same one (the same name, the same 0.9s cycle), so
+        the two declarations agree; and a duplicate `@keyframes` of the same name
+        is the last one that wins, which is the same animation either way.
+      */}
+      <style>{SPIN_KEYFRAMES}</style>
       <div
         style={{
           alignItems: "baseline",

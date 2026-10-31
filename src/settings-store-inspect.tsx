@@ -247,7 +247,7 @@ export const StoreInspectRow: React.FC<StoreInspectRowProps> = (props) => {
             <div
               style={{
                 color: report.warn
-                  ? "var(--dsw-alias-label-warning, var(--dsw-alias-label-caption))"
+                  ? "var(--dsw-alias-state-warn-label, var(--dsw-alias-label-caption))"
                   : "var(--dsw-alias-label-caption)",
                 marginTop: 6,
               }}
