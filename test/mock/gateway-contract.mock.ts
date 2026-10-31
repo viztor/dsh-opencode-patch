@@ -15,6 +15,12 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import {
+  OPENCODE_FAMILY_API,
+  OPENCODE_PLANE_API,
+} from "../../src/catalog-data.ts";
+import { DEFAULT_USAGE_BASE_URL } from "../../src/config.ts";
+import { LEGACY_PLANE_API } from "../../src/pi-provider.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { catalogFor, firstSpecFor, MOCK_SESSION, ZEN_KEY } from "./helpers.ts";
 import type { GatewayRequest } from "./opencode-gateway.ts";
@@ -221,5 +227,53 @@ describe("the mock gateway", () => {
     const ids = payload.data.map((row) => row.id);
     expect(ids).toContain(first.id);
     expect(ids).toContain("mock-unknown-model");
+  });
+
+  it("serves every base URL the plugin can produce", async () => {
+    // **The coverage invariant behind every other suite.** The request-shape
+    // and plugin cases assert what a request LOOKS like; if the plugin starts
+    // sending to a base this server does not serve, the answer is
+    // `404 no_route` — and a case that checks the headers rather than the
+    // status passes anyway. So a base the plugin knows and the mock does not is
+    // a hole in the whole suite, and it is silent.
+    //
+    // The bases come from the plugin's own constants, so a vendor move that
+    // adds a family fails here rather than in a case that happens not to look.
+    const bases = new Set<string>([
+      ...Object.values(OPENCODE_PLANE_API),
+      ...Object.values(LEGACY_PLANE_API),
+      ...Object.values(OPENCODE_FAMILY_API.go),
+      ...Object.values(OPENCODE_FAMILY_API.zen),
+      DEFAULT_USAGE_BASE_URL,
+    ]);
+    expect(bases.size).toBeGreaterThan(4);
+
+    const unserved: string[] = [];
+    for (const base of bases) {
+      // **The mock's origin, the plugin's PATH.** The constants are absolute
+      // URLs on `opencode.ai`; fetching them here would leave the machine and
+      // pass this suite while proving nothing about the mock — which is what
+      // the first version of this test did.
+      const path = new URL(base).pathname;
+      await fetch(`${gateway.origin}${path}/models`, {
+        headers: {
+          authorization: `Bearer ${ZEN_KEY}`,
+          "x-opencode-session-id": MOCK_SESSION,
+        },
+      });
+      const request = gateway.requests.at(-1) as
+        | { reject?: string | null }
+        | undefined;
+      // `no_route` is the server saying it has no such path at all. Any other
+      // answer — a listing, an unknown-endpoint refusal, an auth refusal — is
+      // the server having a route and deciding about it.
+      if (request?.reject === "no_route") {
+        unserved.push(base);
+      }
+    }
+    expect(
+      unserved,
+      "bases the plugin can send to and the mock cannot serve"
+    ).toEqual([]);
   });
 });
