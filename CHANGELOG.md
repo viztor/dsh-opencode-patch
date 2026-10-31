@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.5.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.3...v1.5.0) (2026-10-31)
+
+
+### Features
+
+* **test:** a fixture harness for the worlds the vendor has not produced ([#138](https://github.com/viztor/dsh-opencode-patch/issues/138)) ([60f61aa](https://github.com/viztor/dsh-opencode-patch/commit/60f61aa47419180021730b9d79d7db0d5d50d0dc))
+
 ## [1.4.3](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.2...v1.4.3) (2026-10-31)
 
 
