@@ -150,6 +150,35 @@ describe("stream-hook · the pass-through guards", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it("says WHY a model cannot be served, instead of leaving the picker empty", async () => {
+    // The diagnostic a reader gets when a model they declared is filtered out.
+    // The three reasons are checked in the order the filter applies them, so the
+    // sentence names the decision that actually fired — naming a protocol for a
+    // model filtered on its tier sends the reader to the routing table for an
+    // entitlement problem.
+    //
+    // `@ai-sdk/mistral` is the reachable case: the catalogue carries one such
+    // model and `isServableSdk` keeps it out of every picker, deliberately.
+    const hook = await hookWith(["opencode"]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const next = vi.fn(() => "next-result");
+      expect(
+        hook({ model: "mistral-large-4", provider: "opencode" }, next)
+      ).toBe("next-result");
+      expect(next).toHaveBeenCalledTimes(1);
+      const said = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(said).toContain("opencode/mistral-large-4 cannot be served");
+      expect(said).toContain("@ai-sdk/mistral");
+      // And once per pair: the hook runs on every request, and the same missing
+      // route must not warn on each one.
+      hook({ model: "mistral-large-4", provider: "opencode" }, next);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("accepts a numeric provider id, which the seam may carry", async () => {
     // `provider` is `unknown` on the seam; a number is stringified before the
     // allow-list is consulted, and the call still reaches `next`.
