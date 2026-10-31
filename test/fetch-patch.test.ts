@@ -686,7 +686,7 @@ describe("patchFetch", () => {
   });
 
   it("sends the affinity pair for a relay and not for an OpenCode plane", async () => {
-    // The same split 1.19.4 makes, read from
+    // The same split 1.19.5 makes, read from
     // `packages/opencode/src/session/llm/request.ts:190-202`: for a provider that
     // starts with `opencode` the client sends `x-opencode-session`; for anything
     // else - a relay a deployment claimed by URL - it sends `x-session-affinity`

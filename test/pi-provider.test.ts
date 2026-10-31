@@ -59,7 +59,7 @@ const withHeaders = (
       fn(model, context, {
         ...options,
         headers: {
-          ...gatewayHeaders(sessionId, "opencode/1.19.4 dsh-opencode-patch"),
+          ...gatewayHeaders(sessionId, "opencode/1.19.5 dsh-opencode-patch"),
           ...(options?.headers as Record<string, string> | undefined),
         },
       } as never);
@@ -341,13 +341,13 @@ describe("pi-provider · the tables themselves", () => {
 });
 
 describe("pi-provider · the User-Agent the stream hook sends", () => {
-  // 1.19.4's client sends `opencode/<version>` and nothing more -
+  // 1.19.5's client sends `opencode/<version>` and nothing more -
   // `packages/opencode/src/session/llm/request.ts:18`. The AI SDK stamps its own
   // `ai-sdk/provider-utils/… runtime/bun/…` tail on a request it sends, which is
   // a different transport's signature, not the client's; and 2.x changed the
   // shape again to `opencode/<channel>/<version>/<client>`.
   it("is the CLI's version and nothing else", () => {
-    expect(OPENCODE_USER_AGENT).toBe("opencode/1.19.4");
+    expect(OPENCODE_USER_AGENT).toBe("opencode/1.19.5");
   });
 });
 

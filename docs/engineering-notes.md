@@ -306,7 +306,7 @@ Four instances in one session is no longer an accident of care. The rule that ca
 
 The file is 190 lines and had only ever been grepped, which is how two findings survived in it: the auto-review section kept the "on the same model" conclusion this work overturned, and section 5's neighbourhood exposed a code comment still describing a credential-prefix guard that was removed.
 
-Sections 1 to 3 check out. The header matrix's version claim is the checkable one — `OPENCODE_CLI_VERSION` is `1.19.4` in `identity.ts`, and `pnpm run cli:version` confirms it is the published version with seven copies agreeing — and the rest of the matrix is a decompilation whose values match what the patch sends.
+Sections 1 to 3 check out. The header matrix's version claim is the checkable one — `OPENCODE_CLI_VERSION` is `1.19.5` in `identity.ts`, and `pnpm run cli:version` confirms it is the published version with seven copies agreeing — and the rest of the matrix is a decompilation whose values match what the patch sends.
 
 The remaining claim in section 1 that cannot be checked from here is the `User-Agent`'s purpose: that it prevents Cloudflare WAF Error 1010. It is not the cause of the free-tier refusal, which was measured exhaustively and is about the model rather than the request, and whether it defeats a WAF challenge is not something this repository can observe.
 
@@ -441,9 +441,9 @@ Evidence, all read:
 
 ## The tool schemas were fixed against the wrong generation, and are back
 
-Read from `git show v1.19.4:packages/opencode/src/tool/read.ts:28-36` and `tool/shell/prompt.ts:15-23`, against the 2.x files I had read:
+Read from `git show v1.19.5:packages/opencode/src/tool/read.ts:28-36` and `tool/shell/prompt.ts:15-23`, against the 2.x files I had read:
 
-|  | 1.19.4 (what this plugin emulates) | 2.x (what I read) |
+|  | 1.19.5 (what this plugin emulates) | 2.x (what I read) |
 | :-- | :-- | :-- |
 | `read` required key | **`filePath`** | `path` |
 | `read` offset/limit descriptions | "The line number to start reading from (1-indexed)" / "The maximum number of lines to read (defaults to 2000)" | "…directory entry…" / "…defaults to and capped at 2000" |
@@ -451,14 +451,14 @@ Read from `git show v1.19.4:packages/opencode/src/tool/read.ts:28-36` and `tool/
 | shell parameters | `command`, `timeout`, `workdir` | `command`, `workdir`, `timeout`, **`background`** |
 | shell `timeout` description | "Optional timeout in milliseconds" | "Set to 0 to disable… defaults to 120000…" |
 
-So the round that "fixed the tool schemas" renamed `filePath` to `path` and added `background` — both correct for 2.x and wrong for the generation this plugin emulates. Reverted. This is the third time in this session that reading the `dev` branch produced a change the `v1.19.4` tag contradicts, after the session headers and the affinity split; the branch layout is the first thing to establish, not the last.
+So the round that "fixed the tool schemas" renamed `filePath` to `path` and added `background` — both correct for 2.x and wrong for the generation this plugin emulates. Reverted. This is the third time in this session that reading the `dev` branch produced a change the `v1.19.5` tag contradicts, after the session headers and the affinity split; the branch layout is the first thing to establish, not the last.
 
 Other deltas the comparison establishes, none of them acted on yet:
 
-- `x-opencode-request` **is** sent by 1.19.4 (the user message id) and was dropped in 2.x. This plugin omitted it for a round — the turn store held no message id — and now sends one minted per turn in the same shape; the section below records how and why.
-- `x-session-affinity` and `X-Session-Id` are **not** sent for `opencode*` providers in 1.19.4 — they are the other branch, for relays. This plugin sends them on every claimed request.
-- `User-Agent` is `opencode/<version>` in 1.19.4, and `opencode/<channel>/<version>/<client>` in 2.x. The plugin sends `opencode/1.19.4 ai-sdk/provider-utils/… runtime/bun/…`, which is neither.
-- Chat bodies use `max_tokens` in 1.19.4 and `max_completion_tokens` in 2.x.
+- `x-opencode-request` **is** sent by 1.19.5 (the user message id) and was dropped in 2.x. This plugin omitted it for a round — the turn store held no message id — and now sends one minted per turn in the same shape; the section below records how and why.
+- `x-session-affinity` and `X-Session-Id` are **not** sent for `opencode*` providers in 1.19.5 — they are the other branch, for relays. This plugin sends them on every claimed request.
+- `User-Agent` is `opencode/<version>` in 1.19.5, and `opencode/<channel>/<version>/<client>` in 2.x. The plugin sends `opencode/1.19.5 ai-sdk/provider-utils/… runtime/bun/…`, which is neither.
+- Chat bodies use `max_tokens` in 1.19.5 and `max_completion_tokens` in 2.x.
 - `b3` is absent in **both** generations, and `traceparent` appears only under `experimental.openTelemetry` — so neither belongs in the plugin's request on the evidence available.
 
 ## The two gaps the failed subagent left, answered directly
@@ -467,9 +467,9 @@ It died without a closing message, so the four questions it was given were answe
 
 **`x-opencode-project` is not a hash — it is the git root's path.** `packages/core/src/project.ts:307-315` is `root.replace(/\.git\/?$/, "")` fed to `ID.make`, so the identifier is the working-copy root with the `.git` suffix stripped. A subproject or worktree does not get its own id: `project.ts:356-376` resolves through `repo.commonDirectory` and takes that store's cached id, so a worktree shares its main repository's — which is what "workspace project attribution" means. With no VCS at all the id is `ID.global` (`:348`, `:376`), and that is the case the plugin's current `"global"` actually matches. So for a real repository the plugin sends the wrong value, and the right one is a path rather than a digest.
 
-**`x-opencode-request` is a user-message id, and it can be supplied.** 1.19.4 sends `input.user.id` (`request.ts:194`), and the value is `input.messageID ?? MessageID.ascending()` (`session/prompt.ts:471` and `:657`) — so it is the id of the user's message, not of a turn, and the CLI accepts one from its caller rather than always minting one. The capture of the running client shows the shape as `msg_…`. That matters for this plugin: the turn store held no message id, which is why the header was absent for a round, and a host-supplied value would still be the faithful one — what shipped instead is a minted id in the same shape, because the one consumer the trees show is a metric and a per-turn value satisfies it without a host change. See the section below.
+**`x-opencode-request` is a user-message id, and it can be supplied.** 1.19.5 sends `input.user.id` (`request.ts:194`), and the value is `input.messageID ?? MessageID.ascending()` (`session/prompt.ts:471` and `:657`) — so it is the id of the user's message, not of a turn, and the CLI accepts one from its caller rather than always minting one. The capture of the running client shows the shape as `msg_…`. That matters for this plugin: the turn store held no message id, which is why the header was absent for a round, and a host-supplied value would still be the faithful one — what shipped instead is a minted id in the same shape, because the one consumer the trees show is a metric and a per-turn value satisfies it without a host change. See the section below.
 
-Still open from that subagent's brief: the exact AI SDK wire body on 1.19.4's default path (`max_tokens` versus `max_completion_tokens`, `stream_options`, `store`, `prompt_cache_key`, `strict`) — the pinned AI SDK versions are not in this checkout and the earlier comparison flagged its own answer as read from a different version.
+Still open from that subagent's brief: the exact AI SDK wire body on 1.19.5's default path (`max_tokens` versus `max_completion_tokens`, `stream_options`, `store`, `prompt_cache_key`, `strict`) — the pinned AI SDK versions are not in this checkout and the earlier comparison flagged its own answer as read from a different version.
 
 ## The mount's base URL should be data, and what it takes to make it so
 
@@ -488,7 +488,7 @@ Steps 1 and 2 alone change nothing, and step 3 without 1 or 2 moves a constant. 
 
 ## `x-opencode-request` is sent again — minted, because the message id is not reachable from here
 
-1.19.4 sends it (`request.ts:194`) and 2.x dropped it. It is the user's message id — `input.user.id`, set from `input.messageID ?? MessageID.ascending()` (`session/prompt.ts:471`, `:657`) — so the CLI is happy to be handed one rather than minting it, and the running client shows the shape as `msg_…`.
+1.19.5 sends it (`request.ts:194`) and 2.x dropped it. It is the user's message id — `input.user.id`, set from `input.messageID ?? MessageID.ascending()` (`session/prompt.ts:471`, `:657`) — so the CLI is happy to be handed one rather than minting it, and the running client shows the shape as `msg_…`.
 
 The plugin's turn state carries `model`, `parentValue`, `project`, `provider` and `value` (`src/turn-store.ts`), and none of them is a message id: `value` is the session's derived id, which is a different object from the message. The stream hook's `options` carries no message either — the adapter builds the body after the hook returns — so there is nothing at this layer to send. This section said for a round that "inventing a value would be worse than omitting the header", and the premise turned out to be the part that was wrong: the gateway reads this header as a metric (`packages/console/app/src/routes/zen/util/handler.ts:127-135`) and the console rewrites it to `x-opencode-request-id` before forwarding, so **what the header has to satisfy is its shape and its one-value-per-request lifecycle — not the CLI's own message table**, which nothing reads back.
 

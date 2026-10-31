@@ -85,11 +85,11 @@ describe.skipIf(!ENABLED)("patched fetch over a real socket", () => {
     expect(response.status).toBe(200);
 
     // The session headers carry ONE value in the generation this plugin emulates.
-    // Read from the 1.x line's last release, v1.19.4, in
+    // Read from the 1.x line's last release, v1.19.5, in
     // `packages/opencode/src/session/llm/request.ts`: `x-opencode-session-id` and
     // `x-opencode-session` both carry `sessionID`. 2.x splits the second into an
     // affinity id, and this case asserted that for a round - from the wrong
-    // generation, while the plugin emulates 1.19.4.
+    // generation, while the plugin emulates 1.19.5.
     expect(headerOf(0, "x-opencode-session-id")).toBe(state.value);
     expect(headerOf(0, SESSION_HEADER)).toBe(state.value);
     expect(headerOf(0, SESSION_AFFINITY_HEADER)).toBeUndefined();
@@ -99,7 +99,7 @@ describe.skipIf(!ENABLED)("patched fetch over a real socket", () => {
     expect(headerOf(0, PARENT_SESSION_HEADER)).toBe("ses_parent00000");
     expect(headerOf(0, PARENT_SESSION_ALT_HEADER)).toBe("ses_parent00000");
 
-    // Origin identity, including the turn's message id — the header 1.19.4's
+    // Origin identity, including the turn's message id — the header 1.19.5's
     // `request.ts` sends beside the client and project headers.
     expect(headerOf(0, "x-opencode-client")).toBe("cli");
     expect(headerOf(0, "x-opencode-project")).toBe("dsh-opencode");
