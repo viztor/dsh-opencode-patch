@@ -48,6 +48,18 @@ Two entry points:
 
 **A model with no price in a fixture is PAID at a nominal rate, not free.** The parser derives `is_free` from a zero cost, so a "no price" default would silently turn every fixture model into a free tier.
 
+## The scripts' pure halves
+
+A gate is a script, and a script that runs at import time cannot be tested — so its decisions move out of it:
+
+| script | the decision, extracted | what the test holds |
+| :-- | :-- | :-- |
+| `generate-go-limits.ts` | `scripts/go-limits-html.ts` | which table is an allowance (by header, not position), the refusal when the page carries none, and the round trip through the real parser |
+| `check-vendor-version.ts` | `scripts/vendor-version.ts` | the constant is found, and "read nothing" is distinguishable from "passed" |
+| `publish-scoped.ts` | `scripts/wrapper-forwarder.ts` | the retired alias's entry LINKS against the built barrel in a real Node process |
+
+The pattern is the same one the `utils/` gate enforces inside `src/`, applied to the one place it had not reached: **a decision that lives in a top-level-await script is exercised only by the vendor's schedule**. Two of the three above had already passed while wrong — the version gate twice, the Go-limits reader when the docs moved to HTML.
+
 ## Two habits
 
 ### Plant the violation
