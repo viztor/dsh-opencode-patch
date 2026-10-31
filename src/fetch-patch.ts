@@ -22,8 +22,10 @@ import {
   tierForRequest,
 } from "./key-capture.ts";
 import {
+  type CatalogPlane,
   enrichModelsResponse,
   findModelSpec,
+  findModelSpecOn,
   isModelsListingUrl,
 } from "./models-catalog.ts";
 import {
@@ -45,6 +47,7 @@ import {
   authHeaderFor,
   gatewayPlaneFor,
   headerSourceOf,
+  isGoPlaneUrl,
   requestUrlOf,
   toolNamesOf,
 } from "./utils/request-shape.ts";
@@ -67,7 +70,10 @@ import {
  * @param body - the request body, when there is one to read.
  * @returns whether the model it names is flagged free.
  */
-const isFreeModelBody = (body: RequestInit["body"]): boolean => {
+const isFreeModelBody = (
+  body: RequestInit["body"],
+  plane: CatalogPlane
+): boolean => {
   if (typeof body !== "string" || body.length === 0) {
     return false;
   }
@@ -81,7 +87,13 @@ const isFreeModelBody = (body: RequestInit["body"]): boolean => {
     if (typeof model !== "string" || model.length === 0) {
       return false;
     }
-    return findModelSpec(model)?.is_free === true;
+    // **The plane's own flag.** A model can be free on one plane and not on the
+    // other, and this decides whether a credential is required — so the answer
+    // has to be the plane's. The plane-agnostic lookup searches Go first, which
+    // today agrees with the plane-aware one for every model in the catalog, and
+    // is wrong the day it does not.
+    const spec = findModelSpecOn(plane, model) ?? findModelSpec(model);
+    return spec?.is_free === true;
   } catch {
     return false;
   }
@@ -295,7 +307,7 @@ export const patchFetch = (
         // resolves a `Request`-carried body, and this check runs before it. A
         // body the switch cannot see answers "not free", which is the safe
         // side - the warning is the status quo, not a new failure.
-        !isFreeModelBody(init?.body)
+        !isFreeModelBody(init?.body, isGoPlaneUrl(url) ? "go" : "zen")
       ) {
         warnedNoCredential.add(plane);
         const sources: string[] = [

@@ -76,6 +76,22 @@ describe("isCoreToolModel", () => {
     expect(isCoreToolModel("", "")).toBe(false);
   });
 
+  it("reads the free flag off the PLANE's catalog when the plane is known", () => {
+    // A model can be free on one plane and paid on the other, and this decides
+    // whether the free tier's tools are injected — into a request the account
+    // pays for, that gives a model tools it will not be given. The flags agree
+    // for every model in the catalog today (`test/catalog.test.ts` holds that
+    // invariant), so this case cannot show a difference; it pins the RULE, and
+    // the plane's own row is what a future divergence must be read from.
+    expect(isCoreToolModel("beam-free", "", "go")).toBe(true);
+    expect(isCoreToolModel("beam-free", "", "zen")).toBe(true);
+    // A paid model stays out on either plane, and the marker's substring
+    // fallback still applies per plane.
+    expect(isCoreToolModel("gpt-5.4", "", "go")).toBe(false);
+    expect(isCoreToolModel("gpt-5.4", "", "zen")).toBe(false);
+    expect(isCoreToolModel("gpt-5.4", "preview", "go")).toBe(false);
+  });
+
   it("matches a substring, case-sensitively, anywhere in the id", () => {
     expect(isCoreToolModel(FREE_MODEL, DEFAULT_FREE_MODEL_MARKER)).toBe(true);
     expect(isCoreToolModel("ling-3.1-flash-free", "free")).toBe(true);
