@@ -6,6 +6,14 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.4.3](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.2...v1.4.3) (2026-10-31)
+
+
+### Fixes
+
+* send Gemini 4 thinking levels on older host runtimes ([#130](https://github.com/viztor/dsh-opencode-patch/issues/130)) ([16482fb](https://github.com/viztor/dsh-opencode-patch/commit/16482fbb741693054069518bab79df5586470950))
+* **usage:** answer the whole opencodeGoUsage contract, for the sibling page and the client ([#137](https://github.com/viztor/dsh-opencode-patch/issues/137)) ([5052b31](https://github.com/viztor/dsh-opencode-patch/commit/5052b31324694b52faa4d99d8c662a15ba929e6c))
+
 ## [1.4.2](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.1...v1.4.2) (2026-10-31)
 
 
