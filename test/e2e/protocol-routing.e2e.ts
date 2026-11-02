@@ -324,8 +324,8 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       const answer = await probe(protocol, model, key, base);
       // The rule is in `verdict.ts`, where it is unit-tested: a refusal and a
       // retirement are both vendor-side facts, and a case built on either fails
-      // for a reason that is not its own.
-      if (usableAsSubject(answer)) {
+      // for a reason that is not its own. The case's own narrowing comes after.
+      if (usableAsSubject(answer) && accept(answer)) {
         return model;
       }
     }
