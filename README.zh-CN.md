@@ -217,7 +217,7 @@ opencode-responses:
 | 网关的 `/models`     | **这个账号**实际能用什么                       |
 | 发现装饰             | `discoverModels` 该回答什么                    |
 
-合并是**增量式**的：适配器给的行保留，规范行只在缺失时追加，只有当按 provider 记录的退役名单点名某个模型时才省略它——那是事实，不是猜测。显示名与价格取自目录（`models.opencode.ai`），因为网关列表只给 id，别的几乎没有。
+合并是**增量式**的：适配器给的行保留，规范行只在缺失时追加，只有当目录（registry）把某个模型标为 `status: "deprecated"` 时才省略它——那是事实，不是猜测。显示名与价格取自目录（`models.opencode.ai`），因为网关列表只给 id，别的几乎没有。
 
 有两点你在使用中会注意到。**冷启动永远不为空**——内置 shim 在第一次刷新前就能回答，选择器立刻有模型可选。而且**目录里没有条目的模型照样出现**，费率位置显示 `—`：既不猜，也不会退回去显示上一个模型的名字。
 
@@ -439,7 +439,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 | **网关** | `opencode.ai/zen/v1`（`/responses`、`/chat/completions`、`/messages`、`:streamGenerateContent`）、`zen/go/v1`（`/chat/completions`） |
 | **模型目录** | 由 `models.opencode.ai/api.json` 生成；下线判定直接跟随目录自身的 `status: "deprecated"` 标记，不维护任何手工 id 列表 |
 | **上游 pi** | **不随包携带。** 桥接在运行时加载 harness 已安装的那份 `@earendil-works/pi-ai`，因此 harness 升级不会与本插件锁定的副本产生版本错位 |
-| **验证关卡** | `vp check` 干净、**961** 个确定性测试全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
+| **验证关卡** | `vp check` 干净、确定性单元与离线网关 mock 套件全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
 
 ---
 

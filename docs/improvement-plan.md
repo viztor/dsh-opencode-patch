@@ -65,7 +65,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | D16 | **The protocol comes from the catalog, never from a guess at the model's name.** The order is: the catalog's SDK through `PROTOCOL_FOR_SDK`, then pi's own catalog entry, then the user's route-level `api`, then `openai-completions`. `protocolFromModelId` is deleted. **Stands after the restack.** pi 1.3 and later send the newest Google family's thinking levels themselves, so both P-R1's catalog-driven levels and `main`'s hard-coded bridge (#130) are no-ops for today's ids; P-R1 keeps its rule for an id the catalog marks level-only and pi's pattern misses, and #130's code goes with the module P-R1 deletes. |
 | D17 | **Precedence is catalog first.** Metadata and reasoning levels come from the user's model row, then pi-ai's route-level `modelOverrides`, then the catalog, then pi, then the defaults. **The defaults are pi-ai's, restated:** a 1_000_000-token context window and 128_000 output tokens on the alpha host (they were 262_144 and 32_768). pi-ai does not export them, so a test reads them from the installed pi-ai and fails when they move, rather than letting a stale copy understate a window. |
 | D18 | **Settings keeps showing the planes.** One read-only wrapper on `settings.describe` puts the plane entries back into pi-ai's displayed value (F20). The user's config is never written: the Models page writes only through `settings.mutate` path edits (`client/ui-settings-models/src/client/operations.ts:87`). |
-| D19 | **Plugin settings.** _Stands after the restack: `main`'s copy says `auto` "follows the catalog", but its code agrees that `auto` is `modern`; P1a's copy wins, pinned by `endpoint-copy.test.ts`._ Delete `modelOverrides`, `maxContextWindow`, `modelRoutes` and `internalRoutes`, and the README's nonexistent `hiddenModels`. Keep `endpoint` (`legacy` or `modern`, with `auto` an alias of `modern`). Keep `providers`, redefined as the route ids whose turns the plugin decorates, with both planes always included. |
+| D19 | **Plugin settings.** _Stands after the restack: `main`'s copy says `auto` "follows the catalog", but its code agrees that `auto` is `modern`; P1a's copy wins, pinned by `endpoint-copy.test.ts`._ Delete `modelOverrides`, `maxContextWindow`, `modelRoutes` and `internalRoutes`, and the README's nonexistent `hiddenModels` (removed in P0). Keep `endpoint` (`legacy` or `modern`, with `auto` an alias of `modern`). Keep `providers`, redefined as the route ids whose turns the plugin decorates, with both planes always included. |
 | D20 | **The plane adapter resolves keys by pi-ai's rule.** A named ref resolves through the credentials service, then the launch environment, then fails with `MISSING_CREDENTIAL` and sends no request. With no ref, pi's ambient key applies, plus the `readOpencodeStore` opt-in. Captured and literal keys never feed the adapter; they stay in the fetch patch's fill for an empty or placeholder wire key. |
 | D21 | The keyless paid-model filter on listings is dropped (D3, D8). Without a key, dispatch fails loudly. |
 | D22' | The `@deepseek-ai/*` dev dependencies are the **alpha.2 cluster** `main` already follows: `0.2.2-alpha.2`, with cordis `4.0.6-alpha.1` and its loader `1.0.7-alpha.1`, which is what `dsh@alpha` installs. They are named once, in `test/support/host-versions.ts`. The rc line survives only as the peer range `main`'s `harness-channel.test.ts` enforces for both channels. _Replaces D22 (the 0.2.1-rc.2 cluster)._ |
@@ -104,19 +104,19 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
   - Offer Off only where the protocol can disable reasoning (`adapter.ts:184-196`).
   - Verify that `"high"` is what each protocol sends for "on" before relying on it. Today `"on"` goes out verbatim (`openai-completions.js:718`, `anthropic-messages.js:733-735`).
 
-## Defects found in this audit, not yet fixed (all verified in code)
+## Defects found in this audit, and where each now stands (all verified in code)
 
 | Defect | Where |
 | :-- | :-- |
 | ~~The deprecated wrapper re-exports a `default` that does not exist, an ESM link error.~~ Fixed on `main` (#135); P2 retires the wrapper (D9). | `scripts/publish-scoped.ts:137`, `release.yml:124` |
 | Settings shows pi's snapshot, not the catalog | `models-discovery.ts:142-198,532-539` |
 | Mode merging is done only for Go→Gemini. For the other modes the picker shows catalog levels while dispatch validates against a different profile: toggle models show Minimal…Max with no Off, and Go `minimax-m3` + Xhigh/Max is refused on the internal Anthropic route. | `models-discovery.ts:607-616,735-760,1063-1203`; `pi-provider.ts:351-386`; `responses-provider.ts:111-150` |
-| `isZenProvider("opencode-google")` is false | `utils/request-shape.ts:265-271` |
-| `enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404. | `models-catalog.ts:800-804` |
-| The warning token doesn't exist, so warnings render as caption text. The host's text token is `--dsw-alias-state-warn-label`. | `settings-card.tsx:159`, `settings-store-inspect.tsx:250` |
-| The Settings spinner animates only if the meter is mounted | `settings-usage.tsx:248` → `usage-ui.ts:440` |
+| ~~`isZenProvider("opencode-google")` is false~~ Fixed on `main`: only `opencode-go` and `opencode-go-*` are excluded. P1a adds the regression test. | `utils/request-shape.ts:273-282` |
+| ~~`enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404.~~ Fixed on `main` (#133): a refusal other than 404 passes through. | `models-catalog.ts:731` |
+| ~~The warning token doesn't exist, so warnings render as caption text.~~ Fixed on `main` (#133): both use `--dsw-alias-state-warn-label`. | `settings-card.tsx:159`, `settings-store-inspect.tsx:250` |
+| ~~The Settings spinner animates only if the meter is mounted~~ Fixed on `main` (#133): the card carries its own keyframes. | `settings-usage.tsx:45` |
 | ~~The stream hook writes `debugFile` with `debug` off~~ Not a defect under D24: naming `debugFile` writes both halves. | `stream-hook.ts:327-340` vs `lifecycle.ts:361` |
-| `settings-purge` reports `{ ok: false }` as "not a purge result" and casts instead of using the parser | `settings-purge.ts:47-55` |
+| `settings-purge`: the `{ ok: false }` branch and the parser are on `main` (#133). Still open: a refused purge whose `error` is the host's `RemoteError` object, not a string, shows the generic message; P1a reads its `message`. | `settings-purge.ts:56-69` |
 | The stream hook's `prepared` handling is dead. The host never reads `options.prepared`. | `stream-hook.ts:44,200-203,258` |
 | The partition test misses `debugFile` | `test/settings-page.test.tsx:1223` |
 | `cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists | `cordis.patch.yml:23,36,61` |
