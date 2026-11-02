@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.7.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.6.0...v1.7.0) (2026-11-02)
+
+
+### Features
+
+* **plugin-page:** a curated page and a featured image, instead of the whole README ([#146](https://github.com/viztor/dsh-opencode-patch/issues/146)) ([624cd9f](https://github.com/viztor/dsh-opencode-patch/commit/624cd9f6e51313c8f15cac8d442f5d4bf1450e5d))
+
 ## [1.6.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.5.0...v1.6.0) (2026-10-31)
 
 
