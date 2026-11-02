@@ -167,7 +167,7 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 | `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _(a dialect this plugin does not serve)_ | **not offered** |
 
-Counts are the **80** active `opencode` models in `models.opencode.ai` as of 2026-10-31 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
+Counts are the **80** active `opencode` models in `models.opencode.ai` as of 2026-10-31 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 
 The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 
@@ -389,7 +389,6 @@ These exist in the schema but render no control — each is a literal, a marker,
           - opencode-anthropic
         gatewayUrls:
           - opencode.ai/zen
-        hiddenModels: [] # ids withheld from every listing
         sessionIdEnv: "OPENCODE_SESSION_ID"
         freeModelMarker: "free"
         usageBaseURL: "https://opencode.ai/zen/go/v1"
@@ -429,17 +428,17 @@ These exist in the schema but render no control — each is a literal, a marker,
 
 **Verified on DeepSeek Harness `0.2.1` — both the `alpha` and `rc` channels (Node 24+)**
 
-The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. Both channels' latest is **`0.2.1`**, and that line is this plugin's target — it is tested against every published `0.2.1` build in both channels, and the `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
+The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, the `rc` channel's latest, and the **`0.2.2`** prereleases the `alpha` channel now carries (the test install runs `0.2.2-alpha.2`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
 
 ```
->=0.2.1-alpha.1 <0.2.2
+>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
 ```
 
-One range covers the whole line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. A plain `<0.2.2` would **not** work — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, which is how a range written against one channel silently excludes the other.
+The first clause covers the `0.2.1` line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. The second is **not** redundant — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, so `<0.3.0` alone would silently drop every `0.2.2-*` build, alpha and rc alike. Both clauses stop at `0.3.0`, which leaves the next line a separate decision rather than a silent widening.
 
 | Surface | Target |
 | :-- | :-- |
-| **Harness line** | **`0.2.1`**, `alpha` and `rc` channels alike (peer: `>=0.2.1-alpha.1 <0.2.2`) |
+| **Harness line** | **`0.2.1`** and the **`0.2.2`** prereleases, `alpha` and `rc` channels alike (peer: the range above) |
 | **Plugin package** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
 | **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` |

@@ -847,14 +847,15 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       }
       if (answered === undefined) {
         if (busy) {
-          // Every candidate was busy, which says nothing about the tier.
+          // No candidate answered and at least one was busy, which says
+          // nothing about the tier.
           context.skip();
           return;
         }
         // Reported rather than skipped: the account (or the vendor) closed the
         // whole free tier, and that is worth a line in the run's output.
         console.log(
-          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, or throttled. The header-restoration case did not run.`
+          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, refused for the account (no funds, no entitlement), or never answered. The header-restoration case did not run.`
         );
         return;
       }

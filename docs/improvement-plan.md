@@ -6,7 +6,7 @@ The result of an architecture audit of the tree at 1.4.1, and the order in which
 
 - six audits: routing, catalog, credentials, config/UI, tests/CI/docs, and the stream path;
 - an adversarial review of the plan itself, then a nine-lens review (five reviewers, four investigators) in which two independent skeptics checked every finding: 78 of 82 were upheld and are folded in here;
-- the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog it pins). File references into the host are relative to that repository's `packages/`.
+- the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog its rc tag pins; the alpha tag pins 1.3.0, D14'). File references into the host are relative to that repository's `packages/`.
 
 **Restacked onto 1.8.0 (November 2026).** The stack was cut from 1.4.1. Since then `main` moved to 1.8.0 and followed the harness onto its **alpha** track (the `0.2.2-alpha.2` cluster, cordis `4.0.6-alpha.1`, pi `1.4.0` exact), and it landed several things the plan had scheduled: the plane-aware price, free flag and refusal (#133), a working retired alias (#135), the synthetic catalogue fixtures (#138), the language-pair gate and the live-run verdicts (#140), and the scripts' pure halves (#143, #144). Each open phase merges its parent, and only P0 merges `main`. What changed in the decisions is under "Owner decisions" (D14', D22', D17's defaults, D23, D24, D25), what changed per phase is under "Restack adjustments", and what two community plugins built on the same host taught is under "Lessons from opencode2dsh". A new phase, P-R3, follows P-T3.
 
@@ -20,7 +20,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 
 | Phase | PR | Title | State | Restack onto 1.8.0 |
 | :-- | :-- | :-- | :-- | :-- |
-| P0 | #105 | suite hardening, 12 defect fixes, this plan | in review | **merged `main` 1.8.0**; catalog refreshes and the pricing fix dropped (on `main`) |
+| P0 | #105 | suite hardening, 10 defect fixes, this plan | in review | **merged `main` 1.8.0**; catalog refreshes and the pricing fix dropped (on `main`) |
 | P1a | #106 | `fix:` shipped breakage | in review | pending: merges P0; shrinks hard (title changes) |
 | P1b | #107 | `chore:` hygiene | in review | pending: merges P1a; drops its tool-fallback variant (D25) |
 | P2 | #108 | `feat:` a smaller public API | in review | pending: merges P1b; re-retires the wrapper (D9) |
@@ -134,7 +134,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | # | Fact | Evidence |
 | :-- | :-- | :-- |
 | F1 | **One route already serves every mode, per model.** llm-pi-ai resolves `api` and `baseUrl` per model: `request.api ?? base?.api ?? routeApi` and `request.baseURL ?? base?.baseUrl ?? providerBaseUrl`, where `base` is pi's installed catalog entry. | `llm-pi-ai/src/catalog.ts:917-922` |
-| F2 | **pi's installed `opencode` catalog spans four protocols, each with its own endpoint.** In pi 1.1.0, which the host pins and patches: Zen has 18 anthropic-messages (`/zen`) and 7 google, 28 completions and 30 responses (`/zen/v1`). Go has 5 anthropic (`/zen/go`) and 19 completions and 6 responses (`/zen/go/v1`), and **no google**. | `@earendil-works/pi-ai@1.1.0` `dist/providers/data/opencode*.json`; the harness's `pnpm-lock.yaml:13` |
+| F2 | _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ **pi's installed `opencode` catalog spans four protocols, each with its own endpoint.** In pi 1.1.0, which the host pins and patches: Zen has 18 anthropic-messages (`/zen`) and 7 google, 28 completions and 30 responses (`/zen/v1`). Go has 5 anthropic (`/zen/go`) and 19 completions and 6 responses (`/zen/go/v1`), and **no google**. | `@earendil-works/pi-ai@1.1.0` `dist/providers/data/opencode*.json`; the harness's `pnpm-lock.yaml:13` |
 | F3 | **A model pi's catalog does not know cannot get its own protocol.** A profile entry has no `api`/`baseURL` field (`PiAiModelProfile`); it takes the route's `api`, or `sharedCatalogApi`, which is undefined for a multi-protocol catalog. | `llm-pi-ai/src/catalog.ts:600-640,681-691,917-921` |
 | F4 | **Such a model cannot be saved, listed or dispatched on a pi-ai route.** Writes are validated strictly (`assertServiceable`), so the save is rejected with "needs an api". Stored reads are deferred, so the id lands in `modelErrors`. `listModels` lists only resolved models, and `modelOf` throws `INVALID_CONFIG`. | `llm-pi-ai/src/config.ts:357-368,487`; `index.ts:171`; `adapter.ts:271-311` |
 | F5 | **A route-level `api` or `baseURL` overrides every model**, collapsing the modes onto one protocol or endpoint. | `llm-pi-ai/src/catalog.ts:917,922` |
@@ -162,8 +162,8 @@ Three corrections to the facts above:
 
 **What the plugin has to add, and nothing else:**
 
-- **G1:** serve any declared model the host's pi cannot resolve (D15). That means models newer than pi 1.1.0's catalog (8 Zen and 4 Go, including every Gemini model on Go, F10), **and** ids the catalog doesn't know at all.
-- **G2:** the endpoint family. pi 1.1.0 stores the legacy bases; the plugin sends the per-protocol `inference` bases, or the legacy ones when the `endpoint` setting says so.
+- **G1:** _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ serve any declared model the host's pi cannot resolve (D15). That means models newer than pi 1.1.0's catalog (8 Zen and 4 Go, including every Gemini model on Go, F10), **and** ids the catalog doesn't know at all.
+- **G2:** _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ the endpoint family. pi 1.1.0 stores the legacy bases; the plugin sends the per-protocol `inference` bases, or the legacy ones when the `endpoint` setting says so.
 - **G3:** a profile-level `api`/`baseURL` (F5). It is the user's explicit choice and is honoured as one (D8), without collapsing the modes.
 
 ### The design: the plugin owns the plane routes (D13)
@@ -502,7 +502,7 @@ Two community plugins solve the same problem on the same host: [`FishBottle7/ope
 
 - **Unit:**
   - each shipped breakage, red before its fix;
-  - the wrapper forwarder;
+  - the wrapper is retired (P2, D9), so it has no forwarder to test;
   - a snapshot of the endpoint copy;
   - the manifest is a subset of `Config.dict`;
   - the `src.ts` indirection;

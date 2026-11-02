@@ -49,7 +49,7 @@ The web profile wires this checkout with `link:`, so builds are picked up like t
 
 - **Host (`lib/index.mjs`) — restart required.** The base bundle ships `hmr root: []` (config watches only, `**/node_modules` ignored) and the loader caches ESM imports per process, so a linked package is never re-imported after boot. After every `pnpm run build`, restart `dsh web` — otherwise the profile silently keeps running the module from boot time. Symptom of a stale host: the plugin row is active but the settings card shows "This plugin is not loaded, so it cannot be configured." — `dsh-settings` is filtering on the old module's `Config` schema.
 - **Client (`lib/client.js`) — refresh suffices.** The client bundle is re-served from disk on every page load; a browser refresh picks it up.
-- **Verify after a restart:** the Plugins page shows the **OpenCode Patch** card, and its configure view renders all 17 fields (no unavailable line). `node --experimental-strip-types scripts/check.ts` catches a stale `lib/` before you do (`src/` newer than `lib/`).
+- **Verify after a restart:** the Plugins page shows the **OpenCode Patch** card, and its configure view renders every card field (`CARD_FIELDS` in `src/settings-fields.ts`; the `CONFIG_ONLY_FIELDS` knobs stay off the card by design) and no unavailable line. `node --experimental-strip-types scripts/check.ts` catches a stale `lib/` before you do (`src/` newer than `lib/`).
 
 ## Code conventions
 

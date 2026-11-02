@@ -67,12 +67,13 @@ It is the same trick `scripts/check.ts` already uses for the client bundle, at f
 
 ## What moved
 
-| to `utils/`        | from                                              |
-| :----------------- | :------------------------------------------------ |
-| `request-shape.ts` | new (extracted in #74)                            |
-| `guards.ts`        | `src/`                                            |
-| `session-id.ts`    | the rules inside `session.ts`                     |
+| to `utils/` | from |
+| :-- | :-- |
+| `request-shape.ts` | new (extracted in #74) |
+| `guards.ts` | `src/` |
+| `session-id.ts` | the rules inside `session.ts` |
 | `google-replay.ts` | `src/` (pure translation, so the gate polices it) |
+| `retry.ts` | new (7b1c5d4): the settings card's usage-read retry loop; its default `sleep` and its warning still reach a global timer and `console`, which P1b moves to the caller |
 
 - `src/session.ts` · `src/turn-store.ts` — the `ses_<12hex><14base62>` derivation and the `AsyncLocalStorage` turn store.
 - `src/stream-hook.ts` · `src/fetch-patch.ts` · `src/tool-fallback.ts` — the `llm/stream` hook, the fetch interceptor, and the free-tier `read`/`bash` fallback.
@@ -109,7 +110,7 @@ Web client bundle (`lib/client.js`): `src/settings-page.tsx` (entry, wiring only
 vp test run            # unit suite (refuses to start below engines.node)
 pnpm run test:shuffle  # the unit suite in random order; CI runs it on Node 24
 pnpm run test:mock     # gateway mock suite: offline, no key, runs in CI
-vp test run --coverage # with the coverage ratchet (95/90/93/95)
+vp test run --coverage # with the coverage ratchet (thresholds in vite.config.ts)
 vp check               # format, lint, types
 vp fmt --write         # rewrite formatting
 pnpm run build         # build lib/ (host bundle + client bundle)

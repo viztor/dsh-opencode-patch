@@ -58,8 +58,9 @@ export interface FreshnessCheckSpec {
   readonly entry: string;
   /**
    * Inputs the script reads as data rather than importing, so the import walk
-   * cannot see them. `check-vendor-version.ts` reads the pinned version out of
-   * `src/identity.ts` with a regular expression.
+   * cannot see them. `check-vendor-version.ts` reads `src/identity.ts` as text
+   * and takes the pinned version out of it with `vendor-version.ts`'s
+   * `PINNED_VERSION` regular expression.
    */
   readonly dataInputs: readonly string[];
   /** The generated files the check compares, and its `--write` rewrites. */
@@ -68,10 +69,11 @@ export interface FreshnessCheckSpec {
 
 /**
  * Every generated file. Never an input, whichever import reaches it.
- * `check-vendor-version.ts` keeps its own copy of this list (it skips these in
- * its copy scan, since they hold vendor data, not copies the repository
- * maintains) rather than importing it, which would make this module one of its
- * inputs; `test/freshness-scope.test.ts` ties the two.
+ * `scripts/vendor-version.ts` keeps its own copy of this list
+ * (`GENERATED_TABLES`, which `scansFile` skips in the copy scan, since these
+ * hold vendor data, not copies the repository maintains) rather than importing
+ * it, which would make this module an input of `cli:version`;
+ * `test/freshness-scope.test.ts` ties the two.
  */
 export const GENERATED_OUTPUTS: readonly string[] = [
   "src/catalog-data.ts",
