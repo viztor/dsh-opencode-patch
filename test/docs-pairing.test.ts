@@ -1,10 +1,11 @@
 /**
  * The language pairs: one document each, two languages.
  *
- * `README` and `docs/quota-meter` are the documents this repository publishes
- * twice. Every count and every table in them is already held to the code — but
- * nothing held the two LANGUAGES to each other, and that is the drift that
- * actually happens: a row added to one language and not the other.
+ * `README`, `docs/quota-meter` and `docs/detail` are the documents this
+ * repository publishes twice. Every count and every table in them is already
+ * held to the code — but nothing held the two LANGUAGES to each other, and that
+ * is the drift that actually happens: a row added to one language and not the
+ * other.
  *
  * It had, when this check was first run, in both directions:
  *
@@ -14,8 +15,12 @@
  *
  * The check is deliberately about STRUCTURE, not prose. A translator may
  * rephrase, and the two languages are allowed their own idiom — but a section, a
- * code block or a table row is a FACT, and a fact present in one language and
- * absent from the other is invisible to whoever reads only one of them.
+ * code block, a table row or an image is a FACT, and a fact present in one
+ * language and absent from the other is invisible to whoever reads only one.
+ *
+ * No axis has a minimum. The page documents are ONE image line each, by design,
+ * and a floor of "at least one heading" was a rule about long pages dressed up
+ * as a rule about pairing.
  *
  * @module test/docs-pairing.test
  */
@@ -82,59 +87,76 @@ const tableRows = (text: string): number[] => {
 const listItems = (text: string): number =>
   (text.match(/^(?:\d+\.|[-*]) /gmu) ?? []).length;
 
+/** Every image a document embeds, in order, as written. */
+const images = (text: string): string[] =>
+  [...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/gu)].map((match) => match[1] ?? "");
+
 describe("the documents published in two languages", () => {
   for (const base of PAIRS) {
     it(`${base}: the two languages carry the same sections`, () => {
       // A section added to one language is the drift a reader cannot see: they
       // read one language and never learn the other says more.
-      const en = headings(read(base, ""));
-      const zh = headings(read(base, ".zh-CN"));
-      expect(en.length).toBeGreaterThan(0);
-      expect(zh, `${base}.zh-CN`).toEqual(en);
+      expect(headings(read(base, ".zh-CN")), `${base}.zh-CN`).toEqual(
+        headings(read(base, ""))
+      );
     });
 
     it(`${base}: the two languages carry the same code blocks`, () => {
       // A command that exists in one language only is worse than a typo: the
       // reader following that language cannot run it.
-      // No minimum: a page with no commands is a legitimate page, and the
-      // pairing is what this asserts — not that every document has a fence.
-      const en = fences(read(base, ""));
-      const zh = fences(read(base, ".zh-CN"));
-      expect(zh, `${base}.zh-CN`).toBe(en);
+      expect(fences(read(base, ".zh-CN")), `${base}.zh-CN`).toBe(
+        fences(read(base, ""))
+      );
     });
 
     it(`${base}: every table has the same rows in both languages`, () => {
       // Row for row: a row may be rephrased, not removed. This is what found
       // the stale settings row and the missing `credentialOrg` row.
-      const en = tableRows(read(base, ""));
-      const zh = tableRows(read(base, ".zh-CN"));
-      expect(en.length).toBeGreaterThan(0);
-      expect(zh, `${base}.zh-CN`).toEqual(en);
+      expect(tableRows(read(base, ".zh-CN")), `${base}.zh-CN`).toEqual(
+        tableRows(read(base, ""))
+      );
     });
 
     it(`${base}: the two languages carry the same list items`, () => {
       // The other fact form. Counted rather than compared, because a list item
       // is prose with a marker and the prose is the translator's.
-      const en = listItems(read(base, ""));
-      const zh = listItems(read(base, ".zh-CN"));
-      expect(zh, `${base}.zh-CN`).toBe(en);
+      expect(listItems(read(base, ".zh-CN")), `${base}.zh-CN`).toBe(
+        listItems(read(base, ""))
+      );
+    });
+
+    it(`${base}: the two languages show the same pictures`, () => {
+      // The detail pages are a single image each, and their two images are
+      // different FILES (a Chinese preview and an English one) — so what is
+      // compared is the count, and each file has to exist.
+      const en = images(read(base, ""));
+      const zh = images(read(base, ".zh-CN"));
+      expect(zh.length, `${base}.zh-CN`).toBe(en.length);
+      for (const image of [...en, ...zh]) {
+        if (/^[a-z]+:/iu.test(image)) {
+          continue;
+        }
+        expect(() =>
+          readFileSync(join(process.cwd(), base, "..", image))
+        ).not.toThrow();
+      }
     });
   }
 
   it("finds the pairs it claims to check", () => {
     // A loop over an empty list passes silently, which is how a gate stops being
-    // one. Each pair is read, and each read has to produce structure.
+    // one. Each pair is read, and each read has to produce SOMETHING — a
+    // heading, a table, a list item or a picture — because a document with none
+    // of those is not a document a pairing check can say anything about.
     for (const base of PAIRS) {
       for (const suffix of ["", ".zh-CN"]) {
         const text = read(base, suffix);
-        // A floor that proves the file was READ, not a length policy: the
-        // featured-image page is three short sections and 808 characters, and a
-        // threshold tuned to it would fail the next short document for no reason.
-        expect(text.length, `${base}${suffix}.md`).toBeGreaterThan(200);
-        expect(headings(text).length, `${base}${suffix}.md`).toBeGreaterThan(1);
-        expect(tableRows(text).length, `${base}${suffix}.md`).toBeGreaterThan(
-          0
-        );
+        const markers =
+          headings(text).length +
+          tableRows(text).length +
+          listItems(text) +
+          images(text).length;
+        expect(markers, `${base}${suffix}.md`).toBeGreaterThan(0);
       }
     }
   });
