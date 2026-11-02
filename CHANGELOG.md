@@ -6,6 +6,18 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.8.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.7.0...v1.8.0) (2026-11-02)
+
+
+### Features
+
+* **plugin-page:** the page is a picture, like the upstream plugins' ([#150](https://github.com/viztor/dsh-opencode-patch/issues/150)) ([29a0d96](https://github.com/viztor/dsh-opencode-patch/commit/29a0d96ca5cda9c93b9a73017978d661c4293d92))
+
+
+### Documentation
+
+* record where the plugin page's content comes from ([#148](https://github.com/viztor/dsh-opencode-patch/issues/148)) ([5903131](https://github.com/viztor/dsh-opencode-patch/commit/59031311cc4f761dade119c8098d0e750d8d261e))
+
 ## [1.7.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.6.0...v1.7.0) (2026-11-02)
 
 
