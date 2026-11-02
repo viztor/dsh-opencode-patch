@@ -10,15 +10,17 @@
  * the shipped one: a `models.dev` payload → the parser → the active maps → the
  * lookup. Nothing here reaches a synthetic consumer of the plugin's internals.
  *
- * **The installation is per FILE, not per test.** `refreshCatalog` merges by id
- * and cannot remove rows, so a synthetic world persists for the rest of this
- * file — which is why this file holds nothing else, and why its rows carry ids
- * no other test names.
+ * **The installation is per TEST.** `refreshCatalog` merges by id and cannot
+ * remove rows, but the suite's setup file (`test/support/reset-process-state.ts`)
+ * resets the live catalog after every test, so a world installed once per file
+ * would be gone by the second case. Installing before each one keeps every case
+ * independent of the order it runs in; the rows still carry ids no other test
+ * names.
  *
  * @module test/plane-lookup.test
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   findModelSpec,
@@ -50,14 +52,7 @@ const install = async (): Promise<void> => {
   await refreshCatalog(async () => Response.json(body), true);
 };
 
-beforeAll(install, 15_000);
-
-/** Other suites in this process must not see the synthetic rows. */
-afterAll(() => {
-  // Nothing to undo: `refreshCatalog` has no removal, and the rows are named so
-  // that no other fixture collides with them. The next process gets the shim.
-  expect(DIVERGENT.length).toBeGreaterThan(0);
-});
+beforeEach(install, 15_000);
 
 describe("the lookup reads the plane's own row", () => {
   it("parses the divergent world into two rows that disagree", () => {
