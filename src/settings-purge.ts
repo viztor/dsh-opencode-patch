@@ -10,7 +10,11 @@
  * @module dsh-opencode-patch/settings-purge
  */
 
-import { PURGE_NAMESPACE, type PurgeResult } from "./purge-contract.ts";
+import {
+  parsePurgeResult,
+  PURGE_NAMESPACE,
+  type PurgeResult,
+} from "./purge-contract.ts";
 import { remoteNamespace, remoteNamespaceOf } from "./settings-remote.ts";
 import { isRecord } from "./utils/guards.ts";
 
@@ -45,14 +49,31 @@ export const purgeDeprecatedModels = async (
   try {
     const answer: unknown = await call();
     const value = isRecord(answer) && "value" in answer ? answer.value : answer;
-    if (!isRecord(value) || !Array.isArray(value.removed)) {
+    // **The host's own failure comes first.** The host answers a failure as
+    // `{ ok: false, … }`, and reading that as "not a purge result" replaced the
+    // message that says WHY with a sentence about shape — which tells the reader
+    // nothing they can act on.
+    if (isRecord(value) && value.ok === false) {
+      const { error, message: said } = value;
+      let message = "the host refused the purge";
+      if (typeof said === "string") {
+        message = said;
+      } else if (typeof error === "string") {
+        message = error;
+      }
+      return { kind: "failed", message };
+    }
+    // And the result is PARSED, not cast: the contract's whitelist is the
+    // client's only statement about what it is told, and a cast is no statement
+    // at all.
+    const result = parsePurgeResult(value);
+    if (result === undefined) {
       return {
         kind: "failed",
         message: "the host answered something that is not a purge result",
       };
     }
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the shape was just checked field by field.
-    return { kind: "purged", result: value as unknown as PurgeResult };
+    return { kind: "purged", result };
   } catch (error: unknown) {
     return {
       kind: "failed",

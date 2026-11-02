@@ -136,6 +136,5 @@ The token is generated at runtime by `dsh web` and never written to disk, so it 
 
 ## 8. Two design rules
 
-A number that cannot tell the truth is not rendered; the explanation of why it is absent takes its place. An estimate wearing a precise outfit is worse than a sentence, because it reads as a measurement.
-
-An explanation can hide behind a hover; an instruction cannot.
+- **A number that cannot tell the truth is not rendered; the explanation of why it is absent takes its place.** An estimate wearing a precise outfit is worse than a sentence, because it reads as a measurement.
+- **An explanation can hide behind a hover; an instruction cannot.**

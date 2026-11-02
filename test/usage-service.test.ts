@@ -585,7 +585,13 @@ describe("GoUsageService readings", () => {
     expect(listed.allowance).toEqual({
       go: 60,
       goPlus: 120,
-      model: "mimo-v2.6-flash",
+      // **The catalog's spelling of the model, not the id the picker sent.**
+      // The row pairs this figure with a model name, and the client cannot
+      // resolve one — it ships neither the catalog nor the table. So the Host
+      // names the model the allowance BELONGS TO, which is the picked one: the
+      // session's own model is a different model, and labelling this figure
+      // with that one states something false about the money.
+      model: "MiMo-V2.6-Flash",
     });
 
     // A model the plan does not publish an allowance for gets nothing at all,
@@ -596,6 +602,23 @@ describe("GoUsageService readings", () => {
     // No selection, no figure to attribute it to.
     const unselected = await service.read();
     expect(Object.hasOwn(unselected, "allowance")).toBe(false);
+  });
+
+  it("names the allowance after the picked model, not the session's", async () => {
+    // The picker names a model the last turn did not run — that is the whole
+    // point of a picker — so the two are routinely different. The allowance
+    // belongs to the PICKED one, and the row has to say so: with the session's
+    // model named instead, a free model reads "$100 a month" beside a figure
+    // that was another model's.
+    stubFetch(() => new Response(okBody()));
+    const service = serviceWithKey("sk-live-key");
+    const usage = await service.read({
+      model: "deepseek-v4.1-flash",
+      sessionId: "s-picked",
+    });
+    expect(usage.allowance?.model).toBe("DeepSeek V4.1 Flash");
+    // And the session's own model keeps its own name, on its own row.
+    expect(usage.session?.activeModelName).not.toBe(usage.allowance?.model);
   });
 
   it("marks a Go reading overflow-eligible exactly when Zen credit exists", async () => {
@@ -899,5 +922,46 @@ describe("usage service: the read that a silent meter depends on", () => {
     } finally {
       globalThis.fetch = real;
     }
+  });
+});
+
+describe("GoUsageService account-scoped read", () => {
+  it("declares `readAccount` as a Remote method", async () => {
+    // The sibling `dsh-opencode-go` account page calls this spelling. The marker
+    // is hand-written (see `usage.ts`), and a method the gateway cannot see
+    // fails exactly like one that throws, so the declaration is what is tested.
+    const { remoteMethods } = await import("@deepseek-ai/dsh-typert-protocol");
+    const declared = remoteMethods(serviceWithKey("sk-live-key")).map(
+      (method: { method: string }) => method.method
+    );
+    expect(declared).toContain("read");
+    expect(declared).toContain("readAccount");
+  });
+
+  it("answers the account-scoped read with the route's reading", async () => {
+    // The ref selects an account in the sibling's manager, which this plugin
+    // does not enumerate; the reading it can answer is the configured route's.
+    const capture = stubFetch(() => new Response(okBody()));
+    const service = serviceWithKey("sk-live-key");
+
+    const usage = await service.readAccount("DSH_OPENCODE_GO_ACCOUNT_AB12");
+
+    expect(capture.url).toBe(GO_USAGE_URL);
+    expect(usage.rolling.percent).toBe(15);
+    expect(usage.weekly.percent).toBe(42);
+  });
+
+  it("rejects a ref that is not an identifier without reading anything", async () => {
+    // A malformed ref is a bad request, not an empty account: letting it reach
+    // the credential lookup would report the caller's mistake as a missing key.
+    const capture = stubFetch(() => new Response(okBody()));
+    const service = serviceWithKey("sk-live-key");
+
+    for (const bad of ["", "has space", "0leading", "with-dash", "a/b"]) {
+      await expect(service.readAccount(bad)).rejects.toThrow(
+        "Invalid OpenCode Go account reference"
+      );
+    }
+    expect(capture.url).toBe("");
   });
 });

@@ -191,7 +191,7 @@ export const discoverGoConfig = (
  * measured rather than assumed.** The public quota route is
  * `GET /zen/go/v1/usage` and there is no second one: the only route file in
  * either major version is
- * `packages/console/app/src/routes/zen/go/v1/usage.ts` (checked in 1.19.4 and
+ * `packages/console/app/src/routes/zen/go/v1/usage.ts` (checked in 1.19.5 and
  * 2.0.32), and the inference proxy's path table
  * (`packages/console/app/src/lib/inference-proxy.ts`) lists
  * `"GET /zen/go/v1/usage": "/go/v1/usage"` with no `/inference/.../usage`

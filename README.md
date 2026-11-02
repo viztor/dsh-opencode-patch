@@ -1,6 +1,8 @@
 <div align="center">
   <p><b>English</b> &nbsp;·&nbsp; <a href="./README.zh-CN.md">简体中文</a></p>
 
+  <p><img src="docs/media/hero.svg" alt="OpenCode Patch — session affinity, gateway headers and live Go quota" width="100%" /></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />Gateway origin headers · Session affinity · Free-tier tool fallback · Live dual-mode quota meter</p>
@@ -92,7 +94,7 @@ The package is `dsh-opencode-patch` under every name it is used by: the dependen
 // ~/.dsh/profiles/web/package.json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^1.4.1",
+    "dsh-opencode-patch": "^1.8.0",
   },
   "dsh": {
     "profile": {
@@ -139,18 +141,18 @@ DSH speaks three of the four families itself. The fourth — Google Generative A
 
 ### 1. OpenCode Zen (`provider: opencode`) — pay-as-you-go & free tier
 
-- **Anthropic Messages** (`https://opencode.ai/zen/v1/messages`): `claude-sonnet-4-5`, `claude-opus-4-7`, `claude-haiku-4-5`, `qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/zen/v1/responses`): `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `space-bunny-free`, and the free-tier `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/zen/v1/chat/completions`): `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`, plus free-tier `nemotron-3-ultra-free`, `ling-3.0-flash-fin-free`, `mimo-v2.6-flash-free`
-- **Google Generative AI** (`https://opencode.ai/zen/v1/models/*:streamGenerateContent`), served by this patch's adapter as `opencode-google`: `gemini-3.8-flash`, `gemini-3.1-pro`, `gemini-3.5-flash-lite`
+- **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`): `claude-sonnet-4-5`, `claude-opus-4-7`, `claude-haiku-4-5`, `qwen3.8-flash`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`): `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `grok-4.7`, `muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`): `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`, plus free-tier `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `deepseek-v4.1-flash-free`
+- **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`), served by this patch's adapter as `opencode-google`: `gemini-3.8-flash`, `gemini-3.1-pro`, `gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — subscription quota
 
 - **Google Generative AI** (`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`): `gemini-4-argon`, served by the internal `opencode-go-google` adapter. Add the model under your existing `opencode-go` provider; the bridge inherits that provider's API key reference (default `OPENCODE_GO_API_KEY`). It supports image attachments and signed tool-call replay. Only configured models are mounted; access still depends on your Go plan. This endpoint is also used with `endpoint: legacy`, because Go has no legacy Google endpoint.
 
-- **OpenAI Chat Completions** (`https://opencode.ai/zen/go/v1/chat/completions`): `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses** (`https://opencode.ai/zen/go/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages** (`https://opencode.ai/zen/go/v1/messages`): `claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses** (`https://opencode.ai/inference/go/openai/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages** (`https://opencode.ai/inference/go/anthropic/v1/messages`): `claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - Monitored by the live 3-window quota meter (5-hour rolling, weekly, monthly). The full set ships in the bundled catalog — see [Authoritative Model Catalogs](#7-authoritative-model-catalogs-dual-local-shims--real-time-swr-updates).
 
 ### 3. How a model's protocol is chosen — and why you configure nothing
@@ -159,13 +161,13 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol | served from |
 | :-- | --: | :-- | :-- |
-| _(absent)_ | 24 | OpenAI Chat Completions | the route you configured |
+| _(absent)_ | 23 | OpenAI Chat Completions | the route you configured |
 | `@ai-sdk/openai` | 31 | OpenAI Responses | `opencode-responses` |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
 | `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _(a dialect this plugin does not serve)_ | **not offered** |
 
-Counts are the **81** active `opencode` models in `models.opencode.ai` as of 2026-10-27 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 81 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
+Counts are the **80** active `opencode` models in `models.opencode.ai` as of 2026-10-31 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
 
 The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 
@@ -249,7 +251,7 @@ Nine controls in four sections — the decisions a user actually makes. Everythi
 | **Models & Free Tier** | Enrich model metadata from the OpenCode catalog | `on` | Fills catalog context limits, modalities and thinking levels into model info, and lets the gateway `/models` listing carry the full catalog. Does **not** add models to the picker — the picker shows declared models only; use the card's **Check catalog** row to declare more |
 | **Models & Free Tier** | Inject Core Tools | `on` | Adds the `read` + `bash` schemas free-tier `/responses` bodies require |
 | **Quota Meter** | Enable Composer Usage Meter | `on` | Mounts the live meter in the composer dock — the Go quota ring, or the Zen session spend |
-| **Account & Endpoint** | API Endpoint | `auto` | Which endpoint family requests go to: **Automatic** (follow the catalog) · **Legacy** (`zen/v1`) · **Modern** (`inference/v1`) |
+| **Account & Endpoint** | API Endpoint | `auto` | Which endpoint family requests go to: **Automatic** (follow the catalog) · **Legacy** (`zen/v1`) · **Modern** (`inference/…`) |
 | **Account & Endpoint** | Credential Source | `auto` | Which key wins when several are known: **Automatic** · **Live request first** · **Declared key first** |
 | **Account & Endpoint** | Read the OpenCode installation's key | `off` | Lets the plugin read the credential OpenCode itself stored, as the LAST resort — off by default |
 
@@ -257,7 +259,7 @@ Nine controls in four sections — the decisions a user actually makes. Everythi
 
 Two questions decide where a request goes, and the **Account & Endpoint** section is where you answer them.
 
-**Which endpoint family.** The gateway answers on two families — the older `/zen/v1` and the newer `/inference/v1` — and they are entitled **separately**: an account that works on one is not guaranteed to work on the other. `auto` follows the gateway's own catalog, which today names the newer family, so a catalog move carries you along; `legacy` and `modern` pin one, which is what you want when your account only works on the older one, or when you are checking that the newer one does.
+**Which endpoint family.** The gateway answers on two families — the older `/zen/v1` and the newer `inference` family, whose base is per protocol (`…/inference/openai/v1`, `…/inference/anthropic/v1`, `…/inference/google/v1beta`) — and they are entitled **separately**: an account that works on one is not guaranteed to work on the other. `auto` follows the gateway's own catalog, which today names the newer family, so a catalog move carries you along; `legacy` and `modern` pin one, which is what you want when your account only works on the older one, or when you are checking that the newer one does.
 
 **Which credential wins.** `keySource` orders the sources the plugin can see — `auto` prefers a key you declared, then one captured from a live request, then the declared reference; `request` promotes a captured key first; `configured` does the reverse. Below it, `readOpencodeStore` lets the plugin read the credential OpenCode itself stored, as the **last** resort only. Both are `off`/`auto` by default, so nothing changes until you say so.
 

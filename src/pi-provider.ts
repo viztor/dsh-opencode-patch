@@ -50,8 +50,9 @@ export type Plane = "opencode" | "opencode-go";
  * (`models-dev.ts:107` lifts the provider's `api` into `settings.baseURL`), and
  * which the shim now carries as `OPENCODE_PLANE_API`. It was hard-coded here
  * instead, and when the vendor moved `models.dev`'s provider entry to
- * `…/inference/v1` the constant was left on `…/zen/v1`: a deployment would have
- * kept using the older endpoint while its own catalog named the newer one.
+ * the `inference` family the constant was left on `…/zen/v1`: a deployment
+ * would have kept using the older endpoint while its own catalog named the
+ * newer one.
  *
  * The Anthropic path differs from the others by design (`/messages` not `/chat/
  * completions`), so only the suffix changes, and the suffix is per protocol
@@ -66,8 +67,8 @@ const PLANE_BASE: Readonly<Record<Plane, string>> = {
  * The older endpoint each plane's requests used to go to.
  *
  * Still served — measured — and the reason an endpoint choice exists at all:
- * the catalog moved to `…/inference/v1`, but a deployment whose account is only
- * entitled on the older family needs `/zen/v1` and no catalog change will say
+ * the catalog moved to the `inference` family, but a deployment whose account is
+ * only entitled on the older one needs `/zen/v1` and no catalog change will say
  * so. `responses-routes.ts`'s `PLANES` is this table, kept as the declared name
  * so the two cannot drift.
  */

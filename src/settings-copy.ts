@@ -17,7 +17,7 @@ export const en = {
   endpointHint:
     "Which endpoint family requests are sent to. Automatic follows the gateway's own catalog address; the other two pin one. The older and newer families are separately entitled and both still answer, so pick whichever your account works on rather than whichever is current.",
   endpointLegacy: "Legacy (zen/v1)",
-  endpointModern: "Modern (inference/v1)",
+  endpointModern: "Modern (inference/…)",
   injectCoreTools: "Inject Core Tools (default on)",
   injectCoreToolsHint:
     "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
@@ -204,7 +204,7 @@ export const zh: Record<keyof typeof en, string> = {
   endpointHint:
     "请求发往哪个端点家族。自动会跟随网关目录给出的地址；另外两项则固定其一。旧端点与新端点的授权彼此独立且目前均可访问，因此请选择账户可用的那个，而不是当前最新的那个。",
   endpointLegacy: "旧端点（zen/v1）",
-  endpointModern: "新端点（inference/v1）",
+  endpointModern: "新端点（inference/…）",
   freeModel: "免费",
   invalidText: "该值未被接受，留空使用默认值。",
   keySource: "凭据来源",

@@ -19,7 +19,7 @@ import {
   readUntilAnswered,
 } from "../src/settings-usage.tsx";
 import type { GoUsage } from "../src/usage-contract.ts";
-import { findAllOf } from "./test-helpers.ts";
+import { findAll, findAllOf } from "./test-helpers.ts";
 
 const t = (key: string): string => zh[key as keyof typeof zh] ?? key;
 
@@ -96,6 +96,24 @@ describe("settings: Go usage summary", () => {
       usage: undefined,
     });
     expect(text(refreshing)).toContain(t("usageRefreshing"));
+  });
+
+  it("carries the spinner's own keyframes, so it turns without the meter", () => {
+    // The meter's stylesheet defines the animation, and that stylesheet is
+    // rendered by the METER — so the settings summary's refresh button turned
+    // only while the meter happened to be on screen. The summary carries its own
+    // declaration, and it is the same animation.
+    const refreshing = UsageSummaryView({
+      locale: "zh",
+      refreshing: true,
+      t,
+      usage: undefined,
+    });
+    const styles = findAll(refreshing, "style")
+      .map((node) => String(node.props.children))
+      .join("\n");
+    expect(styles).toContain("@keyframes dsh-oc-spin");
+    expect(styles).toContain("rotate(360deg)");
   });
 
   it("states the monthly allowance as a total, for both tiers", () => {

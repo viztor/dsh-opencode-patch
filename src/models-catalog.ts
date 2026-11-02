@@ -423,13 +423,24 @@ export const findModelSpecOn = (
   plane === "go" ? activeGoCatalog.get(modelId) : activeZenCatalog.get(modelId);
 
 /**
- * Look up model specifications and pricing rates by model ID, preferring the Go
- * plane.
+ * Look up model specifications by model ID, preferring the Go plane.
  *
- * Correct for "does either plane know this model" — pricing and limits, which
- * agree across the planes for every shared id. **Not** correct for routing: see
- * {@link findModelSpecOn}. Anywhere the answer decides which ENDPOINT serves a
- * model, the plane has to come from the route in play.
+ * Answers "does either plane know this model" — which is all some callers need.
+ * It is **not** correct for anything the planes can disagree about:
+ *
+ * - **Routing.** See {@link findModelSpecOn}: `qwen3.8-max` and `minimax-m3`
+ *   name `@ai-sdk/anthropic` on Go and nothing (completions) on Zen, so a
+ *   Go-first read sent Zen requests to `/messages`, where the gateway answers
+ *   `400 ModelProtocolUnsupported`.
+ * - **Pricing.** This doc used to claim the two planes agree on price "for
+ *   every shared id", and that stopped being true: `deepseek-v4.1-flash` costs
+ *   $0.30/$1.20 per million on Zen and $0.15/$0.60 on Go, and
+ *   `deepseek-v4-pro` differs too. A Zen turn priced through here came out at
+ *   exactly half of what it cost. `test/catalog.test.ts` measures the
+ *   disagreement, so the claim cannot go stale in silence again.
+ *
+ * The plane has to come from the route in play; this function is the fallback
+ * for a model the plane's OWN row does not describe.
  */
 export const findModelSpec = (modelId: string): CatalogModelSpec | undefined =>
   activeGoCatalog.get(modelId) ?? activeZenCatalog.get(modelId);
@@ -695,16 +706,31 @@ export const isGoModelsListingUrl = (
 /**
  * Merge and enrich a gateway `/models` response with the complete OpenCode Go or Zen catalog.
  *
+ * **A refusal is not a listing.** The enrichment used to answer EVERY
+ * upstream response with a 200 and the full catalog, which turned a 401 (no
+ * credential), a 403 (access denied), a 429 (rate limited) and a 500 into "here
+ * are 80 models, all of them yours". A caller that cannot call the endpoint was
+ * told it offers everything, and a gateway that was down looked like a listing.
+ *
+ * The one status the catalog answers for is **404**, and it is not a
+ * politeness: the Go plane's base is the `inference` family, and that family
+ * serves no `/models` route at all — the listing lives on the older `zen/go`
+ * route. So the Go plane's modern base 404s, and the catalog is what fills it.
+ *
  * @param url - the request URL
  * @param response - the upstream fetch Response
  * @param fetchFn - optional fetch implementation for SWR background refresh
- * @returns an enriched Response with all models and complete metadata
+ * @returns an enriched Response with all models and complete metadata, or the
+ * upstream response untouched when it refused.
  */
 export const enrichModelsResponse = async (
   url: string,
   response: Response,
   fetchFn: typeof fetch = globalThis.fetch
 ): Promise<Response> => {
+  if (!response.ok && response.status !== 404) {
+    return response;
+  }
   let existingData: Record<string, unknown>[] = [];
   try {
     const raw: unknown = await response.clone().json();

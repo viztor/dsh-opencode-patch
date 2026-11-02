@@ -22,8 +22,10 @@ import {
   tierForRequest,
 } from "./key-capture.ts";
 import {
+  type CatalogPlane,
   enrichModelsResponse,
   findModelSpec,
+  findModelSpecOn,
   isModelsListingUrl,
 } from "./models-catalog.ts";
 import {
@@ -45,6 +47,7 @@ import {
   authHeaderFor,
   gatewayPlaneFor,
   headerSourceOf,
+  isGoPlaneUrl,
   requestUrlOf,
   toolNamesOf,
 } from "./utils/request-shape.ts";
@@ -67,7 +70,10 @@ import {
  * @param body - the request body, when there is one to read.
  * @returns whether the model it names is flagged free.
  */
-const isFreeModelBody = (body: RequestInit["body"]): boolean => {
+const isFreeModelBody = (
+  body: RequestInit["body"],
+  plane: CatalogPlane
+): boolean => {
   if (typeof body !== "string" || body.length === 0) {
     return false;
   }
@@ -81,7 +87,13 @@ const isFreeModelBody = (body: RequestInit["body"]): boolean => {
     if (typeof model !== "string" || model.length === 0) {
       return false;
     }
-    return findModelSpec(model)?.is_free === true;
+    // **The plane's own flag.** A model can be free on one plane and not on the
+    // other, and this decides whether a credential is required — so the answer
+    // has to be the plane's. The plane-agnostic lookup searches Go first, which
+    // today agrees with the plane-aware one for every model in the catalog, and
+    // is wrong the day it does not.
+    const spec = findModelSpecOn(plane, model) ?? findModelSpec(model);
+    return spec?.is_free === true;
   } catch {
     return false;
   }
@@ -312,7 +324,7 @@ export const patchFetch = (
         //
         // A body the check cannot read answers "not free", which is the safe
         // side - the warning is the status quo, not a new failure.
-        !isFreeModelBody(bodyToPatch)
+        !isFreeModelBody(bodyToPatch, isGoPlaneUrl(url) ? "go" : "zen")
       ) {
         warnedNoCredential.add(plane);
         const sources: string[] = [
@@ -336,11 +348,11 @@ export const patchFetch = (
 
     // 1. Session headers, as the version this plugin emulates sends them.
     //
-    // Read from the 1.x line's last release, v1.19.4, in
+    // Read from the 1.x line's last release, v1.19.5, in
     // `packages/opencode/src/session/llm/request.ts`: `x-opencode-session-id`
     // and `x-opencode-session` both carry `sessionID`, and the affinity pair
     // belongs to relays. 2.x splits the first of those into an affinity id; the
-    // plugin emulates 1.19.4, so it follows 1.19.4.
+    // plugin emulates 1.19.5, so it follows 1.19.5.
     //
     // Which ENDPOINT the request goes to is the deployment's, not this block's:
     // measured, either key serves a paid model on either endpoint - they are two
@@ -359,7 +371,7 @@ export const patchFetch = (
     );
     headers.set("x-opencode-session-id", sessionVal);
     headers.set(SESSION_HEADER, sessionVal);
-    // The affinity pair belongs to the OTHER branch in 1.19.4: for a provider
+    // The affinity pair belongs to the OTHER branch in 1.19.5: for a provider
     // that does not start with `opencode` - a relay a deployment claimed by URL -
     // the client sends `x-session-affinity` and `X-Session-Id`; for an OpenCode
     // plane it sends `x-opencode-session` instead and nothing else. This plugin
@@ -398,7 +410,7 @@ export const patchFetch = (
       headers.set("x-opencode-client", config.originClient);
 
       // The message id, the one header of the captured set this block omitted.
-      // Read from v1.19.4's `request.ts`: `"x-opencode-request": input.user.id`,
+      // Read from v1.19.5's `request.ts`: `"x-opencode-request": input.user.id`,
       // in the same branch as the client and project headers. The console reads
       // it for per-request metrics and rewrites it to `x-opencode-request-id`
       // before the request reaches the inference service

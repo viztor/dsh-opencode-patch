@@ -1,6 +1,8 @@
 <div align="center">
   <p><a href="./README.md">English</a> &nbsp;·&nbsp; <b>简体中文</b></p>
 
+  <p><img src="docs/media/hero.svg" alt="OpenCode 补丁——会话保持、网关请求头与实时 Go 额度" width="100%" /></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />网关来源头 · 会话亲和 · 免费层工具回退 · 实时双模式额度计量</p>
@@ -90,7 +92,7 @@ npm install dsh-opencode-patch
 // ~/.dsh/profiles/web/package.json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^1.4.1",
+    "dsh-opencode-patch": "^1.8.0",
   },
   "dsh": {
     "profile": {
@@ -137,18 +139,18 @@ DSH 能说其中四种，插件就把这四种都路由掉。**Google Generative
 
 ### 1. OpenCode Zen (`provider: opencode`) — 按量计费与免费额度
 
-- **Anthropic Messages** (`https://opencode.ai/zen/v1/messages`)：`claude-sonnet-4-5`、`claude-opus-4-7`、`claude-haiku-4-5`、`qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/zen/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`space-bunny-free`，以及免费层的 `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/zen/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `nemotron-3-ultra-free`、`ling-3.0-flash-fin-free`、`mimo-v2.6-flash-free`
-- **Google Generative AI** (`https://opencode.ai/zen/v1/models/*:streamGenerateContent`)：`gemini-3.8-flash`、`gemini-3.1-pro`、`gemini-3.5-flash-lite`
+- **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`)：`claude-sonnet-4-5`、`claude-opus-4-7`、`claude-haiku-4-5`、`qwen3.8-flash`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`grok-4.7`、`muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `mimo-v2.6-flash-free`、`nemotron-3.5-lightning-free`、`deepseek-v4.1-flash-free`
+- **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`)：`gemini-3.8-flash`、`gemini-3.1-pro`、`gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — 订阅额度
 
 - **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon`，由内部适配器 `opencode-go-google` 服务。在现有 `opencode-go` 提供商下配置该模型即可，适配器继承该提供商的 API Key 引用（默认 `OPENCODE_GO_API_KEY`），支持图片附件和带签名的工具调用回放。只挂载已配置的模型，可用范围仍由 Go 套餐决定。Go 没有旧版 Google 接口，因此 `endpoint: legacy` 也使用此地址。
 
-- **OpenAI Chat Completions**（`https://opencode.ai/zen/go/v1/chat/completions`）：`deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses**（`https://opencode.ai/zen/go/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages**（`https://opencode.ai/zen/go/v1/messages`）：`claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
 
 ### 3. 模型的协议是怎么定的 —— 以及为什么你什么都不用配
@@ -157,13 +159,13 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 | 服务自 |
 | :-- | --: | :-- | :-- |
-| _（缺失）_ | 24 | OpenAI Chat Completions | 你配置的路由 |
+| _（缺失）_ | 23 | OpenAI Chat Completions | 你配置的路由 |
 | `@ai-sdk/openai` | 31 | OpenAI Responses | `opencode-responses` |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
 | `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _（本插件不服务的方言）_ | **不提供** |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 81 个**在用**模型，统计于 2026-10-27 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 81 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
+数量为 `models.opencode.ai` 中 `opencode` 的 80 个**在用**模型，统计于 2026-10-31 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 80 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
@@ -247,8 +249,7 @@ opencode-responses:
 | **模型与免费额度** | 用 OpenCode 官方目录补全模型信息（默认开启） | `on` | 把目录的上下文上限、模态与思考档位补进模型信息，并让网关 `/models` 列表带上完整目录。**不会**往选择器里添加模型——选择器只显示已声明的；要添加请用卡片的**检查目录** |
 | **模型与免费额度** | 自动补全核心工具（默认开启） | `on` | 补上免费层 `/responses` 请求体所需的 `read` + `bash` schema |
 | **配额计量** | 开启输入区用量计量（默认开启） | `on` | 在输入框停靠栏挂载实时计量表——Go 额度环，或 Zen 会话消耗 |
-| **配额计量** | 显示会话消耗与模型费率（默认开启） | `on` | 追加显示本会话累计花费与当前模型每百万 Token 费率 |
-| **账户与端点** | API 端点 | `auto` | 请求发往哪个端点家族：**自动**（跟随目录） · **旧端点**（`zen/v1`） · **新端点**（`inference/v1`） |
+| **账户与端点** | API 端点 | `auto` | 请求发往哪个端点家族：**自动**（跟随目录） · **旧端点**（`zen/v1`） · **新端点**（`inference/…`） |
 | **账户与端点** | 凭据来源 | `auto` | 多个密钥同时可用时以哪个为准：**自动** · **优先实时请求** · **优先已声明密钥** |
 | **账户与端点** | 读取 OpenCode 安装版的密钥（默认关闭） | `off` | 允许本插件读取 OpenCode 自己保存的凭据，且仅作最后手段——默认关闭 |
 
@@ -256,7 +257,7 @@ opencode-responses:
 
 一个请求发往哪里由两个问题决定，答案就在**账户与端点**分区里。
 
-**发往哪个端点家族。** 网关在两套端点上都应答——较早的 `/zen/v1` 与较新的 `/inference/v1`——而两者的授权是**彼此独立**的：在一边可用的账户不保证在另一边可用。`auto` 会跟随网关自己的目录，目前它指向较新的一套，因此目录迁移会带着你一起走；`legacy` 与 `modern` 则固定其一，适用于账户只在较早一套上可用，或你想确认较新的一套是否可用的情况。
+**发往哪个端点家族。** 网关在两套端点上都应答——较早的 `/zen/v1` 与较新的 `inference` 家族（其 base 按协议区分：`…/inference/openai/v1`、`…/inference/anthropic/v1`、`…/inference/google/v1beta`）——而两者的授权是**彼此独立**的：在一边可用的账户不保证在另一边可用。`auto` 会跟随网关自己的目录，目前它指向较新的一套，因此目录迁移会带着你一起走；`legacy` 与 `modern` 则固定其一，适用于账户只在较早一套上可用，或你想确认较新的一套是否可用的情况。
 
 **以哪个凭据为准。** `keySource` 决定插件可见的多个凭据源的优先级——`auto` 优先使用你声明过的密钥，其次是从实时请求中捕获的密钥，最后是声明的凭据引用；`request` 把捕获到的密钥提到最前；`configured` 则相反。其下的 `readOpencodeStore` 允许插件读取 OpenCode 自己保存的凭据，且**仅作最后手段**。两者默认分别为 `auto` 与关闭，因此在你说要改之前一切照旧。
 
@@ -362,6 +363,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | 指定一个仅当调用方提供会话 id 时才使用的环境变量名 |
 | `freeModelMarker` | `free` | 模型 id 子串；`*` 强制启用回退，`''` 关闭回退 |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | 端点覆盖；从组合中自动发现 |
+| `credentialOrg` | — | 账户凭据所属的组织 id，在部署从带外提供一个时使用 |
 | `debug` / `debugFile` | `false` / — | 诊断用 JSONL 日志，不是谁会在 UI 里调节的行为 |
 
 ```yaml
