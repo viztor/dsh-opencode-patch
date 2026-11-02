@@ -168,14 +168,18 @@ export const sendProbe = async (input: {
 /**
  * Whether the gateway answered that it no longer serves the MODEL at all.
  *
- * `400 Upstream request failed: Model is unavailable` and `410` are the gateway
- * speaking about the model rather than the route: the catalog can still list an
- * id the upstream has withdrawn (measured 2026-10-26 on `nemotron-3-ultra-free`,
- * answered identically on two runs a minute apart). Such a candidate is skipped
- * like any other the gateway left nothing to assert about, never asserted on.
+ * `400 Upstream request failed: Model is unavailable`, `410` and an error of
+ * type `ModelDeprecated` are the gateway speaking about the model rather than
+ * the route: the catalog can still list an id the upstream has withdrawn
+ * (measured 2026-10-26 on `nemotron-3-ultra-free`, answered identically on two
+ * runs a minute apart, and 2026-11-02 on `gemini-3-flash`, answered
+ * `{"type":"ModelDeprecated"}` while the registry still listed it). Such a
+ * candidate is skipped like any other the gateway left nothing to assert
+ * about, never asserted on.
  */
 export const modelGone = (result: Probe): boolean =>
   result.status === 410 ||
+  result.summary.includes("ModelDeprecated") ||
   (result.status === 400 && result.summary.includes("Model is unavailable"));
 
 /**

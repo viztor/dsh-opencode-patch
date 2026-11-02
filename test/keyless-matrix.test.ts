@@ -343,6 +343,11 @@ describe("a live turn's failure message that says the model is gone", () => {
     ["410 status code (no body)", true],
     ["400 Upstream request failed: Model is unavailable", true],
     ["model is UNAVAILABLE", true],
+    [
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model gemini-3-flash has been deprecated."}}',
+      true,
+    ],
+    ["ModelDeprecatedish", false],
     ["400 Invalid request: messages is required", false],
     ["4100 tokens exceeded", false],
     ["", false],

@@ -258,7 +258,9 @@ export const isTransientProbeAnswer = (status: number | undefined): boolean =>
  *
  * The same two answers {@link classifyKeylessProbe} reads as `model-gone` — a
  * `410`, or a `400` saying "Model is unavailable" — as they reach a turn's
- * failure message rather than a raw response. It is a PRE-FILTER, not a
+ * failure message rather than a raw response, plus the gateway's
+ * `ModelDeprecated` error type, which it now answers for a model the catalog
+ * still lists (measured 2026-11-02 on `gemini-3-flash`). It is a PRE-FILTER, not a
  * verdict: the gateway answers "Model is unavailable" for an id sent where it
  * is not served too (`docs/upstream-findings.md` §3.8), so the live adapter
  * blocks move past such a model only once a raw probe of the same id
@@ -269,7 +271,7 @@ export const isTransientProbeAnswer = (status: number | undefined): boolean =>
  * @returns whether the message names a withdrawn model.
  */
 export const isModelGoneMessage = (message: string): boolean =>
-  /\b410\b|model is unavailable/iu.test(message);
+  /\b410\b|model is unavailable|\bModelDeprecated\b/iu.test(message);
 
 /**
  * Read one keyless answer.
