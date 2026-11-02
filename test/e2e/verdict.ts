@@ -74,6 +74,12 @@ export const accessDisabled = (result: Probe): boolean =>
  * slice while the gateway answers `410 ModelDeprecated`. Measured: the registry
  * listed `gemini-3-flash` as active while the gateway refused it.
  *
+ * A third shape says the same thing about an upstream rather than the
+ * gateway's own entry: `400 Upstream request failed: Model is unavailable`.
+ * Measured on a free model the catalog still listed as active, answered
+ * identically on two runs a minute apart. The status alone is not enough — a
+ * `400` is also how a malformed request is refused — so the body has to say it.
+ *
  * Such a model is not a subject to assert on — the case would fail on a
  * retirement the plugin had nothing to do with.
  *
@@ -81,7 +87,9 @@ export const accessDisabled = (result: Probe): boolean =>
  * @returns whether the answer is a retirement.
  */
 export const retiredAtTheGateway = (result: Probe): boolean =>
-  result.status === 410 || result.summary.includes("ModelDeprecated");
+  result.status === 410 ||
+  result.summary.includes("ModelDeprecated") ||
+  (result.status === 400 && result.summary.includes("Model is unavailable"));
 
 /** The gateway is busy: it answered, but not about the route. */
 export const gatewayBusy = (result: Probe): boolean => result.status === 429;
