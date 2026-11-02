@@ -142,15 +142,15 @@ Those endpoints authenticate in **three ways**, because they speak three wire sh
 ### 1. OpenCode Zen (`provider: opencode`) — pay-as-you-go & free tier
 
 - **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`): `claude-sonnet-4-5`, `claude-opus-4-7`, `claude-haiku-4-5`, `qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`): `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `space-bunny-free`, and the free-tier `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`): `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`, plus free-tier `nemotron-3-ultra-free`, `ling-3.0-flash-fin-free`, `mimo-v2.6-flash-free`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`): `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `grok-4.7`, `muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`): `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`, plus free-tier `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `deepseek-v4.1-flash-free`
 - **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`): `gemini-3.8-flash`, `gemini-3.1-pro`, `gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — subscription quota
 
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses** (`https://opencode.ai/inference/go/openai/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages** (`https://opencode.ai/inference/go/anthropic/v1/messages`): `claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses** (`https://opencode.ai/inference/go/openai/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages** (`https://opencode.ai/inference/go/anthropic/v1/messages`): `claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - **Google Generative AI** (`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`): `gemini-4-argon`, with image attachments and signed tool-call replay. Go has no legacy Google endpoint, so this one base serves both families.
 - Monitored by the live 3-window quota meter (5-hour rolling, weekly, monthly). The full set ships in the bundled catalog — see [Authoritative Model Catalogs](#7-authoritative-model-catalogs-dual-local-shims--real-time-swr-updates).
 
@@ -160,13 +160,13 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol |
 | :-- | --: | :-- |
-| _(absent)_ | 24 | OpenAI Chat Completions |
+| _(absent)_ | 23 | OpenAI Chat Completions |
 | `@ai-sdk/openai` | 31 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages |
 | `@ai-sdk/google` | 8 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, as pi's own data files it |
 
-Counts are the **81** active `opencode` models in `models.opencode.ai` as of 2026-10-27 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 81 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
+Counts are the **80** active `opencode` models in `models.opencode.ai` as of 2026-11-02 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
 
 Four properties follow:
 

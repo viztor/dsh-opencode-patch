@@ -140,15 +140,15 @@ npm install dsh-opencode-patch
 ### 1. OpenCode Zen (`provider: opencode`) — 按量计费与免费额度
 
 - **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`)：`claude-sonnet-4-5`、`claude-opus-4-7`、`claude-haiku-4-5`、`qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`space-bunny-free`，以及免费层的 `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `nemotron-3-ultra-free`、`ling-3.0-flash-fin-free`、`mimo-v2.6-flash-free`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`grok-4.7`、`muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `mimo-v2.6-flash-free`、`nemotron-3.5-lightning-free`、`deepseek-v4.1-flash-free`
 - **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`)：`gemini-3.8-flash`、`gemini-3.1-pro`、`gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — 订阅额度
 
-- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon`，支持图片附件和带签名的工具调用回放。Go 没有旧版 Google 接口，因此两个家族都使用这一个地址。
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
 
@@ -158,13 +158,13 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 |
 | :-- | --: | :-- |
-| _（缺失）_ | 24 | OpenAI Chat Completions |
+| _（缺失）_ | 23 | OpenAI Chat Completions |
 | `@ai-sdk/openai` | 31 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages |
 | `@ai-sdk/google` | 8 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions（与 pi 自己的数据一致） |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 81 个**在用**模型，统计于 2026-10-27 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 81 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
+数量为 `models.opencode.ai` 中 `opencode` 的 80 个**在用**模型，统计于 2026-11-02 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 80 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
 
 由此有四条性质：
 
