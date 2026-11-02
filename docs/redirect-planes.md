@@ -141,7 +141,7 @@ Measured 2026-10-10 by building one with pi's own protocol implementations and i
 
 **The session header reaches every protocol.** Wrapping each `api` before `createProvider` puts our `x-opencode-session`, `x-opencode-client` and `x-opencode-project` on all four, and pi's own session header defers when ours is already present.
 
-**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.4 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
+**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.5 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
 
 ## 10. A catalog route serves every protocol already
 
