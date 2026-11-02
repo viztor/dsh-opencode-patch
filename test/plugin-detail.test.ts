@@ -111,23 +111,29 @@ describe("the document the plugin page renders", () => {
     // "why do I have such a big readme here".
     for (const locale of LOCALES) {
       const detail = metaOf(locale).detail ?? "";
-      const lines = read(detail).split("\n").length;
-      expect(lines, `${detail} is ${lines} lines`).toBeLessThanOrEqual(40);
+      const lines = read(detail)
+        .split("\n")
+        .filter((line) => line.trim() !== "").length;
+      expect(
+        lines,
+        `${detail} is ${lines} non-empty lines`
+      ).toBeLessThanOrEqual(3);
     }
   });
 
-  it("names the pages a reader needs next", () => {
-    // A short page has to hand off, or it is just a shorter dead end: the full
-    // reference, the meter's numbers, and the endpoints behind them.
-    const en = read(metaOf("en").detail ?? "");
-    for (const target of [
-      "github.com/viztor/dsh-opencode-patch",
-      "docs/quota-meter.md",
-      "docs/redirect-planes.md",
-    ]) {
-      expect(en, `the English detail document must link ${target}`).toContain(
-        target
-      );
+  it("is the picture and nothing else", () => {
+    // The upstream plugins' detail pages are ONE image line — the header above
+    // the card already carries the title and the one-sentence description, so a
+    // second copy of the prose is noise. The reference page this was modelled on
+    // is exactly `![alt](preview.svg)` and nothing else.
+    for (const locale of LOCALES) {
+      const detail = metaOf(locale).detail ?? "";
+      const lines = read(detail)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      expect(lines, `${detail} must be one image line`).toHaveLength(1);
+      expect(lines[0]).toMatch(/^!\[[^\]]+\]\([^)]+\)$/u);
     }
   });
 });

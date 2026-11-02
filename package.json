@@ -40,7 +40,9 @@
     "LICENSE",
     "docs/detail.md",
     "docs/detail.zh-CN.md",
-    "docs/media/hero.svg"
+    "docs/media/hero.svg",
+    "docs/media/preview.svg",
+    "docs/media/preview.zh.svg"
   ],
   "type": "module",
   "main": "lib/index.mjs",
