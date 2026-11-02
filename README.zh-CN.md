@@ -1,6 +1,8 @@
 <div align="center">
   <p><a href="./README.md">English</a> &nbsp;·&nbsp; <b>简体中文</b></p>
 
+  <p><img src="docs/media/hero.svg" alt="OpenCode 补丁——会话保持、网关请求头与实时 Go 额度" width="100%" /></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />网关来源头 · 会话亲和 · 免费层工具回退 · 实时双模式额度计量</p>
