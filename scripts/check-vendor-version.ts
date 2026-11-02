@@ -42,22 +42,11 @@ import {
   CLI_LITERAL as LITERAL,
   disagreements,
   pinnedVersion,
+  scansFile,
 } from "./vendor-version.ts";
 
-/** Where a copy may appear. Extensions are listed because the scan is recursive. */
+/** Where a copy may appear; `scansFile` decides which files under them are read. */
 const ROOTS = ["src", "test", "docs", "scripts", "README.md"];
-const EXTENSIONS = /\.(?:ts|tsx|md|json|ya?ml)$/;
-
-/**
- * Not scanned: the generated tables hold the vendor's data, not copies the
- * repository maintains, so a version-shaped string arriving in a refresh is
- * not a stale copy - and scanning them would let a vendor move fail the gate
- * that only the repository is supposed to be able to break. The same list as
- * `GENERATED_OUTPUTS` in `scripts/freshness-scope.ts`, kept here rather than
- * imported (an import would make that module an input of this check);
- * `test/freshness-scope.test.ts` ties the two.
- */
-const GENERATED = new Set(["src/catalog-data.ts", "src/go-limits-data.ts"]);
 
 const CONSTANT_FILE = "src/identity.ts";
 
@@ -77,7 +66,7 @@ const literals = async (pattern: RegExp): Promise<Map<string, string[]>> => {
       }
     } catch {
       // Not a directory, so read it as a file when it is one we scan.
-      if (EXTENSIONS.test(path) && !GENERATED.has(path)) {
+      if (scansFile(path)) {
         record(path, await readFile(path, "utf8"));
       }
     }
