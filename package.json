@@ -37,7 +37,10 @@
     "README.zh-CN.md",
     "CONTRIBUTING.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "docs/detail.md",
+    "docs/detail.zh-CN.md",
+    "docs/media/hero.svg"
   ],
   "type": "module",
   "main": "lib/index.mjs",

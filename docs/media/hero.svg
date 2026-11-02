@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" role="img" aria-label="OpenCode Patch for DeepSeek Harness">
+  <title>OpenCode Patch — session affinity, gateway headers and live Go quota for DeepSeek Harness</title>
+  <defs>
+    <linearGradient id="oc-frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4D6BFE"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7F6FF"/>
+      <stop offset="1" stop-color="#EEEAFE"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4D6BFE"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="380" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="378" rx="27" fill="none" stroke="#E4DFFF" stroke-width="2"/>
+
+  <!-- The family mark: pale frame behind, the vibrant frame in front. -->
+  <g transform="translate(84 118) scale(2.25)">
+    <path fill-rule="evenodd" d="M0 0 H32 V40 H0 Z M7.5 7.5 H24.5 V32.5 H7.5 Z" fill="#C7BFFA"/>
+    <path fill-rule="evenodd" d="M8.5 8.5 H40.5 V48.5 H8.5 Z M16 16 H33 V41 H16 Z" fill="url(#oc-frame)"/>
+  </g>
+
+  <path d="M232 84 V296" stroke="#E4DFFF" stroke-width="2"/>
+
+  <text x="288" y="150" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="62" font-weight="700" fill="#1B1733">OpenCode Patch</text>
+  <text x="288" y="196" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="27" fill="#6B6488">Zen / Go gateway parity for DeepSeek Harness</text>
+
+  <!-- Three things it does, as chips. -->
+  <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" fill="#3B3560">
+    <rect x="288" y="236" width="246" height="52" rx="26" fill="#FFFFFF" stroke="#E4DFFF" stroke-width="2"/>
+    <circle cx="318" cy="262" r="6" fill="#4D6BFE"/>
+    <text x="338" y="270">session affinity</text>
+
+    <rect x="552" y="236" width="252" height="52" rx="26" fill="#FFFFFF" stroke="#E4DFFF" stroke-width="2"/>
+    <circle cx="582" cy="262" r="6" fill="#7C5CFA"/>
+    <text x="602" y="270">gateway headers</text>
+
+    <rect x="822" y="236" width="196" height="52" rx="26" fill="#FFFFFF" stroke="#E4DFFF" stroke-width="2"/>
+    <circle cx="852" cy="262" r="6" fill="#A78BFA"/>
+    <text x="872" y="270">live quota</text>
+  </g>
+
+  <!-- The meter's ring: the surface this plugin is known by. -->
+  <g transform="translate(1068 152)">
+    <circle r="52" fill="none" stroke="#E4DFFF" stroke-width="14"/>
+    <circle r="52" fill="none" stroke="url(#ring)" stroke-width="14" stroke-linecap="round"
+            stroke-dasharray="238 327" transform="rotate(-90)"/>
+    <text x="0" y="9" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+          font-size="24" font-weight="600" fill="#3B3560">73%</text>
+  </g>
+</svg>
