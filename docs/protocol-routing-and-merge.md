@@ -4,7 +4,7 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17; counts as of 2026-10-31 (the shipped shim, regenerated in #132):
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17; counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`):
 
 | API shape | Wire endpoint | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |

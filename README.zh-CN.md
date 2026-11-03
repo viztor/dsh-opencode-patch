@@ -427,9 +427,11 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 ## 📜 兼容性与验证
 
-**已在 DeepSeek Harness `0.2.1` 上验证 —— `alpha` 与 `rc` 两个通道（Node 24+）**
+**支持范围：DeepSeek Harness `rc` 与 `alpha` 两个通道的最新版本，无论通过 npm 安装还是随桌面应用发布（Node 24+）**
 
-Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件在两个通道上都针对两条线：**`0.2.1`**（`rc` 通道的最新版本），以及 `alpha` 通道目前发布的 **`0.2.2`** 预发布版本（测试安装运行的是 `0.2.2-alpha.2`）。`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
+**支持策略。** 本插件支持**两个**通道各自的**最新**版本，以它们实际发布的形态为准：`rc` 即 `dsh@latest`（当前为 `0.2.1-rc.5`，其桥接声明 pi `^1.1.0`），`alpha` 即 `dsh@alpha`（当前为 `0.2.2-alpha.2`，pi `^1.3.0`）。npm 安装运行的是**未打补丁**的 pi，版本为桥接范围所允许的最新 `1.x`；桌面应用随附的是 harness 自身工作区锁定的 pi（`rc` 上为 `1.1.0`，`alpha` 上为 `1.3.0`）。CI 在每个拉取请求上，于两个通道的 npm 安装上运行单元与离线 mock 套件，并每晚在各通道的最低 pi 版本上运行。本插件既不修补也不重新实现宿主 pi 的行为：宿主的 pi 若缺少网关所需的能力，那是宿主的限制，会被记录并报告给上游，而不是在这里绕过。
+
+Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件在两个通道上都针对两条线：**`0.2.1`**（`rc` 通道的最新版本），以及 `alpha` 通道目前发布的 **`0.2.2`** 预发布版本（测试套件的默认安装运行的是 `0.2.2-alpha.2`；其 `rc` 安装运行的是 `0.2.1-rc.5`）。`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
 
 ```
 >=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
@@ -445,7 +447,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 | **声明的路由** | `opencode`、`opencode-go`、`opencode-responses`、`opencode-anthropic` |
 | **网关** | `opencode.ai/zen/v1`（`/responses`、`/chat/completions`、`/messages`、`:streamGenerateContent`）、`zen/go/v1`（`/chat/completions`） |
 | **模型目录** | 由 `models.opencode.ai/api.json` 生成；下线判定直接跟随目录自身的 `status: "deprecated"` 标记，不维护任何手工 id 列表 |
-| **上游 pi** | **不随包携带。** 桥接在运行时加载 harness 已安装的那份 `@earendil-works/pi-ai`，因此 harness 升级不会与本插件锁定的副本产生版本错位 |
+| **上游 pi** | **不随包携带，也不打补丁。** 桥接在运行时加载 harness 已安装的那份 `@earendil-works/pi-ai`，因此 harness 升级不会与本插件锁定的副本产生版本错位；测试套件运行各通道经 npm 解析出的 pi，以及其最低版本 |
 | **验证关卡** | `vp check` 干净、确定性单元与离线网关 mock 套件全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
 
 ---

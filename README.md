@@ -433,9 +433,11 @@ These exist in the schema but render no control — each is a literal, a marker,
 
 ## 📜 Compatibility & Verification
 
-**Verified on DeepSeek Harness `0.2.1` — both the `alpha` and `rc` channels (Node 24+)**
+**Supported: the latest release of both DeepSeek Harness channels, `rc` and `alpha`, installed with npm or shipped in the desktop app (Node 24+)**
 
-The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, the `rc` channel's latest, and the **`0.2.2`** prereleases the `alpha` channel now carries (the test install runs `0.2.2-alpha.2`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
+**Support policy.** The plugin supports the **latest** release of **both** channels, as each one actually ships: `rc` is `dsh@latest` (today `0.2.1-rc.5`, whose bridge declares pi `^1.1.0`) and `alpha` is `dsh@alpha` (today `0.2.2-alpha.2`, pi `^1.3.0`). An npm install runs pi **unpatched**, at the newest `1.x` the bridge's range admits; the desktop app ships the pi the harness's own workspace pins (`1.1.0` on `rc`, `1.3.0` on `alpha`). CI runs the unit and offline mock suites on both channels' npm installs on every pull request, and on each channel's floor pi nightly. The plugin neither patches nor re-implements what the host's pi does: where a host's pi lacks something the gateway needs, that is a host limitation, recorded and reported upstream rather than worked around here.
+
+The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, the `rc` channel's latest, and the **`0.2.2`** prereleases the `alpha` channel now carries (the test suite's default install runs `0.2.2-alpha.2`; its `rc` install runs `0.2.1-rc.5`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
 
 ```
 >=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
@@ -451,7 +453,7 @@ The first clause covers the `0.2.1` line on both channels: its lower bound (`alp
 | **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` |
 | **Gateways** | `opencode.ai/zen/v1` (`/responses`, `/chat/completions`, `/messages`, `:streamGenerateContent`), `zen/go/v1` (`/chat/completions`) |
 | **Catalog** | Generated from `models.opencode.ai/api.json`; retirement follows the registry's own `status: "deprecated"` flag, with no hand-maintained id list |
-| **Upstream pi** | **Not bundled.** The bridge loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy |
+| **Upstream pi** | **Not bundled, not patched.** The bridge loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy; the suite runs each channel's pi as npm resolves it, and its floor |
 | **Verification gate** | `vp check` clean, the deterministic unit and offline gateway-mock suites green, full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
 
 ---

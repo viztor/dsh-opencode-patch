@@ -65,8 +65,10 @@ A gate is a script, and a script that runs at import time cannot be tested — s
 | :-- | :-- | :-- |
 | `generate-go-limits.ts` | `scripts/go-limits-html.ts` | which table is an allowance (by header, not position), the refusal when the page carries none, and the round trip through the real parser |
 | `check-vendor-version.ts` | `scripts/vendor-version.ts` | the constant is found, "read nothing" is distinguishable from "passed", and the scan reads every file a copy can live in but never the generated tables |
+| `report-host-drift.ts` | `scripts/host-drift.ts` | what each channel installs today, read as npm resolves it (`dsh` at the record's dist-tag; cordis, the loader, schemastery and pi at the newest version the bridge's ranges admit, a prerelease only on its own tuple), one line per field that moved, and "the registry answered nothing" never read as current; the CLI runs against a loopback registry and the CI job's condition is evaluated (nightly and dispatch only) |
+| `use-channel.ts` | `scripts/channel-manifest.ts` | which packages a channel repins (every `@deepseek-ai` pin moved, pi's range untouched, a harness package with no rule refused rather than guessed), the identity on the committed channel, the one-line floor override, and the host-free lockfile a `--relock` starts from (every host key gone from the importer, `packages:` and `snapshots:`, everything else kept) |
 
-The pattern is the same one the `utils/` gate enforces inside `src/`, applied to the one place it had not reached: **a decision that lives in a top-level-await script is exercised only by the vendor's schedule**. Both had already passed while wrong — the version gate twice, the Go-limits reader when the docs moved to HTML.
+The pattern is the same one the `utils/` gate enforces inside `src/`, applied to the one place it had not reached: **a decision that lives in a top-level-await script is exercised only by the vendor's schedule** (or, for the channel switch, by the next harness bump). The first two had already passed while wrong — the version gate twice, the Go-limits reader when the docs moved to HTML.
 
 ## Two habits
 
