@@ -49,8 +49,9 @@
 #   modelRoutes: object         per-model wire routing: { <id>: { api, baseURL } } (default {}).
 #   internalRoutes: boolean     mount the internal per-protocol routes; off for a deployment that
 #                               declares its own providers for the other protocols (default true).
-#   debug: true|false           log every streamed call that receives the header.
-#   debugFile: path             optional append target for stream debug JSONL.
+#   debug: true|false           log every streamed call that receives the header to the console.
+#   debugFile: path             optional JSONL file for the request and stream debug entries; naming
+#                               it writes the file whether or not debug is on.
 - insert:
     - id: dsh-opencode-patch
       name: "dsh-opencode-patch"
