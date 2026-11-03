@@ -95,6 +95,67 @@ const lockfile = (path: string) => {
   return { direct, project, resolved, snapshots, text, versionsOf };
 };
 
+/**
+ * The prerelease lines a channel's lockfile must not hold: each OTHER
+ * channel's prerelease tag. A channel whose `dsh` is a stable release has no
+ * prerelease line that could leak, so it contributes none (the rc line goes
+ * stable when `latest` reaches `0.2.1`).
+ */
+const foreignTags = (
+  channel: string,
+  records: Readonly<Record<string, { readonly dsh: string }>>
+): string[] =>
+  Object.entries(records)
+    .filter(([other]) => other !== channel)
+    .map(([, other]) => semver.prerelease(other.dsh)?.[0])
+    .filter((tag): tag is string => typeof tag === "string");
+
+describe("harness channel alignment · the other channel's prerelease line", () => {
+  it("reads each other channel's tag, and none from a stable one", () => {
+    expect(foreignTags("alpha", CHANNELS)).toStrictEqual(["rc"]);
+    expect(foreignTags("rc", CHANNELS)).toStrictEqual(["alpha"]);
+    // Known answers, so a broken reader cannot pass by reading nothing.
+    expect(foreignTags("x", { a: { dsh: "0.2.2-alpha.2" } })).toStrictEqual([
+      "alpha",
+    ]);
+    expect(foreignTags("x", { a: { dsh: "0.2.1-rc.5" } })).toStrictEqual([
+      "rc",
+    ]);
+    // The rc channel's stable release: nothing to look for, and no failure.
+    expect(
+      foreignTags("alpha", { ...CHANNELS, rc: { dsh: "0.2.1" } })
+    ).toStrictEqual([]);
+  });
+});
+
+describe("harness channel alignment · the READMEs' support policy", () => {
+  // CONTRIBUTING's release step 3: a channel bump moves the record and these
+  // sentences together, in both languages. Held here, so the bump that moves
+  // only the record fails rather than leaving either README stale.
+  const POLICY = [
+    ["README.md", "**Support policy.**"],
+    ["README.zh-CN.md", "**支持策略。**"],
+  ] as const;
+  for (const [file, marker] of POLICY) {
+    it(`${file} names each channel's release, pi range and floor as its record does`, () => {
+      const lines = readFileSync(file, "utf8").split("\n");
+      const at = lines.findIndex((line) => line.startsWith(marker));
+      // Known answer: the paragraph was found, so the checks below read it.
+      expect(at, `${marker} in ${file}`).toBeGreaterThan(-1);
+      const policy = lines[at] ?? "";
+      // The paragraph that follows names the suite's installs.
+      const installs = lines.slice(at + 1).find((line) => line !== "") ?? "";
+      for (const channel of Object.keys(CHANNELS) as Channel[]) {
+        const { dsh, piFloor, piRange } = CHANNELS[channel];
+        for (const value of [dsh, piRange, piFloor]) {
+          expect(policy, `${channel} ${value}`).toContain(`\`${value}\``);
+        }
+        expect(installs, `${channel} install`).toContain(`\`${dsh}\``);
+      }
+    });
+  }
+});
+
 describe("harness channel alignment · declarations", () => {
   it("every harness dependency is an exact pin, never a range", () => {
     const pins = harnessPins();
@@ -304,11 +365,7 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       // relock that kept the other channel's optional peers (`-include`,
       // `-group`, `cosmokit`) would pass them. This reads every
       // `@deepseek-ai` version in the file, keys and values alike.
-      const tagOf = (version: string) => /-([a-z]+)\./u.exec(version)?.[1];
-      const foreign = (Object.keys(CHANNELS) as Channel[])
-        .filter((other) => other !== channel)
-        .map((other) => tagOf(CHANNELS[other].dsh));
-      expect(foreign).not.toContain(undefined);
+      const foreign = foreignTags(channel, CHANNELS);
       const versions = [
         ...lockfile(record.lockfile).text.matchAll(
           /@deepseek-ai\/[a-z-]+(?:@|'?:\s+)(\d[^\s'()]*)/gu
