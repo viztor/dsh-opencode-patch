@@ -568,7 +568,7 @@ describe("isCoreToolModel: the plane is the request's, with a plane-blind fallba
   });
 
   it("falls back to the plane-blind row when the plane is unknown or does not carry the id", () => {
-    // `big-pickle` is free on Zen and absent from the Go catalog. A Go request
+    // The id below is free on Zen and absent from the Go catalog. A Go request
     // for it finds no Go row, so the plane-blind lookup answers — and that row
     // is the Zen one, which says free. No seeding: this is the shipped shim.
     expect(
