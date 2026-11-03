@@ -764,7 +764,7 @@ describe("patchFetch", () => {
   });
 
   it("sends the affinity pair for a relay and not for an OpenCode plane", async () => {
-    // The same split 1.19.4 makes, read from
+    // The same split 1.19.5 makes, read from
     // `packages/opencode/src/session/llm/request.ts:190-202`: for a provider that
     // starts with `opencode` the client sends `x-opencode-session`; for anything
     // else - a relay a deployment claimed by URL - it sends `x-session-affinity`
@@ -862,10 +862,11 @@ describe("patchFetch", () => {
     ).toBeUndefined();
   });
 
-  it("reads the plane from the URL first and the turn's route off a gateway", async () => {
-    // `route` has two arms. A gateway URL names its plane and wins over the
-    // turn's provider; a URL that names no plane (a relay the turn's provider
-    // claims) falls back to the turn's route.
+  it("reads the plane from the URL's path, never from the turn's route", async () => {
+    // A relay serves its Go plane under a path of the same shape, and the route
+    // id there is the user's own name, so the path is the one witness both a
+    // gateway and a relay share. A path that names no Go plane is Zen, whatever
+    // the turn's provider says.
     await seedDivergentCatalog();
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const config = resolveConfig({ freeModelMarker: "none-of-these" });
@@ -886,14 +887,15 @@ describe("patchFetch", () => {
       return toolNamesOf(parseJsonBody(capture.init?.body));
     };
 
-    // Off a gateway: the turn's route decides.
+    // A relay's Go-shaped path is the Go plane, even on a Zen turn.
+    expect(
+      await send("opencode", "https://relay.example/zen/go/v1/responses")
+    ).toEqual(["read", "bash"]);
+    // A path naming no Go plane is Zen, even on a Go turn.
     expect(
       await send("opencode-go", "https://relay.example/v1/responses")
-    ).toEqual(["read", "bash"]);
-    expect(
-      await send("opencode", "https://relay.example/v1/responses")
     ).toBeUndefined();
-    // On a gateway: the URL's plane decides, whatever the turn says.
+    // On the gateway: the URL's plane decides, whatever the turn says.
     expect(
       await send("opencode", "https://opencode.ai/zen/go/v1/responses")
     ).toEqual(["read", "bash"]);

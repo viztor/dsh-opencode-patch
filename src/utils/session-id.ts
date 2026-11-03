@@ -72,7 +72,7 @@ export interface SessionDigest {
  * Derive an OpenCode session id from a digest.
  *
  * **The vendor mints sessions DESCENDING, and nothing else needs doing.**
- * `packages/opencode/src/id/id.ts` at v1.19.4:
+ * `packages/opencode/src/id/id.ts` at v1.19.5:
  *
  *     now = BigInt(Date.now()) * 4096n + BigInt(++counter)   // per-millisecond
  *     now = direction === "descending" ? ~now : now

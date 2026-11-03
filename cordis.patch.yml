@@ -50,7 +50,7 @@
 #   internalRoutes: boolean     mount the internal per-protocol routes; off for a deployment that
 #                               declares its own providers for the other protocols (default true).
 #   debug: true|false           log every streamed call that receives the header.
-#   debugFile: path             optional append target for stream debug JSONL; written only while debug is on.
+#   debugFile: path             optional append target for stream debug JSONL.
 - insert:
     - id: dsh-opencode-patch
       name: "dsh-opencode-patch"

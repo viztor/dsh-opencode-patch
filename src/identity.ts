@@ -37,7 +37,7 @@ export const inject = ["llm"];
  * `0.0.0-<channel>-*` snapshots under the `dev`/`next`/`beta` tags; nothing
  * here claims it, and a claim that did would need its own constant.
  */
-export const OPENCODE_CLI_VERSION = "1.19.4";
+export const OPENCODE_CLI_VERSION = "1.19.5";
 
 /**
  * The User-Agent the stream hook sends: the CLI's own shape, verbatim.

@@ -41,10 +41,10 @@ Hovering lists **all three**, because the trigger can print one number and the n
 │ ──────────────────────────────────────────── │
 │                                              │
 │ Monthly allowance                            │
-│ mimo-v2.6-pro          Go $60 · Plus $120    │
+│ mimo-v2.6-flash        Go $60 · Plus $120    │
 │                                              │
 │ Session spend                                │
-│ mimo-v2.6-pro · $0.15/M               $1.44  │
+│ mimo-v2.6-flash · $0.14 / $0.28 per 1M $1.44 │
 │                                              │
 │ Available Zen balance  ⓘ            Ready    │
 │ Zen balance is ready and will take over      │
@@ -114,7 +114,7 @@ Go usage                            Healthy
 ● 5-hour   0% used · resets in 4h 58m      100% left
 ● Weekly  28% used · resets in 3d 2h        72% left
 ● Monthly 14% used · resets Nov 7, 8:55 AM  86% left
-Monthly allowance  mimo-v2.6-pro · Go $60 · Plus $120
+Monthly allowance  mimo-v2.6-flash · Go $60 · Plus $120
 OpenCode publishes only a percentage per window and no balance endpoint, so "left" is the inverse of the same percentage rather than a dollar figure; the plan tier cannot be probed either.
 ```
 
@@ -136,6 +136,5 @@ The token is generated at runtime by `dsh web` and never written to disk, so it 
 
 ## 8. Two design rules
 
-A number that cannot tell the truth is not rendered; the explanation of why it is absent takes its place. An estimate wearing a precise outfit is worse than a sentence, because it reads as a measurement.
-
-An explanation can hide behind a hover; an instruction cannot.
+- **A number that cannot tell the truth is not rendered; the explanation of why it is absent takes its place.** An estimate wearing a precise outfit is worse than a sentence, because it reads as a measurement.
+- **An explanation can hide behind a hover; an instruction cannot.**

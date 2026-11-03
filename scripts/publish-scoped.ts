@@ -37,7 +37,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { writeWrapperEntries } from "./wrapper-forwarder.ts";
+import { wrapperForwarder } from "./wrapper-forwarder.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SCOPED_TARGETS = ["@viztor/dsh-opencode-patch", "@viztor/dsh-opencode"];
@@ -134,9 +134,15 @@ for (const target of SCOPED_TARGETS) {
         "dsh-opencode-patch": `^${version}`,
       };
 
-      // Thin wrapper entrypoints: `export *` only — the barrel has no default
-      // export, and re-exporting one is a link error on every host load.
-      writeWrapperEntries(path.join(scratch, "lib"));
+      // Thin wrapper entrypoints that re-export dsh-opencode-patch directly.
+      //
+      // **The names the canonical package HAS, and no `default`:** it exports
+      // none, and re-exporting one is a link error on every load — which is
+      // what this used to ship. The text comes from one helper so the runtime
+      // entry and the type declaration cannot drift.
+      const forwarder = wrapperForwarder();
+      writeFileSync(path.join(scratch, "lib", "index.mjs"), `${forwarder}\n`);
+      writeFileSync(path.join(scratch, "lib", "index.d.mts"), `${forwarder}\n`);
 
       // The wrapper carries no client half of its own.
       //

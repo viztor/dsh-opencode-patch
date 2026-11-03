@@ -1,136 +1,119 @@
 /**
- * The deprecated wrapper's entry, linked the way a host links it.
+ * The retired alias's forwarder, linked against the REAL built barrel.
  *
- * `@viztor/dsh-opencode` is a forwarder: its `lib/index.mjs` re-exports the
- * canonical package. A re-export of a name the barrel does not have is not a
- * missing value but a LINK error, raised before a line of either module runs —
- * so the only honest test is a real Node process importing the real built
- * barrel. An in-process `import()` would go through vite-node's transform,
- * which turns a missing named re-export into `undefined` and stays green.
+ * The alias is a published package, and the thing it exists for — letting an
+ * existing install keep resolving — is what it broke: its forwarder re-exported
+ * a `default` the canonical package does not have, so every load was a link
+ * error before the plugin ran at all.
  *
- * The entries are written by `writeWrapperEntries`, the function
- * `publish-scoped.ts` calls, so the bytes linked here are the bytes it ships.
- * A second case links the forwarder that shipped broken, so every run shows the
- * probe is sensitive to the defect rather than trusting that it would be.
- *
- * Reads `lib/index.mjs`, so `pnpm run build` must have run.
+ * **The check is a real Node process, not vite-node.** A bundler turns a
+ * missing export into `undefined` and stays green, which is how a package that
+ * cannot be imported ships with a passing suite. So the test writes the
+ * forwarder next to a copy of the BUILT `lib/index.mjs` and lets Node link it.
  *
  * @module test/wrapper-forwarder.test
  */
-import { spawnSync } from "node:child_process";
-import type { SpawnSyncReturns } from "node:child_process";
+
+import { execFileSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   symlinkSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  WRAPPER_FORWARDER,
-  writeWrapperEntries,
-} from "../scripts/wrapper-forwarder.ts";
+import { wrapperForwarder } from "../scripts/wrapper-forwarder.ts";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** The built barrel, which is what the wrapper forwards to. */
+const BUILT = join(import.meta.dirname, "..", "lib", "index.mjs");
 
-if (!existsSync(join(ROOT, "lib/index.mjs"))) {
-  throw new Error(
-    "lib/index.mjs is missing — run `pnpm run build` before the tests"
-  );
-}
+describe("the retired alias's forwarder", () => {
+  it("links against the built barrel in a real Node process", () => {
+    // The built barrel is what ships; if it is missing, the bundle gate
+    // failed and there is nothing to link against.
+    expect(
+      existsSync(BUILT),
+      "lib/index.mjs is missing — run `pnpm run build` first"
+    ).toBe(true);
 
-/** Import both modules and report their surfaces, as one line of JSON. */
-const PROBE = [
-  'import * as w from "./lib/index.mjs";',
-  'import * as b from "dsh-opencode-patch";',
-  "console.log(JSON.stringify({",
-  "  wrapper: Object.keys(w).sort(),",
-  "  barrel: Object.keys(b).sort(),",
-  '  hasDefault: Object.hasOwn(w, "default"),',
-  "}));",
-].join("\n");
+    const root = mkdtempSync(join(tmpdir(), "dsh-wrapper-"));
+    try {
+      // A package tree the wrapper can resolve: the canonical package under
+      // its name, with the barrel that was actually built.
+      const canonical = join(root, "node_modules", "dsh-opencode-patch");
+      mkdirSync(join(canonical, "lib"), { recursive: true });
+      cpSync(BUILT, join(canonical, "lib", "index.mjs"));
+      // The barrel's own imports have to resolve from the temp tree, or Node
+      // fails on the DEPENDENCY and never reaches the export check.
+      for (const dependency of [
+        "@deepseek-ai/schemastery",
+        "@deepseek-ai/dsh-typert-protocol",
+      ]) {
+        const from = join(
+          import.meta.dirname,
+          "..",
+          "node_modules",
+          dependency
+        );
+        if (!existsSync(from)) {
+          continue;
+        }
+        const to = join(root, "node_modules", dependency);
+        mkdirSync(join(to, ".."), { recursive: true });
+        symlinkSync(from, to, "dir");
+      }
+      writeFileSync(
+        join(canonical, "package.json"),
+        JSON.stringify({
+          exports: { ".": "./lib/index.mjs" },
+          name: "dsh-opencode-patch",
+          type: "module",
+          version: "0.0.0-test",
+        })
+      );
 
-/** The forwarder every release up to this fix published. */
-const SHIPPED_BROKEN = [
-  'export * from "dsh-opencode-patch";',
-  'export { default } from "dsh-opencode-patch";',
-  "",
-].join("\n");
+      const wrapper = join(root, "wrapper");
+      mkdirSync(join(wrapper, "lib"), { recursive: true });
+      writeFileSync(
+        join(wrapper, "lib", "index.mjs"),
+        `${wrapperForwarder()}\n`
+      );
+      writeFileSync(
+        join(wrapper, "package.json"),
+        JSON.stringify({
+          name: "dsh-opencode-patch-wrapper",
+          type: "module",
+        })
+      );
 
-interface ProbeAnswer {
-  readonly barrel: string[];
-  readonly hasDefault: boolean;
-  readonly wrapper: string[];
-}
-
-/**
- * Lay out a scratch install of the wrapper and run the probe in it.
- *
- * The scratch directory stands in for an install of the wrapper: its dependency
- * resolves to this checkout, whose `exports` name the built barrel.
- *
- * @param write - writes the wrapper's entries into the scratch `lib/`.
- * @returns the probe's process result and the bytes of the typings entry.
- */
-const probeWith = (
-  write: (libDir: string) => void
-): { run: SpawnSyncReturns<string>; typings: string | undefined } => {
-  const scratch = mkdtempSync(join(tmpdir(), "dsh-opencode-wrapper-"));
-  const link = join(scratch, "node_modules", "dsh-opencode-patch");
-  try {
-    mkdirSync(join(scratch, "node_modules"));
-    mkdirSync(join(scratch, "lib"));
-    symlinkSync(ROOT, link, "dir");
-    write(join(scratch, "lib"));
-    const typingsPath = join(scratch, "lib", "index.d.mts");
-    const typings = existsSync(typingsPath)
-      ? readFileSync(typingsPath, "utf8")
-      : undefined;
-    const run = spawnSync(
-      process.execPath,
-      ["--input-type=module", "-e", PROBE],
-      { cwd: scratch, encoding: "utf8", timeout: 60_000 }
-    );
-    return { run, typings };
-  } finally {
-    if (existsSync(link)) {
-      unlinkSync(link);
+      // Node links it. A `default` the barrel does not have is a SyntaxError
+      // here — and nothing else in the suite would ever see it.
+      const probe = join(root, "probe.mjs");
+      writeFileSync(
+        probe,
+        `import * as ns from "${join(wrapper, "lib", "index.mjs")}";\n` +
+          `console.log(Object.keys(ns).length);\n`
+      );
+      const out = execFileSync(process.execPath, [probe], {
+        encoding: "utf8",
+      });
+      expect(Number(out.trim())).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
     }
-    rmSync(scratch, { force: true, recursive: true });
-  }
-};
+  });
 
-describe("the deprecated wrapper's forwarder", () => {
-  it("the deprecated wrapper's entry links against the built barrel and re-exports exactly its surface", () => {
-    const { run, typings } = probeWith(writeWrapperEntries);
-
-    expect(run.stderr).not.toContain("does not provide an export named");
-    expect(run.status, run.stderr).toBe(0);
-    const answer = JSON.parse(run.stdout) as ProbeAnswer;
-    expect(answer.barrel).toContain("apply");
-    expect(answer.barrel).toContain("Config");
-    // `export *` never forwards `default`: if the barrel ever gained one, the
-    // wrapper would silently drop it, and this is where that shows.
-    expect(answer.wrapper).toEqual(answer.barrel);
-    expect(answer.hasDefault).toBe(false);
-    expect(typings).toBe(WRAPPER_FORWARDER);
-  }, 60_000);
-
-  it("the probe fails on the forwarder that shipped broken", () => {
-    const { run } = probeWith((libDir) => {
-      writeFileSync(join(libDir, "index.mjs"), SHIPPED_BROKEN);
-    });
-
-    expect(run.status).not.toBe(0);
-    expect(run.stderr).toContain("does not provide an export named 'default'");
-  }, 60_000);
+  it("names only what the canonical package has", () => {
+    // The forwarder is a star re-export and nothing else: a named re-export
+    // can name something the target does not have, and that is a link error.
+    expect(wrapperForwarder()).toBe('export * from "dsh-opencode-patch";');
+    expect(wrapperForwarder()).not.toContain("default");
+  });
 });

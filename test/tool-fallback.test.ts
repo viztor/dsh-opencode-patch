@@ -80,6 +80,22 @@ describe("isCoreToolModel", () => {
     expect(isCoreToolModel("", "")).toBe(false);
   });
 
+  it("reads the free flag off the PLANE's catalog when the plane is known", () => {
+    // A model can be free on one plane and paid on the other, and this decides
+    // whether the free tier's tools are injected — into a request the account
+    // pays for, that gives a model tools it will not be given. The flags agree
+    // for every model in the catalog today (`test/catalog.test.ts` holds that
+    // invariant), so this case cannot show a difference; it pins the RULE, and
+    // the plane's own row is what a future divergence must be read from.
+    expect(isCoreToolModel("beam-free", "", "go")).toBe(true);
+    expect(isCoreToolModel("beam-free", "", "zen")).toBe(true);
+    // A paid model stays out on either plane, and the marker's substring
+    // fallback still applies per plane.
+    expect(isCoreToolModel("gpt-5.4", "", "go")).toBe(false);
+    expect(isCoreToolModel("gpt-5.4", "", "zen")).toBe(false);
+    expect(isCoreToolModel("gpt-5.4", "preview", "go")).toBe(false);
+  });
+
   it("matches a substring, case-sensitively, anywhere in the id", () => {
     expect(isCoreToolModel(FREE_MODEL, DEFAULT_FREE_MODEL_MARKER)).toBe(true);
     expect(isCoreToolModel("ling-3.1-flash-free", "free")).toBe(true);
@@ -537,40 +553,34 @@ describe("maybeInjectCoreTools: marker scoping", () => {
   });
 });
 
-describe("isCoreToolModel: the plane comes from the route", () => {
+describe("isCoreToolModel: the plane is the request's, with a plane-blind fallback", () => {
   // The catalog's free flag is read from the plane the request is on. No id
-  // the shipped shim lists on both planes disagrees on it, so these cases seed a live
-  // catalog that does: a Go-first lookup reads the paid Go row for a model Zen
-  // serves free, and the free Go row for a model Zen charges for.
+  // the shipped shim lists on both planes disagrees on it, so these cases seed
+  // a live catalog that does: a Go-first lookup reads the paid Go row for a
+  // model Zen serves free, and the free Go row for a model Zen charges for.
   it("admits a model the request's plane calls free, whatever the other plane says", async () => {
     await seedDivergentCatalog();
 
-    expect(isCoreToolModel(ZEN_FREE_PROBE, "", "opencode")).toBe(true);
-    expect(isCoreToolModel(ZEN_FREE_PROBE, "", "opencode-go")).toBe(false);
-    // A derived Go route is on the Go plane: the rule is the prefix.
-    expect(isCoreToolModel(GO_FREE_PROBE, "", "opencode-go-google")).toBe(true);
-    expect(isCoreToolModel(GO_FREE_PROBE, "", "opencode")).toBe(false);
-    // No route is the rule's default plane, which is Zen.
-    expect(isCoreToolModel(ZEN_FREE_PROBE, "")).toBe(true);
-    expect(isCoreToolModel(GO_FREE_PROBE, "")).toBe(false);
+    expect(isCoreToolModel(ZEN_FREE_PROBE, "", "zen")).toBe(true);
+    expect(isCoreToolModel(ZEN_FREE_PROBE, "", "go")).toBe(false);
+    expect(isCoreToolModel(GO_FREE_PROBE, "", "go")).toBe(true);
+    expect(isCoreToolModel(GO_FREE_PROBE, "", "zen")).toBe(false);
   });
 
-  it("no longer admits a Zen-only free id with no marker on the Go plane", () => {
-    // An intended change on shipped data, recorded so it is not rediscovered:
-    // `big-pickle` is free on Zen and absent from the Go catalog. The old
-    // Go-first lookup fell back to Zen and admitted it on a Go request; the
-    // plane rule reads the Go plane, which does not serve it, and the default
-    // marker does not match the id. No seeding: this is the shipped shim.
+  it("falls back to the plane-blind row when the plane is unknown or does not carry the id", () => {
+    // `big-pickle` is free on Zen and absent from the Go catalog. A Go request
+    // for it finds no Go row, so the plane-blind lookup answers — and that row
+    // is the Zen one, which says free. No seeding: this is the shipped shim.
     expect(
-      isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "opencode")
+      isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "zen")
     ).toBe(true);
+    expect(isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "go")).toBe(
+      true
+    );
     expect(isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER)).toBe(true);
-    expect(
-      isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "opencode-go")
-    ).toBe(false);
   });
 
-  it("maybeInjectCoreTools reads the plane from options.route", async () => {
+  it("maybeInjectCoreTools reads the plane from the URL's path", async () => {
     await seedDivergentCatalog();
     const body = JSON.stringify({ model: ZEN_FREE_PROBE });
 
@@ -578,7 +588,6 @@ describe("isCoreToolModel: the plane comes from the route", () => {
     const zen = maybeInjectCoreTools(RESPONSES_URL, body, zenHeaders, {
       enabled: true,
       modelMarker: "none",
-      route: "opencode",
     });
     expect(parseJsonBody(bodyText(zen))).toEqual({
       model: ZEN_FREE_PROBE,
@@ -589,11 +598,12 @@ describe("isCoreToolModel: the plane comes from the route", () => {
     );
 
     const goHeaders = new Headers();
-    const go = maybeInjectCoreTools(RESPONSES_URL, body, goHeaders, {
-      enabled: true,
-      modelMarker: "none",
-      route: "opencode-go",
-    });
+    const go = maybeInjectCoreTools(
+      `https://opencode.ai/zen/go/v1${RESPONSES_PATH}`,
+      body,
+      goHeaders,
+      { enabled: true, modelMarker: "none" }
+    );
     expect(go).toBe(body);
     expect(goHeaders.get("content-length")).toBeNull();
   });

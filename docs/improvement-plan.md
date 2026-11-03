@@ -6,7 +6,9 @@ The result of an architecture audit of the tree at 1.4.1, and the order in which
 
 - six audits: routing, catalog, credentials, config/UI, tests/CI/docs, and the stream path;
 - an adversarial review of the plan itself, then a nine-lens review (five reviewers, four investigators) in which two independent skeptics checked every finding: 78 of 82 were upheld and are folded in here;
-- the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog it pins). File references into the host are relative to that repository's `packages/`.
+- the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog its rc tag pins; the alpha tag pins 1.3.0, D14'). File references into the host are relative to that repository's `packages/`.
+
+**Restacked onto 1.8.0 (November 2026).** The stack was cut from 1.4.1. Since then `main` moved to 1.8.0 and followed the harness onto its **alpha** track (the `0.2.2-alpha.2` cluster, cordis `4.0.6-alpha.1`, pi `1.4.0` exact), and it landed several things the plan had scheduled: the plane-aware price, free flag and refusal (#133), a working retired alias (#135), the synthetic catalogue fixtures (#138), the language-pair gate and the live-run verdicts (#140), and the scripts' pure halves (#143, #144). Each open phase merges its parent, and only P0 merges `main`. What changed in the decisions is under "Owner decisions" (D14', D22', D17's defaults, D23, D24, D25), what changed per phase is under "Restack adjustments", and what two community plugins built on the same host taught is under "Lessons from opencode2dsh". A new phase, P-R3, follows P-T3.
 
 **Outcome:** a plugin that only uses host extension points the host supports; one source of truth per decision; a suite that pins behaviour before it moves; and the owner's product rules below.
 
@@ -16,29 +18,30 @@ The result of an architecture audit of the tree at 1.4.1, and the order in which
 
 Phases land as **stacked pull requests**. Each one is based on the previous phase's branch, and the first stacks on P0. Every phase is a 1.x release: there is no major (D6).
 
-| Phase | Title                                         | State     |
-| :---- | :-------------------------------------------- | :-------- |
-| P0    | suite hardening, 12 defect fixes, this plan   | in review |
-| P1a   | `fix:` shipped breakage                       | in review |
-| P1b   | `chore:` hygiene                              | in review |
-| P2    | `feat:` a smaller public API                  | planned   |
-| P-T1a | `build:` pin the host                         | planned   |
-| P-T1b | `test:` a harness that is the real host       | planned   |
-| P-H   | `refactor:` one way to patch a host method    | planned   |
-| P-R1  | `feat:` the plugin owns the plane routes      | planned   |
-| P-R2  | `fix:` the endpoint family, measured          | planned   |
-| P3    | `feat:` Settings complements pi's list        | planned   |
-| P-T2  | `test:` suite structure                       | planned   |
-| P-T3  | `ci:` CI and scripts                          | planned   |
-| P5    | `refactor:` installers                        | planned   |
-| P6    | `refactor:` the fetch patch's credential fill | planned   |
-| P7    | `refactor:` one source per table              | planned   |
-| P8    | `refactor:` settings table                    | planned   |
-| P9    | `refactor:` remote seam                       | planned   |
-| P10a  | `refactor:` pure module moves                 | planned   |
-| P10b  | `fix:` catalog state                          | planned   |
-| P11   | `refactor:` UI on the primitives              | planned   |
-| P12   | `ci:` lint warnings gating                    | planned   |
+| Phase | PR | Title | State | Restack onto 1.8.0 |
+| :-- | :-- | :-- | :-- | :-- |
+| P0 | #105 | suite hardening, 10 defect fixes, this plan | in review | **merged `main` 1.8.0**; catalog refreshes and the pricing fix dropped (on `main`) |
+| P1a | #106 | `fix:` the purge row's refusal and the endpoint copy | in review | **merged P0**; shrunk to the purge row's `RemoteError.message`, the `auto` = `modern` copy and the `opencode-google` regression tests; the warning colour drops its token fallback; the catalog's refusal tests gain three cases `main` lacks; the rest is on `main`, and the debug gate follows D24 |
+| P1b | #107 | `chore:` hygiene | in review | pending: merges P1a; drops its tool-fallback variant (D25) |
+| P2 | #108 | `feat:` a smaller public API | in review | pending: merges P1b; re-retires the wrapper (D9) |
+| P-T1a | #109 | `build:` pin the host | in review | pending: merges P2; redone on the alpha cluster and pi 1.3.0 (D14', D22') |
+| P-T1b | #110 | `test:` a harness that is the real host | in review | pending: merges P-T1a; re-measured on both cells |
+| P-H | #112 | `refactor:` one way to patch a host method | in review | pending: merges P-T1b |
+| P-R1 | #113 | `feat:` the plugin owns the plane routes | in review | pending: merges P-H; restates pi-ai's defaults (D17) |
+| P-R2 | #114 | `fix:` the endpoint family, measured | in review | pending: merges P-R1; gains the L3-L5, L9, L10, L13 probes |
+| P3 | #115 | `feat:` Settings complements pi's list | in review | pending: merges P-R2 |
+| P-T2 | #116 | `test:` suite structure | in review | pending: merges P3; absorbs `main`'s tests and `docs/testing.md` |
+| P-T3 |  | `ci:` CI and scripts | planned | shrinks: `main` extracted the scripts' pure halves |
+| P-R3 |  | `fix:` honest refusals | planned | new |
+| P5 |  | `refactor:` installers | planned |  |
+| P6 |  | `refactor:` the fetch patch's credential fill | planned |  |
+| P7 |  | `refactor:` one source per table | planned |  |
+| P8 |  | `refactor:` settings table | planned |  |
+| P9 |  | `refactor:` remote seam | planned |  |
+| P10a |  | `refactor:` pure module moves | planned |  |
+| P10b |  | `fix:` catalog state | planned |  |
+| P11 |  | `refactor:` UI on the primitives | planned |  |
+| P12 |  | `ci:` lint warnings gating | planned |  |
 
 ## Owner decisions
 
@@ -52,20 +55,23 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | D6 | **Shrink the public API in a 1.x minor.** There is no 2.0.0: nobody consumes the API. Titles are `feat:`, `fix:`, `refactor:` and so on, with no `!` and no `BREAKING CHANGE` footer. Behaviour changes are named in each PR body and in the README's "Changed in 1.x" notes. |
 | D7 | Stacked pull requests: one phase per branch, each based on the previous one. |
 | D8 | **The plugin never writes the user's profile on its own, and never overrides the user's configuration at dispatch.** The only write is the card's explicit purge action, which goes through `configEditor`. |
-| D9 | Stop publishing `@viztor/dsh-opencode` in P2. The deprecation message already published ("Renamed to …") stays as the final one. |
+| D9 | Stop publishing `@viztor/dsh-opencode` in P2. The deprecation message already published ("Renamed to …") stays as the final one. **Stands after the restack:** `main` revived the alias and fixed its forwarder (#135, `scripts/wrapper-forwarder.ts`), so the last published alias is a working one, and P2 retires it again, deleting the forwarder and its test. |
 | D10 | This document is the plan of record. Each phase PR updates its status row. |
 | D11 | The adapter patch existed to merge modes. Once the plugin's provider serves every mode per model (D13), the merge is native and the patch is deleted. |
 | D12 | **No upstream changes.** Everything is done inside the current host with the APIs it has. |
 | D13 | **The plugin owns the `opencode`/`opencode-go` routes.** pi-ai is kept from claiming them through the config waterfall, and the plugin registers its own adapter under the same ids (F11–F14, run S0). It never deletes another plugin's registration, which the host forbids. |
-| D14 | **Target pi 1.1.0, the version the harness pins.** Installs of the published host resolve `^1.1.0` to the newest 1.x (1.4.0 today), so CI runs both. |
+| D14' | **The pinned cell runs the pi the target harness tag pins, with that tag's own patch**: today the alpha tag's pi 1.3.0 and its `@earendil-works__pi-ai@1.3.0.patch`. **The floating cell runs what the registry resolves for the published wrapper** (1.5.0 today), and its rows are version-agnostic. The patched cell stands for the harness's development tree, not for any shipped host, and says so. pi 1.4.0, which `main` pins exactly, is nobody's host and is dropped. _Replaces D14 ("target pi 1.1.0, the version the harness pins"): the alpha harness pins 1.3.0, and its wrapper's `^1.3.0` excludes 1.1.0._ |
 | D15 | **Any model id saved on `opencode`/`opencode-go` is accepted and served**, including ids neither pi nor the live catalog knows. |
-| D16 | **The protocol comes from the catalog, never from a guess at the model's name.** The order is: the catalog's SDK through `PROTOCOL_FOR_SDK`, then pi's own catalog entry, then the user's route-level `api`, then `openai-completions`. `protocolFromModelId` is deleted. |
-| D17 | **Precedence is catalog first.** Metadata and reasoning levels come from the user's model row, then pi-ai's route-level `modelOverrides`, then the catalog, then pi, then the defaults. |
+| D16 | **The protocol comes from the catalog, never from a guess at the model's name.** The order is: the catalog's SDK through `PROTOCOL_FOR_SDK`, then pi's own catalog entry, then the user's route-level `api`, then `openai-completions`. `protocolFromModelId` is deleted. **Stands after the restack.** pi 1.3 and later send the newest Google family's thinking levels themselves, so both P-R1's catalog-driven levels and `main`'s hard-coded bridge (#130) are no-ops for today's ids; P-R1 keeps its rule for an id the catalog marks level-only and pi's pattern misses, and #130's code goes with the module P-R1 deletes. |
+| D17 | **Precedence is catalog first.** Metadata and reasoning levels come from the user's model row, then pi-ai's route-level `modelOverrides`, then the catalog, then pi, then the defaults. **The defaults are pi-ai's, restated:** a 1_000_000-token context window and 128_000 output tokens on the alpha host (they were 262_144 and 32_768). pi-ai does not export them, so a test reads them from the installed pi-ai and fails when they move, rather than letting a stale copy understate a window. |
 | D18 | **Settings keeps showing the planes.** One read-only wrapper on `settings.describe` puts the plane entries back into pi-ai's displayed value (F20). The user's config is never written: the Models page writes only through `settings.mutate` path edits (`client/ui-settings-models/src/client/operations.ts:87`). |
-| D19 | **Plugin settings.** Delete `modelOverrides`, `maxContextWindow`, `modelRoutes` and `internalRoutes`, and the README's nonexistent `hiddenModels`. Keep `endpoint` (`legacy` or `modern`, with `auto` an alias of `modern`). Keep `providers`, redefined as the route ids whose turns the plugin decorates, with both planes always included. |
+| D19 | **Plugin settings.** _Stands after the restack: `main`'s copy says `auto` "follows the catalog", but its code agrees that `auto` is `modern`; P1a's copy wins, pinned by `endpoint-copy.test.ts`._ Delete `modelOverrides`, `maxContextWindow`, `modelRoutes` and `internalRoutes`, and the README's nonexistent `hiddenModels` (removed in P0). Keep `endpoint` (`legacy` or `modern`, with `auto` an alias of `modern`). Keep `providers`, redefined as the route ids whose turns the plugin decorates, with both planes always included. |
 | D20 | **The plane adapter resolves keys by pi-ai's rule.** A named ref resolves through the credentials service, then the launch environment, then fails with `MISSING_CREDENTIAL` and sends no request. With no ref, pi's ambient key applies, plus the `readOpencodeStore` opt-in. Captured and literal keys never feed the adapter; they stay in the fetch patch's fill for an empty or placeholder wire key. |
 | D21 | The keyless paid-model filter on listings is dropped (D3, D8). Without a key, dispatch fails loudly. |
-| D22 | The `@deepseek-ai/*` dev dependencies move to the version the published `dsh` resolves (0.2.1-rc.2). It is named once, in `test/support/host-versions.ts`. |
+| D22' | The `@deepseek-ai/*` dev dependencies are the **alpha.2 cluster** `main` already follows: `0.2.2-alpha.2`, with cordis `4.0.6-alpha.1` and its loader `1.0.7-alpha.1`, which is what `dsh@alpha` installs. They are named once, in `test/support/host-versions.ts`. The rc line survives only as the peer range `main`'s `harness-channel.test.ts` enforces for both channels. _Replaces D22 (the 0.2.1-rc.2 cluster)._ |
+| D23 | **CI's freshness checks gate a pull request only on its own inputs.** A check's inputs are its script and every local module it loads, plus `src/identity.ts` for the CLI version; the generated tables never are. Vendor drift warns, and the nightly run proposes the refresh. The strict input lists in `test/freshness-scope.test.ts` are the record: `cli:version`'s grew by `scripts/vendor-version.ts` when `main` gave the check a pure half (#144), and the copy scan's generated-table skip moved into that half. |
+| D24 | **The debug gate is `main`'s rule:** naming `debugFile` writes both halves of the log; `debug` governs console output only. `main` chose it (#133), and its README example (`debug: false` with a `debugFile`) relies on it. P1a adopts it, and turns its "writes nothing while debug is off" test into one that asserts the rule. |
+| D25 | **The tool fallback's plane is `main`'s rule:** the request URL decides the plane, with a plane-blind lookup as the fallback (#138, `coreToolDecision`). P1b drops its route-mapped variant with no fallback. |
 
 ## What the host supports (read from source)
 
@@ -98,24 +104,24 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
   - Offer Off only where the protocol can disable reasoning (`adapter.ts:184-196`).
   - Verify that `"high"` is what each protocol sends for "on" before relying on it. Today `"on"` goes out verbatim (`openai-completions.js:718`, `anthropic-messages.js:733-735`).
 
-## Defects found in this audit, not yet fixed (all verified in code)
+## Defects found in this audit, and where each now stands (all verified in code)
 
 | Defect | Where |
 | :-- | :-- |
-| The deprecated wrapper re-exports a `default` that does not exist, an ESM link error. It is published every release. | `scripts/publish-scoped.ts:137`, `release.yml:124` |
+| ~~The deprecated wrapper re-exports a `default` that does not exist, an ESM link error.~~ Fixed on `main` (#135); P2 retires the wrapper (D9). | `scripts/publish-scoped.ts:137`, `release.yml:124` |
 | Settings shows pi's snapshot, not the catalog | `models-discovery.ts:142-198,532-539` |
 | Mode merging is done only for Go→Gemini. For the other modes the picker shows catalog levels while dispatch validates against a different profile: toggle models show Minimal…Max with no Off, and Go `minimax-m3` + Xhigh/Max is refused on the internal Anthropic route. | `models-discovery.ts:607-616,735-760,1063-1203`; `pi-provider.ts:351-386`; `responses-provider.ts:111-150` |
-| `isZenProvider("opencode-google")` is false | `utils/request-shape.ts:265-271` |
-| `enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404. | `models-catalog.ts:800-804` |
-| The warning token doesn't exist, so warnings render as caption text. The host's text token is `--dsw-alias-state-warn-label`. | `settings-card.tsx:159`, `settings-store-inspect.tsx:250` |
-| The Settings spinner animates only if the meter is mounted | `settings-usage.tsx:248` → `usage-ui.ts:440` |
-| The stream hook writes `debugFile` with `debug` off | `stream-hook.ts:327-340` vs `lifecycle.ts:361` |
-| `settings-purge` reports `{ ok: false }` as "not a purge result" and casts instead of using the parser | `settings-purge.ts:47-55` |
+| ~~`isZenProvider("opencode-google")` is false~~ Fixed on `main`: only `opencode-go` and `opencode-go-*` are excluded. P1a adds the regression test. | `utils/request-shape.ts:273-282` |
+| ~~`enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404.~~ Fixed on `main` (#133): a refusal other than 404 passes through. P1a adds the Zen-plane 404 fill, the non-JSON 200 answer and the retry-after passthrough cases. | `models-catalog.ts:731` |
+| ~~The warning token doesn't exist, so warnings render as caption text.~~ Fixed on `main` (#133): both use `--dsw-alias-state-warn-label`. | `settings-card.tsx:159`, `settings-store-inspect.tsx:250` |
+| ~~The Settings spinner animates only if the meter is mounted~~ Fixed on `main` (#133): the card carries its own keyframes. | `settings-usage.tsx:45` |
+| ~~The stream hook writes `debugFile` with `debug` off~~ Not a defect under D24: naming `debugFile` writes both halves. | `stream-hook.ts:327-340` vs `lifecycle.ts:361` |
+| `settings-purge`: the `{ ok: false }` branch and the parser are on `main` (#133). ~~Still open: a refused purge whose `error` is the host's `RemoteError` object, not a string, shows the generic message.~~ Fixed by P1a: `settings-purge.ts` reads the `RemoteError`'s `message`. | `settings-purge.ts:56-69` |
 | The stream hook's `prepared` handling is dead. The host never reads `options.prepared`. | `stream-hook.ts:44,200-203,258` |
 | The partition test misses `debugFile` | `test/settings-page.test.tsx:1223` |
 | `cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists | `cordis.patch.yml:23,36,61` |
 | `utils/retry.ts` uses `console` and global timers, against the purity gate | `utils/retry.ts:31,55` |
-| `tool-fallback`: the Anthropic branch can't be reached, and the lookup is Go-first | `tool-fallback.ts:204,237-242` |
+| `tool-fallback`: the Anthropic branch can't be reached. (The Go-first lookup is fixed on `main`, D25.) | `tool-fallback.ts:204,237-242` |
 | Hard-coded catalog counts in tests, which the nightly refresh PR breaks by construction | `test/catalog.test.ts:94,200,208` |
 | `.freebuff/project-id` is tracked | repo root |
 
@@ -128,7 +134,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | # | Fact | Evidence |
 | :-- | :-- | :-- |
 | F1 | **One route already serves every mode, per model.** llm-pi-ai resolves `api` and `baseUrl` per model: `request.api ?? base?.api ?? routeApi` and `request.baseURL ?? base?.baseUrl ?? providerBaseUrl`, where `base` is pi's installed catalog entry. | `llm-pi-ai/src/catalog.ts:917-922` |
-| F2 | **pi's installed `opencode` catalog spans four protocols, each with its own endpoint.** In pi 1.1.0, which the host pins and patches: Zen has 18 anthropic-messages (`/zen`) and 7 google, 28 completions and 30 responses (`/zen/v1`). Go has 5 anthropic (`/zen/go`) and 19 completions and 6 responses (`/zen/go/v1`), and **no google**. | `@earendil-works/pi-ai@1.1.0` `dist/providers/data/opencode*.json`; the harness's `pnpm-lock.yaml:13` |
+| F2 | _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ **pi's installed `opencode` catalog spans four protocols, each with its own endpoint.** In pi 1.1.0, which the host pins and patches: Zen has 18 anthropic-messages (`/zen`) and 7 google, 28 completions and 30 responses (`/zen/v1`). Go has 5 anthropic (`/zen/go`) and 19 completions and 6 responses (`/zen/go/v1`), and **no google**. | `@earendil-works/pi-ai@1.1.0` `dist/providers/data/opencode*.json`; the harness's `pnpm-lock.yaml:13` |
 | F3 | **A model pi's catalog does not know cannot get its own protocol.** A profile entry has no `api`/`baseURL` field (`PiAiModelProfile`); it takes the route's `api`, or `sharedCatalogApi`, which is undefined for a multi-protocol catalog. | `llm-pi-ai/src/catalog.ts:600-640,681-691,917-921` |
 | F4 | **Such a model cannot be saved, listed or dispatched on a pi-ai route.** Writes are validated strictly (`assertServiceable`), so the save is rejected with "needs an api". Stored reads are deferred, so the id lands in `modelErrors`. `listModels` lists only resolved models, and `modelOf` throws `INVALID_CONFIG`. | `llm-pi-ai/src/config.ts:357-368,487`; `index.ts:171`; `adapter.ts:271-311` |
 | F5 | **A route-level `api` or `baseURL` overrides every model**, collapsing the modes onto one protocol or endpoint. | `llm-pi-ai/src/catalog.ts:917,922` |
@@ -136,7 +142,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | F7 | **`registerAdapter` is all-or-nothing against a private map**, and only a registration's owner moves its routes (`handle.replace`). A route nobody holds is free to register. | `llm/src/index.ts:399-460` |
 | F8 | **Config resolution is a public, synchronous waterfall.** Cordis runs `internal/config` listeners in order, each getting `(config, next)`; `prepend: true` puts a listener outside those registered before it. pi-ai's save check (`assertServiceable`) is one listener on it. | the harness's `vendor/cordis/src/events.ts:234-258`; `llm-pi-ai/src/index.ts:177-186` |
 | F9 | **opencode's own client serves four protocols from one provider, per model.** It picks the SDK from `model.provider.npm` and the endpoint from `model.provider.api ?? provider.api`, both from the catalog. The plugin's catalog carries the same data (`catalog-data.ts` `OPENCODE_FAMILY_API`, a per-model SDK). | opencode's `packages/core/src/models-dev.ts:85-93` |
-| F10 | **pi 1.1.0's `opencode-go` provider has no Google API.** Its api map is anthropic-messages, openai-completions and openai-responses only, each wrapped in `withOpenCodeSessionHeader`. pi exports each protocol separately (`api/*.lazy`: `anthropicMessagesApi`, `openAICompletionsApi`, `openAIResponsesApi`, `googleGenerativeAIApi`) plus `createProvider` (`models`), which is what `google-bridge.ts` `googleProviderFor` already composes from. | pi 1.1.0 `dist/providers/opencode-go.js`; its `package.json` `exports` |
+| F10 | _Gone on pi 1.3 and later, whose `providers/opencode-go.js` wires `google-generative-ai`: the row flips to a baseline, and the plane adapter's Go Google wiring is equivalent rather than a gap-fill._ **pi 1.1.0's `opencode-go` provider has no Google API.** Its api map is anthropic-messages, openai-completions and openai-responses only, each wrapped in `withOpenCodeSessionHeader`. pi exports each protocol separately (`api/*.lazy`: `anthropicMessagesApi`, `openAICompletionsApi`, `openAIResponsesApi`, `googleGenerativeAIApi`) plus `createProvider` (`models`), which is what `google-bridge.ts` `googleProviderFor` already composes from. | pi 1.1.0 `dist/providers/opencode-go.js`; its `package.json` `exports` |
 | F11 | **pi-ai's routes are exactly the keys of its _resolved_ config.** It registers `[...profiles().keys()]`, and `profiles()` reads `config.providers.get()`, the value the fiber resolved. | `llm-pi-ai/src/index.ts:166-175,293-312` |
 | F12 | **Every path to that resolved value goes through the `internal/config` waterfall, and the fiber keeps the waterfall's _return value_.** That covers the first load, `fiber.update`, the loader's volatile commit, and the config editor's validation. **The config editor writes the raw `next` to `cordis.patch.yml`, never the resolved value.** So an outermost listener that returns a copy without `providers.opencode`/`providers["opencode-go"]` keeps pi-ai from seeing or registering them, while the user's file keeps every entry. | the harness's `vendor/cordis/src/fiber.ts:641-643,736-752` and `vendor/loader/src/config/entry.ts:164-195`; `boot/config-editor/src/index.ts:101-123` |
 | F13 | **The plugin can then register those ids through the public API.** With no pi-ai entry for them, `registerAdapter(["opencode", "opencode-go"], adapter)` passes the duplicate check. `PiAiAdapter` is a **public export** of `@deepseek-ai/dsh-llm-pi-ai`. pi-ai's Settings directory keeps listing both ids, because it lists every installed catalog provider regardless of profiles, with `settingsNs` = pi-ai and `settingsPath = ["providers", id]`. So Settings edits the same entries in the same file as today. | `llm/src/index.ts:399-460`; `llm-pi-ai/src/index.ts:77,128-150` |
@@ -156,8 +162,8 @@ Three corrections to the facts above:
 
 **What the plugin has to add, and nothing else:**
 
-- **G1:** serve any declared model the host's pi cannot resolve (D15). That means models newer than pi 1.1.0's catalog (8 Zen and 4 Go, including every Gemini model on Go, F10), **and** ids the catalog doesn't know at all.
-- **G2:** the endpoint family. pi 1.1.0 stores the legacy bases; the plugin sends the per-protocol `inference` bases, or the legacy ones when the `endpoint` setting says so.
+- **G1:** _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ serve any declared model the host's pi cannot resolve (D15). That means models newer than pi 1.1.0's catalog (8 Zen and 4 Go, including every Gemini model on Go, F10), **and** ids the catalog doesn't know at all.
+- **G2:** _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ the endpoint family. pi 1.1.0 stores the legacy bases; the plugin sends the per-protocol `inference` bases, or the legacy ones when the `endpoint` setting says so.
 - **G3:** a profile-level `api`/`baseURL` (F5). It is the user's explicit choice and is honoured as one (D8), without collapsing the modes.
 
 ### The design: the plugin owns the plane routes (D13)
@@ -258,7 +264,7 @@ pi-ai serves the models it knows again, from the same file. Ids pi can't serve d
 **Runs.**
 
 - Runs A–D use the published `@deepseek-ai/dsh` 0.2.1-rc.2 with the pi 1.4.0 it installs, offline, with an instrumented fetch.
-- Runs S0 and S0b swap pi for **1.1.0 plus the harness's own patch** (D14).
+- Runs S0 and S0b swap pi for **1.1.0 plus the harness's own patch** (the pin of the time, D14; D14' now pins the alpha tag's 1.3.0).
 - The prototypes are throwaway, and are not in the repository.
 
 | Run | Registered | Known models, 4 shapes × 2 planes | A model pi lacks | Saving a model pi lacks |
@@ -331,15 +337,13 @@ What stays private is pinned by contract tests against the real host packages:
   - completions models move from `/zen(/go)/v1` to `/inference(/go)/openai/v1`;
   - `decoratePlaneAdapters`' baseUrl repair never reaches the wire.
 
-1. **P1a `fix:` shipped breakage.**
-   - The wrapper's broken `export { default }`.
-   - `isZenProvider("opencode-google")` answers false.
-   - `enrichModelsResponse` passes a 401/403/5xx through, and still fills the Go plane's 404.
-   - The warning colour uses `--dsw-alias-state-warn-label`.
-   - The spinner keyframes are in the settings styles.
-   - One debug gate.
-   - `settings-purge` uses `parsePurgeResult`.
-   - The endpoint copy (`config.ts`, `config-values.ts`, README) names the per-protocol inference family for `modern`, with `auto` as its alias.
+1. **P1a `fix:` the purge row's refusal and the endpoint copy.** The rest of what shipped broken in 1.4.1 was fixed on `main` (#133, #135) before this phase landed.
+   - `settings-purge` shows the `message` of a refusal whose `error` is the host's `RemoteError` object.
+   - The endpoint copy (`config.ts`, `config-values.ts`, the card, both READMEs) names the per-protocol inference family for `modern`, with `auto` as its alias (D19), pinned by `endpoint-copy.test.ts`.
+   - Regression tests for `isZenProvider("opencode-google")`: the predicate, its agreement with `catalogPlaneForRoute`, and the usage service's Zen fallback on that route.
+   - The warning colour is the bare `--dsw-alias-state-warn-label` (no token fallback), and every token the card names is checked against the host's vocabulary.
+   - The stream hook's debug test asserts D24 rather than the gate this phase first proposed.
+   - The catalog's refusal tests gain three cases `main` lacks: the Zen-plane 404 fill, the non-JSON 200 answer, and a `retry-after` header that survives the passthrough. The passthrough itself is on `main` (#133).
 2. **P1b `chore:` hygiene.**
    - Delete `adapter-replacement.ts` and its test, with a note in the engineering notes on why the approach is unsupported.
    - Delete the dead `prepared` handling and `.freebuff/`.
@@ -353,10 +357,10 @@ What stays private is pinned by contract tests against the real host packages:
    - Delete `resolveRoutedKey` and `internalRoutes`.
    - Stop publishing the wrapper. `publish-scoped.ts`'s `SCOPED_TARGETS` and `release.yml`'s verify list change together, and `check.ts` asserts that they agree.
 4. **P-T1a `build:` pin the host.**
-   - `pnpm-workspace.yaml` gains `overrides: { "@earendil-works/pi-ai": "1.1.0" }` and `patchedDependencies`, with a committed copy of the harness's patch. The lockfile is regenerated.
-   - The `@deepseek-ai/*` packages move to rc.2, and the devDependencies gain `dsh-llm`, `dsh-app-boot`, `dsh-config-editor`, `dsh-settings` and `cordis-plugin-loader`.
-   - Add `test/support/host-versions.ts`, with a version test: `loadHostPi().version` is 1.1.0, and the root pi is the same copy.
-   - Rewrite `mount-protocols.test.ts` as "every catalog SDK maps to a protocol that pi's `api/*` exports implement", keeping the row that pi 1.1.0's Go provider lacks Google.
+   - `pnpm-workspace.yaml` keeps `main`'s pins, and gains `overrides: { "@earendil-works/pi-ai": "1.3.0" }` and `patchedDependencies`, with a committed copy of the alpha harness tag's `@earendil-works__pi-ai@1.3.0.patch` (D14'). The lockfile is regenerated.
+   - The `@deepseek-ai/*` packages stay on `main`'s alpha.2 cluster (D22'), and the devDependencies gain `dsh-llm`, `dsh-app-boot`, `dsh-config-editor`, `dsh-settings` and `cordis-plugin-loader`.
+   - Add `test/support/host-versions.ts`, with a version test: `loadHostPi().version` is 1.3.0, and the root pi is the same copy.
+   - Rewrite `mount-protocols.test.ts` as "every catalog SDK maps to a protocol that pi's `api/*` exports implement"; the row that pi's Go provider lacks Google flips to a baseline (F10).
 5. **P-T1b `test:` the real-host harness.** It is additive only. `test/support/host.ts` provides two tiers that run inside the test process:
    - **Tier A:** a cordis `Context`, `LlmRuntime`, and pi-ai mounted with `{ providers }`.
    - **Tier B:** dsh-app-boot's `boot()` with a temporary HOME, and a test bundle that names the loader builtins `llm`, `llm-pi-ai`, `ConfigEditor`, `Settings` and the plugin. It follows the harness's `experimental/speech-to-text/tests/configuration.spec.ts:7-33`, with a fake `credentials` service and a launch-environment snapshot.
@@ -402,36 +406,93 @@ What stays private is pinned by contract tests against the real host packages:
     - **`check.ts`** keeps the lib freshness check, the consumer install and the size tripwire.
     - **Scripts:** the generators share helpers, and the `verify-*` scripts exit non-zero.
     - **`no-local-paths`** also covers `.github/` and `*.sh`.
-12. **P5 `refactor:` installers.** `installRemoteService` replaces the three mount-once copies.
-13. **P6 `refactor:` the fetch patch's credential fill.** The adapter path is already D20.
+12. **P-R3 `fix:` honest refusals.** After P-R2 has recorded the shapes (lessons L2, L7, L9, L10 below).
+    - `PlaneAdapter.prepareCall` classifies the gateway's refusals as non-retryable and keeps their status and body: `FreeTierError` (403) and `FreeUsageLimitError` (429) as the free tier's refusal; `RegionError`, `ModelDeprecated` (410) and `ModelProtocolUnsupported` (400) as "model unavailable". First verify whether an `AUTH` code makes the conversation UI replace the gateway's message, which decides where the codes land.
+    - Set `tool_choice` when the gate tools are injected (`none` on chat completions with no original tools; never on Responses, which accepts only `auto`), and treat a `read`/`bash` tool with empty `properties` as missing.
+    - Fill dsh-llm's `providerRetryAfterMs` from `Retry-After`, if P-R2 measured it on Go's 429s.
+    - Offer Off through `reasoning_effort: "none"` on plain chat-completions reasoning models, if P-R2 measured it.
+13. **P5 `refactor:` installers.** `installRemoteService` replaces the three mount-once copies.
+14. **P6 `refactor:` the fetch patch's credential fill.** The adapter path is already D20.
     - One resolver, for an empty or placeholder wire key only.
     - A parity test over the deciders, with the adapter path as its own row: a rotated key takes effect, and a service failure propagates.
     - A `CaptureStore` per root, evicting a key on 401.
-14. **P7 `refactor:` one source per table.** One `planeForRoute` (four copies today), `formatUsd` and `specFor`; delete the duplicate `ALL_THINKING_LEVELS` and the capitalisation copies.
-15. **P8 `refactor:` settings table.** It starts with a snapshot test of the derived `Config`. Then one field table drives the schema, resolver, types, card, copy and manifest.
-16. **P9 `refactor:` remote seam.** `defineRemote`, `markRemote` and `callRemote`, with the parity test reading the contracts.
-17. **P10a `refactor:` pure module moves.**
+15. **P7 `refactor:` one source per table.** One `planeForRoute` (four copies today), `formatUsd` and `specFor`; delete the duplicate `ALL_THINKING_LEVELS` and the capitalisation copies.
+16. **P8 `refactor:` settings table.** It starts with a snapshot test of the derived `Config`. Then one field table drives the schema, resolver, types, card, copy and manifest.
+17. **P9 `refactor:` remote seam.** `defineRemote`, `markRemote` and `callRemote`, with the parity test reading the contracts.
+18. **P10a `refactor:` pure module moves.**
     - `models-discovery` → `host/*`;
     - `go-discovery` → `credentials.ts`;
     - split `usage-ui`;
     - `fetch-patch` → `request/`.
-18. **P10b `fix:` catalog state.**
+19. **P10b `fix:` catalog state.**
     - The parse is pure and returns `deprecated`, and a refresh replaces the maps.
     - The purge makes one edit per entry.
     - The card lists the ids pi can't serve, and removes them.
-19. **P11 `refactor:` UI on the primitives.**
-20. **P12 `ci:`** make lint warnings gating once `src/` is at zero.
+20. **P11 `refactor:` UI on the primitives.**
+21. **P12 `ci:`** make lint warnings gating once `src/` is at zero.
 
 ## Order
 
 ```
-P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 → P-T2 → P-T3 → P5 → P6 → P7 → P8 → P9 → P10a → P10b → P11 → P12
+P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 → P-T2 → P-T3 → P-R3 → P5 → P6 → P7 → P8 → P9 → P10a → P10b → P11 → P12
 ```
 
 - **P1a first:** it fixes what already shipped broken.
 - **P-T1a and P-T1b before any routing change:** the real-host harness records today's behaviour, and P-R1 must keep it except for the rows it names.
 - **P-H before P-R1:** P-R1 needs the `describe` wrapper.
 - **P10a only after P5–P9:** a module is moved only once tests pin what it does.
+- **P-R3 only after P-R2's re-measure:** it changes how refusals are reported, so the refusal shapes have to be recorded first.
+
+## Restack adjustments
+
+How each phase changes now that it sits on `main` 1.8.0 and the alpha host. Each open phase merges its parent; only P0 merges `main`. Generated files take `main`'s blobs, catalog counts are re-derived from the shipped shim, the README pair moves in step (`test/docs-pairing.test.ts`), and the repository map stays true in both directions (`test/no-local-paths.test.ts`).
+
+| Phase | Adjustment |
+| :-- | :-- |
+| P0 | Shrinks: the three catalog refreshes and the per-plane pricing fix are on `main`. Keeps the suite hardening, the lifecycle, mount and credential fixes, D23's scoping with `--copies`, and this plan. |
+| P1a | Shrinks hard: the purge row shows the host's `RemoteError.message`, the endpoint copy says `auto` is `modern`, and `isZenProvider("opencode-google")` gains a regression test. The wrapper fix, refusal passthrough, warning token, spinner and `parsePurgeResult` are on `main` or superseded; P1a only drops the warning token's fallback, checks every token the card names against the host's vocabulary, and adds three refusal-passthrough test cases `main` lacks (the Zen-plane 404 fill, the non-JSON 200 answer, the `retry-after` passthrough). The debug gate follows D24. |
+| P1b | Takes `main`'s `coreToolDecision` (D25) and ports only the dead Anthropic branch's deletion; its catalogue fixture merges with `main`'s `test/fixtures/catalogs.ts` behind the one door. |
+| P2 | Re-retires the wrapper `main` revived (D9); the door list grows by every `src` name `main`'s tests import. |
+| P-T1a | Redone on D14' and D22': `main`'s pins, then the pi 1.3.0 override and patch; the 1.1.0 patch is deleted. |
+| P-T1b | Re-measured on the pinned cell (pi 1.3.0, patched) and the floating one (1.5.0 today); floating rows are version-agnostic; contract-test citations move to cordis `4.0.6-alpha.1`. |
+| P-H | Gains the Chinese "Changed in 1.x" bullet the pairing gate requires. |
+| P-R1 | Restates pi-ai's defaults (D17); deletes `test/google-thinking.test.ts` with `src/google-bridge.ts`, moving its intents to the mock suite; takes `main`'s model lists with its own routing prose. |
+| P-R2 | Splits the free probe's 429: `FreeUsageLimitError` is its own non-retryable verdict, not a rate limit; `ModelDeprecated` reads as gone; adds the probe rows of lessons L3, L4, L5, L9, L10 and L13; ports `main`'s mock-coverage gate (#142) over the dispatch tables. |
+| P3 | Unchanged seams on the alpha host; its Settings fetch row runs in both binary cells. |
+| P-T2 | Absorbs `main`'s tests and owns `docs/testing.md`; folds `test/e2e/verdict.ts` into the live-probe module; tests `main`'s plane lookup fallback. |
+| P-T3 | **Shrinks.** `main` already extracted the scripts' pure halves and wrote `docs/testing.md`. Remaining: one unit run with the build before the `lib/` readers, `test/**/*.tsx` type-checked, the composite setup action, `check.ts` trimmed to freshness, consumer install and size, `verify-*` exit codes, and `no-local-paths` over `.github/` and `*.sh`. **New:** the CLI-version script reads the registry's dist-tags and the 2.x User-Agent format (L6), and a matrix cell runs unit and tier A on the floating pi (L13). |
+| P-R3 | **New**, after P-R2's re-measure: L2's error mapping in `prepareCall`, L7's `tool_choice` and schema check, L9's `providerRetryAfterMs`, and L10's Off through `none` if measured. |
+| P5 | Unchanged, plus L1's warn-once when `globalThis.fetch` is no longer the patched function. |
+| P6 | L8: verify before evicting a key; L4's outcome (drop `x-opencode-request`, or send it only where it is accepted). |
+| P7 | L6's client-generation table and L11's context-window overrides table; the `planeForRoute` copies now include `main`'s `isGoPlaneUrl` and `catalogPlaneForRoute` pair. |
+| P8 | The health snapshot shows the catalog's `lastError` on the card. |
+| P9 | A loopback triple guard, only if a `webServer` route appears. |
+| P10a | L1's per-call shaping is the first move of `fetch-patch` into `request/`. |
+| P10b | L12's test; optionally emit `llm/models-updated` on refresh, a new host event. |
+| P11, P12 | Unchanged. |
+
+## Lessons from opencode2dsh
+
+Two community plugins solve the same problem on the same host: [`FishBottle7/opencode2dsh`](https://github.com/FishBottle7/opencode2dsh) (read at `3805a38`, cited as FB) and [`satanfire/opencode2dsh`](https://github.com/satanfire/opencode2dsh) (read at `873e914`, cited as SF). Ranked by value. "Adopt" means the evidence is in the cited code; "measure" means P-R2 records it before any code moves.
+
+| # | Lesson | Evidence | Phase | Verdict |
+| :-- | :-- | :-- | :-- | :-- |
+| L1 | **Shape plane traffic per call, not through the global fetch patch.** Put the derived session id, `x-opencode-client` and `x-opencode-project` into `options.headers`, and the core-tool fallback into `onPayload`, when wrapping each api in the plane provider; keep the fetch patch for URL-claimed relays, listing enrichment and P6's credential fill. Warn once when `globalThis.fetch` is no longer the patched function. | FB `packages/plugin/src/adapter/zen-adapter.ts` (`headers`, `onPayload`); FB `packages/plugin/src/pool/installer.ts` swaps `globalThis.fetch`, and our restore is identity-guarded. `docs/redirect-planes.md` claims the headers reach all four protocols; only the session header does. | P-R1 follow-up (the doc fix), P10a, P5 | Adopt |
+| L2 | **Classify the gateway's refusals as non-retryable in `prepareCall`**, keeping status and body. The host maps 403 to `AUTH` and 429 to `RATE_LIMIT`, and retries a 429 five times. | SF `lib/errors.js`; FB `packages/plugin/src/adapter/events.ts`. FB's claim that `AUTH` makes the UI print "API key is invalid" is unverified. | P-R3 | Adopt after verifying the UI claim |
+| L3 | **The free probe misreads the newer refusal.** A final 429 is always read as rate-limited; `429 FreeUsageLimitError` is the gate refusing, so it is its own verdict and is not retried. Also probe the root family `/inference/v1`. | SF `873e914` (the probe no longer counts a 429 as usable); FB `packages/plugin/src/adapter/catalog.ts` counts a 429 as a pass. | P-R2 | Adopt |
+| L4 | **Measure `x-opencode-request` before keeping it.** We send a minted `msg_` id, and the keyed probes omit it, so it has never been measured. | FB `packages/plugin/src/adapter/ids.ts` ("any value is refused"); SF removed it; `docs/upstream-findings.md` says 2.x dropped it. | P-R2 rows, then P6 or P10a | Measure; drop it or send it only where accepted |
+| L5 | **`x-opencode-project` has three conflicting claims:** the folder basename (ours, which also leaks the repository's name), `global` (FB), and a 40-hex digest (SF). | FB `packages/plugin/src/adapter/ids.ts`; SF `lib/protocol.js`. | P-R2 rows for all three, then default to `global` unless another is proven | Measure; probably change the default |
+| L6 | **One "client generation" table** for the User-Agent format, the header set and the session semantics. Our tree disagrees with itself about the affinity headers on plane routes, and SF ships the 2.x User-Agent format. | FB `packages/plugin/src/adapter/ids.ts`; SF `lib/protocol.js`; `src/fetch-patch.ts`; `docs/upstream-findings.md`. | P7, P-T3 | Adopt |
+| L7 | **Set `tool_choice` when injecting the gate tools, and check their schemas.** Ours injects and leaves `tool_choice` alone, and matches by name only, so a title or compaction call can end in a stub-tool call. | FB `packages/plugin/src/adapter/messages.ts`; SF `lib/protocol.js`. | P-R3 (or L1's `onPayload`) | Adopt |
+| L8 | **Verify before evicting a key.** A malformed session header yields `401 Invalid API key`, and FB saw the same request refused and then accepted. Evict per plane only after one verification or a second well-formed 401. | FB `packages/plugin/src/pool/death-verify.ts`; `src/utils/session-id.ts`. | P6 | Adopt |
+| L9 | **Honour `Retry-After`.** dsh-llm accepts `providerRetryAfterMs`, `dsh-llm-pi-ai` never fills it, and pi's `onResponse` exposes the headers. | SF `lib/errors.js`. | P-R2 records whether Go's 429s carry it; P-R3 fills it | Measure, then adopt |
+| L10 | **Offer Off on plain chat-completions reasoning models** through `reasoning_effort: "none"`; ours offers Off only for a few body formats. | FB `packages/plugin/src/adapter/zen-adapter.ts`; `src/utils/model-metadata.ts`. | P-R2 keyed probe, then P-R1's metadata | Measure first |
+| L11 | **Context-window overrides with dated evidence.** FB keeps measured windows for two free models that differ from the catalog's; an understated window is the overflow trap. | FB `packages/plugin/src/adapter/catalog.ts`. | P7 | Low priority; the table pattern only |
+| L12 | **A failed or partial refresh must not replace the maps.** | SF `lib/catalog.js`; FB `packages/plugin/src/adapter/catalog.ts`. | P10b | Adopt |
+| L13 | **Test against the host's newer pi**, not only the pin: unit and tier A on the floating pi, not just the binary e2e; the `/zen/v1/systemone` family belongs in P-R2's families. | FB's hoisted-pi test and loader hook. | P-T1b's floating cell, P-T3's matrix cell, P-R2 | Adopt |
+| L14 | Smaller: a triple loopback guard if a `webServer` route is ever added (the remotes seam remains the better one); the host's `volatileForm()` as an alternative to hand-written card fields; the catalog's `lastError` on the card rather than in a file. | FB `packages/plugin/src/ip-pool-settings/bridge.ts`, `packages/plugin/src/config.ts`. | P9, P8 or P11, P8 | Adopt where the phase reaches it |
+
+**Do not adopt:** SF's Bun transport and its `<env>` prompt injection (which also leaks the host server's working directory); FB's IP pool, sibling-host replay and credential-custody delegation; automatic retry with thinking turned off; FB's own stream watchdogs (the host has one). These circumvent the vendor's stated gate ("Free models work in OpenCode"); the vendor answers with IP blocks, and these features would expose our users' keys. Classify the refusals honestly instead (L2, L3). Also avoid their session-id scheme, which is derived from the first user message and re-minted per process: ours is stable per DSH session (`src/utils/session-id.ts`).
 
 ## Test matrix
 
@@ -439,7 +500,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 - **Unit:**
   - each shipped breakage, red before its fix;
-  - the wrapper forwarder;
+  - the wrapper is retired (P2, D9), so it has no forwarder to test;
   - a snapshot of the endpoint copy;
   - the manifest is a subset of `Config.dict`;
   - the `src.ts` indirection;
@@ -469,7 +530,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
   - `configEditor.edit` writes the raw `next` to the YAML;
   - `_commitVolatile` re-resolves through a prepended listener;
   - baselines for `settings.describe` and `hasProviderApiKey`.
-- **Characterization rows**, tagged, on pi 1.1.0.
+- **Characterization rows**, tagged, on the pinned pi (D14'), with the floating cell's rows version-agnostic.
 
 **P-R1**
 
@@ -561,7 +622,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 **Cells:**
 
-- (a) pi 1.1.0, pinned and patched, on PRs;
+- (a) the pi the target harness tag pins, with its patch (1.3.0 today, D14'), on PRs;
 - (b) whatever npm installs, nightly and on dispatch.
 
 ### The live gateway job (`OPENCODE_API_KEY` / `OPENCODE_GO_API_KEY`)

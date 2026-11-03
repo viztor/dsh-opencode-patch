@@ -12,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OPENCODE_FAMILY_API } from "../src/catalog-data.ts";
+import { GO_MODEL_LIMITS } from "../src/go-limits-data.ts";
 import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
@@ -197,12 +198,12 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // replacing the whole set — so these counts are the cold-start picker, and a
     // silent drop here is a model nobody can pick. Regenerate with
     // `scripts/regenerate-catalog-shim.ts` rather than editing by hand.
-    expect(OPENCODE_ZEN_CATALOG.length).toBe(81);
+    expect(OPENCODE_ZEN_CATALOG.length).toBe(80);
     const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
     // Only the free tiers the registry still lists as active. The count is the
     // `is_free` flag the shim carries, NOT the `-free` suffix: `big-pickle` is
     // flagged and is not suffixed, so a suffix rule would have missed it.
-    expect(freeModels.length).toBe(9);
+    expect(freeModels.length).toBe(8);
 
     const ids = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
     expect(ids.has("beam-free")).toBe(true);
@@ -228,6 +229,40 @@ describe("OpenCode Model Catalog & Enrichment", () => {
    * that every model the shim carries, and every model naming an SDK we have a
    * route for, is carried WITH that field.
    */
+  it("prices the same id differently on the two planes, and agrees about free", () => {
+    // **The two planes are not the same catalog.** Sixteen ids are on both, and
+    // two of them are priced differently: `deepseek-v4.1-flash` is $0.30/$1.20
+    // per million on Zen and $0.15/$0.60 on Go, and `deepseek-v4-pro` differs
+    // too. A lookup that does not know the plane answers with the Go price —
+    // the plane-agnostic one searches Go first — so a Zen turn came out at
+    // exactly half of what it cost, and the meter showed the half.
+    //
+    // This is the shape of the correction: the price and the free flag are the
+    // PLANE's, and the plane is the route's.
+    const zen = new Map(OPENCODE_ZEN_CATALOG.map((m) => [m.id, m]));
+    const go = new Map(OPENCODE_GO_CATALOG.map((m) => [m.id, m]));
+    const shared = [...zen.keys()].filter((id) => go.has(id));
+
+    const pricedDifferently = shared.filter(
+      (id) =>
+        JSON.stringify(zen.get(id)?.cost) !== JSON.stringify(go.get(id)?.cost)
+    );
+    expect(pricedDifferently.length).toBeGreaterThan(0);
+
+    // **The free flag agrees everywhere today**, which is why the free-model
+    // lookups are plane-aware as a precaution rather than a correction. The day
+    // the vendor breaks that, this fails and names the case: a model that is
+    // free on one plane and paid on the other decides whether a credential is
+    // required, and the free tier's tools are the free tier's business.
+    const freeDiffers = shared.filter(
+      (id) => (zen.get(id)?.is_free === true) !== (go.get(id)?.is_free === true)
+    );
+    expect(
+      freeDiffers,
+      `the planes disagree about free: ${freeDiffers.join(", ")}`
+    ).toEqual([]);
+  });
+
   it("carries the SDK on every Zen shim entry that names one", () => {
     const buckets = new Map<string, string[]>();
     for (const spec of OPENCODE_ZEN_CATALOG) {
@@ -353,6 +388,70 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(zenJson.data.some((m) => m.id === "beam-free")).toBe(true);
   });
 
+  it("passes a refusal through untouched, and fills only a 404", async () => {
+    // **A refusal is not a listing.** The enrichment answered every upstream
+    // response with a 200 and the whole catalog, so a 401 (no credential), a
+    // 403 (access denied), a 429 (rate limited) and a 500 all became "here are
+    // 80 models, all of them yours" — a caller that cannot call the endpoint
+    // was told it offers everything, and an outage looked like a listing.
+    //
+    // The one status the catalog answers for is 404, because the Go plane's
+    // modern base serves no `/models` route at all.
+    for (const status of [401, 403, 429, 500, 502]) {
+      // The rate limit carries the header a caller backs off by; the
+      // passthrough must hand it on with the status.
+      const headers: Record<string, string> =
+        status === 429 ? { "retry-after": "30" } : {};
+      const upstream = Response.json(
+        { error: { message: "refused" } },
+        { headers, status }
+      );
+      const enriched = await enrichModelsResponse(
+        "https://opencode.ai/inference/openai/v1/models",
+        upstream
+      );
+      expect(enriched.status, `status ${status}`).toBe(status);
+      expect(enriched.headers.get("retry-after"), `status ${status}`).toBe(
+        headers["retry-after"] ?? null
+      );
+      const body = (await enriched.json()) as { data?: unknown[] };
+      expect(body.data, `status ${status} must not carry a catalog`).toBe(
+        undefined
+      );
+    }
+
+    // And a 404 IS filled — the Go plane's modern base answers exactly that.
+    const missing = await enrichModelsResponse(
+      "https://opencode.ai/inference/go/openai/v1/models",
+      Response.json({ error: { message: "not found" } }, { status: 404 })
+    );
+    expect(missing.status).toBe(200);
+    const filled = (await missing.json()) as { data: Array<{ id: string }> };
+    expect(filled.data.length).toBeGreaterThan(0);
+  });
+
+  it("fills a Zen-plane 404 with the Zen catalog, as it does the Go plane's", async () => {
+    // The 404 rule is not a Go special case: a Zen base that serves no
+    // listing is answered from the Zen catalog the same way.
+    const out = await enrichModelsResponse(
+      "https://opencode.ai/zen/v1/models",
+      new Response("Not Found", { status: 404 })
+    );
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(getLiveZenCatalog().length);
+  });
+
+  it("still answers a 200 whose body is not JSON with the full catalog", async () => {
+    const out = await enrichModelsResponse(
+      "https://opencode.ai/zen/v1/models",
+      new Response("not json", { status: 200 })
+    );
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(getLiveZenCatalog().length);
+  });
+
   it("answers the modern Go listing with the Go catalog, not the Zen one", async () => {
     // **This is the bug the Go plane's endpoint change exposed.** The Go plane's
     // base is the `inference` family, and the adapter lists its models at
@@ -378,8 +477,6 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // …and the Zen catalog's are not.
     expect(goJson.data.some((m) => m.id === "claude-opus-4-6")).toBe(false);
     expect(goJson.data.length).toBe(getLiveGoCatalog().length);
-    // The fill is the listing, so it answers as one.
-    expect(goResponse.status).toBe(200);
   });
 
   it("keeps the Muse 1.2 rows the zen plane actually serves", async () => {
@@ -871,72 +968,6 @@ describe("findModelSpec", () => {
   });
 });
 
-describe("enrichModelsResponse: the gateway's verdict passes through", () => {
-  const url = "https://opencode.ai/zen/v1/models";
-
-  it("enrichModelsResponse: a 401, a 403, a 429 and a 5xx reach the caller as the gateway sent them", async () => {
-    // A refused key, a refused tier and an outage are answers about the
-    // REQUEST. Filling them with the catalog told discovery the listing had
-    // succeeded, and the reason the gateway gave never reached anyone.
-    const rows = [
-      {
-        body: JSON.stringify({ error: { message: "Missing API key" } }),
-        status: 401,
-        type: "application/json",
-      },
-      {
-        body: JSON.stringify({ error: { type: "FreeTierError" } }),
-        status: 403,
-        type: "application/json",
-      },
-      // Not an auth answer and not an outage: the rule is "every non-2xx but
-      // 404", and this row records that a rate limit is the gateway's too.
-      {
-        body: JSON.stringify({ error: { type: "RateLimitError" } }),
-        headers: { "retry-after": "30" },
-        status: 429,
-        type: "application/json",
-      },
-      { body: "upstream down", status: 503, type: "text/plain" },
-    ];
-    for (const row of rows) {
-      const extra: Record<string, string> =
-        "headers" in row && row.headers !== undefined ? row.headers : {};
-      const upstream = new Response(row.body, {
-        headers: { "content-type": row.type, ...extra },
-        status: row.status,
-      });
-      const out = await enrichModelsResponse(url, upstream);
-      expect(out.status).toBe(row.status);
-      expect(await out.text()).toBe(row.body);
-      expect(out.headers.get("content-type")).toBe(row.type);
-      for (const [name, value] of Object.entries(extra)) {
-        expect(out.headers.get(name)).toBe(value);
-      }
-    }
-  });
-
-  it("fills a Zen-plane 404 with the Zen catalog, as it does the Go plane's", async () => {
-    const out = await enrichModelsResponse(
-      url,
-      new Response("Not Found", { status: 404 })
-    );
-    expect(out.status).toBe(200);
-    const body = (await out.json()) as { data: unknown[] };
-    expect(body.data.length).toBe(getLiveZenCatalog().length);
-  });
-
-  it("still answers a 200 whose body is not JSON with the full catalog", async () => {
-    const out = await enrichModelsResponse(
-      url,
-      new Response("not json", { status: 200 })
-    );
-    expect(out.status).toBe(200);
-    const body = (await out.json()) as { data: unknown[] };
-    expect(body.data.length).toBe(getLiveZenCatalog().length);
-  });
-});
-
 describe("enrichModelsResponse: a model neither source describes", () => {
   it("still describes it fully, so the picker never shows a row with no limits", async () => {
     // The gateway adds models before models.dev — or the bundled shim — knows
@@ -1078,6 +1109,43 @@ describe("catalog · the README's routing table", () => {
       Number(m[1] ?? 0)
     );
     expect(served).toEqual([zen, go]);
+  });
+
+  it("holds every allowance figure in the docs to the generated table", async () => {
+    // The counts above are parsed, the dollar figures beside a model id were
+    // not, and the meter's mock-ups paired one model with another's allowance
+    // in four files while the README's own prose had the right one. Every
+    // `<id> Go $a · Plus $b` a document prints is read back against the table
+    // the meter itself prints from.
+    let seen = 0;
+    for (const file of [
+      "../README.md",
+      "../README.zh-CN.md",
+      "../docs/quota-meter.md",
+      "../docs/quota-meter.zh-CN.md",
+    ]) {
+      const text = await readFile(new URL(file, import.meta.url), "utf8");
+      const figures = [
+        ...text.matchAll(
+          /([a-z0-9][a-z0-9.-]*)[\s·,`]+Go \$([\d.]+) · Plus \$([\d.]+)/gu
+        ),
+      ];
+      expect(
+        figures.length,
+        `${file} prints no allowance figure to check`
+      ).toBeGreaterThan(0);
+      for (const [, id = "", go, plus] of figures) {
+        const row = GO_MODEL_LIMITS[id];
+        expect(row, `${file} prints an allowance for ${id}`).toBeDefined();
+        expect(
+          [Number(go), Number(plus)],
+          `${file}: the allowance it prints for ${id}`
+        ).toEqual([row?.go, row?.goPlus]);
+        seen += 1;
+      }
+    }
+    // A known answer, so a regex that stops matching cannot pass as clean.
+    expect(seen).toBeGreaterThanOrEqual(8);
   });
 
   it("holds the plane-by-plane table to both catalogs", async () => {

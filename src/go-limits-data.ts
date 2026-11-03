@@ -23,8 +23,8 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     name: "DeepSeek V4 Pro (Off-Peak)",
   },
   "deepseek-v4.1-flash": {
-    go: 80,
-    goPlus: 160,
+    go: 100,
+    goPlus: 200,
     name: "DeepSeek V4.1 Flash (Off-Peak)",
   },
   "gemini-4-argon": {
@@ -115,7 +115,7 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
   "minimax-m3": {
     go: 60,
     goPlus: 180,
-    name: "MiniMax M3",
+    name: "MiniMax M3 (≤ 512K tokens)",
   },
   "minimax-m3.1-flash": {
     go: 20,
