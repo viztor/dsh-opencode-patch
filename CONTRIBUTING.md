@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Node.js `>= 24` (CI runs the version in `.node-version`, and the floor in a job of its own), `pnpm` (v12). The suite refuses to start below the floor and names both versions: below it, `node:sqlite`, `Intl.DurationFormat` and the ICU strings the tests pin differ, and the failures read like regressions.
-- The host versions the suite runs against (pi, the `@deepseek-ai` cluster, cordis and its loader) are named once, in `test/support/host-versions.ts`. `pnpm install` pins pi for every copy in the tree and applies the harness's own patch from `patches/` — that is what the `overrides` and `patchedDependencies` in `pnpm-workspace.yaml` do.
+- The plugin supports the latest release of **both** harness channels, `rc` (`dsh@latest`) and `alpha` (`dsh@alpha`). Their hosts (the `@deepseek-ai` cluster, cordis, its loader, and the pi range the bridge declares) are named once, in `test/support/host-versions.ts`. `pnpm install` installs the alpha channel from the root lockfile; `node --experimental-strip-types scripts/use-channel.ts rc` switches to the rc channel's committed lockfile (`channels/rc/pnpm-lock.yaml`), `… alpha` switches back, and `--floor` puts pi at the range's floor (the harness's own pin) for a local run. Each install runs pi **unpatched**, as an npm user does: this repository carries no pi patch. A switch restores every file it touched, so `git status` stays clean, and the suite reads which channel is installed from the marker the switch leaves (`DSH_CHANNEL` overrides it). After a bump to a channel's cluster, `scripts/use-channel.ts rc --relock` regenerates the rc lockfile.
 - A checkout of this repo; for live testing, a DeepSeek Harness profile (see README for the `link:` setup)
 
 ## Commands

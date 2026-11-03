@@ -43,6 +43,14 @@ minimumReleaseAgeExclude:
 # `channels/rc/pnpm-lock.yaml` for rc). `scripts/use-channel.ts` switches the
 # dev install between the channels, and to the range's floor (the harness's own
 # pin) without committing it; `test/support/host-versions.ts` names both.
+#
+# `pnpm run`/`pnpm exec` only WARN when the install looks stale against these
+# files, rather than reinstalling: a channel switch restores the committed
+# files while the tree keeps the switched install, and an automatic reinstall
+# would put the default channel back under a run that was meant to test the
+# other one. The suite itself checks which host is installed
+# (`test/host-versions.test.ts`), so a stale tree fails there, by name.
+verifyDepsBeforeRun: warn
 overrides:
   vite@*: "catalog:"
 peerDependencyRules:
