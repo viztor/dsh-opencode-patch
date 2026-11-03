@@ -274,7 +274,7 @@ Go usage                                           Healthy
 ● 5 hours    0% used · resets in 4h 58m           100% left
 ● Weekly    28% used · resets in 3d 2h             72% left
 ● Monthly   14% used · resets Nov 7, 8:55 AM       86% left
-Monthly allowance  mimo-v2.6-pro · Go $60 · Plus $120         ⓘ
+Monthly allowance  mimo-v2.6-flash · Go $60 · Plus $120       ⓘ
 ```
 
 **This build carries the API key path only.** There is no sign-in row and no device flow: a credential comes from the deployment's configuration, from a key captured on a live request, or — when `readOpencodeStore` is on — from the OpenCode installation's own store. The Console login (device flow, session store, credential pool) lives on the `v2` line and is deliberately not in `main`, so nothing here depends on a service the host may not mount.

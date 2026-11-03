@@ -12,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OPENCODE_FAMILY_API } from "../src/catalog-data.ts";
+import { GO_MODEL_LIMITS } from "../src/go-limits-data.ts";
 import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
@@ -1079,6 +1080,43 @@ describe("catalog · the README's routing table", () => {
       Number(m[1] ?? 0)
     );
     expect(served).toEqual([zen, go]);
+  });
+
+  it("holds every allowance figure in the docs to the generated table", async () => {
+    // The counts above are parsed, the dollar figures beside a model id were
+    // not, and the meter's mock-ups paired one model with another's allowance
+    // in four files while the README's own prose had the right one. Every
+    // `<id> Go $a · Plus $b` a document prints is read back against the table
+    // the meter itself prints from.
+    let seen = 0;
+    for (const file of [
+      "../README.md",
+      "../README.zh-CN.md",
+      "../docs/quota-meter.md",
+      "../docs/quota-meter.zh-CN.md",
+    ]) {
+      const text = await readFile(new URL(file, import.meta.url), "utf8");
+      const figures = [
+        ...text.matchAll(
+          /([a-z0-9][a-z0-9.-]*)[\s·,`]+Go \$([\d.]+) · Plus \$([\d.]+)/gu
+        ),
+      ];
+      expect(
+        figures.length,
+        `${file} prints no allowance figure to check`
+      ).toBeGreaterThan(0);
+      for (const [, id = "", go, plus] of figures) {
+        const row = GO_MODEL_LIMITS[id];
+        expect(row, `${file} prints an allowance for ${id}`).toBeDefined();
+        expect(
+          [Number(go), Number(plus)],
+          `${file}: the allowance it prints for ${id}`
+        ).toEqual([row?.go, row?.goPlus]);
+        seen += 1;
+      }
+    }
+    // A known answer, so a regex that stops matching cannot pass as clean.
+    expect(seen).toBeGreaterThanOrEqual(8);
   });
 
   it("holds the plane-by-plane table to both catalogs", async () => {
