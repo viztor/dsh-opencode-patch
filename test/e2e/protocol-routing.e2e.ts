@@ -64,6 +64,13 @@ import {
   internalRouteFor,
   isServableSdk,
 } from "../support/src.ts";
+import {
+  accessDisabled,
+  freeTierClosed,
+  gatewayBusy,
+  retiredAtTheGateway,
+  usableAsSubject,
+} from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 const ZEN_KEY = process.env.OPENCODE_API_KEY;
@@ -165,10 +172,7 @@ const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
   "x-opencode-session": "ses_e2e0000000000abcdefghij",
 };
 
-interface Probe {
-  readonly status: number;
-  readonly summary: string;
-}
+import type { Probe } from "./verdict.ts";
 
 /** Ask one endpoint about one model, optionally with a credential. */
 const probe = async (
@@ -241,52 +245,6 @@ const otherProtocols = (expected: string) =>
  * A skip is the honest answer in both: it says the routing was not verified,
  * which is not the same as saying it was verified and passed.
  */
-/**
- * Whether the gateway is refusing the FREE TIER rather than the route.
- *
- * Measured, one request each, on `step-5-preview-free` — which was the canonical
- * free-tier id when those runs were made and has since been retired, so the
- * cases below now sample `beam-free`: the deployment's `oc_…` key answers
- * `403 FreeTierError` on both `…/zen/v1` and the new `…/inference/openai/v1`,
- * with and without `x-opencode-org-id`; the literal `public` answers the same;
- * and the real client — whose captured request carries an `st_…` session token —
- * is served.
- *
- * **Read that as a statement about the CLIENT, not the credential.** The
- * gateway's own message is "OpenCode's free tier can only be used from within
- * OpenCode", and presenting as that client is what this plugin does — so a free
- * model is OFFERED now, and a refusal names its own reason rather than being
- * pre-empted by an exclusion. What the older runs establish still holds: an
- * org id and a key do not unlock it.
- *
- * `docs/opencode-1.19-api.md` has the endpoints, the captured headers and the
- * login flow.
- */
-const freeTierClosed = (result: Probe): boolean =>
-  result.summary.includes("FreeTierError");
-
-/**
- * Whether the gateway answered that it no longer serves the MODEL at all.
- *
- * `400 Upstream request failed: Model is unavailable` and `410` are the gateway
- * speaking about the model rather than the route: the catalog can still list an
- * id the upstream has withdrawn (measured 2026-10-26 on `nemotron-3-ultra-free`,
- * answered identically on two runs a minute apart). Such a candidate is skipped
- * like any other the gateway left nothing to assert about, never asserted on.
- */
-const modelGone = (result: Probe): boolean =>
-  result.status === 410 ||
-  (result.status === 400 && result.summary.includes("Model is unavailable"));
-
-const accessDisabled = (result: Probe): boolean =>
-  result.status === 402 ||
-  result.summary.includes("Insufficient account funds") ||
-  (result.status === 403 &&
-    result.summary.includes("Model access is disabled")) ||
-  result.status === 429 ||
-  // No answer at all is the third shape of "cannot tell": the gateway is busy,
-  // so nothing about the route was observed either way.
-  result.status === 0;
 
 /**
  * The protocol the model is SERVED ON, per the shipped catalog on the Zen plane.
@@ -364,12 +322,10 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
   ): Promise<string | undefined> => {
     for (const model of candidates) {
       const answer = await probe(protocol, model, key, base);
-      if (
-        !accessDisabled(answer) &&
-        !modelGone(answer) &&
-        answer.status !== 0 &&
-        accept(answer)
-      ) {
+      // The rule is in `verdict.ts`, where it is unit-tested: a refusal and a
+      // retirement are both vendor-side facts, and a case built on either fails
+      // for a reason that is not its own. The case's own narrowing comes after.
+      if (usableAsSubject(answer) && accept(answer)) {
         return model;
       }
     }
@@ -864,16 +820,24 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         (m) => m.id
       );
       let answered: { model: string; status: number } | undefined;
+      let busy = false;
       for (const model of candidates) {
         const response = await probe(
           servedProtocolFor(model) ?? "openai-completions",
           model
         );
-        // A gated, withdrawn or throttled candidate says nothing about whether
+        if (gatewayBusy(response)) {
+          // The gateway answered, but about its own load. That is neither a
+          // completion nor a dead tier, and it must not be reported as one.
+          // Asked before the refusals below, which count a 429 among them.
+          busy = true;
+          continue;
+        }
+        // A gated, withdrawn or refused candidate says nothing about whether
         // the free tier is reachable, so the walk moves on to the next one.
         if (
           freeTierClosed(response) ||
-          modelGone(response) ||
+          retiredAtTheGateway(response) ||
           accessDisabled(response)
         ) {
           continue;
@@ -882,11 +846,16 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         break;
       }
       if (answered === undefined) {
-        // Reported rather than skipped: the account (or the vendor) closed,
-        // withdrew or throttled the whole free tier, and that is worth a line
-        // in the run's output.
+        if (busy) {
+          // No candidate answered and at least one was busy, which says
+          // nothing about the tier.
+          context.skip();
+          return;
+        }
+        // Reported rather than skipped: the account (or the vendor) closed the
+        // whole free tier, and that is worth a line in the run's output.
         console.log(
-          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, or throttled. The header-restoration case did not run.`
+          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, refused for the account (no funds, no entitlement), or never answered. The header-restoration case did not run.`
         );
         return;
       }

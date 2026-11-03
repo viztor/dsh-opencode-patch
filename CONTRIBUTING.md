@@ -38,10 +38,13 @@ OPENCODE_E2E=1 OPENCODE_API_KEY=… OPENCODE_GO_API_KEY=… pnpm run test:e2e
 - The **free-tier and unmetered** routing cases run keyless on purpose: measured 2026-10-06, a paid model answers `401 AuthError` on every endpoint without a credential, so keyless probing cannot tell them apart at all. Keyless discrimination is real only for the free classes.
 - `OPENCODE_ZEN_BASE_URL` / `OPENCODE_GO_BASE_URL` retarget the suite at a mirror.
 
-Two files, two jobs:
+The e2e files, one job each:
 
 - `opencode-live.e2e.ts` — the only place the plugin meets the real API. It catches what a stub cannot: **the vendor changing the payload**. The meter parses `/zen/go/v1/usage` and the picker consumes an enriched `/models` listing, so both shapes are asserted against the live service. The unkeyed cases assert reachability (never a 404) and that our header set does not change the gateway's verdict on a request — compared against the same call without it, rather than hardcoding a status the vendor may tighten.
 - `patched-fetch-headers.e2e.ts` — a local `node:http` listener, so the _outgoing_ header set crosses a real socket. The live gateway cannot echo a request back; everywhere else in the suite the injected headers are asserted against a captured `fetch`.
+- `protocol-routing.e2e.ts` — one turn per protocol against the live gateway: the vendor-side claim that a model's `provider_npm` names its wire format, which a unit test can only read back from our own table.
+- `refusal-classification.e2e.ts` — the host's error classifier fed the gateway's measured refusals over a real `node:http` socket, chunked bodies included, after asserting the installed bundle still carries the branches the verdicts rely on.
+- `dispatch-levels.e2e.ts` — no network: the installed pi's own level rule against both decorators across the shipped catalog, so every reasoning level the picker offers is one dispatch accepts.
 
 ## Live profile loop
 
@@ -49,12 +52,12 @@ The web profile wires this checkout with `link:`, so builds are picked up like t
 
 - **Host (`lib/index.mjs`) — restart required.** The base bundle ships `hmr root: []` (config watches only, `**/node_modules` ignored) and the loader caches ESM imports per process, so a linked package is never re-imported after boot. After every `pnpm run build`, restart `dsh web` — otherwise the profile silently keeps running the module from boot time. Symptom of a stale host: the plugin row is active but the settings card shows "This plugin is not loaded, so it cannot be configured." — `dsh-settings` is filtering on the old module's `Config` schema.
 - **Client (`lib/client.js`) — refresh suffices.** The client bundle is re-served from disk on every page load; a browser refresh picks it up.
-- **Verify after a restart:** the Plugins page shows the **OpenCode Patch** card, and its configure view renders all 17 fields (no unavailable line). `node --experimental-strip-types scripts/check.ts` catches a stale `lib/` before you do (`src/` newer than `lib/`).
+- **Verify after a restart:** the Plugins page shows the **OpenCode Patch** card, and its configure view renders every card field (`CARD_FIELDS` in `src/settings-fields.ts`; the `CONFIG_ONLY_FIELDS` knobs stay off the card by design) and no unavailable line. `node --experimental-strip-types scripts/check.ts` catches a stale `lib/` before you do (`src/` newer than `lib/`).
 
 ## Code conventions
 
 - **100% strict TypeScript.** No `any` leaks, no `as` assertions in `src/` — narrow `unknown` with `in`-operator type guards (`isRecord`, `isUnknownArray`, …).
-- **Zero errors and zero warnings.** `vp check` must report neither — that is what `release:gate` and CI enforce, and the warnings tier has been paid down to zero: do not reintroduce one. The `error` tier is reserved for defects: async safety and throw contracts. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
+- **Zero errors; warnings are reported, not gating** (the `pnpm run check` line above). `release:gate` and CI fail on an error; warnings become gating in phase P12 of `docs/improvement-plan.md`, so do not add one. The `error` tier is reserved for defects: async safety and throw contracts. If a rule fights a correct pattern (e.g. sync Promise wrappers that preserve `AsyncLocalStorage` context), prefer a targeted `oxlint-disable` comment with justification over weakening the rule globally.
 - **Sync-over-async for context propagation.** `withStore` iterators and the `fetch` patch intentionally return promises from non-`async` functions so `als.run()` keeps turn context without an extra tick. Don't "fix" these into `async`.
 - **Style:** arrow-function consts (not `function` declarations), dot notation, explicit `=== undefined` checks, `oxfmt` formatting.
 
@@ -101,8 +104,8 @@ git diff --name-only main... \
 ## Release process (maintainers)
 
 1. Use conventional commits (`feat:`, `fix:`) — release-please opens the version-bump + changelog PR automatically; merging it tags and creates the GitHub Release, which fires OIDC publishing to npm and GitHub Packages.
-2. For manual releases: bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit, `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. On every release, refresh the **Last verified** date and matrix in `README.md` after smoke-testing: registry install resolves, plugin loads in the DSH Web profile, and a free-tier Zen call succeeds.
+2. Avoid manual releases: release-please anchors on the latest GitHub **Release**, not the latest tag, so a bare tag is invisible to it (`AGENTS.md`, "Releasing"). If one is unavoidable, bump `version` in `package.json`, commit, tag, push the tag, and create the GitHub Release in the same step (`gh release create vX.Y.Z --generate-notes`). Never touch `CHANGELOG.md`: release-please owns it.
+3. On every release, refresh the **Verified on DeepSeek Harness** line and its matrix under "Compatibility & Verification" in both READMEs after smoke-testing: registry install resolves, plugin loads in the DSH Web profile, and a free-tier Zen call succeeds.
 
 ## Docs
 

@@ -1821,20 +1821,6 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     ],
   },
   {
-    context_window: 1_000_000,
-    cost: {
-      cache_read: 0,
-      input: 0,
-      output: 0,
-    },
-    id: "nemotron-3-ultra-free",
-    input_modalities: ["text"],
-    is_free: true,
-    max_output_tokens: 128_000,
-    name: "Nemotron 3 Ultra Free",
-    reasoning: true,
-  },
-  {
     context_window: 262_144,
     cost: {
       cache_read: 0,
