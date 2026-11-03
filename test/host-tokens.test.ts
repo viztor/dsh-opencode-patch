@@ -20,8 +20,9 @@
  * not it carries a fallback: the card and every file it renders that names a
  * token are scanned. Which token the mounted card renders for a warning is
  * asserted in settings-card-purge and settings-store-inspect. The meter
- * (`usage-ui.ts`, `usage-panel.tsx`) is left out: it builds
- * `--dsw-alias-state-…` names from a template, which a plain scan would misread.
+ * (`usage-ui.ts`, `usage-panel.tsx`, `usage-pill.tsx`) is left out: the card
+ * does not render it, and it builds `--dsw-alias-state-…` names from a
+ * template, which a plain scan would misread.
  *
  * @module test/host-tokens.test
  */
