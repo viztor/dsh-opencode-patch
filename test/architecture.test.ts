@@ -272,7 +272,7 @@ describe("architecture · no source module imports a test library", () => {
 describe("architecture · src never reads what the desktop's patched pi changes", () => {
   /**
    * The harness's own pi patch, which only the desktop app ships, removes pi's
-   * per-delta re-parse of streamed tool-call arguments and round-trips Gemini's
+   * per-delta re-parse of streamed tool-call arguments and round-trips a model's
    * thought signature on OpenAI-compatible completions. An npm install runs pi
    * unpatched. The plugin supports both because it reads neither (D14''):
    * this case fails the day a module starts to, so the difference stays
