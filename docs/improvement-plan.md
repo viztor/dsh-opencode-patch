@@ -6,9 +6,9 @@ The result of an architecture audit of the tree at 1.4.1, and the order in which
 
 - six audits: routing, catalog, credentials, config/UI, tests/CI/docs, and the stream path;
 - an adversarial review of the plan itself, then a nine-lens review (five reviewers, four investigators) in which two independent skeptics checked every finding: 78 of 82 were upheld and are folded in here;
-- the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog its rc tag pins; the alpha tag pins 1.3.0, D14'). File references into the host are relative to that repository's `packages/`.
+- the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog its rc tag pins; the alpha tag pins 1.3.0, which is what the desktop app ships, D14''). File references into the host are relative to that repository's `packages/`.
 
-**Restacked onto 1.8.0 (November 2026).** The stack was cut from 1.4.1. Since then `main` moved to 1.8.0 and followed the harness onto its **alpha** track (the `0.2.2-alpha.2` cluster, cordis `4.0.6-alpha.1`, pi `1.4.0` exact), and it landed several things the plan had scheduled: the plane-aware price, free flag and refusal (#133), a working retired alias (#135), the synthetic catalogue fixtures (#138), the language-pair gate and the live-run verdicts (#140), and the scripts' pure halves (#143, #144). Each open phase merges its parent, and only P0 merges `main`. What changed in the decisions is under "Owner decisions" (D14', D22', D17's defaults, D23, D24, D25), what changed per phase is under "Restack adjustments", and what two community plugins built on the same host taught is under "Lessons from opencode2dsh". A new phase, P-R3, follows P-T3.
+**Restacked onto 1.8.0 (November 2026).** The stack was cut from 1.4.1. Since then `main` moved to 1.8.0 and followed the harness onto its **alpha** track (the `0.2.2-alpha.2` cluster, cordis `4.0.6-alpha.1`, pi `1.4.0` exact), and it landed several things the plan had scheduled: the plane-aware price, free flag and refusal (#133), a working retired alias (#135), the synthetic catalogue fixtures (#138), the language-pair gate and the live-run verdicts (#140), and the scripts' pure halves (#143, #144). Each open phase merges its parent, and only P0 merges `main`. What changed in the decisions is under "Owner decisions" (D14'', D22'', D17's defaults, D23, D24, D25), what changed per phase is under "Restack adjustments", and what two community plugins built on the same host taught is under "Lessons from opencode2dsh". A new phase, P-R3, follows P-T3.
 
 **Outcome:** a plugin that only uses host extension points the host supports; one source of truth per decision; a suite that pins behaviour before it moves; and the owner's product rules below.
 
@@ -24,7 +24,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | P1a | #106 | `fix:` the purge row's refusal and the endpoint copy | in review | **merged P0**; shrunk to the purge row's `RemoteError.message`, the `auto` = `modern` copy and the `opencode-google` regression tests; the warning colour drops its token fallback; the catalog's refusal tests gain three cases `main` lacks; the rest is on `main`, and the debug gate follows D24 |
 | P1b | #107 | `chore:` hygiene | in review | **merged P1a**; takes `main`'s tool-fallback plane rule (D25) and keeps only the dead Anthropic branch's deletion; its catalogue fixture and `main`'s `test/fixtures/catalogs.ts` become one module behind the one door |
 | P2 | #108 | `feat:` a smaller public API | in review | **merged P1b**; re-retires the wrapper `main` revived in #135 (D9): `scripts/wrapper-forwarder.ts` and its test go again; the barrel stays the host's contract, and every name `main`'s tests reach (`parseAccountRef`, `callUsageRead`, `GO_MODEL_LIMITS`, …) comes through the one door |
-| P-T1a | #109 | `build:` pin the host | in review | pending: merges P2; redone on the alpha cluster and pi 1.3.0 (D14', D22') |
+| P-T1a | #109 | `build:` pin the host | in review | **merged P2**; redone for both harness channels with no pi patch (D14'', D22''): one record per channel in `test/support/host-versions.ts`, the rc channel's committed lockfile and `scripts/use-channel.ts`, the unit and mock suites on both channels in CI, and the tripwire that keeps `src` off what the desktop's patched pi changes |
 | P-T1b | #110 | `test:` a harness that is the real host | in review | pending: merges P-T1a; re-measured on both cells |
 | P-H | #112 | `refactor:` one way to patch a host method | in review | pending: merges P-T1b |
 | P-R1 | #113 | `feat:` the plugin owns the plane routes | in review | pending: merges P-H; restates pi-ai's defaults (D17) |
@@ -60,7 +60,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | D11 | The adapter patch existed to merge modes. Once the plugin's provider serves every mode per model (D13), the merge is native and the patch is deleted. |
 | D12 | **No upstream changes.** Everything is done inside the current host with the APIs it has. |
 | D13 | **The plugin owns the `opencode`/`opencode-go` routes.** pi-ai is kept from claiming them through the config waterfall, and the plugin registers its own adapter under the same ids (F11–F14, run S0). It never deletes another plugin's registration, which the host forbids. |
-| D14' | **The pinned cell runs the pi the target harness tag pins, with that tag's own patch**: today the alpha tag's pi 1.3.0 and its `@earendil-works__pi-ai@1.3.0.patch`. **The floating cell runs what the registry resolves for the published wrapper** (1.5.0 today), and its rows are version-agnostic. The patched cell stands for the harness's development tree, not for any shipped host, and says so. pi 1.4.0, which `main` pins exactly, is nobody's host and is dropped. _Replaces D14 ("target pi 1.1.0, the version the harness pins"): the alpha harness pins 1.3.0, and its wrapper's `^1.3.0` excludes 1.1.0._ |
+| D14'' | **The plugin supports the latest release of both harness channels, as each one actually ships, and this repository carries no pi patch** (owner, 2026-11-03). Measured that day: the npm packages force no pi version. `@deepseek-ai/dsh` reaches pi through `dsh-base` and `dsh-llm-pi-ai`, which declares a caret range (`^1.1.0` on `rc`, `^1.3.0` on `alpha`), with no shrinkwrap, no bundled copy, no install script and no runtime version check, and the bridge imports pi as an external. So an npm install of either channel runs pi **unpatched**, at the newest `1.x` the range admits (1.5.0 today on both). The harness's exact pin and its patch exist only in the harness's own workspace, and reach users only through the desktop app, whose build copies that workspace's dependencies (pi 1.1.0 on the `rc` tag, 1.3.0 on `alpha`). That patch removes pi's per-delta re-parse of streamed tool-call arguments and, on 1.3.0, round-trips Gemini's thought signature on OpenAI-compatible completions. No `src` module reads either, so the patch is invisible to the plugin, and `test/architecture.test.ts` fails the day one starts to. A pnpm patch is keyed to one exact version, so carrying the harness's copy would break every pi bump. Hence: each channel's default install is the channel's cluster with unpatched pi at the newest version the bridge's range admits, pinned exactly in that channel's committed lockfile (the root one for `alpha`, `channels/rc/pnpm-lock.yaml` for `rc`); `scripts/use-channel.ts <rc | alpha> [--floor]`switches the dev install, and`--floor`puts pi at the range's floor (the desktop's pi, unpatched), never committed. Unit and mock run on both channels on every pull request and on the floors nightly. The plugin declares no pi range narrower than the union,`^1.1.0`. pi 1.4.0, which `main` pinned exactly, is nobody's host and is gone. _Replaces D14' (a pinned cell with the alpha tag's patch, and a floating cell) and D14 ("target pi 1.1.0, the version the harness pins")._ |
 | D15 | **Any model id saved on `opencode`/`opencode-go` is accepted and served**, including ids neither pi nor the live catalog knows. |
 | D16 | **The protocol comes from the catalog, never from a guess at the model's name.** The order is: the catalog's SDK through `PROTOCOL_FOR_SDK`, then pi's own catalog entry, then the user's route-level `api`, then `openai-completions`. `protocolFromModelId` is deleted. **Stands after the restack.** pi 1.3 and later send the newest Google family's thinking levels themselves, so both P-R1's catalog-driven levels and `main`'s hard-coded bridge (#130) are no-ops for today's ids; P-R1 keeps its rule for an id the catalog marks level-only and pi's pattern misses, and #130's code goes with the module P-R1 deletes. |
 | D17 | **Precedence is catalog first.** Metadata and reasoning levels come from the user's model row, then pi-ai's route-level `modelOverrides`, then the catalog, then pi, then the defaults. **The defaults are pi-ai's, restated:** a 1_000_000-token context window and 128_000 output tokens on the alpha host (they were 262_144 and 32_768). pi-ai does not export them, so a test reads them from the installed pi-ai and fails when they move, rather than letting a stale copy understate a window. |
@@ -68,7 +68,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | D19 | **Plugin settings.** _Stands after the restack: `main`'s copy says `auto` "follows the catalog", but its code agrees that `auto` is `modern`; P1a's copy wins, pinned by `endpoint-copy.test.ts`._ Delete `modelOverrides`, `maxContextWindow`, `modelRoutes` and `internalRoutes`, and the README's nonexistent `hiddenModels` (removed in P0). Keep `endpoint` (`legacy` or `modern`, with `auto` an alias of `modern`). Keep `providers`, redefined as the route ids whose turns the plugin decorates, with both planes always included. |
 | D20 | **The plane adapter resolves keys by pi-ai's rule.** A named ref resolves through the credentials service, then the launch environment, then fails with `MISSING_CREDENTIAL` and sends no request. With no ref, pi's ambient key applies, plus the `readOpencodeStore` opt-in. Captured and literal keys never feed the adapter; they stay in the fetch patch's fill for an empty or placeholder wire key. |
 | D21 | The keyless paid-model filter on listings is dropped (D3, D8). Without a key, dispatch fails loudly. |
-| D22' | The `@deepseek-ai/*` dev dependencies are the **alpha.2 cluster** `main` already follows: `0.2.2-alpha.2`, with cordis `4.0.6-alpha.1` and its loader `1.0.7-alpha.1`, which is what `dsh@alpha` installs. They are named once, in `test/support/host-versions.ts`. The rc line survives only as the peer range `main`'s `harness-channel.test.ts` enforces for both channels. _Replaces D22 (the 0.2.1-rc.2 cluster)._ |
+| D22'' | **Two channel records, named once** in `test/support/host-versions.ts`: `rc` = `dsh@latest` (`0.2.1-rc.5`, cordis `4.0.5`, loader `1.0.6`, schemastery `3.18.5`, bridge pi `^1.1.0`) and `alpha` = `dsh@alpha` (`0.2.2-alpha.2`, cordis `4.0.6-alpha.1`, loader `1.0.7-alpha.1`, schemastery `3.18.6-alpha.1`, bridge pi `^1.3.0`), each with the newest pi its range resolves (the lockfile's) and the range's floor (the harness's pin). The committed `package.json` is `alpha`'s, which is what `main` follows; the devDependencies gain `dsh-llm`, `dsh-app-boot`, `dsh-config-editor`, `dsh-settings` and `cordis-plugin-loader` for the real-host tiers. `test/host-versions.test.ts` checks the installed tree against the SELECTED record (`DSH_CHANNEL`, else the switch's marker, else `alpha`); `test/harness-channel.test.ts` keeps `main`'s both-channel peer-range rule and holds each committed lockfile to its record. A bump moves a lockfile and a record, and nothing else; a nightly step that compares the registry's dist-tags and pi's latest `1.x` with the records is P-T3's. _Replaces D22' (the alpha cluster alone, with `rc` only as a peer range) and D22 (the 0.2.1-rc.2 cluster)._ |
 | D23 | **CI's freshness checks gate a pull request only on its own inputs.** A check's inputs are its script and every local module it loads, plus `src/identity.ts` for the CLI version; the generated tables never are. Vendor drift warns, and the nightly run proposes the refresh. The strict input lists in `test/freshness-scope.test.ts` are the record: `cli:version`'s grew by `scripts/vendor-version.ts` when `main` gave the check a pure half (#144), and the copy scan's generated-table skip moved into that half. |
 | D24 | **The debug gate is `main`'s rule:** naming `debugFile` writes both halves of the log; `debug` governs console output only. `main` chose it (#133), and its README example (`debug: false` with a `debugFile`) relies on it. P1a adopts it, and turns its "writes nothing while debug is off" test into one that asserts the rule. |
 | D25 | **The tool fallback's plane is `main`'s rule:** the request URL decides the plane, with a plane-blind lookup as the fallback (#138, `coreToolDecision`). P1b drops its route-mapped variant with no fallback. |
@@ -134,7 +134,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | # | Fact | Evidence |
 | :-- | :-- | :-- |
 | F1 | **One route already serves every mode, per model.** llm-pi-ai resolves `api` and `baseUrl` per model: `request.api ?? base?.api ?? routeApi` and `request.baseURL ?? base?.baseUrl ?? providerBaseUrl`, where `base` is pi's installed catalog entry. | `llm-pi-ai/src/catalog.ts:917-922` |
-| F2 | _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ **pi's installed `opencode` catalog spans four protocols, each with its own endpoint.** In pi 1.1.0, which the host pins and patches: Zen has 18 anthropic-messages (`/zen`) and 7 google, 28 completions and 30 responses (`/zen/v1`). Go has 5 anthropic (`/zen/go`) and 19 completions and 6 responses (`/zen/go/v1`), and **no google**. | `@earendil-works/pi-ai@1.1.0` `dist/providers/data/opencode*.json`; the harness's `pnpm-lock.yaml:13` |
+| F2 | _Measured on pi 1.1.0, the pin at the time; on pi 1.3.0 and later (D14'') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ **pi's installed `opencode` catalog spans four protocols, each with its own endpoint.** In pi 1.1.0, which the host pins and patches: Zen has 18 anthropic-messages (`/zen`) and 7 google, 28 completions and 30 responses (`/zen/v1`). Go has 5 anthropic (`/zen/go`) and 19 completions and 6 responses (`/zen/go/v1`), and **no google**. | `@earendil-works/pi-ai@1.1.0` `dist/providers/data/opencode*.json`; the harness's `pnpm-lock.yaml:13` |
 | F3 | **A model pi's catalog does not know cannot get its own protocol.** A profile entry has no `api`/`baseURL` field (`PiAiModelProfile`); it takes the route's `api`, or `sharedCatalogApi`, which is undefined for a multi-protocol catalog. | `llm-pi-ai/src/catalog.ts:600-640,681-691,917-921` |
 | F4 | **Such a model cannot be saved, listed or dispatched on a pi-ai route.** Writes are validated strictly (`assertServiceable`), so the save is rejected with "needs an api". Stored reads are deferred, so the id lands in `modelErrors`. `listModels` lists only resolved models, and `modelOf` throws `INVALID_CONFIG`. | `llm-pi-ai/src/config.ts:357-368,487`; `index.ts:171`; `adapter.ts:271-311` |
 | F5 | **A route-level `api` or `baseURL` overrides every model**, collapsing the modes onto one protocol or endpoint. | `llm-pi-ai/src/catalog.ts:917,922` |
@@ -162,8 +162,8 @@ Three corrections to the facts above:
 
 **What the plugin has to add, and nothing else:**
 
-- **G1:** _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ serve any declared model the host's pi cannot resolve (D15). That means models newer than pi 1.1.0's catalog (8 Zen and 4 Go, including every Gemini model on Go, F10), **and** ids the catalog doesn't know at all.
-- **G2:** _Measured on pi 1.1.0, the pin at the time; on the pinned 1.3.0 (D14') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ the endpoint family. pi 1.1.0 stores the legacy bases; the plugin sends the per-protocol `inference` bases, or the legacy ones when the `endpoint` setting says so.
+- **G1:** _Measured on pi 1.1.0, the pin at the time; on pi 1.3.0 and later (D14'') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ serve any declared model the host's pi cannot resolve (D15). That means models newer than pi 1.1.0's catalog (8 Zen and 4 Go, including every Gemini model on Go, F10), **and** ids the catalog doesn't know at all.
+- **G2:** _Measured on pi 1.1.0, the pin at the time; on pi 1.3.0 and later (D14'') Go carries Google (F10) and pi stores the `/inference(/go)/v1` bases, so P-R1 re-measures this._ the endpoint family. pi 1.1.0 stores the legacy bases; the plugin sends the per-protocol `inference` bases, or the legacy ones when the `endpoint` setting says so.
 - **G3:** a profile-level `api`/`baseURL` (F5). It is the user's explicit choice and is honoured as one (D8), without collapsing the modes.
 
 ### The design: the plugin owns the plane routes (D13)
@@ -264,7 +264,7 @@ pi-ai serves the models it knows again, from the same file. Ids pi can't serve d
 **Runs.**
 
 - Runs A–D use the published `@deepseek-ai/dsh` 0.2.1-rc.2 with the pi 1.4.0 it installs, offline, with an instrumented fetch.
-- Runs S0 and S0b swap pi for **1.1.0 plus the harness's own patch** (the pin of the time, D14; D14' now pins the alpha tag's 1.3.0).
+- Runs S0 and S0b swap pi for **1.1.0 plus the harness's own patch** (the pin of the time, D14; under D14'' the suite runs pi unpatched, at each channel's newest and at its floor).
 - The prototypes are throwaway, and are not in the repository.
 
 | Run | Registered | Known models, 4 shapes × 2 planes | A model pi lacks | Saving a model pi lacks |
@@ -358,10 +358,11 @@ What stays private is pinned by contract tests against the real host packages:
    - Delete `resolveRoutedKey` and `internalRoutes`.
    - Stop publishing the wrapper. `publish-scoped.ts`'s `SCOPED_TARGETS` and `release.yml`'s verify list change together, and `check.ts` asserts that they agree.
 4. **P-T1a `build:` pin the host.**
-   - `pnpm-workspace.yaml` keeps `main`'s pins, and gains `overrides: { "@earendil-works/pi-ai": "1.3.0" }` and `patchedDependencies`, with a committed copy of the alpha harness tag's `@earendil-works__pi-ai@1.3.0.patch` (D14'). The lockfile is regenerated.
-   - The `@deepseek-ai/*` packages stay on `main`'s alpha.2 cluster (D22'), and the devDependencies gain `dsh-llm`, `dsh-app-boot`, `dsh-config-editor`, `dsh-settings` and `cordis-plugin-loader`.
-   - Add `test/support/host-versions.ts`, with a version test: `loadHostPi().version` is 1.3.0, and the root pi is the same copy.
-   - Rewrite `mount-protocols.test.ts` as "every catalog SDK maps to a protocol that pi's `api/*` exports implement"; the row that pi's Go provider lacks Google flips to a baseline (F10).
+   - `test/support/host-versions.ts` names both channels' hosts (D22''), and `package.json` keeps `main`'s alpha pins, with `dsh-llm`, `dsh-app-boot`, `dsh-config-editor`, `dsh-settings` and `cordis-plugin-loader` added, and pi at the union range `^1.1.0`.
+   - No pi patch and no pi override (D14''): `patches/` and `patchedDependencies` go. The root lockfile pins alpha's newest pi; `channels/rc/pnpm-lock.yaml` pins rc's; `scripts/use-channel.ts` switches between them, and to a channel's floor.
+   - Tests: the installed tree against the selected record (`host-versions`), each lockfile against its record (`harness-channel`), the switch's pure half (`use-channel`), and the tripwire that keeps `src` off streamed tool-call deltas, partial arguments and thought signatures (`architecture`).
+   - `mount-protocols.test.ts`: "every catalog SDK maps to a protocol that pi's `api/*` exports implement"; the F10 row is per pi (no Go Google on 1.1.0, native on 1.3.0 and 1.5.0).
+   - CI: the unit and mock suites run as a matrix over `[alpha, rc]` on every pull request, and on each channel's floor nightly and on dispatch.
 5. **P-T1b `test:` the real-host harness.** It is additive only. `test/support/host.ts` provides two tiers that run inside the test process:
    - **Tier A:** a cordis `Context`, `LlmRuntime`, and pi-ai mounted with `{ providers }`.
    - **Tier B:** dsh-app-boot's `boot()` with a temporary HOME, and a test bundle that names the loader builtins `llm`, `llm-pi-ai`, `ConfigEditor`, `Settings` and the plugin. It follows the harness's `experimental/speech-to-text/tests/configuration.spec.ts:7-33`, with a fake `credentials` service and a launch-environment snapshot.
@@ -454,8 +455,8 @@ How each phase changes now that it sits on `main` 1.8.0 and the alpha host. Each
 | P1a | Shrinks hard: the purge row shows the host's `RemoteError.message`, the endpoint copy says `auto` is `modern`, and `isZenProvider("opencode-google")` gains a regression test. The wrapper fix, refusal passthrough, warning token, spinner and `parsePurgeResult` are on `main` or superseded; P1a only drops the warning token's fallback, checks every token the card names against the host's vocabulary, and adds three refusal-passthrough test cases `main` lacks (the Zen-plane 404 fill, the non-JSON 200 answer, the `retry-after` passthrough). The debug gate follows D24. |
 | P1b | Takes `main`'s `coreToolDecision` (D25) and ports only the dead Anthropic branch's deletion; its catalogue fixture merges with `main`'s `test/fixtures/catalogs.ts` behind the one door. |
 | P2 | Re-retires the wrapper `main` revived (D9); the door list grows by every `src` name `main`'s tests import. On the merge, P1b's and P2's door-rule lines in `CONTRIBUTING.md` conflict; take P2's, which names the same exceptions and adds its gate. |
-| P-T1a | Redone on D14' and D22': `main`'s pins, then the pi 1.3.0 override and patch. **Open before it starts:** D14' and D22' verify one channel, while the README's "Verified on" line and `harness-channel.test.ts` name both channels' latest hosts, and the rc host pins an older pi with its own patch and its own defaults (D17), so a peer range cannot stand for it. The owner decides, and the outcome is recorded as D14'' and D22''. The cheapest coverage is a per-channel `HOST_VERSIONS` and an rc row in the e2e-host matrix, which installs into a throwaway prefix: a floating rc install first, and a pinned rc cell with that tag's patch only once the latest rc tag's pi pin is confirmed. The committed install and lockfile stay on the alpha cluster, and the 1.1.0 patch is kept until the decision. |
-| P-T1b | Re-measured on the pinned cell (pi 1.3.0, patched) and the floating one (1.5.0 today); floating rows are version-agnostic; contract-test citations move to cordis `4.0.6-alpha.1`. |
+| P-T1a | Redone on D14'' and D22'' (the owner's 2026-11-03 decision, which settled the question this row used to leave open): both channels' latest hosts, each pinned by its own lockfile, pi unpatched at the newest version its range resolves, the floors one switch away; the 1.1.0 patch, the pi override and the patch-hunk tests are gone. |
+| P-T1b | Runs tiers A and B on both channels (D14''), the floors nightly; characterization rows carry a per-channel (and floor-versus-newest) expectation where the hosts differ; contract tests run on both channels; contract-test citations move to cordis `4.0.6-alpha.1`. |
 | P-H | Gains the Chinese "Changed in 1.x" bullet the pairing gate requires. |
 | P-R1 | Restates pi-ai's defaults (D17); deletes `test/google-thinking.test.ts` with `src/google-bridge.ts`, moving its intents to the mock suite; takes `main`'s model lists with its own routing prose. |
 | P-R2 | Splits the free probe's 429: `FreeUsageLimitError` is its own non-retryable verdict, not a rate limit; `ModelDeprecated` reads as gone; adds the probe rows of lessons L3, L4, L5, L9, L10 and L13; ports `main`'s mock-coverage gate (#142) over the dispatch tables. |
@@ -513,8 +514,11 @@ Two community plugins solve the same problem on the same host: [`FishBottle7/ope
 **P-T1a**
 
 - **Unit:**
-  - the version pin, and a same-copy check on the realpath;
-  - the rewritten `mount-protocols` test.
+  - the installed tree against the selected channel record, and a same-copy check on the realpath;
+  - each committed lockfile against its record, and no pi patch anywhere;
+  - the channel switch's pure half;
+  - the rewritten `mount-protocols` test, with F10 per pi;
+  - the tripwire on what the desktop's patched pi changes.
 
 **P-T1b**
 
@@ -531,7 +535,7 @@ Two community plugins solve the same problem on the same host: [`FishBottle7/ope
   - `configEditor.edit` writes the raw `next` to the YAML;
   - `_commitVolatile` re-resolves through a prepended listener;
   - baselines for `settings.describe` and `hasProviderApiKey`.
-- **Characterization rows**, tagged, on the pinned pi (D14'), with the floating cell's rows version-agnostic.
+- **Characterization rows**, tagged, on each channel's install (D14''), with a per-channel expectation where the hosts differ.
 
 **P-R1**
 
@@ -616,15 +620,15 @@ Two community plugins solve the same problem on the same host: [`FishBottle7/ope
 
 **What it does:**
 
-1. Installs `@deepseek-ai/dsh@$DSH_VERSION` into a throwaway prefix, cached by host version, with npm `overrides` forcing pi.
+1. Installs `@deepseek-ai/dsh@$DSH_VERSION` into a throwaway prefix, cached by host version, with npm `overrides` forcing pi only in the floor cell.
 2. Asserts the pi version that resolved.
 3. Builds, and boots a temporary HOME whose profile links the checkout through a relative `link:`.
 4. Runs `test/e2e/host/probe-plugin.mjs` together with `test/e2e/host-binary.e2e.ts`, which runs only when `DSH_HOST_E2E=1`.
 
 **Cells:**
 
-- (a) the pi the target harness tag pins, with its patch (1.3.0 today, D14'), on PRs;
-- (b) whatever npm installs, nightly and on dispatch.
+- (a) each channel's published binary, with pi as npm resolves it (D14''), on PRs that touch the host seam;
+- (b) each channel's floor pi, nightly and on dispatch.
 
 ### The live gateway job (`OPENCODE_API_KEY` / `OPENCODE_GO_API_KEY`)
 
