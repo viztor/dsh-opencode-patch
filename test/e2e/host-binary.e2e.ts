@@ -20,15 +20,23 @@
  * than pinning a 70 ms margin.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
- * directory whose `node_modules/@deepseek-ai/dsh` is the installed host.
- * `DSH_HOST_PI_CELL=pinned` (the default) also requires the pi
- * `host-versions.ts` names, with the harness patch, and asserts every row;
- * `floating` accepts whatever pi the host resolved. It skips the rows that
- * depend on which ids pi describes (the keyed listing and the per-model rows)
- * and still asserts the save rows. Those assume the floating pi lacks at least
- * one of `ZEN_UNDESCRIBED` and still describes every other declared Zen id, so
- * a pi that learns all of them or retires a declared id turns them red by
- * design — triage a red floating run as a pi change first.
+ * directory whose `node_modules/@deepseek-ai/dsh` is the installed host of the
+ * channel `DSH_CHANNEL` names (`alpha` by default; `host-versions.ts` holds
+ * both channels' records). The installed dsh must be that record's.
+ * `DSH_HOST_PI_CELL` says which pi the prefix holds, both unpatched (D14''):
+ *
+ * - `npm` (the default): pi as npm resolved it for the published host, what an
+ *   npm user of the channel runs. Its rows are the `newest` cell's while the
+ *   resolved pi is the channel record's `pi`. A pi published since the record
+ *   was cut is still asserted to sit in the bridge's range, but the rows that
+ *   depend on which ids pi describes (the keyed listing and the per-model
+ *   rows) are skipped with a warning: the nightly drift report names the new
+ *   pi, and its probe JSON is the record. The save rows still run; they assume
+ *   pi lacks at least one of `ZEN_UNDESCRIBED` and still describes every other
+ *   declared Zen id, so a pi that learns all of them or retires a declared id
+ *   turns them red by design — triage that as a pi change first.
+ * - `floor`: pi forced to the range's floor, the pi the desktop app ships. The
+ *   resolved pi must be that floor, and every row is the channel's floor cell.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -55,13 +63,14 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { HOST_VERSIONS } from "../support/host-versions.ts";
+import { CHANNELS, HOST_VERSIONS } from "../support/host-versions.ts";
 import {
   type ApplyOrder,
   CHARACTERIZED_MODELS,
   CHARACTERIZED_PROFILE,
+  type HostCell,
   PI_AI_PACKAGE,
-  S0_TODAY,
+  S0_TODAY_BY_CELL,
   SAVE_BLOCKED_BY_ANY_UNDESCRIBED,
   SAVE_CANDIDATE,
   todayRowsFor,
@@ -71,8 +80,41 @@ import { INTERNAL_ROUTES } from "../support/src.ts";
 
 const ENABLED = process.env.DSH_HOST_E2E === "1";
 const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
-const CELL = process.env.DSH_HOST_PI_CELL ?? "pinned";
-const PINNED = CELL === "pinned";
+const CELL = process.env.DSH_HOST_PI_CELL ?? "npm";
+if (CELL !== "npm" && CELL !== "floor") {
+  throw new Error(`DSH_HOST_PI_CELL=${CELL} names no cell; use npm or floor`);
+}
+/** The channel the prefix holds (`DSH_CHANNEL`, read by `host-versions.ts`). */
+const CHANNEL = HOST_VERSIONS.channel;
+const RECORD = CHANNELS[CHANNEL];
+/** The host cell whose rows this run asserts. */
+const ROWS_CELL: HostCell = CELL === "floor" ? `${CHANNEL}-floor` : "newest";
+const ROWS = S0_TODAY_BY_CELL[ROWS_CELL];
+/** The pi that cell's rows were measured on. */
+const ROWS_PI = CELL === "floor" ? RECORD.piFloor : RECORD.pi;
+/**
+ * Whether the prefix's pi is the one the rows were measured on; set in
+ * `beforeAll`, false for an npm-resolved pi newer than the channel record.
+ */
+let rowsHold = false;
+
+/**
+ * Whether `version` satisfies a caret range `^x.y.z` (x >= 1): the same
+ * major, and not below the floor. The bridge declares nothing else.
+ */
+const satisfiesCaret = (version: string, range: string): boolean => {
+  const parse = (text: string): number[] =>
+    text.replace(/^\^/u, "").split(".").map(Number);
+  const [major, minor, patch] = parse(version);
+  const [floorMajor, floorMinor, floorPatch] = parse(range);
+  if (major !== floorMajor) {
+    return false;
+  }
+  return (
+    (minor ?? 0) * 1e6 + (patch ?? 0) >=
+    (floorMinor ?? 0) * 1e6 + (floorPatch ?? 0)
+  );
+};
 const BOOT_DEADLINE_MS = 180_000;
 /** Each `dsh plugin install` (a blocking `spawnSync`). */
 const INSTALL_DEADLINE_MS = 120_000;
@@ -239,14 +281,33 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
         version: string;
       }
     ).version;
-    console.info(`[e2e-host] cell ${CELL}: pi ${piVersion}`);
+    const dshVersion = (
+      JSON.parse(
+        readFileSync(
+          join(PREFIX, "node_modules", "@deepseek-ai", "dsh", "package.json"),
+          "utf8"
+        )
+      ) as { version: string }
+    ).version;
+    console.info(
+      `[e2e-host] ${CHANNEL} · ${CELL}: dsh ${dshVersion}, pi ${piVersion} (rows: ${ROWS_CELL}, measured on pi ${ROWS_PI})`
+    );
+    expect(dshVersion, "the prefix holds another channel's host").toBe(
+      RECORD.dsh
+    );
     expect(piCopies(join(PREFIX, "node_modules"))).toHaveLength(1);
-    if (PINNED) {
-      expect(piVersion).toBe(HOST_VERSIONS.pi);
-      // The harness patch is applied (the check test/host-versions.test.ts runs).
-      expect(
-        readFileSync(join(piRoot, "dist", "api", "pi-messages.js"), "utf8")
-      ).not.toContain("parseStreamingJson(json)");
+    expect(
+      satisfiesCaret(piVersion, RECORD.piRange),
+      `pi ${piVersion} is outside the bridge's ${RECORD.piRange}`
+    ).toBe(true);
+    if (CELL === "floor") {
+      expect(piVersion).toBe(RECORD.piFloor);
+    }
+    rowsHold = piVersion === ROWS_PI;
+    if (!rowsHold) {
+      console.warn(
+        `[e2e-host] npm resolved pi ${piVersion}, not the ${CHANNEL} record's ${RECORD.pi}: the rows that depend on which ids pi describes are skipped (the nightly drift report names it)`
+      );
     }
     expect(existsSync(join(CHECKOUT, "lib", "index.mjs"))).toBe(true);
 
@@ -428,43 +489,43 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
   });
 
   it("[INTENDED_CHANGE] keyless listing: every paid model is hidden before a key is captured", () => {
-    expect(out.listModels).toEqual(S0_TODAY.keylessListing);
+    expect(out.listModels).toEqual(ROWS.keylessListing);
   });
 
-  // These two depend on which ids pi describes, so they are pinned for the
-  // pi this repository pins; the floating cell skips them and its probe JSON
-  // is the record.
+  // These two depend on which ids pi describes, so they hold for the pi the
+  // cell's rows were measured on; an npm-resolved pi newer than the channel
+  // record skips them, and its probe JSON is the record.
   describe("rows that depend on which ids pi describes", () => {
-    it.skipIf(!PINNED)(
-      "[KNOWN_DEFECT] keyed listing: the gap ids are missing (pinned pi)",
-      () => {
-        expect(out.listModelsAfter).toEqual(S0_TODAY.keyedListing);
+    it("[KNOWN_DEFECT] keyed listing: the ids this cell's pi cannot place are missing", (context) => {
+      if (!rowsHold) {
+        context.skip();
       }
-    );
+      expect(out.listModelsAfter).toEqual(ROWS.keyedListing);
+    });
 
-    it.skipIf(!PINNED)(
-      "resolveModelInfo, resolveCallConfig and the wire match the in-process rows for the decoration state the probe recorded (pinned pi)",
-      () => {
-        // The loader starts rows in parallel (F17), so whether the plugin's
-        // decoration wrapped pi-ai's plane adapter is a race: measured on the
-        // published binary it did not (the plugin applied about 70 ms first),
-        // which is no margin to pin. So the rows follow the recorded state, and
-        // `todayRowsFor` throws on a missing or unknown value.
-        console.info(
-          `[e2e-host] plane adapter decorated: ${String(out.planeAdapterDecorated)} (inferred order ${out.inferredOrder})`
-        );
-        for (const [key, row] of Object.entries(
-          todayRowsFor(out.inferredOrder)
-        )) {
-          expect(out.modelInfo[key], key).toEqual(row.info);
-          expect(out.callConfig[key], key).toBe(row.callConfig);
-          expect(out.dispatch[key], key).toEqual({
-            finish: row.finish,
-            sent: row.sent,
-          });
-        }
+    it("resolveModelInfo, resolveCallConfig and the wire match the in-process rows of this cell, for the decoration state the probe recorded", (context) => {
+      if (!rowsHold) {
+        context.skip();
       }
-    );
+      // The loader starts rows in parallel (F17), so whether the plugin's
+      // decoration wrapped pi-ai's plane adapter is a race: measured on the
+      // published binary it did not (the plugin applied about 70 ms first),
+      // which is no margin to pin. So the rows follow the recorded state, and
+      // `todayRowsFor` throws on a missing or unknown value.
+      console.info(
+        `[e2e-host] plane adapter decorated: ${String(out.planeAdapterDecorated)} (inferred order ${out.inferredOrder})`
+      );
+      for (const [key, row] of Object.entries(
+        todayRowsFor(out.inferredOrder, ROWS_CELL)
+      )) {
+        expect(out.modelInfo[key], key).toEqual(row.info);
+        expect(out.callConfig[key], key).toBe(row.callConfig);
+        expect(out.dispatch[key], key).toEqual({
+          finish: row.finish,
+          sent: row.sent,
+        });
+      }
+    });
   });
 
   it("[BASELINE] the settings page reads every plane the profile declares", () => {
@@ -477,24 +538,24 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
 
   it("[KNOWN_DEFECT] a stored gap id blocks saving any new id on its plane", () => {
     // pi-ai's strict check names the FIRST stored id the installed pi cannot
-    // describe. The pinned pi lacks gpt-5.3-codex-spark, so it is named; a
-    // floating pi may have learned it, and then names the next undescribed id
-    // — so the floating cell asserts only that one of them blocks the save.
+    // describe. Every recorded cell's pi lacks gpt-5.3-codex-spark, so it is
+    // named; a newer pi may have learned it, and then names the next
+    // undescribed id — so that run asserts only that one of them blocks it.
     expect(out.saveBlocked.rejected).toMatch(
-      PINNED ? S0_TODAY.saveBlockedByStoredGap : SAVE_BLOCKED_BY_ANY_UNDESCRIBED
+      rowsHold ? ROWS.saveBlockedByStoredGap : SAVE_BLOCKED_BY_ANY_UNDESCRIBED
     );
   });
 
   it("[KNOWN_DEFECT] a catalog-unknown id cannot be saved, once the plane stores no gap id", () => {
     // Clearing only ZEN_UNDESCRIBED assumes the installed pi still describes
-    // the other opencode ids the profile declares. The floating cell asserts
-    // it too: a pi that retires one of them would fail here, and that is a
-    // retirement worth a red nightly rather than a row to skip.
+    // the other opencode ids the profile declares. A pi newer than the record
+    // asserts it too: one that retires one of them would fail here, and that
+    // is a retirement worth a red run rather than a row to skip.
     expect(out.saveCleared).toEqual({
       accepted: true,
       dropped: [...ZEN_UNDESCRIBED],
     });
-    expect(out.save.rejected).toMatch(S0_TODAY.saveRejectedUnknown);
+    expect(out.save.rejected).toMatch(ROWS.saveRejectedUnknown);
     expect(out.afterSave).toBeUndefined();
   });
 });
