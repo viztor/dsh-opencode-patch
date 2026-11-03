@@ -25,6 +25,7 @@ import React from "react";
 import { formatUsd } from "./go-limits.ts";
 import type { Translate } from "./settings-copy.ts";
 import {
+  callUsageRead,
   isRemoteCall,
   remoteNamespace,
   remoteNamespaceOf,
@@ -35,6 +36,18 @@ import { isRecord } from "./utils/guards.ts";
 import { backoffOver, retryUntilAnswered } from "./utils/retry.ts";
 
 /** The three windows, in the order the panel lists them. */
+/**
+ * The refresh button's spin, as a standalone declaration.
+ *
+ * The meter's stylesheet defines the same animation; this copy is here so the
+ * settings summary does not depend on the meter being mounted.
+ */
+const SPIN_KEYFRAMES = `
+@keyframes dsh-oc-spin {
+  to { transform: rotate(360deg); }
+}
+`;
+
 const WINDOWS = [
   { copy: "usage_rolling", key: "rolling" },
   { copy: "usage_weekly", key: "weekly" },
@@ -107,7 +120,9 @@ export const readGoUsage = async (
     );
     return undefined;
   }
-  const result: unknown = await call({ provider: "opencode-go" });
+  const result: unknown = await callUsageRead(call, {
+    provider: "opencode-go",
+  });
   if (isRecord(result) && typeof result.ok === "boolean") {
     if (!result.ok) {
       throw "error" in result ? result.error : new Error("usage call failed");
@@ -154,17 +169,6 @@ export interface UsageSummaryViewProps {
 }
 
 /**
- * The one rule this surface carries: the refresh glyph's keyframes.
- *
- * The meter declares the same `dsh-oc-spin` in its own stylesheet, but the
- * meter is not on the settings page, and an animation naming keyframes nobody
- * declared does not animate. The declaration mirrors the meter's
- * `dsh-oc-spin` rule in `usage-ui.ts`.
- */
-export const USAGE_SUMMARY_STYLES =
-  "@keyframes dsh-oc-spin { to { transform: rotate(360deg); } }";
-
-/**
  * The summary itself: pure, so a test can invoke it and read the tree without
  * mounting — the same contract the meter's panel keeps.
  */
@@ -181,8 +185,15 @@ export const UsageSummaryView = ({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {/* Component-local, so it leaves with the view — as the meter's does. */}
-      <style>{USAGE_SUMMARY_STYLES}</style>
+      {/*
+        The spinner's own keyframes. The meter's stylesheet carries them, and
+        that stylesheet is rendered by the METER — so the settings summary's
+        refresh button turned only while the meter happened to be on screen.
+        The animation is the same one (the same name, the same 0.9s cycle), so
+        the two declarations agree; and a duplicate `@keyframes` of the same name
+        is the last one that wins, which is the same animation either way.
+      */}
+      <style>{SPIN_KEYFRAMES}</style>
       <div
         style={{
           alignItems: "baseline",
@@ -204,9 +215,8 @@ export const UsageSummaryView = ({
             The note is an explanation, so it lives behind this affordance — the
             same rule the composer panel's billing note follows. A paragraph
             under the rows made the caveat the loudest thing on a summary that
-            is meant to be read at a glance. Inline styles because the meter's
-            stylesheet is not on this page; the spinner's keyframes are the one
-            rule this surface carries itself (USAGE_SUMMARY_STYLES).
+            is meant to be read at a glance. Inline styles because this surface
+            has no stylesheet: the meter's classes are not rendered here.
           */}
           <Tooltip label={t("usageSummaryNote")} portal side="top">
             <span

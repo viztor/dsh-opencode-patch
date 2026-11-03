@@ -720,7 +720,7 @@ describe("architecture · every test reaches src through one door", () => {
     expect(files).toContain("mock/helpers.ts");
     expect(files).toContain("e2e/protocol-routing.e2e.ts");
     expect(files).not.toContain("support/src.ts");
-    expect(files).toContain("support/catalog-fixture.ts");
+    expect(files).toContain("support/catalogs.ts");
   });
 
   it("no static src import outside the exemptions", () => {
