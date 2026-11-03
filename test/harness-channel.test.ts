@@ -299,6 +299,30 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       ]);
     });
 
+    it("holds no harness package on the other channel's prerelease line", () => {
+      // The checks above name dsh, cordis, the loader and schemastery; a
+      // relock that kept the other channel's optional peers (`-include`,
+      // `-group`, `cosmokit`) would pass them. This reads every
+      // `@deepseek-ai` version in the file, keys and values alike.
+      const tagOf = (version: string) => /-([a-z]+)\./u.exec(version)?.[1];
+      const foreign = (Object.keys(CHANNELS) as Channel[])
+        .filter((other) => other !== channel)
+        .map((other) => tagOf(CHANNELS[other].dsh));
+      expect(foreign).not.toContain(undefined);
+      const versions = [
+        ...lockfile(record.lockfile).text.matchAll(
+          /@deepseek-ai\/[a-z-]+(?:@|'?:\s+)(\d[^\s'()]*)/gu
+        ),
+      ].map((match) => match[1] ?? "");
+      // Known answer: the reader finds the channel's own cluster.
+      expect(versions).toContain(record.dsh);
+      expect(
+        versions.filter((version) =>
+          foreign.some((tag) => version.includes(`-${tag}.`))
+        )
+      ).toEqual([]);
+    });
+
     it("pins pi once, unpatched, at the newest version the bridge's range resolves", () => {
       const lock = lockfile(record.lockfile);
       expect(lock.direct.get(PI)).toBe(record.pi);
