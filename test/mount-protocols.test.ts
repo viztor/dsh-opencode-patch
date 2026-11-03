@@ -1,6 +1,7 @@
 import { supportedProtocols } from "@deepseek-ai/dsh-llm-pi-ai";
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import semver from "semver";
 import { describe, expect, it } from "vitest";
 
 import { HOST_VERSIONS } from "./support/host-versions.ts";
@@ -123,26 +124,49 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
   });
 
   /**
-   * F10, per pi: whether pi's own `opencode-go` provider lists a model on the
-   * Google protocol. A characterization of the install under test, keyed by
-   * the pi it runs (`HOST_VERSIONS.pi`: the channel's newest, or its floor),
-   * not a requirement. pi 1.1.0, the rc channel's floor and the harness's rc
-   * pin, has none; pi 1.3.0 added a Go Google row, and 1.5.0 keeps it. The
-   * gateway's Go catalog carries Google models either way, which the plugin
-   * routes through its own adapter, so the row describes pi, not the plugin.
+   * F10, per pi line: whether pi's own `opencode-go` provider lists a model on
+   * the Google protocol. A characterization of the install under test, keyed
+   * by the pi it runs (`HOST_VERSIONS.pi`: the channel's newest, or its
+   * floor), not a requirement. pi 1.1.0, the rc channel's floor and the
+   * harness's rc pin, has none; pi 1.3.0 added a Go Google row, and 1.5.0
+   * keeps it. The gateway's Go catalog carries Google models either way,
+   * which the plugin routes through its own adapter, so the row describes pi,
+   * not the plugin.
+   *
+   * Rows are pi LINES, not exact versions, so a channel bump that moves pi
+   * inside a line stays version data (CONTRIBUTING's release step 3): the case
+   * fails only for a pi outside every row, which is a new major and a
+   * reviewed change, or for a pi whose provider contradicts its row, which is
+   * the measured change this row exists to catch.
    */
-  const GO_HAS_GOOGLE: Readonly<Record<string, boolean>> = {
-    "1.1.0": false,
-    "1.3.0": true,
-    "1.5.0": true,
-  };
+  const GO_HAS_GOOGLE: readonly (readonly [line: string, google: boolean])[] = [
+    [">=1.1.0 <1.3.0", false],
+    [">=1.3.0 <2.0.0", true],
+  ];
+
+  const f10RowFor = (pi: string): boolean[] =>
+    GO_HAS_GOOGLE.filter(([line]) => semver.satisfies(pi, line)).map(
+      ([, google]) => google
+    );
+
+  it("F10's rows are one answer per pi line, with known answers", () => {
+    expect(f10RowFor("1.1.0")).toEqual([false]);
+    expect(f10RowFor("1.2.9")).toEqual([false]);
+    expect(f10RowFor("1.3.0")).toEqual([true]);
+    expect(f10RowFor("1.5.0")).toEqual([true]);
+    expect(f10RowFor("1.6.2")).toEqual([true]);
+    // Outside every line: a new major, or a pi below every channel's floor.
+    expect(f10RowFor("2.0.0")).toEqual([]);
+    expect(f10RowFor("1.0.9")).toEqual([]);
+  });
 
   it(`characterization (F10): pi ${HOST_VERSIONS.pi}'s opencode-go provider and the Google protocol`, () => {
-    const expected = GO_HAS_GOOGLE[HOST_VERSIONS.pi];
+    const rows = f10RowFor(HOST_VERSIONS.pi);
     expect(
-      expected,
-      `no F10 row for pi ${HOST_VERSIONS.pi}: measure it and add one`
-    ).toBeDefined();
+      rows,
+      `no F10 row for pi ${HOST_VERSIONS.pi}'s line: measure it and add one`
+    ).toHaveLength(1);
+    const [expected] = rows;
     const go = providers.find((p) => p.id === "opencode-go");
     const apis = new Set((go?.getModels() ?? []).map((model) => model.api));
     expect(apis.has("google-generative-ai")).toBe(expected);

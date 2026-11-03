@@ -38,6 +38,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 import semver from "semver";
 import { describe, expect, it } from "vitest";
+import { parse, parseAllDocuments } from "yaml";
 
 import { channelManifest, pinFor } from "../scripts/channel-manifest.ts";
 import {
@@ -311,6 +312,45 @@ describe("harness channel alignment · declarations", () => {
   });
 });
 
+describe("harness channel alignment · Dependabot leaves the hosts to a channel bump", () => {
+  it("ignores every @deepseek-ai package and pi, for every update type", () => {
+    // A host or pi move is a channel bump (D22''): it moves a record, its
+    // lockfile and, for alpha, `package.json`'s exact pins together, which a
+    // Dependabot pull request cannot do, so one would only ever land red and
+    // take its whole group with it. The nightly drift report notices the move.
+    interface Rule {
+      readonly "dependency-name"?: string;
+      readonly "update-types"?: readonly string[];
+    }
+    interface Update {
+      readonly ignore?: readonly Rule[];
+      readonly "package-ecosystem"?: string;
+    }
+    const config = parse(readFileSync(".github/dependabot.yml", "utf8")) as {
+      readonly updates?: readonly Update[];
+    };
+    const npm = (config.updates ?? []).filter(
+      (update) => update["package-ecosystem"] === "npm"
+    );
+    expect(npm).toHaveLength(1);
+    const rules = new Map(
+      (npm[0]?.ignore ?? []).map((rule) => [
+        rule["dependency-name"],
+        rule["update-types"],
+      ])
+    );
+    // Known answer: the reader found the ignore list (react's major rule).
+    expect(rules.get("react")).toEqual(["version-update:semver-major"]);
+    for (const name of ["@deepseek-ai/*", PI]) {
+      expect(rules.has(name), `${name} is not ignored`).toBe(true);
+      expect(
+        rules.get(name),
+        `${name} is ignored for some update types only`
+      ).toBeUndefined();
+    }
+  });
+});
+
 describe.each(Object.keys(CHANNELS) as Channel[])(
   "harness channel alignment · the %s lockfile",
   (channel) => {
@@ -326,6 +366,73 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       for (const [name, version] of harness) {
         expect(version, name).toBe(pinFor(name, record));
       }
+    });
+
+    it("was locked from the manifest and workspace as they stand: every specifier, catalog and override", () => {
+      // `channels/rc/pnpm-lock.yaml` is the root lockfile with the host
+      // packages re-resolved, so it carries every NON-host specifier too, and
+      // CI installs it frozen. A change to any `package.json` dependency or to
+      // `pnpm-workspace.yaml`'s catalog or overrides regenerates the root
+      // lockfile only (a Dependabot bump included); without this case the rc
+      // cell is the first to notice, at its install step.
+      const fix =
+        channel === DEFAULT_CHANNEL
+          ? "pnpm install"
+          : `node --experimental-strip-types scripts/use-channel.ts ${channel} --relock`;
+      const documents = (path: string): Record<string, unknown>[] =>
+        parseAllDocuments(readFileSync(path, "utf8")).map(
+          (document) => document.toJS() as Record<string, unknown>
+        );
+      const own = documents(record.lockfile);
+      const root = documents(CHANNELS[DEFAULT_CHANNEL].lockfile);
+      const project = own.at(-1) ?? {};
+      const rootProject = root.at(-1) ?? {};
+      const importers = project.importers as
+        | Record<string, Record<string, Record<string, { specifier: string }>>>
+        | undefined;
+      const importer = importers?.["."] ?? {};
+      const expected = JSON.parse(
+        channelManifest(manifestText(), record)
+      ) as Record<string, Record<string, string> | undefined>;
+      let compared = 0;
+      for (const section of [
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+      ]) {
+        const locked = Object.fromEntries(
+          Object.entries(importer[section] ?? {}).map(([name, entry]) => [
+            name,
+            entry.specifier,
+          ])
+        );
+        expect(
+          locked,
+          `${record.lockfile}'s ${section} differ from package.json as the ${channel} channel installs it; run \`${fix}\``
+        ).toStrictEqual(expected[section] ?? {});
+        compared += Object.keys(locked).length;
+      }
+      // Known answer: the reader found the importer, so equality means
+      // something (a lockfile it could not read would compare {} to {}).
+      expect(compared).toBeGreaterThan(20);
+      expect(project.catalogs, "catalogs").toBeDefined();
+      for (const key of [
+        "lockfileVersion",
+        "settings",
+        "catalogs",
+        "overrides",
+      ]) {
+        expect(
+          project[key],
+          `${record.lockfile}'s ${key} differ from the root lockfile's; run \`${fix}\``
+        ).toStrictEqual(rootProject[key]);
+      }
+      // pnpm's own package-manager record, the file's first document.
+      expect(own.length, record.lockfile).toBe(root.length);
+      expect(
+        own[0],
+        `${record.lockfile}'s package-manager record differs from the root lockfile's; run \`${fix}\``
+      ).toStrictEqual(root[0]);
     });
 
     it("resolves every dsh package in the tree, transitive ones included, to the channel's cluster", () => {
