@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "OpenCode 补丁",
-    "description": "恢复 OpenCode Zen/Go 网关请求头与会话保持，并在输入框旁实时显示 Go 额度。"
+    "description": "恢复 OpenCode Zen/Go 网关请求头与会话保持，并在输入框旁实时显示 Go 额度。",
+    "detail": "docs/detail.zh-CN.md"
   }
 }

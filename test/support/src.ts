@@ -326,6 +326,7 @@ export { purgeDeprecatedModels } from "../../src/settings-purge.ts";
 
 // settings-remote.ts
 export {
+  callUsageRead,
   remoteNamespace,
   remoteNamespaceOf,
 } from "../../src/settings-remote.ts";
@@ -353,6 +354,7 @@ export { createStreamHook, projectNameFrom } from "../../src/stream-hook.ts";
 
 // tool-fallback.ts
 export {
+  coreToolDecision,
   DUMMY_BASH_TOOL,
   DUMMY_BASH_TOOL_FUNCTION,
   DUMMY_READ_TOOL,
@@ -367,7 +369,11 @@ export { withStore } from "../../src/turn-store.ts";
 export type { ActiveTurnState } from "../../src/turn-store.ts";
 
 // usage-contract.ts
-export { parseGoUsage, parseUsageQuery } from "../../src/usage-contract.ts";
+export {
+  parseAccountRef,
+  parseGoUsage,
+  parseUsageQuery,
+} from "../../src/usage-contract.ts";
 export type { GoUsage } from "../../src/usage-contract.ts";
 
 // usage-panel.tsx

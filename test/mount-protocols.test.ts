@@ -1,6 +1,7 @@
 import { supportedProtocols } from "@deepseek-ai/dsh-llm-pi-ai";
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import semver from "semver";
 import { describe, expect, it } from "vitest";
 
 import { HOST_VERSIONS } from "./support/host-versions.ts";
@@ -122,22 +123,60 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
     }
   });
 
-  it(`characterization (F10): pi ${HOST_VERSIONS.pi}'s opencode-go provider has no google-generative-ai`, () => {
-    // A characterization of the pinned pi (`HOST_VERSIONS.pi`), not a
-    // requirement: its Go provider lists no model on the Google protocol,
-    // while the gateway's Go catalog does carry one. That gap is what the
-    // bridge serves today. pi 1.3.0 added a Go Google row
-    // (`gemini-4-argon-contributor`), which is why the provider-based routing
-    // check that used to stand below passed on the newer pi and not this one.
+  /**
+   * F10, per pi line: whether pi's own `opencode-go` provider lists a model on
+   * the Google protocol. A characterization of the install under test, keyed
+   * by the pi it runs (`HOST_VERSIONS.pi`: the channel's newest, or its
+   * floor), not a requirement. pi 1.1.0, the rc channel's floor and the
+   * harness's rc pin, has none; pi 1.3.0 added a Go Google row, and 1.5.0
+   * keeps it. The gateway's Go catalog carries Google models either way,
+   * which the plugin routes through its own adapter, so the row describes pi,
+   * not the plugin.
+   *
+   * Rows are pi LINES, not exact versions, so a channel bump that moves pi
+   * inside a line stays version data (CONTRIBUTING's release step 3): the case
+   * fails only for a pi outside every row, which is a new major and a
+   * reviewed change, or for a pi whose provider contradicts its row, which is
+   * the measured change this row exists to catch.
+   */
+  const GO_HAS_GOOGLE: readonly (readonly [line: string, google: boolean])[] = [
+    [">=1.1.0 <1.3.0", false],
+    [">=1.3.0 <2.0.0", true],
+  ];
+
+  const f10RowFor = (pi: string): boolean[] =>
+    GO_HAS_GOOGLE.filter(([line]) => semver.satisfies(pi, line)).map(
+      ([, google]) => google
+    );
+
+  it("F10's rows are one answer per pi line, with known answers", () => {
+    expect(f10RowFor("1.1.0")).toEqual([false]);
+    expect(f10RowFor("1.2.9")).toEqual([false]);
+    expect(f10RowFor("1.3.0")).toEqual([true]);
+    expect(f10RowFor("1.5.0")).toEqual([true]);
+    expect(f10RowFor("1.6.2")).toEqual([true]);
+    // Outside every line: a new major, or a pi below every channel's floor.
+    expect(f10RowFor("2.0.0")).toEqual([]);
+    expect(f10RowFor("1.0.9")).toEqual([]);
+  });
+
+  it(`characterization (F10): pi ${HOST_VERSIONS.pi}'s opencode-go provider and the Google protocol`, () => {
+    const rows = f10RowFor(HOST_VERSIONS.pi);
+    expect(
+      rows,
+      `no F10 row for pi ${HOST_VERSIONS.pi}'s line: measure it and add one`
+    ).toHaveLength(1);
+    const [expected] = rows;
     const go = providers.find((p) => p.id === "opencode-go");
-    const apis = [
-      ...new Set((go?.getModels() ?? []).map((model) => model.api)),
-    ].toSorted();
-    expect(apis).toEqual([
+    const apis = new Set((go?.getModels() ?? []).map((model) => model.api));
+    expect(apis.has("google-generative-ai")).toBe(expected);
+    for (const api of [
       "anthropic-messages",
       "openai-completions",
       "openai-responses",
-    ]);
+    ]) {
+      expect(apis.has(api), api).toBe(true);
+    }
     expect(OPENCODE_GO_CATALOG.some((m) => m.provider_npm === GOOGLE_SDK)).toBe(
       true
     );
@@ -160,7 +199,8 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
  * and not a table kept here. An earlier version asked each plane's pi provider
  * whether it carried a model on the same protocol, which made the answer a
  * fact about pi's catalog: pi 1.3.0 listed a Go Gemini model and so passed,
- * while the pinned pi 1.1.0 lists none (characterized above, F10) although the
+ * while pi 1.1.0 (the rc channel's floor) lists none (characterized above,
+ * F10) although the
  * bridge serves those models through the same `google-generative-ai` module.
  * Models whose SDK is a recorded decision (`UNSERVED_SDKS`) are skipped: that
  * is the plugin saying so, not a gap. Plane-level decisions in

@@ -50,10 +50,10 @@ describe("purgeDeprecatedModels", () => {
   });
 });
 
-describe("purgeDeprecatedModels: the contract decides what a result is", () => {
+describe("purgeDeprecatedModels: the remote protocol's refusal", () => {
   it("carries the host's refusal envelope in its own words", async () => {
-    // The remote answers a failure as `{ ok: false, error }`. Read as a shape
-    // error about the envelope, the host's own reason was lost.
+    // The remote protocol answers a failure as `{ ok: false, error }`, with
+    // `error` a serialized RemoteError: the reason is its `message`.
     await expect(
       purgeDeprecatedModels(
         scopeWith(async () => ({
@@ -73,34 +73,6 @@ describe("purgeDeprecatedModels: the contract decides what a result is", () => {
     ).resolves.toEqual({
       kind: "failed",
       message: "the host refused the purge",
-    });
-  });
-
-  it("refuses a value without catalogRead, which the contract requires", async () => {
-    const outcome = await purgeDeprecatedModels(
-      scopeWith(async () => ({ ok: true, value: { removed: [] } }))
-    );
-    expect(outcome).toMatchObject({ kind: "failed" });
-  });
-
-  it("strips a removed row down to the fields the card renders", async () => {
-    const outcome = await purgeDeprecatedModels(
-      scopeWith(async () => ({
-        ok: true,
-        value: {
-          catalogRead: true,
-          removed: [
-            { extra: 1, id: "x", provider: "opencode", site: "summarizer" },
-          ],
-        },
-      }))
-    );
-    expect(outcome).toEqual({
-      kind: "purged",
-      result: {
-        catalogRead: true,
-        removed: [{ id: "x", provider: "opencode", site: "summarizer" }],
-      },
     });
   });
 });
@@ -133,6 +105,48 @@ describe("purgeDeprecatedModels: the paths a scope can take", () => {
     expect(unwrapped).toEqual({
       kind: "purged",
       result: { catalogRead: false, removed: [] },
+    });
+  });
+
+  it("shows the host's own failure, and parses the result through the contract", async () => {
+    // The host answers a failure as `{ ok: false, … }`, and reading that as
+    // "not a purge result" replaced the message that says WHY with a sentence
+    // about shape — which tells the reader nothing they can act on.
+    const refused = await purgeDeprecatedModels(
+      scopeWith(async () => ({
+        ok: false,
+        message: "the profile is read-only",
+      }))
+    );
+    expect(refused).toEqual({
+      kind: "failed",
+      message: "the profile is read-only",
+    });
+
+    // And the result is PARSED, not cast: the contract's whitelist is the
+    // client's only statement about what it is told, and a cast is no statement
+    // at all. A row the whitelist rejects is not a result.
+    const malformed = await purgeDeprecatedModels(
+      scopeWith(async () => ({
+        catalogRead: true,
+        removed: [{ id: "a", provider: "opencode", extra: "ignored" }],
+      }))
+    );
+    expect(malformed).toEqual({
+      kind: "purged",
+      result: {
+        catalogRead: true,
+        // The whitelist keeps only the fields it renders.
+        removed: [{ id: "a", provider: "opencode" }],
+      },
+    });
+
+    const notAResult = await purgeDeprecatedModels(
+      scopeWith(async () => ({ removed: [{ id: 42, provider: "opencode" }] }))
+    );
+    expect(notAResult).toEqual({
+      kind: "failed",
+      message: "the host answered something that is not a purge result",
     });
   });
 

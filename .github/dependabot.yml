@@ -29,6 +29,14 @@ updates:
 
   # The plugin's own dependencies. Grouped so a routine bump does not arrive as
   # a dozen PRs; the lockfile is the unit that is actually tested.
+  #
+  # Every pull request this opens also needs `channels/rc/pnpm-lock.yaml`
+  # relocked, which Dependabot cannot do: that lockfile is the root one with the
+  # host packages re-resolved, so it carries every specifier in `package.json`
+  # and CI's rc cell installs it frozen. Push one commit running
+  # `node --experimental-strip-types scripts/use-channel.ts rc --relock` onto
+  # the pull request; `test/harness-channel.test.ts` names that command when
+  # the two lockfiles disagree.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -56,17 +64,18 @@ updates:
           - vitest
           - "@vitest/*"
     ignore:
-      # pi-ai follows the line the main dsh installs, not the registry. The bridge
-      # loads pi from the wrapper's copy, so our pin has to satisfy the range the
-      # wrapper declares - now `^1.1.0`, where minor releases stay inside the range
-      # and a major does not. A second pi beside the wrapper's is the failure this
-      # prevents: two module instances drift apart the moment either side moves, and
-      # `test/google-bridge.test.ts` asserts the pin satisfies the range, so a major
-      # here would land red rather than break something quietly. Minors are
-      # welcome - they stay inside the wrapper's range - so only majors are ignored.
+      # The harness cluster and pi move only as a channel bump (D22''), never
+      # as a dependency update: a bump moves a channel record in
+      # `test/support/host-versions.ts`, that channel's lockfile and, for alpha,
+      # `package.json`'s exact `@deepseek-ai/*` pins together (CONTRIBUTING's
+      # release step 3), and pi is the bridge's, at the newest 1.x its range
+      # resolves, pinned per channel. A pull request from here would move one of
+      # them, land red on `test/harness-channel.test.ts`, and take its whole
+      # group with it. The nightly `host-drift` job reports when either channel
+      # moves, and P-T3 (a later phase) turns that report into the bump. Every
+      # update type is ignored; `test/harness-channel.test.ts` holds both rules.
+      - dependency-name: "@deepseek-ai/*"
       - dependency-name: "@earendil-works/pi-ai"
-        update-types:
-          - version-update:semver-major
       # React stays at 18: the bundles this plugin ships are host-bound, so a
       # major here is a coordinated move with the host rather than a bump - and
       # it is not hypothetical: under react-dom 19 the settings suite fails
