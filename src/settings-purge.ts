@@ -11,8 +11,8 @@
  */
 
 import {
-  PURGE_NAMESPACE,
   parsePurgeResult,
+  PURGE_NAMESPACE,
   type PurgeResult,
 } from "./purge-contract.ts";
 import { remoteNamespace, remoteNamespaceOf } from "./settings-remote.ts";
@@ -48,20 +48,27 @@ export const purgeDeprecatedModels = async (
   }
   try {
     const answer: unknown = await call();
-    if (isRecord(answer) && answer.ok === false) {
-      // The remote's own failure, said in its own words rather than as a shape
-      // error about the envelope it arrived in.
-      const { error } = answer;
-      return {
-        kind: "failed",
-        message:
-          isRecord(error) && typeof error.message === "string"
-            ? error.message
-            : "the host refused the purge",
-      };
-    }
     const value = isRecord(answer) && "value" in answer ? answer.value : answer;
-    // The contract's own parser, so the card renders only the fields it whitelists.
+    // **The host's own failure comes first.** The host answers a failure as
+    // `{ ok: false, … }`, and reading that as "not a purge result" replaced the
+    // message that says WHY with a sentence about shape — which tells the reader
+    // nothing they can act on. The remote protocol sends `{ ok: false, error }`
+    // with `error` a serialized `RemoteError`, so its `message` is read too.
+    if (isRecord(value) && value.ok === false) {
+      const { error, message: said } = value;
+      let message = "the host refused the purge";
+      if (typeof said === "string") {
+        message = said;
+      } else if (typeof error === "string") {
+        message = error;
+      } else if (isRecord(error) && typeof error.message === "string") {
+        message = error.message;
+      }
+      return { kind: "failed", message };
+    }
+    // And the result is PARSED, not cast: the contract's whitelist is the
+    // client's only statement about what it is told, and a cast is no statement
+    // at all.
     const result = parsePurgeResult(value);
     if (result === undefined) {
       return {

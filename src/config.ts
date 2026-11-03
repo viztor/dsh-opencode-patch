@@ -622,7 +622,5 @@ export const Config = z.object({
     .description("Log injected streamed calls."),
   debugFile: z
     .string()
-    .description(
-      "Server-side path for JSONL stream-debug entries; written only while debug is on."
-    ),
+    .description("Server-side path for JSONL stream-debug entries."),
 });

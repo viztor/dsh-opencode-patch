@@ -121,16 +121,13 @@ describe("stream-hook · the pass-through guards", () => {
    * mistyped options object, a provider it does not own, and a model it cannot
    * serve.
    */
-  const hookWith = async (
-    providers: string[],
-    overrides: Record<string, unknown> = {}
-  ) => {
+  const hookWith = async (providers: string[]) => {
     const { createStreamHook } = await import("../src/stream-hook.ts");
     const { AsyncLocalStorage } = await import("node:async_hooks");
     const { resolveConfig } = await import("../src/config.ts");
     return createStreamHook(
       { logger: { info: () => {} } } as never,
-      resolveConfig({ providers, usageEnabled: false, ...overrides } as never),
+      resolveConfig({ providers, usageEnabled: false } as never),
       new AsyncLocalStorage()
     );
   };
@@ -162,6 +159,35 @@ describe("stream-hook · the pass-through guards", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it("says WHY a model cannot be served, instead of leaving the picker empty", async () => {
+    // The diagnostic a reader gets when a model they declared is filtered out.
+    // The three reasons are checked in the order the filter applies them, so the
+    // sentence names the decision that actually fired — naming a protocol for a
+    // model filtered on its tier sends the reader to the routing table for an
+    // entitlement problem.
+    //
+    // `@ai-sdk/mistral` is the reachable case: the catalogue carries one such
+    // model and `isServableSdk` keeps it out of every picker, deliberately.
+    const hook = await hookWith(["opencode"]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const next = vi.fn(() => "next-result");
+      expect(
+        hook({ model: "mistral-large-4", provider: "opencode" }, next)
+      ).toBe("next-result");
+      expect(next).toHaveBeenCalledTimes(1);
+      const said = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(said).toContain("opencode/mistral-large-4 cannot be served");
+      expect(said).toContain("@ai-sdk/mistral");
+      // And once per pair: the hook runs on every request, and the same missing
+      // route must not warn on each one.
+      hook({ model: "mistral-large-4", provider: "opencode" }, next);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("accepts a numeric provider id, which the seam may carry", async () => {
     // `provider` is `unknown` on the seam; a number is stringified before the
     // allow-list is consulted, and the call still reaches `next`.
@@ -174,10 +200,10 @@ describe("stream-hook · the pass-through guards", () => {
 
 describe("stream-hook · the debug gate", () => {
   /**
-   * `debug` is the switch and `debugFile` is only where the switch writes. The
-   * fetch patch has always been gated that way; the stream hook wrote the file
-   * whenever a path was configured, so turning debugging off left one of the two
-   * logs running.
+   * Naming `debugFile` writes the file; `debug` governs the console alone. The
+   * request half (lifecycle.ts) and this stream half are the two halves of one
+   * JSONL log, so they share that gate: the README's own example, `debug: false`
+   * beside a `debugFile` path, must produce a file holding both halves.
    */
   const debugFile = join(tmpdir(), "dsh-stream-debug", "stream.jsonl");
 
@@ -224,13 +250,18 @@ describe("stream-hook · the debug gate", () => {
     vi.mocked(recordDebug).mockClear();
   });
 
-  it("stream-hook · the debug gate: writes nothing to debugFile while debug is off", async () => {
-    await turn(false);
-    expect(recordDebug).not.toHaveBeenCalled();
+  it("stream-hook · the debug gate: writes debugFile while debug is off, and logs nothing", async () => {
+    const info = vi.fn<(...args: unknown[]) => void>();
+    await turn(false, { info });
+    expect(recordDebug).toHaveBeenCalledTimes(1);
+    const [, file] = vi.mocked(recordDebug).mock.calls[0] ?? [];
+    expect(file).toBe(debugFile);
+    expect(info).not.toHaveBeenCalled();
   });
 
-  it("writes one entry for the turn to debugFile while debug is on", async () => {
-    await turn(true);
+  it("writes one entry for the turn to debugFile and logs it while debug is on", async () => {
+    const info = vi.fn<(...args: unknown[]) => void>();
+    await turn(true, { info });
     expect(recordDebug).toHaveBeenCalledTimes(1);
     const [, file, entry] = vi.mocked(recordDebug).mock.calls[0] ?? [];
     expect(file).toBe(debugFile);
@@ -238,6 +269,7 @@ describe("stream-hook · the debug gate", () => {
       header: "x-opencode-session",
       session: "s",
     });
+    expect(info).toHaveBeenCalledTimes(1);
   });
 
   it("logs the turn but writes no file while debug is on without a debugFile", async () => {
@@ -246,5 +278,81 @@ describe("stream-hook · the debug gate", () => {
     expect(recordDebug).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledTimes(1);
     expect(info.mock.calls[0]).toContain("x-opencode-session");
+  });
+
+  it("does nothing at all with debug off and no debugFile", async () => {
+    const info = vi.fn<(...args: unknown[]) => void>();
+    await turn(false, { info, withFile: false });
+    expect(recordDebug).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
+  });
+});
+
+describe("stream-hook · a turn is priced at ITS plane's rate", () => {
+  /**
+   * The two planes price the same id differently, and the plane-agnostic
+   * catalog lookup searches Go FIRST — so a Zen turn was priced at the Go rate.
+   *
+   * `deepseek-v4.1-flash` costs $0.30 per million input tokens on Zen and
+   * $0.15 on Go: a Zen turn came out at exactly half of what it cost, and the
+   * meter showed the half.
+   */
+  const hookWith = async (providers: string[]) => {
+    const { createStreamHook } = await import("../src/stream-hook.ts");
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    const { resolveConfig } = await import("../src/config.ts");
+    return createStreamHook(
+      { logger: { info: () => {} } } as never,
+      resolveConfig({ providers, usageEnabled: true } as never),
+      new AsyncLocalStorage()
+    );
+  };
+
+  /**
+   * A stream that reports one turn's usage, the way the gateway reports it.
+   *
+   * @yields {unknown} one usage chunk
+   */
+  const usageStream = async function* usageStream() {
+    yield {
+      type: "usage",
+      usage: {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        totalTokens: 1_000_000,
+      },
+    };
+  };
+
+  it("prices a Zen turn at the Zen rate, and a Go turn at the Go rate", async () => {
+    const { clearSessionUsageStore, getSessionUsage } =
+      await import("../src/session-cost.ts");
+    clearSessionUsageStore();
+    const hook = await hookWith(["opencode", "opencode-go"]);
+
+    // One million input tokens: $0.30 on Zen, $0.15 on Go.
+    for (const [provider, sessionId, expected] of [
+      ["opencode", "s-zen", 0.3],
+      ["opencode-go", "s-go", 0.15],
+    ] as const) {
+      const result = hook(
+        {
+          model: "deepseek-v4.1-flash",
+          provider,
+          sessionId,
+        },
+        () => usageStream()
+      );
+      // The hook returns the downstream's value, and the usage is recorded while
+      // the stream is consumed.
+      for await (const _chunk of result as AsyncGenerator) {
+        void _chunk;
+      }
+      const snapshot = getSessionUsage(sessionId);
+      expect(snapshot?.costUsd, `${provider} priced a Zen-rate turn`).toBe(
+        expected
+      );
+    }
+    clearSessionUsageStore();
   });
 });

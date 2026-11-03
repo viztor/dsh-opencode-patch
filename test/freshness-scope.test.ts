@@ -41,6 +41,7 @@ import {
   scopeFor,
   type SourceReader,
 } from "../scripts/freshness-scope.ts";
+import { GENERATED_TABLES } from "../scripts/vendor-version.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -131,8 +132,11 @@ describe("freshness scope · the walk reads the real generators", () => {
 
   it("counts the pinned version's file as a CLI-version input, though nothing imports it", () => {
     const { read } = diskReader();
+    // The rules moved into a pure half the script imports, so that module is
+    // an input too: a change to the rules gates the check that runs them.
     expect(inputsOf("cli:version", read)).toStrictEqual([
       "scripts/check-vendor-version.ts",
+      "scripts/vendor-version.ts",
       "src/identity.ts",
     ]);
   });
@@ -885,6 +889,14 @@ describe("cli:version · the offline copy scan (`--copies`)", () => {
       rmSync(root, { force: true, recursive: true });
     }
   };
+
+  it("skips exactly the files the scope calls generated", () => {
+    // Two lists, kept apart on purpose (an import would make the scope module an
+    // input of this check); this is what keeps them the same list.
+    expect([...GENERATED_TABLES].toSorted()).toStrictEqual(
+      [...GENERATED_OUTPUTS].toSorted()
+    );
+  });
 
   it("passes on this repository itself, as CI's pull-request gate will run it", () => {
     // Offline, and the same scan CI gates every pull request on: a stale copy

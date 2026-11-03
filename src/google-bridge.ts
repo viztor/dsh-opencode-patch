@@ -31,11 +31,12 @@
  *
  * **Why not a dependency.** The harness wrapper (`dsh-llm-pi-ai`) already
  * depends on `@earendil-works/pi-ai` with a RANGE (`^1.1.0`), so the host
- * installs exactly the pi its own release was tested against — 1.3.0 for
- * `0.2.1-alpha.5`, whatever the next harness line moves it to. Declaring the
- * same package as an exact dependency here puts a SECOND pi in the tree and
- * turns every harness bump into a version-skew bug: the worst measured shape is
- * a degraded Google route whose error names the model rather than the version.
+ * installs exactly the pi its own release was tested against — 1.4.0 for the
+ * `0.2.1-rc.4` harness line, whatever the next harness line moves it to.
+ * Declaring the same package as an exact dependency here puts a SECOND pi in
+ * the tree and turns every harness bump into a version-skew bug: the worst
+ * measured shape is a degraded Google route whose error names the model rather
+ * than the version.
  *
  * So the rule is the user's own: *use whatever the harness provides*. The
  * lookup below asks the harness which pi that is, from the wrapper's own
@@ -99,9 +100,23 @@ import { isFunctionLike, isRecord } from "./utils/guards.ts";
  * these two methods, and stating them locally is what keeps a harness bump a
  * runtime decision instead of a type error.
  */
+export interface PiGoogleStreamOptions {
+  [key: string]: unknown;
+  onPayload?: (payload: unknown, model: unknown) => unknown;
+  reasoning?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+}
+
 export interface PiGoogleApi {
-  stream: (model: never, context: never, options?: never) => unknown;
-  streamSimple: (model: never, context: never, options?: never) => unknown;
+  stream: (
+    model: never,
+    context: never,
+    options?: PiGoogleStreamOptions
+  ) => unknown;
+  streamSimple: (
+    model: never,
+    context: never,
+    options?: PiGoogleStreamOptions
+  ) => unknown;
 }
 
 /** The wrapper whose own dependency tree names the pi the host installed. */
@@ -350,6 +365,45 @@ const installedEntryFor = (
   pi.getBuiltinModels(plane).find((model) => model.id === id);
 
 /**
+ * Older host pi versions classify Argon as a token-budget model. Argon only
+ * accepts LOW/MEDIUM/HIGH: normalize that legacy payload at pi's public seam.
+ * A current runtime's thinkingLevel and the caller's payload hook are retained.
+ */
+const withArgonThinkingLevel = (
+  model: unknown,
+  options?: PiGoogleStreamOptions
+): PiGoogleStreamOptions | undefined => {
+  if (!isRecord(model) || model.id !== "gemini-4-argon") return options;
+  return {
+    ...options,
+    onPayload: async (payload, currentModel) => {
+      const replacement = await options?.onPayload?.(payload, currentModel);
+      const next = replacement === undefined ? payload : replacement;
+      if (
+        !isRecord(next) ||
+        !isRecord(next.config) ||
+        !isRecord(next.config.thinkingConfig)
+      )
+        return next;
+      const thinking = next.config.thinkingConfig;
+      if ("thinkingBudget" in thinking) {
+        let level = "LOW";
+        if (options?.reasoning === "medium") level = "MEDIUM";
+        else if (
+          options?.reasoning === "high" ||
+          options?.reasoning === "xhigh" ||
+          options?.reasoning === "max"
+        )
+          level = "HIGH";
+        delete thinking.thinkingBudget;
+        thinking.thinkingLevel ??= level;
+      }
+      return next;
+    },
+  };
+};
+
+/**
  * The provider this route serves: pi's Google wire implementation carrying our
  * catalog's Gemini models.
  *
@@ -434,9 +488,9 @@ export const googleProviderFor = (
     name:
       plane === "opencode-go" ? "OpenCode Go (Google)" : "OpenCode (Google)",
     stream: (model: never, context: never, options?: never) =>
-      api.stream(model, context, options),
+      api.stream(model, context, withArgonThinkingLevel(model, options)),
     streamSimple: (model: never, context: never, options?: never) =>
-      api.streamSimple(model, context, options),
+      api.streamSimple(model, context, withArgonThinkingLevel(model, options)),
   };
 };
 

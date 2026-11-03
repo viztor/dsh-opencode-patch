@@ -19,7 +19,14 @@ export interface ModelAllowanceSnapshot {
   go: number;
   /** Go Plus, the $40/month plan. */
   goPlus: number;
-  /** The model this allowance is for, as the picker spells it. */
+  /**
+   * The model this allowance is for, **as the catalog spells it**.
+   *
+   * It is the model the PICKER is on, which is not the model that priced the
+   * turns so far, and the Host resolves the name because the client cannot
+   * know it. A row that pairs this figure with another model's name states
+   * something false about the money.
+   */
   model: string;
 }
 
@@ -206,6 +213,17 @@ declare module "@deepseek-ai/dsh-typert-protocol" {
   interface TypertRemoteNamespaceMap {
     opencodeGoUsage: {
       read: (query?: UsageQuery) => Promise<RemoteResult<GoUsage>>;
+      /**
+       * The account-scoped spelling of the reading above.
+       *
+       * `dsh-opencode-go` owns an `opencodeGoUsage` contract of its own and its
+       * account page calls `readAccount(ref)`; this plugin mounts the
+       * root-context instance the Typert gateway resolves for that namespace
+       * (see `installUsageService`), so a namespace offering only `read` answers
+       * that page with `active Service "opencodeGoUsage" has no callable method
+       * "readAccount"` and the account row reads as unavailable.
+       */
+      readAccount: (ref: string) => Promise<RemoteResult<GoUsage>>;
     };
   }
 }
@@ -276,6 +294,30 @@ const usageQueryCodec = {
   typeSymbol: "dsh-opencode-patch#UsageQuery",
 };
 
+/**
+ * An account reference, as the sibling `dsh-opencode-go` account manager spells
+ * it — the `apiKeyEnv` names on its own config (`DSH_OPENCODE_GO_ACCOUNT_…`).
+ *
+ * It is an identifier rather than free text, so the shape is checked before the
+ * value can reach a credential lookup: a malformed ref is a bad request, and the
+ * caller should hear that instead of an empty reading.
+ */
+const ACCOUNT_REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+export const parseAccountRef = (value: unknown): string => {
+  if (typeof value !== "string" || !ACCOUNT_REF_PATTERN.test(value)) {
+    throw new TypeError("Invalid OpenCode Go account reference");
+  }
+  return value;
+};
+
+const accountRefCodec = {
+  create: () => ({ parse: parseAccountRef }),
+  mode: "strict" as const,
+  schema: { parse: parseAccountRef },
+  typeSymbol: "dsh-opencode-patch#AccountRef",
+};
+
 export const usageRemote: TypertRemoteContribution = {
   descriptors: [
     {
@@ -292,6 +334,24 @@ export const usageRemote: TypertRemoteContribution = {
           name: "query",
           source: "json",
           wire: "query",
+        },
+      ],
+      result: usageCodec,
+      service: "opencodeGoUsage",
+    },
+    {
+      // The sibling `dsh-opencode-go` account page reads through this spelling;
+      // the reading is the one for the account this plugin's route selects.
+      id: "dsh-opencode-patch#opencodeGoUsage/readAccount",
+      invocation: { kind: "direct" },
+      method: "readAccount",
+      namespace: "opencodeGoUsage",
+      parameters: [
+        {
+          codec: accountRefCodec,
+          name: "ref",
+          source: "json",
+          wire: "ref",
         },
       ],
       result: usageCodec,

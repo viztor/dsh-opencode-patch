@@ -11,8 +11,13 @@
  */
 
 import { ALL_MODELS_MARKER } from "./config-values.ts";
-import { findModelSpec } from "./models-catalog.ts";
+import {
+  type CatalogPlane,
+  findModelSpec,
+  findModelSpecOn,
+} from "./models-catalog.ts";
 import { isRecord, isUnknownArray } from "./utils/guards.ts";
+import { isGoPlaneUrl } from "./utils/request-shape.ts";
 
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
@@ -197,11 +202,33 @@ const toolNames = (
   return { hasBash, hasRead, isOpenAiFormat };
 };
 
-/** Whether `modelId` is in scope for the core-tool fallback. */
-export const isCoreToolModel = (modelId: string, marker: string): boolean => {
-  // The catalog's free-tier flag is the authority: it catches free models
-  // whose ids carry no marker (big-pickle), where a substring test goes blind.
-  if (findModelSpec(modelId)?.is_free === true) {
+/**
+ * The decision, given the row it is about.
+ *
+ * **Pure, so the row can be constructed.** The plane-aware lookup that produces
+ * `row` cannot be exercised against a divergence the vendor has not produced
+ * yet — see `test/fixtures/catalogs.ts` — so the decision takes the row and the
+ * lookup moves to the caller.
+ *
+ * @param row - the model's row on ITS plane, or `undefined` when that plane's
+ * catalogue does not describe it.
+ * @param modelId - the id the request named.
+ * @param marker - the configured free-tier marker.
+ * @returns whether the free tier's tools are injected into this request.
+ */
+export const coreToolDecision = (
+  row: { readonly is_free?: boolean } | undefined,
+  modelId: string,
+  marker: string
+): boolean => {
+  // The catalog's free-tier flag is the authority: it catches free models whose
+  // ids carry no marker (big-pickle), where a substring test goes blind.
+  //
+  // **The flag is the PLANE's row.** A model can be free on one plane and paid
+  // on the other, and the free tier's tools are the free tier's business:
+  // injecting `read` + `bash` into a request the account pays for gives a model
+  // tools it will not be given.
+  if (row?.is_free === true) {
     return true;
   }
   if (marker === ALL_MODELS_MARKER) {
@@ -211,6 +238,24 @@ export const isCoreToolModel = (modelId: string, marker: string): boolean => {
     return false;
   }
   return modelId.includes(marker);
+};
+
+/**
+ * Whether `modelId` is in scope for the core-tool fallback.
+ *
+ * The row comes from the PLANE the request is going to, when that plane is
+ * known — and the plane-agnostic row is the fallback for a model the plane's
+ * own catalogue does not describe.
+ */
+export const isCoreToolModel = (
+  modelId: string,
+  marker: string,
+  plane?: CatalogPlane
+): boolean => {
+  const row =
+    (plane === undefined ? undefined : findModelSpecOn(plane, modelId)) ??
+    findModelSpec(modelId);
+  return coreToolDecision(row, modelId, marker);
 };
 
 /**
@@ -267,7 +312,11 @@ export const maybeInjectCoreTools = (
   if (typeof modelProp !== "string") {
     return body;
   }
-  if (!isCoreToolModel(modelProp, options.modelMarker)) {
+  // The plane is the PATH's, not the route's: a relay serves its Go plane
+  // under a path of the same shape, and the route id there is the user's own
+  // name.
+  const plane: CatalogPlane = isGoPlaneUrl(url) ? "go" : "zen";
+  if (!isCoreToolModel(modelProp, options.modelMarker, plane)) {
     return body;
   }
   const toolsProp: unknown = parsed.tools;

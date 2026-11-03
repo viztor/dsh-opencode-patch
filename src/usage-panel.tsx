@@ -372,9 +372,14 @@ export const UsagePanel = ({
                 {t("monthlyAllowance")}
               </span>
               {/* WHICH model — the allowance is per model, so the figure is
-                meaningless without it. */}
+                meaningless without it. It is the model the allowance BELONGS
+                TO, which is the model the picker is on, and the Host resolves
+                its name from the catalog; the session's own model is a
+                different model (the one that priced the turns so far), and
+                labelling one with the other's figure is how a free model came
+                to read "$100 a month". */}
               <span className="dsh-oc-usage-detail-desc">
-                {usage.session?.activeModelName ?? usage.allowance.model}
+                {usage.allowance.model}
               </span>
             </div>
             <span className="dsh-oc-usage-detail-value">

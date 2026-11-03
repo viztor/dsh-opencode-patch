@@ -14,7 +14,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { remoteNamespace, remoteNamespaceOf } from "../src/settings-remote.ts";
+import {
+  callUsageRead,
+  remoteNamespace,
+  remoteNamespaceOf,
+} from "../src/settings-remote.ts";
 
 describe("settings-remote · remoteNamespaceOf", () => {
   it("answers the namespace's calls when the remote serves them", () => {
@@ -94,5 +98,47 @@ describe("settings-remote · remoteNamespace", () => {
     ]) {
       expect(remoteNamespace(remote, "usage")).toBeUndefined();
     }
+  });
+});
+
+describe("settings-remote · callUsageRead", () => {
+  it("passes the query through and answers what the namespace answered", async () => {
+    const seen: unknown[] = [];
+    const read = async (query?: unknown) => {
+      seen.push(query);
+      return { ok: true, value: { rolling: 15 } };
+    };
+    const answer = await callUsageRead(read, { provider: "opencode-go" });
+    expect(answer).toEqual({ ok: true, value: { rolling: 15 } });
+    expect(seen).toEqual([{ provider: "opencode-go" }]);
+  });
+
+  it("retries unscoped when the client refuses the sibling's zero-argument read", async () => {
+    const seen: unknown[] = [];
+    const read = async (query?: unknown) => {
+      seen.push(query);
+      if (seen.length === 1) {
+        throw new Error(
+          "client api: opencodeGoUsage/read expected 0 argument(s), got 1"
+        );
+      }
+      return { ok: true };
+    };
+    await expect(
+      callUsageRead(read, { provider: "opencode-go" })
+    ).resolves.toEqual({ ok: true });
+    expect(seen).toEqual([{ provider: "opencode-go" }, undefined]);
+  });
+
+  it("rethrows anything that is not an arity refusal, without a second call", async () => {
+    const seen: unknown[] = [];
+    const read = async (query?: unknown) => {
+      seen.push(query);
+      throw new Error("usage call failed");
+    };
+    await expect(
+      callUsageRead(read, { provider: "opencode-go" })
+    ).rejects.toThrow("usage call failed");
+    expect(seen).toHaveLength(1);
   });
 });

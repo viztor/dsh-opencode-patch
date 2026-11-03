@@ -1314,8 +1314,10 @@ describe("settings-page: every remote gets a mount", () => {
     const services = mounted.flatMap((contribution) =>
       contribution.descriptors.map((d) => d.service)
     );
+    // Namespaces, not descriptors: `opencodeGoUsage` carries more than one
+    // endpoint (`read`, and the account-scoped `readAccount` the sibling
+    // `dsh-opencode-go` account page calls), and both are the same mount.
     // `opencodeStore` is the inspection row's; it was the one left out.
-    expect(services).toHaveLength(3);
     expect(new Set(services)).toEqual(
       new Set(["opencodeGoUsage", "opencodeModelPurge", "opencodeStore"])
     );

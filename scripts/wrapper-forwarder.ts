@@ -1,28 +1,37 @@
 /**
- * The entry the deprecated `@viztor/dsh-opencode` wrapper ships.
+ * The retired alias's forwarder, in one place.
  *
- * Both its `lib/index.mjs` and its `lib/index.d.mts` are exactly these bytes:
- * `export *` from the canonical package and nothing else. The barrel
- * (`src/index.ts`) has named exports only, so a `default` re-export is an ESM
- * link error the moment the host loads the wrapper — `SyntaxError: The
- * requested module 'dsh-opencode-patch' does not provide an export named
- * 'default'`. The text and the write both live here, so
- * `test/wrapper-forwarder.test.ts` links what `publish-scoped.ts` writes by
- * calling the same function, instead of linking a copy of it.
+ * **The wrapper re-exports the canonical package's NAMES, and nothing else.**
+ * It used to add `export { default } from "dsh-opencode-patch";` — and the
+ * canonical package has no `default` export, so every load of the wrapper was a
+ * link error:
+ *
+ * ```
+ * SyntaxError: The requested module 'dsh-opencode-patch'
+ *   does not provide an export named 'default'
+ * ```
+ *
+ * That is a hard failure before any of the plugin runs: the alias is a
+ * published package, and the thing it exists for — letting an existing install
+ * keep resolving — is exactly what it prevented.
+ *
+ * The re-export lives here rather than inline in the publish script because it
+ * is written to TWO files (the runtime entry and the type declaration), and
+ * the two must not drift: a `.d.mts` that re-exports a name the package does
+ * not have is a type error for every consumer, and one that differs from the
+ * runtime entry is a lie in the declarations.
  *
  * @module scripts/wrapper-forwarder
  */
-import { writeFileSync } from "node:fs";
-import path from "node:path";
 
-export const WRAPPER_FORWARDER = 'export * from "dsh-opencode-patch";\n';
+/** The package the wrapper forwards to. */
+export const FORWARDED_PACKAGE = "dsh-opencode-patch";
 
 /**
- * Write the wrapper's two entry files into a `lib/` directory.
+ * The forwarder's source, for the runtime entry and the type declaration.
  *
- * @param libDir - the wrapper package's `lib/` directory.
+ * `export *` and nothing else: a star re-export carries whatever names the
+ * target has, so it cannot name one it does not.
  */
-export const writeWrapperEntries = (libDir: string): void => {
-  writeFileSync(path.join(libDir, "index.mjs"), WRAPPER_FORWARDER);
-  writeFileSync(path.join(libDir, "index.d.mts"), WRAPPER_FORWARDER);
-};
+export const wrapperForwarder = (): string =>
+  `export * from "${FORWARDED_PACKAGE}";`;

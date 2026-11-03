@@ -324,11 +324,7 @@ export const createStreamHook = (
       return downstream;
     }
 
-    // `debug` is the switch and `debugFile` is only where the switch writes —
-    // the fetch patch is gated the same way (lifecycle.ts), and the manifest
-    // documents `debugFile` as the append target for stream debug, not a
-    // switch of its own.
-    if (debug) {
+    if (debug || debugFile !== undefined) {
       const entry = {
         header: SESSION_HEADER,
         model: options.model,
@@ -342,20 +338,27 @@ export const createStreamHook = (
       if (debugFile !== undefined) {
         void recordDebug(ctx, debugFile, entry);
       }
-      ctx.logger?.info?.(
-        '[dsh-opencode-patch] streaming provider "%s" with %s=%s',
-        providerKey,
-        SESSION_HEADER,
-        value
-      );
+      if (debug) {
+        ctx.logger?.info?.(
+          '[dsh-opencode-patch] streaming provider "%s" with %s=%s',
+          providerKey,
+          SESSION_HEADER,
+          value
+        );
+      }
     }
     const modelProp: unknown = options.model;
     const modelName = typeof modelProp === "string" ? modelProp : "unknown";
-    // The ROUTE's plane first, as the dispatch lookup above does: the two planes
-    // price some shared ids differently (deepseek-v4-pro is 0.66/1.98 on Go and
-    // 1.74/3.48 on Zen), and a Go-first lookup recorded every Zen turn on those
-    // at the Go rate. The Go-first lookup is the fallback for a model neither
-    // route's plane carries.
+    // **The plane's own price, not the other plane's.** The two planes price
+    // some shared ids differently — one costs twice as much on Zen as on Go —
+    // and the plane-agnostic lookup searches Go FIRST, so a Zen turn was priced
+    // at the Go rate: half of what it cost. The plane decides, because the
+    // route is what the user configured; it is the same lookup the dispatch
+    // above makes.
+    //
+    // The fallback is for a model the plane's own catalog does not describe,
+    // where any price is better than none — and the turn is still attributed to
+    // the plane it ran on.
     const spec =
       findModelSpecOn(catalogPlaneForRoute(providerKey), modelName) ??
       findModelSpec(modelName);
