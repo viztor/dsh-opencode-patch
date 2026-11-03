@@ -209,6 +209,7 @@ export {
 export {
   BASE_FOR_PROTOCOL,
   baseForProtocol,
+  LEGACY_PLANE_API,
   piModelFor,
   planeBaseFor,
   protocolFor,

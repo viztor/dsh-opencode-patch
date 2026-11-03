@@ -16,11 +16,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_USAGE_BASE_URL,
+  LEGACY_PLANE_API,
   OPENCODE_FAMILY_API,
   OPENCODE_PLANE_API,
-} from "../../src/catalog-data.ts";
-import { DEFAULT_USAGE_BASE_URL } from "../../src/config.ts";
-import { LEGACY_PLANE_API } from "../../src/pi-provider.ts";
+} from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { catalogFor, firstSpecFor, MOCK_SESSION, ZEN_KEY } from "./helpers.ts";
 import type { GatewayRequest } from "./opencode-gateway.ts";
