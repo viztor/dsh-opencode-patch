@@ -20,9 +20,15 @@
  * not it carries a fallback: the card and every file it renders that names a
  * token are scanned. Which token the mounted card renders for a warning is
  * asserted in settings-card-purge and settings-store-inspect. The meter
- * (`usage-ui.ts`, `usage-panel.tsx`, `usage-pill.tsx`) is left out: the card
- * does not render it, and it builds `--dsw-alias-state-…` names from a
- * template, which a plain scan would misread.
+ * (`usage-ui.ts`, `usage-panel.tsx`, `usage-pill.tsx`) is left out because the
+ * card does not render it. `usage-pill.tsx` would pass the scan; the other two
+ * would not, for measured reasons rather than broken tokens: each spells the
+ * `--dsw-alias-state-*` wildcard in a prose comment, which the scan reads as
+ * the name `--dsw-alias-state-`, and `usage-ui.ts` names `--dsw-radius-full`,
+ * which the primitives never use and which sits behind a literal `999px`
+ * fallback — the case the first test allows. Scanning the meter would mean
+ * re-spelling those two comments and letting a literal fallback through, not
+ * handling a template: no meter file builds a token name from one.
  *
  * @module test/host-tokens.test
  */
