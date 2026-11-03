@@ -17,10 +17,13 @@
  * The prices DO disagree for two models, which is why the pricing decision was
  * testable against the real catalog and the others were not.
  *
- * @module test/fixtures/catalogs
+ * It reaches `src` through the one door, `./src.ts`, like every other support
+ * module, so a module move edits one file.
+ *
+ * @module test/support/catalogs
  */
 
-import type { CatalogModelSpec } from "../../src/catalog-data.ts";
+import { type CatalogModelSpec, refreshCatalog } from "./src.ts";
 
 /** What a test says about one catalogue row, in the terms the decisions use. */
 export interface SpecInput {
@@ -167,4 +170,35 @@ export const payload = (world: {
     ),
   });
   return { "opencode-go": provider(world.go), opencode: provider(world.zen) };
+};
+
+/** Free on Zen, paid on Go. Neither probe id contains "free", so only the row decides. */
+export const ZEN_FREE_PROBE = "plane-probe";
+
+/** Free on Go, paid on Zen. */
+export const GO_FREE_PROBE = "go-probe";
+
+/**
+ * Refresh the live catalogue with the two plane-divergent probes.
+ *
+ * A request-path test needs the world installed where the shipped lookup reads
+ * it, so this goes through `refreshCatalog` (the stubbed fetch never touches the
+ * network). `refreshCatalog` merges into the live maps, and
+ * `test/support/reset-process-state.ts` restores the shim after every test, so
+ * a case seeds its own world.
+ *
+ * @returns once the live maps carry both probes.
+ */
+export const seedDivergentCatalog = async (): Promise<void> => {
+  const body = payload({
+    go: [
+      { free: true, id: GO_FREE_PROBE, name: "Go Probe" },
+      { id: ZEN_FREE_PROBE, name: "Plane Probe" },
+    ],
+    zen: [
+      { id: GO_FREE_PROBE, name: "Go Probe" },
+      { free: true, id: ZEN_FREE_PROBE, name: "Plane Probe" },
+    ],
+  });
+  await refreshCatalog(async () => Response.json(body), true);
 };

@@ -14,7 +14,7 @@ import {
   GO_FREE_PROBE,
   seedDivergentCatalog,
   ZEN_FREE_PROBE,
-} from "./support/catalog-fixture.ts";
+} from "./support/catalogs.ts";
 import { createOpencodeStore } from "./support/opencode-store-fixture.ts";
 import {
   DUMMY_BASH_TOOL,

@@ -7,16 +7,19 @@
  * real catalogue disagrees about the PRICES today (two models), and agrees
  * about everything else, so a test built on the real catalogue cannot tell a
  * plane-aware lookup from a plane-blind one: both pass. That is the gap this
- * file closes, using `test/fixtures/catalogs.ts` to build the row.
+ * file closes, using `test/support/catalogs.ts` to build the row.
  *
  * @module test/plane-divergence.test
  */
 
 import { describe, expect, it } from "vitest";
 
-import { calculateTurnCost, recordTurnUsage } from "../src/session-cost.ts";
-import { coreToolDecision } from "../src/tool-fallback.ts";
-import { divergent, spec } from "./fixtures/catalogs.ts";
+import { divergent, spec } from "./support/catalogs.ts";
+import {
+  calculateTurnCost,
+  coreToolDecision,
+  recordTurnUsage,
+} from "./support/src.ts";
 
 describe("the free flag is the plane's row", () => {
   it("injects the free tier's tools on the plane that says free, and not on the other", () => {

@@ -21,7 +21,7 @@ import {
   GO_FREE_PROBE,
   seedDivergentCatalog,
   ZEN_FREE_PROBE,
-} from "./support/catalog-fixture.ts";
+} from "./support/catalogs.ts";
 import {
   ALL_MODELS_MARKER,
   DEFAULT_FREE_MODEL_MARKER,

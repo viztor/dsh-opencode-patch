@@ -158,7 +158,7 @@ const toolNames = (
  *
  * **Pure, so the row can be constructed.** The plane-aware lookup that produces
  * `row` cannot be exercised against a divergence the vendor has not produced
- * yet — see `test/fixtures/catalogs.ts` — so the decision takes the row and the
+ * yet — see `test/support/catalogs.ts` — so the decision takes the row and the
  * lookup moves to the caller.
  *
  * @param row - the model's row on ITS plane, or `undefined` when that plane's

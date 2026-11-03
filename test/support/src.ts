@@ -343,6 +343,7 @@ export { createStreamHook, projectNameFrom } from "../../src/stream-hook.ts";
 
 // tool-fallback.ts
 export {
+  coreToolDecision,
   DUMMY_BASH_TOOL,
   DUMMY_BASH_TOOL_FUNCTION,
   DUMMY_READ_TOOL,
