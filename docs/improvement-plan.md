@@ -22,7 +22,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | :-- | :-- | :-- | :-- | :-- |
 | P0 | #105 | suite hardening, 10 defect fixes, this plan | in review | **merged `main` 1.8.0**; catalog refreshes and the pricing fix dropped (on `main`) |
 | P1a | #106 | `fix:` the purge row's refusal and the endpoint copy | in review | **merged P0**; shrunk to the purge row's `RemoteError.message`, the `auto` = `modern` copy and the `opencode-google` regression tests; the warning colour drops its token fallback; the catalog's refusal tests gain three cases `main` lacks; the rest is on `main`, and the debug gate follows D24 |
-| P1b | #107 | `chore:` hygiene | in review | pending: merges P1a; drops its tool-fallback variant (D25) |
+| P1b | #107 | `chore:` hygiene | in review | **merged P1a**; takes `main`'s tool-fallback plane rule (D25) and keeps only the dead Anthropic branch's deletion; its catalogue fixture and `main`'s `test/fixtures/catalogs.ts` become one module behind the one door |
 | P2 | #108 | `feat:` a smaller public API | in review | pending: merges P1b; re-retires the wrapper (D9) |
 | P-T1a | #109 | `build:` pin the host | in review | pending: merges P2; redone on the alpha cluster and pi 1.3.0 (D14', D22') |
 | P-T1b | #110 | `test:` a harness that is the real host | in review | pending: merges P-T1a; re-measured on both cells |
@@ -351,6 +351,7 @@ What stays private is pinned by contract tests against the real host packages:
    - `retry.ts` takes its timer and logger as parameters. The architecture test bans `console` and timers in `utils/`, and walks the folder recursively.
    - Remove the dead branches in `tool-fallback`.
    - Add the `test/support/src.ts` indirection.
+   - On the restack: the tool fallback keeps `main`'s plane rule (D25), so only the unreachable Anthropic schemas go; the catalogue fixture this phase wrote and `main`'s `test/fixtures/catalogs.ts` become one module under `test/support/`, which reaches `src` through the door.
 3. **P2 `feat:` a smaller public API.** It ships as a 1.x minor.
    - `index.ts` exports `apply`, `Config`, `inject`, `name` and the config types.
    - `./src/*` goes from `exports`, and `check.ts` asserts that every exports target is inside `files`.
