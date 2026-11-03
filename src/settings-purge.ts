@@ -61,8 +61,11 @@ export const purgeDeprecatedModels = async (
         message = said;
       } else if (typeof error === "string") {
         message = error;
-      } else if (isRecord(error) && typeof error.message === "string") {
-        message = error.message;
+      } else if (isRecord(error)) {
+        const { message: reason } = error;
+        if (typeof reason === "string") {
+          message = reason;
+        }
       }
       return { kind: "failed", message };
     }

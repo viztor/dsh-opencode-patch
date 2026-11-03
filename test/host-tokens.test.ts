@@ -132,9 +132,9 @@ describe("the host's design tokens", () => {
 
     for (const file of CARD_FILES) {
       const named = new Set(
-        [...readFileSync(join(process.cwd(), file), "utf8").matchAll(TOKEN)].map(
-          (match) => match[0]
-        )
+        [
+          ...readFileSync(join(process.cwd(), file), "utf8").matchAll(TOKEN),
+        ].map((match) => match[0])
       );
       // A file that names no token at all is a scan that read nothing.
       expect(named.size, file).toBeGreaterThan(0);
