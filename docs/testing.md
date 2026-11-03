@@ -21,6 +21,12 @@ The bulk of the suite. Each file names one subject, and the cases are the branch
 
 The rule for what belongs here, from `AGENTS.md`: **a predicate that lives in a closure cannot be exercised alone**. Every decision the plugin makes is either exported or takes its value as a parameter, and `test/architecture.test.ts` polices the purity of `src/utils/` so the ones that should be pure stay pure.
 
+Three properties the unit and mock suites keep by construction rather than by care:
+
+- **Offline.** `test/support/offline.ts` refuses every non-loopback request, so a networked runner cannot make a result depend on the vendor's live catalog. A case that means to fetch stubs `fetch` itself.
+- **Order-independent.** `test/support/reset-process-state.ts` clears the plugin's module-level stores (captured keys, session spend, the live catalog) after every test, and CI runs the suite shuffled (`pnpm run test:shuffle`; reproduce a failure with `--sequence.seed=<n>`). A new module-level store gets a reset beside its siblings.
+- **Engine-checked.** The suite refuses to start below `engines.node` and names both versions (`test/support/node-engine.ts`), because below the floor `node:sqlite` and the ICU strings the tests pin differ, and the failures read like regressions.
+
 ### Mock: the wiring, without a vendor
 
 `test/mock/` boots the plugin against a gateway that answers like the real one, including its refusals (`403 FreeTierError`, `400 ModelProtocolUnsupported`, `401 AuthError`). This is the layer that catches a wrong header, a wrong path or a wrong protocol — the questions no unit test can ask because they are about the seam.
@@ -31,20 +37,22 @@ The rule for what belongs here, from `AGENTS.md`: **a predicate that lives in a 
 
 **Three rules, learned from failures:**
 
-1. **A live case skips on a vendor-side move, it does not fail.** A retired model (`410 ModelDeprecated`), a closed tier (`FreeTierError`), a missing entitlement and a busy gateway (`429`) are all "not observable today". The reason is printed so the run says which.
-2. **A case that walks candidates walks past the retired ones.** A `410` is an answer, so a picker that accepts "anything but a refusal" picks a dead model and then fails on it.
+1. **A live case skips on a vendor-side move, it does not fail.** A retired model (`410 ModelDeprecated`, or an upstream's `400 … Model is unavailable`), a closed tier (`FreeTierError`), a missing entitlement and a busy gateway (`429`) are all "not observable today". The reason is printed so the run says which.
+2. **A case that walks candidates walks past the retired ones.** A `410` is an answer, so a picker that accepts "anything but a refusal" picks a dead model and then fails on it. For a `400` it is the body, not the status, that makes it a retirement: a bare `400` is also a malformed request, which is the plugin's fault and must still fail (`test/e2e/verdict.ts`, `retiredAtTheGateway`).
 3. **An assertion about the vendor is a claim about a moving thing.** Prefer asserting the PLUGIN's behaviour (which endpoint it chose, which headers it sent) over the vendor's answer.
 
 ## The fixtures
 
-`test/test-helpers.ts` — streams, a capture fetch, a mock cordis context, the OpenCode store fixture, element walkers for the React trees.
+`test/test-helpers.ts` — streams, a capture fetch, a mock cordis context, element walkers for the React trees. The jsdom (client) tests import it, so nothing in it may need a host-only module.
+
+`test/support/opencode-store-fixture.ts` — the OpenCode store fixture. It needs `node:sqlite` and the filesystem, which is why it lives with the other host-only support files rather than in the shared helpers.
 
 `test/fixtures/catalogs.ts` — **synthetic catalogue rows**. Every other fixture quotes something that exists; this one builds the row a test needs, including rows the vendor has not produced. It exists because the plane-aware decisions are only observable when the two planes DISAGREE, and the real catalogue agrees about the free flag for every model it shares.
 
 Two entry points:
 
 - `spec(...)` / `divergent(id, { go, zen })` build a row (or a pair of rows) directly, for a decision that takes the row as its parameter — `coreToolDecision`, `calculateTurnCost`.
-- `payload({ go, zen })` builds a whole `models.dev` payload, for the paths that read the LIVE catalogue through `refreshCatalog` (`test/plane-lookup.test.ts`). That world is per FILE: `refreshCatalog` merges by id and cannot remove, so a file that installs one holds nothing else.
+- `payload({ go, zen })` builds a whole `models.dev` payload, for the paths that read the LIVE catalogue through `refreshCatalog` (`test/plane-lookup.test.ts`). That world is per TEST: `refreshCatalog` merges by id and cannot remove, but the setup file resets the live catalog after every test, so a file installs its world in `beforeEach` and gives its rows ids no other test names.
 
 **A model with no price in a fixture is PAID at a nominal rate, not free.** The parser derives `is_free` from a zero cost, so a "no price" default would silently turn every fixture model into a free tier.
 
@@ -55,7 +63,7 @@ A gate is a script, and a script that runs at import time cannot be tested — s
 | script | the decision, extracted | what the test holds |
 | :-- | :-- | :-- |
 | `generate-go-limits.ts` | `scripts/go-limits-html.ts` | which table is an allowance (by header, not position), the refusal when the page carries none, and the round trip through the real parser |
-| `check-vendor-version.ts` | `scripts/vendor-version.ts` | the constant is found, and "read nothing" is distinguishable from "passed" |
+| `check-vendor-version.ts` | `scripts/vendor-version.ts` | the constant is found, "read nothing" is distinguishable from "passed", and the scan reads every file a copy can live in but never the generated tables |
 | `publish-scoped.ts` | `scripts/wrapper-forwarder.ts` | the retired alias's entry LINKS against the built barrel in a real Node process |
 
 The pattern is the same one the `utils/` gate enforces inside `src/`, applied to the one place it had not reached: **a decision that lives in a top-level-await script is exercised only by the vendor's schedule**. Two of the three above had already passed while wrong — the version gate twice, the Go-limits reader when the docs moved to HTML.

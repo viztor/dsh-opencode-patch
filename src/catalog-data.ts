@@ -1855,6 +1855,21 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     ],
   },
   {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "pulse-alpha-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 131_072,
+    name: "Pulse Alpha Free",
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+  },
+  {
     context_window: 262_144,
     cost: {
       cache_read: 0.02,

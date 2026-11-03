@@ -1317,8 +1317,9 @@ describe("settings-page: every remote gets a mount", () => {
     // Namespaces, not descriptors: `opencodeGoUsage` carries more than one
     // endpoint (`read`, and the account-scoped `readAccount` the sibling
     // `dsh-opencode-go` account page calls), and both are the same mount.
+    // `opencodeStore` is the inspection row's; it was the one left out.
     expect(new Set(services)).toEqual(
-      new Set(["opencodeGoUsage", "opencodeModelPurge"])
+      new Set(["opencodeGoUsage", "opencodeModelPurge", "opencodeStore"])
     );
     expect(mounted).toHaveLength(1);
     expect(mounted[0]?.package).toBe("dsh-opencode-patch");

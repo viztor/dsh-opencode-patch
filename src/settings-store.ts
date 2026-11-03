@@ -8,6 +8,7 @@
  */
 
 import {
+  parseStoreInspection,
   STORE_NAMESPACE,
   type OpencodeStoreInspection,
 } from "./opencode-store-contract.ts";
@@ -42,18 +43,28 @@ export const inspectStore = async (
   }
   try {
     const answer: unknown = await call();
+    if (isRecord(answer) && answer.ok === false) {
+      // The remote's own failure, said in its own words rather than as a shape
+      // error about the envelope it arrived in.
+      const { error } = answer;
+      return {
+        kind: "failed",
+        message:
+          isRecord(error) && typeof error.message === "string"
+            ? error.message
+            : "the host could not inspect the installation",
+      };
+    }
     const value = isRecord(answer) && "value" in answer ? answer.value : answer;
-    if (!isRecord(value) || typeof value.found !== "boolean") {
+    const inspection: OpencodeStoreInspection | undefined =
+      parseStoreInspection(value);
+    if (inspection === undefined) {
       return {
         kind: "failed",
         message: "host returned an invalid inspection shape",
       };
     }
-    return {
-      kind: "inspected",
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      inspection: value as unknown as OpencodeStoreInspection,
-    };
+    return { inspection, kind: "inspected" };
   } catch (error: unknown) {
     return {
       kind: "failed",

@@ -136,10 +136,16 @@ export const readOpencodeCredentials = (
     // sets it, and otherwise the legacy rows are read newest-first rather than
     // being dropped - which is the difference between this reader working and
     // answering nothing on a machine that does have credentials.
-    `SELECT integration_id AS integrationId, label, value FROM credential
-     WHERE active = 1
-        OR (active IS NULL AND NOT EXISTS (SELECT 1 FROM credential WHERE active = 1))
-     ORDER BY time_updated DESC`
+    //
+    // The fallback is PER INTEGRATION. Uncorrelated, one flagged `opencode-go`
+    // row hid every legacy `opencode` row, so the Zen key vanished from the
+    // reader while the inspector, which reads `opencode` alone, still said "ok".
+    `SELECT c.integration_id AS integrationId, c.label, c.value FROM credential c
+     WHERE c.active = 1
+        OR (c.active IS NULL AND NOT EXISTS (
+              SELECT 1 FROM credential f
+              WHERE f.active = 1 AND f.integration_id = c.integration_id))
+     ORDER BY c.time_updated DESC`
   );
   if (found === undefined) {
     return undefined;

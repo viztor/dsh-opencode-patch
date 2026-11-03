@@ -687,7 +687,9 @@ const durationText = (
   }
   const zh = locale?.startsWith("zh") === true;
   const units = zh
-    ? { d: "天", h: "小时", m: "分" }
+    ? // `分钟`, not `分`: the platform's narrow zh output, so a row reads the
+      // same on an engine without the constructor as on one with it.
+      { d: "天", h: "小时", m: "分钟" }
     : { d: "d", h: "h", m: "m" };
   const out: string[] = [];
   if (parts.days !== undefined && parts.days > 0) {

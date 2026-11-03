@@ -419,23 +419,47 @@ describe("OpenCode Go Usage", () => {
   });
 
   describe("tierForRequest", () => {
-    it("trusts the key prefix above every configured signal", () => {
-      // The prefix is intrinsic to the credential, so it survives both a
-      // rotated key and a route the user renamed.
-      expect(
-        tierForRequest(
-          "https://opencode.ai/zen/v1/messages",
-          "opencode",
-          "sk-x"
-        )
-      ).toBe("go");
+    it("never reads the key's prefix", () => {
+      // Measured: OpenCode issues `oc_sk_…` for Go credentials, so the prefix
+      // names no tier. The observed URL decides, and the route after it.
       expect(
         tierForRequest(
           "https://opencode.ai/zen/go/v1/chat/completions",
-          "opencode-go",
-          "oc_sk_x"
+          "opencode-go"
         )
-      ).toBe("zen");
+      ).toBe("go");
+      // The signature no longer takes the key, so it cannot be consulted.
+      expect(tierForRequest.length).toBe(2);
+    });
+
+    it("files an oc_sk_ key seen on the Go plane under Go", () => {
+      // The reproduction: read prefix-first, this key was filed under Zen. The
+      // meter's Go lookup then missed it, and a Zen request carrying a
+      // placeholder was handed the Go key.
+      recordCapturedApiKey(
+        "oc_sk_GOKEY_fixture",
+        "opencode-go",
+        "https://opencode.ai/zen/go/v1/chat/completions"
+      );
+      expect(getCapturedApiKey("opencode-go", "go")).toBe(
+        "oc_sk_GOKEY_fixture"
+      );
+      expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
+    });
+
+    it("does not claim a foreign sk- key for the Go account", () => {
+      // An OpenAI key on a relay a deployment routes through the patch. Read by
+      // prefix it was filed as Go and offered to every Go request.
+      recordCapturedApiKey(
+        "sk-openai-fixture",
+        "my-relay",
+        "https://relay.example/v1/chat/completions"
+      );
+      expect(
+        tierForRequest("https://relay.example/v1/chat/completions", "my-relay")
+      ).toBe("unknown");
+      // Unknown stays answerable by route, as before, but is not filed by tier.
+      expect(getCapturedApiKey("my-relay")).toBe("sk-openai-fixture");
     });
 
     it("trusts the URL above the provider route id", () => {
@@ -531,7 +555,7 @@ describe("OpenCode Go Usage", () => {
         "unknown"
       );
       expect(tierForRequest()).toBe("unknown");
-      expect(tierForRequest("", "", "")).toBe("unknown");
+      expect(tierForRequest("", "")).toBe("unknown");
     });
   });
 

@@ -17,6 +17,36 @@
  * @module scripts/vendor-version
  */
 
+/**
+ * The extensions a copy can live in. Listed because the scan is recursive and
+ * would otherwise read every file under its roots.
+ */
+export const SCANNED_EXTENSIONS = /\.(?:ts|tsx|md|json|ya?ml)$/;
+
+/**
+ * Never scanned: the generated tables hold the vendor's data, not copies the
+ * repository maintains, so a version-shaped string arriving in a refresh is not
+ * a stale copy - and scanning them would let a vendor move fail the gate that
+ * only the repository is supposed to be able to break. The same list as
+ * `GENERATED_OUTPUTS` in `scripts/freshness-scope.ts`, kept here rather than
+ * imported (an import would make that module an input of this check);
+ * `test/freshness-scope.test.ts` ties the two.
+ */
+export const GENERATED_TABLES: ReadonlySet<string> = new Set([
+  "src/catalog-data.ts",
+  "src/go-limits-data.ts",
+]);
+
+/**
+ * Whether the copy scan reads a file.
+ *
+ * @param path - the file's path relative to the repository root, as the scan
+ * walks it (`src/identity.ts`, `README.md`).
+ * @returns whether the file can hold a copy the repository maintains.
+ */
+export const scansFile = (path: string): boolean =>
+  SCANNED_EXTENSIONS.test(path) && !GENERATED_TABLES.has(path);
+
 /** The constant every other copy must agree with, read from `src/identity.ts`. */
 export const PINNED_VERSION = /OPENCODE_CLI_VERSION\s*=\s*"(\d+\.\d+\.\d+)"/;
 

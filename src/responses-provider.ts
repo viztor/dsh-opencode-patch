@@ -1068,7 +1068,7 @@ export const registerResponsesProvider = async (
       "[dsh-opencode-patch] internal routes are off (internalRoutes: false); a declared provider must serve each protocol"
     );
     reportGaps();
-    return undefined;
+    return bridgeDispose;
   }
   const wanted = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
     ([plane, entry]) =>
@@ -1102,7 +1102,7 @@ export const registerResponsesProvider = async (
       "[dsh-opencode-patch] every internal route is already declared; leaving them alone"
     );
     reportGaps();
-    return undefined;
+    return bridgeDispose;
   }
   const host = loadPiAi(ctx);
   if (host === undefined) {
@@ -1110,7 +1110,7 @@ export const registerResponsesProvider = async (
       "[dsh-opencode-patch] no loaded llm-pi-ai in this composition; internal routes stay unregistered"
     );
     reportGaps();
-    return undefined;
+    return bridgeDispose;
   }
   const providers: Record<string, unknown> = {};
   const mounted: string[] = [];
@@ -1166,8 +1166,27 @@ export const registerResponsesProvider = async (
     );
     return bridgeDispose;
   }
+  // Set once the fiber exists, so every exit below can withdraw what the mount
+  // did register: a route captured before a startup error is live on the host,
+  // and a fiber nobody disposes keeps it there across every reload.
+  let fiber: ReturnType<typeof scope.plugin> | undefined;
+  const releaseMount = (): void => {
+    for (const handle of captured) {
+      releaseRegistration(handle);
+    }
+    captured.length = 0;
+    const owned = fiber;
+    fiber = undefined;
+    void (async () => {
+      try {
+        await owned?.dispose?.();
+      } catch {
+        // A disposal failure must not mask the plugin's own teardown.
+      }
+    })();
+  };
   try {
-    const fiber = scope.plugin(host, { providers });
+    fiber = scope.plugin(host, { providers });
     // Cordis's `Fiber` is not thenable; `await()` is what waits for the
     // lifecycle work and rethrows a startup error. A stand-in may hand over a
     // promise instead, so both shapes are settled here.
@@ -1179,6 +1198,7 @@ export const registerResponsesProvider = async (
       ctx.logger?.info?.(
         "[dsh-opencode-patch] the mount registered no route; internal routes stay unregistered"
       );
+      releaseMount();
       return bridgeDispose;
     }
     // The line that answers "what actually mounted", which the boot line's
@@ -1191,19 +1211,10 @@ export const registerResponsesProvider = async (
 
     return () => {
       bridgeDispose?.();
-      for (const handle of captured) {
-        releaseRegistration(handle);
-      }
-      captured.length = 0;
-      void (async () => {
-        try {
-          await fiber?.dispose?.();
-        } catch {
-          // A disposal failure must not mask the plugin's own teardown.
-        }
-      })();
+      releaseMount();
     };
   } catch (error) {
+    releaseMount();
     ctx.logger?.info?.(
       "[dsh-opencode-patch] internal routes stay unregistered (%s); routes declared in the profile are unaffected",
       error instanceof Error ? error.message : String(error)

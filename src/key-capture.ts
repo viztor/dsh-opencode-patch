@@ -54,33 +54,26 @@ export const isPlaceholderApiKey = (key: string): boolean =>
 /**
  * Which account tier a request belongs to.
  *
- * Ordered by how much each signal can be trusted, which is the whole point:
+ * Ordered by how much each signal can be trusted:
  *
- * 1. The **key prefix** is intrinsic to the credential, so it survives a rotated
- *    key and a renamed provider route alike.
- * 2. The **URL** is what the adapter actually called — observed, not configured.
- * 3. The **provider route id** is only a hint. It is user-defined config and may
+ * 1. The **URL** is what the adapter actually called — observed, not configured.
+ * 2. The **provider route id** is only a hint. It is user-defined config and may
  *    be named anything (`zen`, `oc`, `my-opencode`), so it must never be the sole
  *    reason a lookup succeeds — that would make a captured, working key
  *    invisible the moment the user renamed a route.
  *
+ * **The key's prefix is not a signal**, and it used to be the first one. It was
+ * measured wrong: OpenCode issues `oc_sk_…` for Go credentials too, and such a
+ * key answers the Go quota endpoint with real windows (`docs/engineering-notes.md`,
+ * "A credential prefix is not an entitlement"). Read first, it filed a working
+ * Go key under Zen — invisible to the meter, and injected into Zen requests.
+ * And `sk-…` is not OpenCode's to claim: an OpenAI key on a relay the
+ * deployment routes through here was filed as a Go key.
+ *
  * @param url - the request URL, when the caller has one.
  * @param provider - the routed provider id, when known.
- * @param key - the credential itself, when known; its prefix is the best signal.
  */
-export const tierForRequest = (
-  url?: string,
-  provider?: string,
-  key?: string
-): KeyTier => {
-  if (typeof key === "string" && key.length > 0) {
-    if (key.startsWith("sk-")) {
-      return "go";
-    }
-    if (key.startsWith("oc_sk_")) {
-      return "zen";
-    }
-  }
+export const tierForRequest = (url?: string, provider?: string): KeyTier => {
   if (typeof url === "string" && url.length > 0) {
     // Both endpoint families, because the gateway answers on both and a request
     // on either belongs to one of the two accounts. Matching only the legacy
@@ -222,7 +215,7 @@ export const recordCapturedApiKey = (
   // Deliberately NOT `resolveRoutedKey`'s precedence: a key seen on a live
   // request is classified by the request that carried it, not by the route the
   // user named. See `tierForRequest`.
-  const tier = tierForRequest(url, provider, key);
+  const tier = tierForRequest(url, provider);
 
   if (typeof provider === "string" && provider.length > 0) {
     capturedKeysByProvider.set(provider, { key, tier });

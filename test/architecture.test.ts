@@ -254,3 +254,106 @@ describe("architecture · utils/ holds only pure functions", () => {
     expect(violations).toEqual([]);
   });
 });
+
+describe("architecture · the client bundle reaches nothing host-only", () => {
+  const SRC = join(import.meta.dirname, "..", "src");
+  /** The client bundle's entry, as `vite.config.ts` names it. */
+  const ENTRY = "settings-page.tsx";
+
+  /**
+   * Runtime imports of one file. A type-only import is erased by the compiler,
+   * so it is no edge in the bundle and is skipped; a mixed one is a real edge.
+   */
+  const runtimeImportsOf = (source: string): string[] => {
+    const specifiers: string[] = [];
+    for (const match of source.matchAll(
+      /\b(?:import|export)\s+(type\s+)?(?:[^;"']*?\sfrom\s+)?"([^"]+)"/gu
+    )) {
+      if (match[1] === undefined && match[2] !== undefined) {
+        specifiers.push(match[2]);
+      }
+    }
+    return specifiers;
+  };
+
+  /** Every `src/` file the entry reaches at runtime, entry included. */
+  const clientGraph = (): Map<string, string> => {
+    const seen = new Map<string, string>();
+    const visit = (file: string): void => {
+      if (seen.has(file)) {
+        return;
+      }
+      const source = stripComments(readFileSync(join(SRC, file), "utf8"));
+      seen.set(file, source);
+      for (const specifier of runtimeImportsOf(source)) {
+        if (specifier.startsWith("./") || specifier.startsWith("../")) {
+          visit(join(file, "..", specifier).replaceAll("\\", "/"));
+        }
+      }
+    };
+    visit(ENTRY);
+    return seen;
+  };
+
+  /** What a client module may not import, each with the reason it is host-only. */
+  const HOST_ONLY: readonly {
+    readonly matches: (specifier: string) => boolean;
+    readonly because: string;
+  }[] = [
+    {
+      because: "a node built-in does not exist in the browser",
+      matches: (s) => s.startsWith("node:"),
+    },
+    {
+      because:
+        "the cordis runtime is the host's, and the client gets its own context",
+      matches: (s) => s === "@deepseek-ai/cordis",
+    },
+    {
+      because:
+        "pi is loaded from the host's installation, never shipped to a page",
+      matches: (s) => s.startsWith("@earendil-works/pi-ai"),
+    },
+  ];
+
+  it("walks a graph that actually contains the client modules", () => {
+    // A walker that resolved nothing would pass every rule below vacuously.
+    const graph = clientGraph();
+    expect(graph.has(ENTRY)).toBe(true);
+    expect(graph.has("usage-pill.tsx")).toBe(true);
+    expect(graph.has("config-values.ts")).toBe(true);
+    // And it must not wander into the host half through a type-only import.
+    expect(graph.has("lifecycle.ts")).toBe(false);
+  });
+
+  it("imports no node built-in, no cordis runtime and no pi", () => {
+    const violations: string[] = [];
+    for (const [file, source] of clientGraph()) {
+      for (const specifier of runtimeImportsOf(source)) {
+        for (const rule of HOST_ONLY) {
+          if (rule.matches(specifier)) {
+            violations.push(`${file} imports "${specifier}" — ${rule.because}`);
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("never reads process.env, which the browser does not have", () => {
+    // The bundle test runs the built file in a VM, so a read inside a function
+    // that never runs there passes it. Reading the source closes that gap.
+    const violations = [...clientGraph()]
+      .filter(([, source]) => /\bprocess\.env\b/u.test(source))
+      .map(([file]) => file);
+    expect(violations).toEqual([]);
+  });
+
+  it("flags a planted violation, so a pass means something", () => {
+    // The rule is run over a source string with a known answer.
+    const planted =
+      'import { readFileSync } from "node:fs";\nimport type { X } from "node:os";';
+    expect(runtimeImportsOf(planted)).toEqual(["node:fs"]);
+    expect(HOST_ONLY.some((rule) => rule.matches("node:fs"))).toBe(true);
+  });
+});

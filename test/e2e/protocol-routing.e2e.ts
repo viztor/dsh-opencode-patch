@@ -68,6 +68,7 @@ import {
   accessDisabled,
   freeTierClosed,
   gatewayBusy,
+  retiredAtTheGateway,
   usableAsSubject,
 } from "./verdict.ts";
 
@@ -312,14 +313,19 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
     candidates: readonly string[],
     protocol: string,
     key?: string,
-    base: string = ZEN_BASE
+    base: string = ZEN_BASE,
+    // A case that asserts one particular answer narrows the pick to candidates
+    // that give it, so an otherwise observable answer of another kind (an
+    // unmetered 200 where the case asserts the free-tier gate) moves the walk on
+    // instead of being asserted on.
+    accept: (answer: Probe) => boolean = () => true
   ): Promise<string | undefined> => {
     for (const model of candidates) {
       const answer = await probe(protocol, model, key, base);
       // The rule is in `verdict.ts`, where it is unit-tested: a refusal and a
       // retirement are both vendor-side facts, and a case built on either fails
-      // for a reason that is not its own.
-      if (usableAsSubject(answer)) {
+      // for a reason that is not its own. The case's own narrowing comes after.
+      if (usableAsSubject(answer) && accept(answer)) {
         return model;
       }
     }
@@ -332,11 +338,19 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       // The vendor catalog no longer lists a free model on /responses, so the
       // free-tier routing case now asserts the COMPLETIONS side of the split.
       // The subject is picked live from the free slice, in catalog order, so
-      // whichever free model is alive today is the one tested.
+      // whichever GATED free model is alive today is the one tested: the case
+      // asserts the free-tier gate, so an unmetered model (which answers 200
+      // everywhere) cannot be its subject.
       const candidates = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free).map(
         (m) => m.id
       );
-      const model = await pickModel(candidates, "openai-completions");
+      const model = await pickModel(
+        candidates,
+        "openai-completions",
+        undefined,
+        ZEN_BASE,
+        freeTierClosed
+      );
       if (model === undefined) {
         context.skip();
         return;
@@ -812,13 +826,20 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
           servedProtocolFor(model) ?? "openai-completions",
           model
         );
-        if (freeTierClosed(response)) {
-          continue;
-        }
         if (gatewayBusy(response)) {
           // The gateway answered, but about its own load. That is neither a
           // completion nor a dead tier, and it must not be reported as one.
+          // Asked before the refusals below, which count a 429 among them.
           busy = true;
+          continue;
+        }
+        // A gated, withdrawn or refused candidate says nothing about whether
+        // the free tier is reachable, so the walk moves on to the next one.
+        if (
+          freeTierClosed(response) ||
+          retiredAtTheGateway(response) ||
+          accessDisabled(response)
+        ) {
           continue;
         }
         answered = { model, status: response.status };
@@ -826,14 +847,15 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
       }
       if (answered === undefined) {
         if (busy) {
-          // Every candidate was busy, which says nothing about the tier.
+          // No candidate answered and at least one was busy, which says
+          // nothing about the tier.
           context.skip();
           return;
         }
         // Reported rather than skipped: the account (or the vendor) closed the
         // whole free tier, and that is worth a line in the run's output.
         console.log(
-          `[e2e] every free candidate answered FreeTierError — the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md. The header-restoration case did not run.`
+          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, refused for the account (no funds, no entitlement), or never answered. The header-restoration case did not run.`
         );
         return;
       }

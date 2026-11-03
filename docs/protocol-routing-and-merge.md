@@ -4,15 +4,15 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Measured 2026-10-17:
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17; counts as of 2026-10-31 (the shipped shim, regenerated in #132):
 
 | API shape | Wire endpoint | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
-| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default**: 23 of 80 | the model names **no** SDK |
-| OpenAI **Responses** | `POST /zen/v1/responses` | 31 of 80 | `@ai-sdk/openai` |
-| Anthropic **Messages** | `POST /zen/v1/messages` | 17 of 80 | `@ai-sdk/anthropic` |
-| Google **Generative AI** | `POST /zen/v1/models/<id>:streamGenerateContent` | 8 of 80 | `@ai-sdk/google` |
-| Mistral **Conversations** | `POST /zen/v1/chat/completions` | 1 of 80 | `@ai-sdk/mistral` |
+| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default**: 24 of 81 | the model names **no** SDK |
+| OpenAI **Responses** | `POST /zen/v1/responses` | 31 of 81 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /zen/v1/messages` | 17 of 81 | `@ai-sdk/anthropic` |
+| Google **Generative AI** | `POST /zen/v1/models/<id>:streamGenerateContent` | 8 of 81 | `@ai-sdk/google` |
+| Mistral **Conversations** | `POST /zen/v1/chat/completions` | 1 of 81 | `@ai-sdk/mistral` |
 
 Counts are the shipped catalog. They are asserted against this table by `catalog.test.ts`, because a count written into prose does not regenerate with the data it counts.
 
@@ -168,7 +168,7 @@ Two properties matter more than completeness:
 
 Cold start is never empty: the bundled shim answers before the first refresh, so the picker has models immediately, and a refresh replaces the set rather than appending to it twice. A missing price is its own answer: when models.dev has no row for a model, the meter shows the model's name and `—` for the rate rather than `Free`, and the panel never falls back to describing the _previous_ model.
 
-Both generated files are checked in CI: `catalog:shim` and `limits:shim` exit non-zero when the vendor moved, which is the only way to notice that models.dev changed under you. Regenerating one is a three-step deploy: regenerate, rebuild the bundles, commit both. The host loads `lib/index.mjs`, not `src/`.
+Both generated files are checked in CI: `catalog:shim` and `limits:shim` exit non-zero when the vendor moved, which is the only way to notice that models.dev changed under you. A pull request is gated on that only when its own diff touches the generator or a module the generator loads (`scripts/freshness-scope.ts` decides); any other pull request, and a push to main, warns, and the nightly job proposes the refresh. Regenerating one is a three-step deploy: regenerate, rebuild the bundles, commit both. The host loads `lib/index.mjs`, not `src/`.
 
 ## 4. The UI
 

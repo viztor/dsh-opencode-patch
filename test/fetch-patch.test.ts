@@ -18,15 +18,16 @@ import {
   SESSION_HEADER,
   clearCapturedApiKeys,
   getCapturedApiKey,
+  getLiveGoCatalog,
   recordCapturedApiKey,
   openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
   type ActiveTurnState,
 } from "../src/index.ts";
+import { createOpencodeStore } from "./support/opencode-store-fixture.ts";
 import {
   createCaptureFetch,
-  createOpencodeStore,
   headerOf,
   parseJsonBody,
   toolNamesOf,
@@ -91,6 +92,9 @@ describe("patchFetch", () => {
       "a key captured from a live request (policy auto): none"
     );
     expect(line).toContain("not enabled");
+    // The advice names a path this build has: there is no sign-in row here.
+    expect(line).not.toContain("sign in");
+    expect(line).toContain("readOpencodeStore");
   });
 
   it("does NOT report a missing key on a plane that offers free models", async () => {
@@ -135,6 +139,75 @@ describe("patchFetch", () => {
       lines,
       "a keyless free turn is a success, not a missing credential"
     ).toHaveLength(0);
+  });
+
+  it("reads the free model off a Request body, which is how DSH sends a turn", async () => {
+    // DSH calls fetch(new Request(url, { body })), so `init` carries no body.
+    // The check used to read `init.body` alone and reported every keyless free
+    // turn as a missing credential.
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const ok = vi.fn(async () => Response.json({ ok: true }));
+      const patched = patchFetch(
+        ok as unknown as typeof fetch,
+        als,
+        resolveConfig(),
+        {}
+      );
+      await patched(
+        new Request("https://opencode.ai/zen/v1/chat/completions", {
+          body: JSON.stringify({ messages: [], model: "beam-free" }),
+          method: "POST",
+        })
+      );
+      const freeLines = warn.mock.calls
+        .map((args) => args.map(String).join(" "))
+        .filter((text) => text.includes("no credential resolved"));
+      expect(freeLines).toHaveLength(0);
+
+      // The same keyless Request for a PAID model is still reported, so the
+      // case is not passing because the warning went quiet altogether.
+      await patched(
+        new Request("https://opencode.ai/zen/v1/chat/completions", {
+          body: JSON.stringify({ messages: [], model: "gpt-5.4" }),
+          method: "POST",
+        })
+      );
+      expect(
+        warn.mock.calls
+          .map((args) => args.map(String).join(" "))
+          .some((text) => text.includes("no credential resolved for opencode"))
+      ).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("answers a relay's Go listing with the Go catalog", async () => {
+    // The listing is claimed against the deployment's own markers. The
+    // enrichment then re-asked with the DEFAULT markers, so a relay's Go
+    // listing was filled from the Zen catalog.
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const upstream = vi.fn(async () => Response.json({ data: [] }));
+    const patched = patchFetch(
+      upstream as unknown as typeof fetch,
+      als,
+      resolveConfig({ gatewayUrls: ["relay.example/zen"] }),
+      {}
+    );
+    const response = await patched("https://relay.example/zen/go/v1/models", {
+      headers: { authorization: "Bearer test-go-key" },
+      method: "GET",
+    });
+    const body = (await response.json()) as { data: { id: string }[] };
+    const ids = body.data.map((row) => row.id).toSorted();
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids).toEqual(
+      getLiveGoCatalog()
+        .map((spec) => spec.id)
+        .toSorted()
+    );
   });
 
   it("does not name the sources when a credential does resolve", async () => {

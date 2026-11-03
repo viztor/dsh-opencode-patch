@@ -16,7 +16,9 @@ import { describe, expect, it } from "vitest";
 import {
   bareLiteral,
   disagreements,
+  GENERATED_TABLES,
   pinnedVersion,
+  scansFile,
 } from "../scripts/vendor-version.ts";
 
 /**
@@ -99,5 +101,40 @@ describe("copies that disagree with the constant", () => {
     // "passes" is a gate that scanned nothing.
     const agreeing = new Map([[PINNED, ["src/identity.ts", "docs/a.md"]]]);
     expect(disagreements(PINNED, agreeing, agreeing)).toEqual([]);
+  });
+});
+
+describe("which files the copy scan reads", () => {
+  it("reads the files a copy can live in", () => {
+    for (const path of [
+      "src/identity.ts",
+      "src/settings-page.tsx",
+      "README.md",
+      "docs/a.md",
+      "test/fixtures/x.json",
+      "scripts/x.yaml",
+      ".github/workflows/ci.yml",
+    ]) {
+      expect(scansFile(path), path).toBe(true);
+    }
+  });
+
+  it("skips the generated tables, which hold vendor data rather than copies", () => {
+    // The premise: both are TypeScript, so the extension alone would read them.
+    // Only the exclusion keeps a refresh from failing a gate that only the
+    // repository is supposed to be able to break.
+    expect([...GENERATED_TABLES].toSorted()).toEqual([
+      "src/catalog-data.ts",
+      "src/go-limits-data.ts",
+    ]);
+    for (const path of GENERATED_TABLES) {
+      expect(path).toMatch(/\.ts$/u);
+      expect(scansFile(path), path).toBe(false);
+    }
+  });
+
+  it("skips a file no copy can live in", () => {
+    expect(scansFile("docs/media/hero.svg")).toBe(false);
+    expect(scansFile("lib/client.js")).toBe(false);
   });
 });

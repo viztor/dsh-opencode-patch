@@ -79,6 +79,26 @@ describe("a retirement", () => {
     // the case this rule exists for (`gemini-3-flash` was listed and refused).
     expect(retiredAtTheGateway({ status: 200, summary: "ok" })).toBe(false);
   });
+
+  it("is an upstream's withdrawal too, but only when a 400 says so", () => {
+    // Measured on a free model the catalog still listed: the gateway relays the
+    // upstream's answer under a 400, the same status a malformed request gets.
+    const withdrawn = {
+      status: 400,
+      summary: "Upstream request failed: Model is unavailable",
+    };
+    expect(retiredAtTheGateway(withdrawn)).toBe(true);
+    expect(usableAsSubject(withdrawn)).toBe(false);
+    // A 400 for any other reason is the request's fault, and a case about the
+    // route has to see it rather than walk past it.
+    const malformed = { status: 400, summary: "Invalid request body" };
+    expect(retiredAtTheGateway(malformed)).toBe(false);
+    expect(usableAsSubject(malformed)).toBe(true);
+    // The words under another status are not this shape.
+    expect(
+      retiredAtTheGateway({ status: 500, summary: "Model is unavailable" })
+    ).toBe(false);
+  });
 });
 
 describe("the busy gateway", () => {

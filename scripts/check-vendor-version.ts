@@ -23,6 +23,16 @@
  * The second version only scanned `opencode/<version>`, which meant a bare copy
  * was invisible to it: it passed while three e2e comments were two patches
  * stale.
+ *
+ * `--copies` runs the second check alone and stops before the registry. That
+ * half is offline and reads only files the repository maintains (the generated
+ * tables, which hold vendor data, are skipped), so only the repository can
+ * break it, and CI gates every pull request on it. The first half follows the
+ * vendor, and gates only a pull request that touches the pin or this script
+ * (`scripts/freshness-scope.ts` decides).
+ *
+ * A failure prints one `error: <cause>` line first (the detail after it), so a
+ * CI step that only warns can quote the cause rather than guess it.
  */
 
 import { readdir, readFile } from "node:fs/promises";
@@ -32,11 +42,11 @@ import {
   CLI_LITERAL as LITERAL,
   disagreements,
   pinnedVersion,
+  scansFile,
 } from "./vendor-version.ts";
 
-/** Where a copy may appear. Extensions are listed because the scan is recursive. */
+/** Where a copy may appear; `scansFile` decides which files under them are read. */
 const ROOTS = ["src", "test", "docs", "scripts", "README.md"];
-const EXTENSIONS = /\.(?:ts|tsx|md|json|ya?ml)$/;
 
 const CONSTANT_FILE = "src/identity.ts";
 
@@ -56,7 +66,7 @@ const literals = async (pattern: RegExp): Promise<Map<string, string[]>> => {
       }
     } catch {
       // Not a directory, so read it as a file when it is one we scan.
-      if (EXTENSIONS.test(path)) {
+      if (scansFile(path)) {
         record(path, await readFile(path, "utf8"));
       }
     }
@@ -87,6 +97,12 @@ const main = async (): Promise<void> => {
       `these copies do not say ${pinned}, which is what ${CONSTANT_FILE} declares:\n${detail}`
     );
   }
+  if (process.argv.includes("--copies")) {
+    process.stdout.write(
+      `ok   ${[...copies.values()].flat().length} copy/copies and ${[...mentions.values()].flat().length} bare mention/mentions say ${pinned}, as ${CONSTANT_FILE} does (registry not asked)\n`
+    );
+    return;
+  }
 
   const response = await fetch("https://registry.npmjs.org/opencode-ai/latest");
   if (!response.ok) {
@@ -109,4 +125,13 @@ const main = async (): Promise<void> => {
   );
 };
 
-await main();
+try {
+  await main();
+} catch (error) {
+  // The cause, not a stack: every failure above is a sentence written for the
+  // reader, and the line a warning step quotes.
+  process.stderr.write(
+    `error: ${error instanceof Error ? error.message : String(error)}\n`
+  );
+  process.exitCode = 1;
+}
