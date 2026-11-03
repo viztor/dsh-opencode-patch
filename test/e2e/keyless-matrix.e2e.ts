@@ -14,12 +14,14 @@
  * - every one of the sixteen cells has a model and was SENT, and every answer
  *   is one the matrix can read — an empty or reshaped catalog fails here
  *   rather than measuring nothing;
- * - no cell today's plugin dispatches to with the default endpoint (`auto`,
- *   an alias of `modern`; `TODAY_DISPATCH`: completions on the legacy family,
- *   the hidden routes' Responses, Messages and Google on the modern one)
- *   answers "path gone";
- * - nor do the modern completions cells (`NEXT_DISPATCH`), where P-R1 moves
- *   completions: a forward guard, labelled as such when it fails.
+ * - no cell the plugin dispatches to with the default endpoint (`auto`, an
+ *   alias of `modern`) on the rc floor, the desktop app's pi 1.1.0, answers
+ *   "path gone" (`TODAY_DISPATCH`: completions on the legacy family, the
+ *   hidden routes' Responses, Messages and Google on the modern one);
+ * - nor do the modern completions cells (`NEXT_DISPATCH`), where both
+ *   channels' npm install (pi 1.5.0) already sends completions and where
+ *   P-R1 moves every host: a 404 there breaks every npm user's completions
+ *   today, and the failure says so.
  *
  * The other legacy verdicts are recorded, not asserted: P-R2 decides the
  * family from them. They include the cells an `endpoint: legacy` user
@@ -169,14 +171,14 @@ describe.skipIf(!LIVE || MIRRORED)(
         );
         expect(
           goneToday,
-          `a path today's plugin dispatches to is gone: ${JSON.stringify(goneToday)}`
+          `a path the plugin dispatches to on the rc floor (the desktop app's pi 1.1.0) is gone: ${JSON.stringify(goneToday)}`
         ).toEqual([]);
         const goneNext = rows.filter(
           (row) => NEXT_DISPATCH.has(row.cell) && row.verdict === "path-gone"
         );
         expect(
           goneNext,
-          `forward guard: a path P-R1 moves completions to is gone: ${JSON.stringify(goneNext)}`
+          `a path both channels' npm install (pi 1.5.0) dispatches completions to, and P-R1 moves every host to, is gone: ${JSON.stringify(goneNext)}`
         ).toEqual([]);
       },
       16 * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) + PROBE_TIMEOUT_MS

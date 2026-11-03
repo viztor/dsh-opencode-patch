@@ -554,3 +554,4 @@ jobs:
           name: host-probe-${{ matrix.channel }}-${{ matrix.cell }}
           path: ${{ runner.temp }}/probe-${{ matrix.channel }}-${{ matrix.cell }}.json
           if-no-files-found: ignore
+          retention-days: 7

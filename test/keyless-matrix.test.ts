@@ -324,8 +324,8 @@ describe("keyless matrix · the cells the live run asserts", () => {
     const hidden = [...TODAY_DISPATCH].filter(
       (cell) => !cell.includes("openai-completions")
     );
-    // pi 1.5.0 (newest) files completions under the modern family: exactly
-    // the forward-guard cells P-R1 targets.
+    // pi 1.5.0 (newest, both channels' npm install) files completions under
+    // the modern family: exactly the cells P-R1 moves every host to.
     const newest = reachedOn("newest");
     expect(newest.unmatched).toEqual([]);
     expect(newest.reached).toEqual([...hidden, ...NEXT_DISPATCH].toSorted());

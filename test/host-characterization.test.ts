@@ -12,15 +12,18 @@
  *
  * - `[KNOWN_DEFECT]` is wrong today, and a phase fixes it;
  * - `[INTENDED_CHANGE]` is right today, and a phase changes it on purpose;
- * - `[BASELINE]` must survive every phase.
+ * - `[BASELINE]` must survive every phase;
+ * - `[HOST_LIMITATION]` is something one cell's pi lacks that the vendor's
+ *   service needs, named with its channel and pi, reported upstream and never
+ *   fixed here (D26). No row in this file carries it yet: P-R1 adds the first.
  *
  * Where the hosts differ, a row carries one expectation per cell
  * (`S0_TODAY_BY_CELL`, `forHost`), and a title names the cell's tag: a facet
  * pi 1.5.0 already serves the way P-R1 keeps is `[BASELINE]` on `newest` and
  * still `[INTENDED_CHANGE]` or `[KNOWN_DEFECT]` on a floor.
  *
- * The per-model expectations live in `S0_TODAY` (`support/host.ts`), which
- * the binary e2e reads too, so the in-process host and the published binary
+ * The per-model expectations live in `S0_TODAY_BY_CELL` (`support/host.ts`;
+ * `S0_TODAY` is the installed cell's table), which the binary e2e reads too, so the in-process host and the published binary
  * cannot drift apart unnoticed. Each model's three facets (model info, the
  * call-config verdict, the wire) carry their own tag there, and this file
  * generates one test per model and facet titled with that tag, in each apply
@@ -752,7 +755,7 @@ describe(
       await expectSignInReadsTheZenPlane();
     });
 
-    it("[INTENDED_CHANGE] the adapter decoration runs, and the base it repairs is not what dispatch uses: the wire carries pi's own catalog base", async () => {
+    it("[INTENDED_CHANGE] the adapter decoration runs, and the base it repairs is not what dispatch uses: the wire carries pi's own catalog base (on newest, Zen's catalog base is the repaired one, so only Go shows it there)", async () => {
       const adapter = planeAdapter();
       expect(Object.hasOwn(adapter, "prepareCall")).toBe(true);
       for (const route of PLANES) {
@@ -769,11 +772,17 @@ describe(
         });
         const { drained, requests } = await sentBy(route, "deepseek-v4-pro");
         expect(requests.map((request) => request.url)).toEqual([wireUrl]);
-        // Measured, not compared as literals: the URL the turn sent starts
-        // with the base the decorated adapter prepared only where pi's own
-        // catalog base happens to be the same one (Zen on newest).
-        expect(requests[0]?.url.startsWith(String(prepared.baseUrl))).toBe(
-          String(wireUrl).startsWith(decorated)
+        // The claim, wherever a URL can show it: the turn did not go to the
+        // repaired base. That holds on every route of both floors and on Go
+        // on newest. On newest pi 1.5.0's own Zen catalog base IS the
+        // repaired base, so that one pair sends there whichever base dispatch
+        // used and cannot tell them apart; the expectation says so.
+        expect(String(requests[0]?.url).startsWith(decorated)).toBe(
+          forHost({
+            "alpha-floor": false,
+            newest: route === "opencode",
+            "rc-floor": false,
+          })
         );
         expect(drained.finish).toEqual({ code: "AUTH", kind: "error" });
       }

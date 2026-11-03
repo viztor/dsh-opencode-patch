@@ -10,8 +10,9 @@
  * The probe records what the host serves and exits the process; this file reads
  * its JSON.
  *
- * The assertions are TODAY's behaviour, read from the same `S0_TODAY` table the
- * in-process characterization pins, so the binary and the harness cannot drift
+ * The assertions are TODAY's behaviour, read from `S0_TODAY_BY_CELL` for the
+ * cell this run installed, the same tables the in-process characterization
+ * pins, so the binary and the harness cannot drift
  * apart unnoticed. P-R1 flips the rows its PR names. The loader starts rows in
  * parallel, so which of pi-ai and the plugin applies first is a race. The rows
  * depend on whether the plugin's adapter decoration wrapped pi-ai's plane

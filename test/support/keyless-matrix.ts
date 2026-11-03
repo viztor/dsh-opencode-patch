@@ -56,9 +56,10 @@ export const cellKey = (
 ): string => `${cell.plane} ${cell.protocol} ${cell.family}`;
 
 /**
- * The cells TODAY's plugin sends turns to with the default endpoint (`auto`,
- * an alias of `modern`), on both planes, on the oldest supported host (the rc
- * channel's floor, pi 1.1.0): completions on pi's LEGACY bases
+ * The cells the plugin sends turns to with the default endpoint (`auto`, an
+ * alias of `modern`), on both planes, on the oldest supported host: the rc
+ * channel's floor, pi 1.1.0, which the desktop app ships. Completions go to
+ * pi's LEGACY bases
  * (`/zen(/go)/v1/chat/completions`, pi-ai's own plane route) and the three
  * hidden routes' MODERN paths (Responses, Messages, Google). A path-gone
  * verdict on one of these breaks a shipped model in the default
@@ -86,9 +87,12 @@ export const TODAY_DISPATCH: ReadonlySet<string> = new Set(
 );
 
 /**
- * The cells P-R1 moves traffic to that nothing dispatches to yet: completions
- * on the modern family (`/inference(/go)/openai/v1`). The live matrix asserts
- * them too, as P-R1's forward guard, and labels them so in its failure.
+ * Completions on the modern family (`/inference(/go)/openai/v1`): where both
+ * channels' default install (the npm install, pi 1.5.0) already sends every
+ * completions turn, and where P-R1 moves every host, the floors included. A
+ * path-gone verdict here breaks completions for every npm user today, so the
+ * live matrix asserts these cells as it does {@link TODAY_DISPATCH}, and its
+ * failure says which hosts it breaks.
  */
 export const NEXT_DISPATCH: ReadonlySet<string> = new Set(
   (["opencode", "opencode-go"] as const).map((plane) =>
