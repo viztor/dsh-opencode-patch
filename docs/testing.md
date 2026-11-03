@@ -47,7 +47,7 @@ Three properties the unit and mock suites keep by construction rather than by ca
 
 `test/support/opencode-store-fixture.ts` — the OpenCode store fixture. It needs `node:sqlite` and the filesystem, which is why it lives with the other host-only support files rather than in the shared helpers.
 
-`test/support/catalogs.ts` — **synthetic catalogue rows**, reaching `src` through the one door like every other support module. Every other fixture quotes something that exists; this one builds the row a test needs, including rows the vendor has not produced. It exists because the plane-aware decisions are only observable when the two planes DISAGREE, and the real catalogue agrees about the free flag for every model it shares.
+`test/support/catalogs.ts` — **synthetic catalogue rows**, reaching `src` through the one door like the other fixtures. Every other fixture quotes something that exists; this one builds the row a test needs, including rows the vendor has not produced. It exists because the plane-aware decisions are only observable when the two planes DISAGREE, and the real catalogue agrees about the free flag for every model it shares.
 
 Two entry points:
 

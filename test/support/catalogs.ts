@@ -17,8 +17,9 @@
  * The prices DO disagree for two models, which is why the pricing decision was
  * testable against the real catalog and the others were not.
  *
- * It reaches `src` through the one door, `./src.ts`, like every other support
- * module, so a module move edits one file.
+ * It reaches `src` through the one door, `./src.ts`, like the other fixtures,
+ * so a module move edits one file. (The setup file cannot: it loads in the
+ * jsdom files too, so it names the defining modules directly.)
  *
  * @module test/support/catalogs
  */

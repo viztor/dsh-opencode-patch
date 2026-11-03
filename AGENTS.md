@@ -73,7 +73,7 @@ It is the same trick `scripts/check.ts` already uses for the client bundle, at f
 | `guards.ts` | `src/` |
 | `session-id.ts` | the rules inside `session.ts` |
 | `google-replay.ts` | `src/` (pure translation, so the gate polices it) |
-| `retry.ts` | new (7b1c5d4): the settings card's usage-read retry loop; its default `sleep` and its warning still reach a global timer and `console`, which P1b moves to the caller |
+| `retry.ts` | new (7b1c5d4): the settings card's usage-read retry loop; its default `sleep` reached a global timer and its warning reached `console` until P1b moved both to the caller (`backoffOver(timer)`, `warn`) |
 
 - `src/session.ts` · `src/turn-store.ts` — the `ses_<12hex><14base62>` derivation and the `AsyncLocalStorage` turn store.
 - `src/stream-hook.ts` · `src/fetch-patch.ts` · `src/tool-fallback.ts` — the `llm/stream` hook, the fetch interceptor, and the free-tier `read`/`bash` fallback.

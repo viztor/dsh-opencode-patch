@@ -30,6 +30,7 @@ import {
   DUMMY_READ_TOOL,
   DUMMY_READ_TOOL_FUNCTION,
   RESPONSES_PATH,
+  findModelSpecOn,
   isCoreToolModel,
   maybeInjectCoreTools,
 } from "./support/src.ts";
@@ -571,6 +572,10 @@ describe("isCoreToolModel: the plane is the request's, with a plane-blind fallba
     // The id below is free on Zen and absent from the Go catalog. A Go request
     // for it finds no Go row, so the plane-blind lookup answers — and that row
     // is the Zen one, which says free. No seeding: this is the shipped shim.
+    // The premise, asserted: a regeneration that lists the id on Go would keep
+    // the three answers below true while the fallback stopped being taken.
+    expect(findModelSpecOn("go", "big-pickle")).toBeUndefined();
+    expect(findModelSpecOn("zen", "big-pickle")?.is_free).toBe(true);
     expect(
       isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "zen")
     ).toBe(true);

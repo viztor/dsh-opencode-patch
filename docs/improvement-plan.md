@@ -117,13 +117,13 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | ~~The Settings spinner animates only if the meter is mounted~~ Fixed on `main` (#133): the card carries its own keyframes. | `settings-usage.tsx:45` |
 | ~~The stream hook writes `debugFile` with `debug` off~~ Not a defect under D24: naming `debugFile` writes both halves. | `stream-hook.ts:327-340` vs `lifecycle.ts:361` |
 | `settings-purge`: the `{ ok: false }` branch and the parser are on `main` (#133). ~~Still open: a refused purge whose `error` is the host's `RemoteError` object, not a string, shows the generic message.~~ Fixed by P1a: `settings-purge.ts` reads the `RemoteError`'s `message`. | `settings-purge.ts:56-69` |
-| The stream hook's `prepared` handling is dead. The host never reads `options.prepared`. | `stream-hook.ts:44,200-203,258` |
-| The partition test misses `debugFile` | `test/settings-page.test.tsx:1223` |
-| `cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists | `cordis.patch.yml:23,36,61` |
-| `utils/retry.ts` uses `console` and global timers, against the purity gate | `utils/retry.ts:31,55` |
-| `tool-fallback`: the Anthropic branch can't be reached. (The Go-first lookup is fixed on `main`, D25.) | `tool-fallback.ts:204,237-242` |
+| ~~The stream hook's `prepared` handling is dead. The host never reads `options.prepared`.~~ Fixed by P1b: deleted from `stream-hook.ts`. | `stream-hook.ts:44,200-203,258` |
+| ~~The partition test misses `debugFile`~~ Fixed by P1b: `settings-fields.ts` registers it and the partition test walks `Config.dict`. | `test/settings-page.test.tsx:1223` |
+| ~~`cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists~~ Fixed by P1b: `test/manifest.test.ts` holds the header to the schema. | `cordis.patch.yml:23,36,61` |
+| ~~`utils/retry.ts` uses `console` and global timers, against the purity gate~~ Fixed by P1b: `sleep` and `warn` are parameters (`backoffOver(timer)`). | `utils/retry.ts:31,55` |
+| ~~`tool-fallback`: the Anthropic branch can't be reached.~~ Fixed by P1b: the Anthropic schemas are deleted. (The Go-first lookup is fixed on `main`; the plane rule is D25.) | `tool-fallback.ts:204,237-242` |
 | Hard-coded catalog counts in tests, which the nightly refresh PR breaks by construction | `test/catalog.test.ts:94,200,208` |
-| `.freebuff/project-id` is tracked | repo root |
+| ~~`.freebuff/project-id` is tracked~~ Fixed by P1b: `.freebuff/` is ignored and untracked. | repo root |
 
 ## Routing: the problem, the measured facts, the design
 
