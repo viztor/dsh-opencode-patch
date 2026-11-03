@@ -228,7 +228,7 @@ Worth keeping separate because the conclusions differ: the first is fixed by not
 
 ## Every count in the documentation, checked against the data
 
-Two were missed while chasing the catalog's changes — Go's total and its no-SDK row — so the sweep was finished properly: every number stated in any document, compared against `catalog-data.ts`. The facts are Zen 82 with 25 no-SDK, 30 openai, 18 anthropic, 8 google and 1 mistral, and Go 32 with 20 no-SDK, and every live count in the docs says exactly that.
+Two were missed while chasing the catalog's changes — Go's total and its no-SDK row — so the sweep was finished properly: every number stated in any document, compared against `catalog-data.ts`, and every live count in the docs agreed with the shim of that day. The counts are deliberately not restated here, because the shim has been regenerated since and a number in this paragraph is one no test reads: the current ones are the dated tables in [`redirect-planes.md`](./redirect-planes.md) §1 and §2, which `test/catalog.test.ts` reads back against the shipped shim.
 
 Two numbers that look stale are not, and they are worth naming so the next sweep does not "fix" them: `0 of 31` appears once, inside this file, as a quotation of the mistake; and `16 of 17` is a recorded test result from the round that narrowed the header test, not a count of anything current.
 
