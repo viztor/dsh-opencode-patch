@@ -23,6 +23,9 @@ const PI = "@earendil-works/pi-ai";
  * a package no rule covers (the caller refuses it rather than guessing).
  */
 export const pinFor = (name: string, pins: ChannelPins): string | undefined => {
+  // The plugin's own runtime pin moves with the channel too, so a channel's
+  // lockfile holds one coherent cluster. On rc that means the install runs the
+  // host's schemastery line, not the one the published manifest pins.
   if (name === "@deepseek-ai/schemastery") {
     return pins.schemastery;
   }

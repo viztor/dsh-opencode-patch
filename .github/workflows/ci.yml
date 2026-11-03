@@ -64,7 +64,10 @@ jobs:
   # `channels/rc/pnpm-lock.yaml` for rc). `scripts/use-channel.ts` switches
   # the install, and `DSH_CHANNEL`/`DSH_PI` tell `test/host-versions.test.ts`
   # which record to hold the tree to, so a switch that silently did not happen
-  # fails there by name.
+  # fails there by name. One exception to "what an npm user runs": the switch
+  # also repins the plugin's own `@deepseek-ai/schemastery` to the channel's
+  # line, so the rc cell runs the host's schemastery, not the plugin's
+  # published pin (which is the alpha line).
   #
   # The floor cells (pi at the range's floor: 1.1.0 on rc, 1.3.0 on alpha, the
   # pi the desktop app ships, unpatched) run nightly and on dispatch, not on

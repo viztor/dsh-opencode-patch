@@ -106,7 +106,7 @@ git diff --name-only main... \
 
 1. Use conventional commits (`feat:`, `fix:`) — release-please opens the version-bump + changelog PR automatically; merging it tags and creates the GitHub Release, which fires OIDC publishing to npm and GitHub Packages.
 2. Avoid manual releases: release-please anchors on the latest GitHub **Release**, not the latest tag, so a bare tag is invisible to it (`AGENTS.md`, "Releasing"). If one is unavoidable, bump `version` in `package.json`, commit, tag, push the tag, and create the GitHub Release in the same step (`gh release create vX.Y.Z --generate-notes`). Never touch `CHANGELOG.md`: release-please owns it.
-3. On every release, refresh the **Verified on DeepSeek Harness** line and its matrix under "Compatibility & Verification" in both READMEs after smoke-testing: registry install resolves, plugin loads in the DSH Web profile, and a free-tier Zen call succeeds.
+3. On every release, after smoke-testing (registry install resolves, plugin loads in the DSH Web profile, and a free-tier Zen call succeeds), check the **Supported: the latest release of both DeepSeek Harness channels** line and the **Support policy** paragraph under "Compatibility & Verification" in both READMEs. Their "today" versions, pi ranges and floors, and the default install named a paragraph below, are copied from the channel records in `test/support/host-versions.ts`: a channel bump moves the record, its lockfile (the root one for `alpha`; `scripts/use-channel.ts rc --relock` for `rc`) and those README sentences together, in both languages.
 
 ## Docs
 

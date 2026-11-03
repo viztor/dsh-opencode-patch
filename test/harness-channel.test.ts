@@ -287,7 +287,13 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       ]);
       // The plugin's one runtime library the cluster also depends on resolves
       // to ONE copy, the channel's: a second copy would leave two of the
-      // library the Config schema is built with.
+      // library the Config schema is built with. On rc that copy is the
+      // HOST's line, not the plugin's published pin: `use-channel.ts` repins
+      // the plugin's own dependency to the record's `3.18.5`, while the
+      // published manifest pins the alpha line, which the rc bridge's `~` range
+      // does not admit. So this cell checks the host's schemastery; an rc npm
+      // install of the published plugin holds two copies until that pin admits
+      // both lines (an open owner decision).
       expect(lock.versionsOf("@deepseek-ai/schemastery")).toEqual([
         record.schemastery,
       ]);

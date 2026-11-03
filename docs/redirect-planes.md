@@ -23,7 +23,7 @@ A plane is a property of the **account and the base URL**, never of a model. The
 
 ## 2. Shapes
 
-A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions. Counts as of 2026-10-31 (the shipped shim, regenerated in #132).
+A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions. Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`).
 
 | SDK in the catalog  | Protocol                | Zen |    Go |
 | :------------------ | :---------------------- | --: | ----: |
