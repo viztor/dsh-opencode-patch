@@ -39,6 +39,14 @@
  * - `floor`: pi forced to the range's floor, the pi the desktop app ships. The
  *   resolved pi must be that floor, and every row is the channel's floor cell.
  *
+ * Neither cell pins cordis or the loader: the published host declares them as
+ * `~` ranges, and npm resolves the newest patch, as it does for a user. Where
+ * that leaves the host unable to run its own code, the run records a
+ * `[HOST_LIMITATION]` row, detected from what the host answered and never from
+ * a version, and skips the rows that need the broken path (today: alpha's
+ * `0.2.2-alpha.2` under cordis `4.0.6-alpha.2`, where no config-editor save
+ * succeeds).
+ *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
  * `pnpm` must be on `PATH`, and `pnpm run build` must have run.
@@ -98,6 +106,8 @@ const ROWS_PI = CELL === "floor" ? RECORD.piFloor : RECORD.pi;
  * `beforeAll`, false for an npm-resolved pi newer than the channel record.
  */
 let rowsHold = false;
+/** The cordis the prefix resolved, for the HOST_LIMITATION row's message. */
+let cordisVersion = "";
 
 /**
  * Whether `version` satisfies a caret range `^x.y.z` (x >= 1): the same
@@ -151,15 +161,40 @@ interface ProbeOutput {
   readonly callConfig: Record<string, string>;
   readonly dispatch: Record<string, { sent: string[]; finish: string }>;
   readonly describe: { user: string[]; value: string[] } | undefined;
-  readonly saveBlocked: { id: string; rejected?: string; accepted?: true };
-  readonly saveCleared?: {
-    dropped: string[];
-    rejected?: string;
-    accepted?: true;
-  };
-  readonly save: { id: string; rejected?: string; accepted?: true };
+  readonly saveBlocked: { id: string } & EditVerdict;
+  readonly saveCleared?: { dropped: string[] } & EditVerdict;
+  readonly save: { id: string } & EditVerdict;
   readonly afterSave?: unknown;
 }
+
+/**
+ * One config-editor edit's answer. A rejection names the error's class and
+ * the package whose code threw it, which is how a failure inside the host's
+ * own code is told apart from a verdict pi-ai's checks reached.
+ */
+interface EditVerdict {
+  readonly accepted?: true;
+  readonly errorName?: string;
+  readonly rejected?: string;
+  readonly thrownBy?: string;
+}
+
+/**
+ * Whether an edit failed with a TypeError thrown by the host's own cluster
+ * code (a `@deepseek-ai/dsh-*` package; cordis and its loader are excluded,
+ * since a plugin's bad listener can make them throw), rather than with a
+ * verdict pi-ai's checks reached: the host could not run its own save path.
+ * Measured on the alpha channel's npm install of `0.2.2-alpha.2`: its
+ * `dsh-app-boot` registers an `internal/update` listener in the old call shape
+ * (`(config, noSave, next)`), while the cordis its `~` range now resolves
+ * (`4.0.6-alpha.2`) calls the new one, so every config-editor save throws
+ * `next is not a function` there, before any plugin's code runs. Read from
+ * what the edit answered, never from a version, so a host that fixes it
+ * reads false the day it ships (D26).
+ */
+const hostListenerFailed = (verdict: EditVerdict | undefined): boolean =>
+  verdict?.errorName === "TypeError" &&
+  (verdict.thrownBy?.startsWith("@deepseek-ai/dsh-") ?? false);
 
 /** The entries of a directory, or none when it cannot be read. */
 const entriesOf = (dir: string): string[] => {
@@ -304,6 +339,20 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     if (CELL === "floor") {
       expect(piVersion).toBe(RECORD.piFloor);
     }
+    cordisVersion = (
+      JSON.parse(
+        readFileSync(
+          join(
+            PREFIX,
+            "node_modules",
+            "@deepseek-ai",
+            "cordis",
+            "package.json"
+          ),
+          "utf8"
+        )
+      ) as { version: string }
+    ).version;
     rowsHold = piVersion === ROWS_PI;
     if (!rowsHold) {
       console.warn(
@@ -537,7 +586,26 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     ]);
   });
 
-  it("[KNOWN_DEFECT] a stored gap id blocks saving any new id on its plane", () => {
+  it("[HOST_LIMITATION] the host's own save path runs under the cordis npm resolved for it (it does not on alpha 0.2.2-alpha.2 as npm installs it today: every config-editor save throws inside the host's own code; reported upstream, D26)", () => {
+    if (!hostListenerFailed(out.saveBlocked)) {
+      return;
+    }
+    // Recorded, not fixed here: the host's own code cannot run, so no edit
+    // saves, whoever makes it. The two save rows below skip on this host.
+    // What is asserted is that the failure is that one and only that one:
+    // every edit the probe made failed the same way, inside the host's code.
+    console.warn(
+      `[e2e-host] ${CHANNEL} · ${CELL}: HOST_LIMITATION — the host's own ${String(out.saveBlocked.thrownBy)} throws under cordis ${cordisVersion} on every save (${String(out.saveBlocked.rejected)}); the save rows are skipped`
+    );
+    expect(hostListenerFailed(out.saveCleared)).toBe(true);
+    expect(hostListenerFailed(out.save)).toBe(true);
+    expect(out.afterSave).toBeUndefined();
+  });
+
+  it("[KNOWN_DEFECT] a stored gap id blocks saving any new id on its plane", (context) => {
+    if (hostListenerFailed(out.saveBlocked)) {
+      context.skip();
+    }
     // pi-ai's strict check names the FIRST stored id the installed pi cannot
     // describe. Every recorded cell's pi lacks gpt-5.3-codex-spark, so it is
     // named; a newer pi may have learned it, and then names the next
@@ -547,7 +615,10 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     );
   });
 
-  it("[KNOWN_DEFECT] a catalog-unknown id cannot be saved, once the plane stores no gap id", () => {
+  it("[KNOWN_DEFECT] a catalog-unknown id cannot be saved, once the plane stores no gap id", (context) => {
+    if (hostListenerFailed(out.saveBlocked)) {
+      context.skip();
+    }
     // Clearing only ZEN_UNDESCRIBED assumes the installed pi still describes
     // the other opencode ids the profile declares. A pi newer than the record
     // asserts it too: one that retires one of them would fail here, and that

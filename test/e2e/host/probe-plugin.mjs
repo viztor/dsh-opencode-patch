@@ -25,7 +25,8 @@
  *   onto the plane as booted (`saveBlocked`), then — after the ids in
  *   `PROBE_SAVE_DROP` are removed from the plane (`saveCleared`) — once more
  *   (`save`), so the last answer is about the id itself and not about a gap id
- *   the plane already stores;
+ *   the plane already stores. A rejection also names the error's class and
+ *   the PACKAGE whose code threw it (never a path);
  * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove first;
  * - `PROBE_ROUTES`: `["<route>", …]`, the hidden routes to wait for, which the
  *   e2e passes from `INTERNAL_ROUTES` so the probe holds no copy of them;
@@ -51,6 +52,23 @@ const MESSAGE_LIMIT = 500;
 /** An error's message, cut to {@link MESSAGE_LIMIT}. */
 const messageOf = (error) =>
   String(error?.message ?? error).slice(0, MESSAGE_LIMIT);
+
+/**
+ * The package whose code threw `error`: the package of the top stack frame,
+ * read after its LAST `node_modules/`, or `"(not a package)"` when that frame
+ * is outside one, or `"(no stack)"` without a stack. Only the name is written,
+ * never the path, which would name the runner's directories.
+ */
+const thrownByOf = (error) => {
+  const frame = String(error?.stack ?? "")
+    .split("\n")
+    .find((line) => /^\s+at /u.test(line));
+  if (frame === undefined) return "(no stack)";
+  const parts = frame.replaceAll("\\", "/").split("node_modules/");
+  if (parts.length < 2) return "(not a package)";
+  const [first, second] = (parts.at(-1) ?? "").split("/");
+  return first?.startsWith("@") ? `${first}/${second}` : first;
+};
 
 /** A service the measurement needs, or a named failure where it is missing. */
 const required = (ctx, service) => {
@@ -115,6 +133,8 @@ const settle = async (run) => {
       error: {
         code: typeof error?.code === "string" ? error.code : undefined,
         message: messageOf(error),
+        name: typeof error?.name === "string" ? error.name : undefined,
+        thrownBy: thrownByOf(error),
       },
     };
   }
@@ -186,9 +206,16 @@ const editZen = async (editor, entry, mutate) => {
       return { ...current, providers };
     })
   );
+  // `errorName` and `thrownBy` let the e2e tell the host's own failure (a
+  // TypeError inside the host's own code) from a verdict pi-ai's checks
+  // reached.
   return saved.error === undefined
     ? { accepted: true }
-    : { rejected: saved.error.message };
+    : {
+        errorName: saved.error.name,
+        rejected: saved.error.message,
+        thrownBy: saved.error.thrownBy,
+      };
 };
 
 /**
