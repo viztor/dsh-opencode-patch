@@ -57,13 +57,17 @@ export const cellKey = (
 
 /**
  * The cells TODAY's plugin sends turns to with the default endpoint (`auto`,
- * an alias of `modern`), on both planes: completions on pi 1.1.0's LEGACY
- * bases (`/zen(/go)/v1/chat/completions`, pi-ai's own plane route) and the
- * three hidden routes' MODERN paths (Responses, Messages, Google). A path-gone
+ * an alias of `modern`), on both planes, on the oldest supported host (the rc
+ * channel's floor, pi 1.1.0): completions on pi's LEGACY bases
+ * (`/zen(/go)/v1/chat/completions`, pi-ai's own plane route) and the three
+ * hidden routes' MODERN paths (Responses, Messages, Google). A path-gone
  * verdict on one of these breaks a shipped model in the default
- * configuration, so the live matrix asserts them. `test/keyless-matrix.test.ts`
- * derives the same set from the URLs `S0_TODAY` measured (with the default
- * endpoint), so the two cannot drift.
+ * configuration, so the live matrix asserts them. Completions follow pi's
+ * catalog: pi 1.5.0, either channel's newest, sends them to the modern cells
+ * ({@link NEXT_DISPATCH}, also asserted live), and pi 1.3.0, alpha's floor, to
+ * the root family `/inference(/go)/v1`, which no cell here names yet.
+ * `test/keyless-matrix.test.ts` derives all three from the URLs each host
+ * cell's `S0_TODAY` table measured, so they cannot drift.
  *
  * Not covered: a user who sets `endpoint: legacy` dispatches Responses and
  * Messages on both planes, and Zen's Google, to the LEGACY cells, which the

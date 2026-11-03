@@ -1,5 +1,7 @@
 /**
- * TODAY's plugin on the real host, characterized (tier B, pi 1.1.0).
+ * TODAY's plugin on the real host, characterized (tier B), on the host cell
+ * the install under test is (`HOST_CELL`: either channel's newest pi, or a
+ * channel's floor after `scripts/use-channel.ts <channel> --floor`).
  *
  * The plugin is mounted as it ships — its row carries no config, so the
  * shipped defaults apply: the hidden ids in `providers`, `enrichModels` on,
@@ -11,6 +13,11 @@
  * - `[KNOWN_DEFECT]` is wrong today, and a phase fixes it;
  * - `[INTENDED_CHANGE]` is right today, and a phase changes it on purpose;
  * - `[BASELINE]` must survive every phase.
+ *
+ * Where the hosts differ, a row carries one expectation per cell
+ * (`S0_TODAY_BY_CELL`, `forHost`), and a title names the cell's tag: a facet
+ * pi 1.5.0 already serves the way P-R1 keeps is `[BASELINE]` on `newest` and
+ * still `[INTENDED_CHANGE]` or `[KNOWN_DEFECT]` on a floor.
  *
  * The per-model expectations live in `S0_TODAY` (`support/host.ts`), which
  * the binary e2e reads too, so the in-process host and the published binary
@@ -34,6 +41,7 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CHANNELS } from "./support/host-versions.ts";
 import {
   adaptersOf,
   type ApplyOrder,
@@ -43,13 +51,21 @@ import {
   characterizedProviders,
   drainStream,
   fakeCredentials,
+  forHost,
+  HOST_CELL,
+  HOST_CELLS,
+  PI_GAPS,
+  PI_OF_CELL,
   PLANES,
   piKnows,
   providerWithApiKey,
   recordingFetch,
   type RecordingFetch,
   type RowFacet,
+  type RowTag,
   S0_TODAY,
+  S0_TODAY_BY_CELL,
+  type S0RowKey,
   s0Providers,
   SAVE_BLOCKED_BY_ANY_UNDESCRIBED,
   SAVE_CANDIDATE,
@@ -68,7 +84,10 @@ import {
   thinkingLevelMapFor,
 } from "./support/src.ts";
 
-type RowKey = keyof typeof S0_TODAY.rows;
+type RowKey = S0RowKey;
+
+/** The pi the install under test runs, for the titles. */
+const PI = PI_OF_CELL[HOST_CELL];
 
 let tier: TierB | undefined;
 let wire: RecordingFetch;
@@ -233,6 +252,34 @@ const dropFrom =
 
 const FACETS = ["info", "callConfig", "wire"] as const;
 
+/** The facets whose value differs between a cell's two apply orders. */
+const movedByOrder = (cell: (typeof HOST_CELLS)[number]): string[] => {
+  const published = todayRowsFor("plugin-first", cell);
+  const piAiFirst = todayRowsFor("pi-ai-first", cell);
+  return ROW_KEYS.flatMap((key) =>
+    FACETS.filter(
+      (facet) =>
+        JSON.stringify(expectedFacet(facet, key, piAiFirst)) !==
+        JSON.stringify(expectedFacet(facet, key, published))
+    ).map((facet) => `${key} · ${facet}`)
+  );
+};
+
+/**
+ * Where completions go, per cell: pi's catalog base, which moved under the
+ * plugin twice (the legacy family on 1.1.0, the root on 1.3.0, the
+ * per-protocol family P-R1 targets on 1.5.0).
+ */
+const COMPLETIONS_FAMILY = {
+  "alpha-floor": "the root family, /inference(/go)/v1",
+  newest: "the per-protocol family, /inference(/go)/openai/v1",
+  "rc-floor": "the legacy family, /zen(/go)/v1",
+} as const;
+
+/** The completions wire facet's tag on this cell (both planes agree). */
+const COMPLETIONS_TAG: RowTag =
+  S0_TODAY.rows["opencode/deepseek-v4-pro"].tags.wire;
+
 /**
  * One generated case per row and facet, titled with the facet's own tag in
  * that order's table, so a phase's diff names every facet it moves in both
@@ -284,15 +331,22 @@ const expectSignInReadsTheZenPlane = async (): Promise<void> => {
 };
 
 describe(
-  "characterization · today's plugin on pi 1.1.0, the published host's order (tier B)",
+  `characterization · today's plugin on ${HOST_CELL} (pi ${PI}), the published host's order (tier B)`,
   { timeout: 30_000 },
   () => {
     beforeEach(() => bootS0("plugin-first"), 30_000);
 
-    it("fixture: the gap ids are gaps on pi 1.1.0, the unknown id is unknown everywhere, and the known ids are known", () => {
-      expect(piKnows("opencode", "gpt-5.3-codex-spark")).toBeUndefined();
-      expect(piKnows("opencode-go", "gemini-4-argon")).toBeUndefined();
-      expect(piKnows("opencode-go", "minimax-m3.1-flash")).toBeUndefined();
+    it(`fixture: this cell's gap ids are gaps on pi ${PI} and every other declared id is placed, the unknown id is unknown everywhere, and the cells' tables agree on their keys`, () => {
+      for (const plane of PLANES) {
+        for (const id of CHARACTERIZED_MODELS[plane]) {
+          if (id === UNKNOWN_ID) {
+            continue;
+          }
+          expect(piKnows(plane, id), `${plane}/${id}`).toEqual(
+            PI_GAPS[plane].includes(id) ? undefined : expect.any(String)
+          );
+        }
+      }
       expect(piKnows("opencode", "deepseek-v4-pro")).toBe("openai-completions");
       expect(piKnows("opencode", "gemini-3-flash")).toBe(
         "google-generative-ai"
@@ -319,6 +373,14 @@ describe(
         )
       );
       expect(INTERNAL_ROUTES).toHaveLength(6);
+      for (const cell of HOST_CELLS) {
+        expect(Object.keys(S0_TODAY_BY_CELL[cell].rows), cell).toEqual(
+          ROW_KEYS
+        );
+      }
+      // `newest` is one column for both channels only while they resolve one
+      // pi; the day they do not, split it.
+      expect(CHANNELS.rc.pi).toBe(CHANNELS.alpha.pi);
     });
 
     it("fixture: each row's context and efforts are the bundled catalog's, so a catalog refresh that moves a fixture model fails here by name", () => {
@@ -340,10 +402,12 @@ describe(
       const INFO_NOT_FROM_CATALOG = new Set<RowKey>();
       for (const key of INFO_NOT_FROM_CATALOG) {
         expect(ROW_KEYS, `${key} is not a characterized row`).toContain(key);
-        expect(
-          S0_TODAY.rows[key].tags.info,
-          `${key}: a BASELINE info facet cannot be exempted from the catalog`
-        ).not.toBe("BASELINE");
+        for (const cell of HOST_CELLS) {
+          expect(
+            S0_TODAY_BY_CELL[cell].rows[key].tags.info,
+            `${key}: a BASELINE info facet cannot be exempted from the catalog`
+          ).not.toBe("BASELINE");
+        }
       }
       let compared = 0;
       for (const key of ROW_KEYS) {
@@ -361,6 +425,14 @@ describe(
           "either a catalog refresh moved it (update the row in " +
           "test/support/host.ts), or a phase flipped this facet off the " +
           "catalog (add the key to INFO_NOT_FROM_CATALOG here)";
+        // No cell's pi moves an info facet: each comes from the plugin's
+        // catalog, so every cell must agree with it.
+        for (const cell of HOST_CELLS) {
+          expect(
+            S0_TODAY_BY_CELL[cell].rows[key].info,
+            `${cell} ${key}`
+          ).toEqual(S0_TODAY.rows[key].info);
+        }
         const info = S0_TODAY.rows[key].info as {
           context?: number;
           efforts?: readonly string[];
@@ -383,14 +455,18 @@ describe(
       expect(compared).toBeGreaterThan(0);
     });
 
-    it("fixture: the binary e2e's cell-aware helpers — the floating save-block pattern names any undescribed id and only those, todayRowsFor refuses an order it does not know, and a facet its pi-ai-first table moves is retagged with it, from KNOWN_DEFECT to BASELINE", () => {
-      // The pinned message is one the floating pattern accepts, so the two
-      // cells cannot disagree on a pinned run.
-      const pinned =
+    it("fixture: the binary e2e's cell-aware helpers — the newer-pi save-block pattern names any undescribed id and only those, todayRowsFor refuses an order it does not know, and a facet its pi-ai-first table moves is retagged with it, from KNOWN_DEFECT to BASELINE", () => {
+      // Every recorded cell's message is one the newer-pi pattern accepts, so
+      // the two cannot disagree on a run whose pi is the record's.
+      const recorded =
         'provider "opencode" model "gpt-5.3-codex-spark" needs an api';
-      expect(pinned).toMatch(S0_TODAY.saveBlockedByStoredGap);
-      expect(pinned).toMatch(SAVE_BLOCKED_BY_ANY_UNDESCRIBED);
-      // A floating pi that learned gpt-5.3-codex-spark names the next one.
+      for (const cell of HOST_CELLS) {
+        expect(recorded, cell).toMatch(
+          S0_TODAY_BY_CELL[cell].saveBlockedByStoredGap
+        );
+      }
+      expect(recorded).toMatch(SAVE_BLOCKED_BY_ANY_UNDESCRIBED);
+      // A newer pi that learned gpt-5.3-codex-spark names the next one.
       expect(`provider "opencode" model "${UNKNOWN_ID}" needs an api`).toMatch(
         SAVE_BLOCKED_BY_ANY_UNDESCRIBED
       );
@@ -401,7 +477,9 @@ describe(
         );
       }
       for (const order of APPLY_ORDERS) {
-        expect(Object.keys(todayRowsFor(order))).toEqual(ROW_KEYS);
+        for (const cell of HOST_CELLS) {
+          expect(Object.keys(todayRowsFor(order, cell))).toEqual(ROW_KEYS);
+        }
       }
       // Structural, so no phase has to edit it: a facet whose VALUE differs
       // between the orders is exactly a facet whose TAG differs, and each one
@@ -409,30 +487,26 @@ describe(
       // what P-R1 keeps. Which facets those are today is pinned by the
       // [KNOWN_DEFECT] apply-order case below; once P-R1 collapses the
       // override, both sets are empty and this still holds.
-      const piAiFirst = todayRowsFor("pi-ai-first");
-      const moved = ROW_KEYS.flatMap((key) =>
-        FACETS.filter(
-          (facet) =>
-            JSON.stringify(expectedFacet(facet, key, piAiFirst)) !==
-            JSON.stringify(expectedFacet(facet, key))
-        ).map((facet) => `${key} · ${facet}`)
-      );
-      const retagged = ROW_KEYS.flatMap((key) =>
-        FACETS.filter(
-          (facet) =>
-            piAiFirst[key].tags[facet] !== S0_TODAY.rows[key].tags[facet]
-        ).map((facet) => `${key} · ${facet}`)
-      );
-      expect(retagged).toEqual(moved);
-      for (const key of ROW_KEYS) {
-        for (const facet of FACETS) {
-          if (moved.includes(`${key} · ${facet}`)) {
-            expect(S0_TODAY.rows[key].tags[facet], `${key} · ${facet}`).toBe(
-              "KNOWN_DEFECT"
-            );
-            expect(piAiFirst[key].tags[facet], `${key} · ${facet}`).toBe(
-              "BASELINE"
-            );
+      for (const cell of HOST_CELLS) {
+        const published = todayRowsFor("plugin-first", cell);
+        const piAiFirst = todayRowsFor("pi-ai-first", cell);
+        const moved = movedByOrder(cell);
+        const retagged = ROW_KEYS.flatMap((key) =>
+          FACETS.filter(
+            (facet) => piAiFirst[key].tags[facet] !== published[key].tags[facet]
+          ).map((facet) => `${key} · ${facet}`)
+        );
+        expect(retagged, cell).toEqual(moved);
+        for (const key of ROW_KEYS) {
+          for (const facet of FACETS) {
+            if (moved.includes(`${key} · ${facet}`)) {
+              expect(published[key].tags[facet], `${cell} ${key}`).toBe(
+                "KNOWN_DEFECT"
+              );
+              expect(piAiFirst[key].tags[facet], `${cell} ${key}`).toBe(
+                "BASELINE"
+              );
+            }
           }
         }
       }
@@ -479,13 +553,15 @@ describe(
           settingsPath: ["providers", plane],
         });
       }
-      // The directory reports each plane's first stored gap id.
-      expect(
-        directory.find((entry) => entry.provider === "opencode")?.error
-      ).toMatch(/model "gpt-5\.3-codex-spark" needs an api/u);
-      expect(
-        directory.find((entry) => entry.provider === "opencode-go")?.error
-      ).toMatch(/model "gemini-4-argon" needs an api/u);
+      // The directory reports each plane's first id the installed pi cannot
+      // place: its first gap id, else the declared unknown id.
+      for (const plane of PLANES) {
+        const first = PI_GAPS[plane][0] ?? UNKNOWN_ID;
+        expect(
+          directory.find((entry) => entry.provider === plane)?.error,
+          plane
+        ).toContain(`model "${first}" needs an api`);
+      }
     });
 
     it("[INTENDED_CHANGE] keyless listing: before a key is captured, the listing patch hides every paid model on both planes (D21)", async () => {
@@ -507,10 +583,10 @@ describe(
         listed[plane] = models.map((model) => model.id);
       }
       expect(listed).toEqual(S0_TODAY.keyedListing);
-      expect(listed.opencode).not.toContain("gpt-5.3-codex-spark");
-      expect(listed["opencode-go"]).not.toContain("gemini-4-argon");
-      expect(listed["opencode-go"]).not.toContain("minimax-m3.1-flash");
       for (const plane of PLANES) {
+        for (const gap of PI_GAPS[plane]) {
+          expect(listed[plane]).not.toContain(gap);
+        }
         expect(listed[plane]).not.toContain(UNKNOWN_ID);
       }
     });
@@ -535,8 +611,8 @@ describe(
         "minimax-m3"
       );
       const efforts = info.reasoning?.efforts?.map((effort) => effort.id) ?? [];
-      expect(efforts).toEqual(
-        S0_TODAY.rows["opencode-go/minimax-m3"].info.efforts
+      expect({ context: info.context?.contextWindow, efforts }).toEqual(
+        S0_TODAY.rows["opencode-go/minimax-m3"].info
       );
       expect(efforts).toEqual(
         expect.arrayContaining(["minimal", "xhigh", "max"])
@@ -544,13 +620,12 @@ describe(
       expect(efforts).not.toContain("off");
     });
 
-    it("[INTENDED_CHANGE] completions models dispatch to pi 1.1.0's legacy bases", async () => {
-      for (const [route, wireUrl] of [
-        ["opencode", "https://opencode.ai/zen/v1/chat/completions"],
-        ["opencode-go", "https://opencode.ai/zen/go/v1/chat/completions"],
-      ] as const) {
+    it(`[${COMPLETIONS_TAG}] completions models dispatch to pi ${PI}'s own catalog base (${forHost(COMPLETIONS_FAMILY)})`, async () => {
+      for (const route of PLANES) {
         const { drained, requests } = await sentBy(route, "deepseek-v4-pro");
-        expect(requests.map((request) => request.url)).toEqual([wireUrl]);
+        expect(requests.map((request) => request.url)).toEqual(
+          S0_TODAY.rows[`${route}/deepseek-v4-pro`].sent
+        );
         expect(drained.finish).toEqual({ code: "AUTH", kind: "error" });
       }
     });
@@ -586,28 +661,34 @@ describe(
       ]);
     });
 
-    it("[KNOWN_DEFECT] Go minimax-m3.1-flash answers INVALID_CONFIG 'needs an api' and sends nothing (F4)", async () => {
-      const { llm } = booted();
-      await expect(
-        llm.resolveCallConfig({
-          model: "minimax-m3.1-flash",
-          provider: "opencode-go",
-        } as never)
-      ).rejects.toMatchObject({
-        code: "INVALID_CONFIG",
-        message: expect.stringMatching(/"minimax-m3\.1-flash" needs an api/u),
-      });
-      const { drained, requests } = await sentBy(
-        "opencode-go",
-        "minimax-m3.1-flash"
-      );
-      expect(requests).toEqual([]);
-      expect(drained.finish).toEqual({ code: "INVALID_CONFIG", kind: "error" });
-    });
+    it.runIf(PI_GAPS["opencode-go"].includes("minimax-m3.1-flash"))(
+      `[KNOWN_DEFECT] Go minimax-m3.1-flash answers INVALID_CONFIG 'needs an api' and sends nothing (F4; a gap on pi ${PI}, placed on newest, where its facet rows are BASELINE)`,
+      async () => {
+        const { llm } = booted();
+        await expect(
+          llm.resolveCallConfig({
+            model: "minimax-m3.1-flash",
+            provider: "opencode-go",
+          } as never)
+        ).rejects.toMatchObject({
+          code: "INVALID_CONFIG",
+          message: expect.stringMatching(/"minimax-m3\.1-flash" needs an api/u),
+        });
+        const { drained, requests } = await sentBy(
+          "opencode-go",
+          "minimax-m3.1-flash"
+        );
+        expect(requests).toEqual([]);
+        expect(drained.finish).toEqual({
+          code: "INVALID_CONFIG",
+          kind: "error",
+        });
+      }
+    );
 
-    it("[KNOWN_DEFECT] Go gemini-4-argon: resolveCallConfig refuses it (INVALID_CONFIG) while the turn is served on the Go Google base through the bridge", async () => {
+    it(`[${S0_TODAY.rows["opencode-go/gemini-4-argon"].tags.callConfig}] Go gemini-4-argon: resolveCallConfig answers ${S0_TODAY.rows["opencode-go/gemini-4-argon"].callConfig} on pi ${PI} (INVALID_CONFIG where pi lacks the id) while the turn is served on the Go Google base`, async () => {
       expect(await callConfigOf("opencode-go", "gemini-4-argon")).toBe(
-        "INVALID_CONFIG"
+        S0_TODAY.rows["opencode-go/gemini-4-argon"].callConfig
       );
       const { drained, requests } = await sentBy(
         "opencode-go",
@@ -671,13 +752,11 @@ describe(
       await expectSignInReadsTheZenPlane();
     });
 
-    it("[INTENDED_CHANGE] the adapter decoration runs, and the base it repairs never reaches the wire", async () => {
+    it("[INTENDED_CHANGE] the adapter decoration runs, and the base it repairs is not what dispatch uses: the wire carries pi's own catalog base", async () => {
       const adapter = planeAdapter();
       expect(Object.hasOwn(adapter, "prepareCall")).toBe(true);
-      for (const [route, wireUrl] of [
-        ["opencode", "https://opencode.ai/zen/v1/chat/completions"],
-        ["opencode-go", "https://opencode.ai/zen/go/v1/chat/completions"],
-      ] as const) {
+      for (const route of PLANES) {
+        const [wireUrl] = S0_TODAY.rows[`${route}/deepseek-v4-pro`].sent;
         // Measured: the Go plane's repaired base is ZEN's. pi-ai serves both
         // planes from ONE adapter instance, which decoratePlaneAdapters wraps
         // once per route, so the Go wrapper runs over the Zen one and keeps the
@@ -690,10 +769,11 @@ describe(
         });
         const { drained, requests } = await sentBy(route, "deepseek-v4-pro");
         expect(requests.map((request) => request.url)).toEqual([wireUrl]);
-        // Measured, not compared as literals: the URL the turn sent does not
-        // start with the base the decorated adapter prepared.
+        // Measured, not compared as literals: the URL the turn sent starts
+        // with the base the decorated adapter prepared only where pi's own
+        // catalog base happens to be the same one (Zen on newest).
         expect(requests[0]?.url.startsWith(String(prepared.baseUrl))).toBe(
-          false
+          String(wireUrl).startsWith(decorated)
         );
         expect(drained.finish).toEqual({ code: "AUTH", kind: "error" });
       }
@@ -725,19 +805,18 @@ describe("characterization · the apply order (no host)", () => {
   // when P-R1 flips this row it drops todayRowsFor's pi-ai-first override in
   // the same diff, and this case becomes "[BASELINE] no facet depends on the
   // apply order" (CONTRIBUTING.md, "Tags").
-  it("[KNOWN_DEFECT] the apply order decides exactly one facet today: Go gemini-4-argon's callConfig is INVALID_CONFIG in the published order and \"ok\" with pi-ai first (P-R1 drops todayRowsFor's pi-ai-first override with this row's flip)", () => {
-    const piAiFirst = todayRowsFor("pi-ai-first");
-    const moved = ROW_KEYS.flatMap((key) =>
-      FACETS.filter(
-        (facet) =>
-          JSON.stringify(expectedFacet(facet, key, piAiFirst)) !==
-          JSON.stringify(expectedFacet(facet, key))
-      ).map((facet) => `${key} · ${facet}`)
-    );
-    expect(moved).toEqual(["opencode-go/gemini-4-argon · callConfig"]);
-    const key = "opencode-go/gemini-4-argon";
-    expect(expectedFacet("callConfig", key)).toBe("INVALID_CONFIG");
-    expect(expectedFacet("callConfig", key, piAiFirst)).toBe("ok");
+  it("[KNOWN_DEFECT] the apply order decides exactly one facet on the floor cells: Go gemini-4-argon's callConfig is INVALID_CONFIG in the published order and \"ok\" with pi-ai first; on newest pi places the id and nothing depends on the order (P-R1 drops todayRowsFor's pi-ai-first override with this row's flip)", () => {
+    for (const cell of ["alpha-floor", "rc-floor"] as const) {
+      expect(movedByOrder(cell), cell).toEqual([
+        "opencode-go/gemini-4-argon · callConfig",
+      ]);
+      const key = "opencode-go/gemini-4-argon";
+      expect(todayRowsFor("plugin-first", cell)[key].callConfig).toBe(
+        "INVALID_CONFIG"
+      );
+      expect(todayRowsFor("pi-ai-first", cell)[key].callConfig).toBe("ok");
+    }
+    expect(movedByOrder("newest")).toEqual([]);
   });
 });
 
