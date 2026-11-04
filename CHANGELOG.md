@@ -6,6 +6,14 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.8.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.8.0...v1.8.1) (2026-11-04)
+
+
+### Fixes
+
+* harden the test suite, fix plane/mount/credential defects, and add the improvement plan ([#105](https://github.com/viztor/dsh-opencode-patch/issues/105)) ([aeb0dec](https://github.com/viztor/dsh-opencode-patch/commit/aeb0decd9abb009f79df6afe3a40f5a647cc6bed))
+* install beside the harness's 0.2.2 release candidate (cordis 4.1) ([#153](https://github.com/viztor/dsh-opencode-patch/issues/153)) ([b3c6637](https://github.com/viztor/dsh-opencode-patch/commit/b3c6637fd0df5b281725e99819e2531a3d36a3cf))
+
 ## [1.8.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.7.0...v1.8.0) (2026-11-02)
 
 
