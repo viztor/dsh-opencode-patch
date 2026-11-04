@@ -141,7 +141,7 @@ Measured 2026-10-10 by building one with pi's own protocol implementations and i
 
 **The Google path is the one a hand-declared route cannot reach.** Its protocol name is not in the wrapper's three-entry table, so no route may name it; a self-built provider dispatches to it without any special case — which is what the plane adapter is (`buildPlaneProvider`, P-R1).
 
-**The session header reaches every protocol.** Wrapping each `api` before `createProvider` puts our `x-opencode-session`, `x-opencode-client` and `x-opencode-project` on all four, and pi's own session header defers when ours is already present.
+**The session header reaches every protocol, and the rest of the gateway headers do not come from the provider.** `buildPlaneProvider` wraps each `api` with pi's own `withOpenCodeSessionHeader` before `createProvider`, and that is all it adds per call: pi's wrapper sets `x-opencode-session` from the turn's session id on all four protocols, and steps aside when the request already carries one. `x-opencode-client`, `x-opencode-project`, the derived `ses_` id and the User-Agent are set by the global fetch patch on the request the protocol sends, not on the call's options; moving them into each call (`options.headers`) is P10a's first move.
 
 **One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.5 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
 
