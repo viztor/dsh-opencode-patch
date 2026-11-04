@@ -38,6 +38,7 @@ import {
   forHost,
   HOST_CELL,
   mountTierA,
+  PI_AI_DEFAULTS,
   PI_GAPS,
   PI_OF_CELL,
   PLANES,
@@ -298,9 +299,9 @@ describe("host · pi-ai's Config (llm-pi-ai/src/config.ts)", () => {
     // raised both (llm-pi-ai config.ts:65,68), the rc one keeps the old pair.
     expect(resolved).toEqual({
       compat: { chatTemplateArgs: {}, chatTemplateKwargs: {} },
-      defaultContextWindow: forChannel({ alpha: 1_000_000, rc: 262_144 }),
+      defaultContextWindow: forChannel(PI_AI_DEFAULTS).contextWindow,
       defaultInput: ["text"],
-      defaultMaxTokens: forChannel({ alpha: 128_000, rc: 32_768 }),
+      defaultMaxTokens: forChannel(PI_AI_DEFAULTS).maxTokens,
       headers: {},
       maxRequestImageBytes: 20_971_520,
       modelOverrides: {},

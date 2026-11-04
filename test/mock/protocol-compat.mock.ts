@@ -116,10 +116,12 @@ describe("plane × protocol × family", () => {
         sessionTurn({ model: spec.id, provider: plane }),
         async () => {
           const { model, error } = planeModelFor({
+            // Stand-ins for what pi-ai's `Config` fills; the wire read here
+            // ignores them, and the plugin restates none of them (D17).
             defaults: {
-              contextWindow: 262_144,
+              contextWindow: 123_456,
               input: ["text"],
-              maxTokens: 32_768,
+              maxTokens: 6_543,
             },
             endpoint: family,
             entry: { id: spec.id },

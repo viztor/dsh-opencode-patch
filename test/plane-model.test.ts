@@ -35,7 +35,12 @@ const piOf = (plane: Plane, id: string): PlanePiModel | undefined =>
     (model) => model.id === id
   );
 
-const DEFAULTS = { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 };
+/**
+ * The route's defaults as pi-ai's `Config` fills them. Stand-in values, on
+ * purpose not either channel's: the plugin restates none of pi-ai's defaults
+ * (D17), it reads back whatever the channel's `Config` filled in.
+ */
+const DEFAULTS = { contextWindow: 123_456, input: ["text"], maxTokens: 6_543 };
 
 /** The input a plane builds for one declared id, with overrides. */
 const inputFor = (
@@ -420,10 +425,10 @@ describe("plane-model · metadata (D17) and the model object", () => {
     });
     const bare = modelOf(inputFor("opencode", "x"));
     expect(bare).toMatchObject({
-      contextWindow: 262_144,
+      contextWindow: DEFAULTS.contextWindow,
       cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
       input: ["text"],
-      maxTokens: 32_768,
+      maxTokens: DEFAULTS.maxTokens,
       name: "x",
       provider: "opencode",
       reasoning: false,
@@ -483,6 +488,33 @@ describe("plane-model · metadata (D17) and the model object", () => {
       input: 0,
       output: 0,
     });
+  });
+
+  it("restates none of pi-ai's defaults: a model no source sizes takes the route's filled defaults, and is an error where none was filled (D17)", () => {
+    const unsized = {
+      ...inputFor("opencode", "x"),
+      defaults: { input: ["text"] },
+    };
+    expect(planeModelFor(unsized).error).toBe(
+      'llm-pi-ai: provider "opencode" model "x" contextWindow must be a positive integer'
+    );
+    expect(
+      planeModelFor({
+        ...unsized,
+        defaults: { contextWindow: 5, input: ["text"] },
+      }).error
+    ).toBe(
+      'llm-pi-ai: provider "opencode" model "x" maxTokens must be a positive integer'
+    );
+    // A model the catalog sizes needs no default at all.
+    expect(
+      planeModelFor({
+        ...inputFor("opencode", "gpt-5.4"),
+        defaults: { input: ["text"] },
+      }).model?.contextWindow
+    ).toBe(
+      OPENCODE_ZEN_CATALOG.find((spec) => spec.id === "gpt-5.4")?.context_window
+    );
   });
 
   it("reasoning: the user's dict, the override's, the catalog's (with D1 names), pi's, else none", () => {

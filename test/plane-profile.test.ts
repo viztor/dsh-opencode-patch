@@ -128,6 +128,42 @@ describe("plane-profile · the field mapping and pi-ai's defaults", () => {
     expect(result.normalized).toMatchObject({ apiKeyEnv: "OPENCODE_API_KEY" });
   });
 
+  it("sizes a model no source describes with the window and output tokens pi-ai's own Config filled, and restates none of them (D17)", () => {
+    // What the installed channel's pi-ai fills, read back from its own Config,
+    // never from a copy here: the two channels' bridges differ.
+    const filled = normalize({}) as {
+      defaultContextWindow: number;
+      defaultMaxTokens: number;
+    };
+    expect(filled.defaultContextWindow).toBeGreaterThan(0);
+    expect(filled.defaultMaxTokens).toBeGreaterThan(0);
+    const result = planeProfileFor(
+      input({ models: [{ id: "not-a-real-model" }] })
+    );
+    const [model] = (
+      result.profile.piProvider as {
+        getModels: () => Record<string, unknown>[];
+      }
+    ).getModels();
+    expect(model).toMatchObject({
+      contextWindow: filled.defaultContextWindow,
+      id: "not-a-real-model",
+      maxTokens: filled.defaultMaxTokens,
+    });
+    // Without pi-ai's Config nothing fills them, and the plugin invents none:
+    // the model is an error, in pi-ai's words, and the rest of the plane serves.
+    const bare = planeProfileFor(
+      input(
+        { models: [{ id: "not-a-real-model" }, { id: "gpt-5.4" }] },
+        { normalize: undefined }
+      )
+    );
+    expect(bare.profile.modelErrors.get("not-a-real-model")).toBe(
+      'llm-pi-ai: provider "opencode" model "not-a-real-model" contextWindow must be a positive integer'
+    );
+    expect(served(bare)).toEqual(["gpt-5.4"]);
+  });
+
   it("D3: no models list, or an empty one, serves the plugin's servable catalog in catalog order", () => {
     const catalogIds = OPENCODE_ZEN_CATALOG.map((spec) => spec.id);
     expect(served(planeProfileFor(input({})))).toEqual(catalogIds);

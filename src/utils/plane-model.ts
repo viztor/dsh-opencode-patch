@@ -5,7 +5,7 @@
  * | field | first source that has it |
  * | :-- | :-- |
  * | protocol | the catalog SDK ({@link protocolForSdk}) > the route's `api` > completions (D16) |
- * | name, context, max tokens, modalities | the user's row > pi-ai's `modelOverrides` > catalog > pi > defaults (D17) |
+ * | name, context, max tokens, modalities | the user's row > pi-ai's `modelOverrides` > catalog > pi > pi-ai's own route defaults, as its `Config` filled them (D17) |
  * | cost | catalog > pi > zero |
  * | reasoning | the user's `reasoningEfforts` > the override's > the catalog ({@link reasoningFor}, D1) > pi > none |
  * | baseUrl | the route's `baseURL`, shaped > the endpoint family table ({@link baseUrlFor}) |
@@ -104,9 +104,14 @@ export interface PlaneModelInput {
   readonly endpoint: EndpointChoice;
   /** The catalog's family map for this plane (`OPENCODE_FAMILY_API.zen|go`). */
   readonly familyApi: Readonly<Record<string, string>>;
+  /**
+   * The route's defaults, as pi-ai's `Config` filled them: the window and
+   * output tokens are the channel's own, and absent only where no `Config`
+   * ran, which leaves a model no source sizes an error (D17).
+   */
   readonly defaults: {
-    readonly contextWindow: number;
-    readonly maxTokens: number;
+    readonly contextWindow?: number;
+    readonly maxTokens?: number;
     readonly input: readonly string[];
   };
 }

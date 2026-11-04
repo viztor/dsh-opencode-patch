@@ -1190,7 +1190,9 @@ const servedOn = (
     route === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
   const spec = catalog.find((candidate) => candidate.id === id);
   const result = planeModelFor({
-    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
+    // Stand-ins for what pi-ai's `Config` fills; the routing read here
+    // ignores them, and the plugin restates none of them (D17).
+    defaults: { contextWindow: 123_456, input: ["text"], maxTokens: 6_543 },
     endpoint: "modern",
     entry: { id },
     familyApi:
