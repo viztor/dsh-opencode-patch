@@ -4,15 +4,21 @@
  *
  * | field | first source that has it |
  * | :-- | :-- |
- * | protocol | the catalog SDK ({@link protocolForSdk}) > pi's entry > the route's `api` > completions (D16) |
+ * | protocol | the catalog SDK ({@link protocolForSdk}) > the route's `api` > completions (D16) |
  * | name, context, max tokens, modalities | the user's row > pi-ai's `modelOverrides` > catalog > pi > defaults (D17) |
  * | cost | catalog > pi > zero |
  * | reasoning | the user's `reasoningEfforts` > the override's > the catalog ({@link reasoningFor}, D1) > pi > none |
- * | baseUrl | the route's `baseURL`, shaped > the endpoint family ({@link baseUrlFor}) |
+ * | baseUrl | the route's `baseURL`, shaped > the endpoint family table ({@link baseUrlFor}) |
  *
- * A route-level `api` never reclassifies an id the catalog or pi describes:
- * the plane serves every protocol at once, so the route's `api` only says what
- * an id nobody describes speaks.
+ * A route-level `api` never reclassifies an id the catalog describes: the
+ * plane serves every protocol at once, so the route's `api` only says what an
+ * id the catalog does not classify speaks.
+ *
+ * pi's own catalog entry is in neither the protocol nor the base (D16, D26):
+ * the endpoint family table, the vendor's endpoints, is the only base source,
+ * so a pi release that reshapes its catalog (1.5.0 moved its bases to
+ * per-protocol roots) cannot move a turn. pi's entry still fills metadata the
+ * user's row and the catalog leave unstated (D17).
  *
  * Pure: the catalog spec, pi's entry and the family map come in as values, and
  * nothing here throws — a malformed row comes back as `error`, in pi-ai's
@@ -176,8 +182,10 @@ const forProtocol = (protocol: Protocol, base: string): string =>
  * 3. Otherwise the `endpoint` choice; `auto` is `modern`.
  * 4. Modern: the catalog's family map for the model's SDK, else for the
  *    protocol's family, else the measured fallback.
- * 5. Legacy: pi's own base when pi files the model under this protocol on a
- *    `/zen` root, else the fixed table — Go's Google cell included.
+ * 5. Legacy: the fixed table — Go's Google cell included.
+ *
+ * pi's own catalog base is never read: a pi release that moves its bases
+ * cannot move a turn (D26).
  *
  * @returns the base URL.
  */
@@ -187,8 +195,7 @@ export const baseUrlFor = (
   sdk: string | undefined,
   endpoint: EndpointChoice,
   familyApi: Readonly<Record<string, string>>,
-  routeBaseURL?: string,
-  pi?: PlanePiModel
+  routeBaseURL?: string
 ): string => {
   let family: "legacy" | "modern" = endpoint === "legacy" ? "legacy" : "modern";
   if (routeBaseURL !== undefined && routeBaseURL.length > 0) {
@@ -205,13 +212,7 @@ export const baseUrlFor = (
     }
   }
   if (family === "legacy") {
-    const piPath =
-      pi?.api === protocol && typeof pi.baseUrl === "string"
-        ? vendorPathOf(pi.baseUrl)
-        : undefined;
-    return piPath?.startsWith("/zen") === true && pi?.baseUrl !== undefined
-      ? pi.baseUrl
-      : LEGACY_BASE[route][protocol];
+    return LEGACY_BASE[route][protocol];
   }
   const declared =
     (sdk === undefined ? undefined : familyApi[sdk]) ??
@@ -288,10 +289,13 @@ const effortsDictOf = (
   return dict;
 };
 
-/** The protocol an id speaks (D16). */
+/**
+ * The protocol an id speaks (D16): the catalog's SDK, then the route's `api`,
+ * then completions. pi's own catalog entry is not consulted (D26), so a pi
+ * release that refiles a model cannot move it.
+ */
 const protocolOf = (
   spec: PlaneCatalogSpec | undefined,
-  pi: PlanePiModel | undefined,
   routeApi: string | undefined
 ): Protocol => {
   const fromCatalog =
@@ -299,13 +303,7 @@ const protocolOf = (
   if (fromCatalog !== undefined) {
     return fromCatalog;
   }
-  if (isProtocol(pi?.api)) {
-    return pi.api;
-  }
-  if (spec === undefined && pi === undefined && isProtocol(routeApi)) {
-    return routeApi;
-  }
-  return "openai-completions";
+  return isProtocol(routeApi) ? routeApi : "openai-completions";
 };
 
 /**
@@ -325,7 +323,7 @@ export const planeModelFor = (input: PlaneModelInput): PlaneModelResult => {
   const fail = (detail: string): PlaneModelResult => ({
     error: `llm-pi-ai: provider "${route}" model "${id}" ${detail}`,
   });
-  const protocol = protocolOf(spec, pi, input.routeApi);
+  const protocol = protocolOf(spec, input.routeApi);
   const compat = compatFor(
     route,
     id,
@@ -410,8 +408,7 @@ export const planeModelFor = (input: PlaneModelInput): PlaneModelResult => {
       spec?.provider_npm,
       input.endpoint,
       input.familyApi,
-      input.routeBaseURL,
-      pi
+      input.routeBaseURL
     ),
     contextWindow,
     cost:
