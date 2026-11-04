@@ -61,7 +61,12 @@ const SENT_PATH: Readonly<Record<Protocol, (id: string) => string>> = {
   "openai-responses": () => "/responses",
 };
 
-const DEFAULTS = { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 };
+/**
+ * The route's defaults as pi-ai's `Config` fills them. Stand-in values, on
+ * purpose not either channel's: the plugin restates none of pi-ai's defaults
+ * (D17), and the family a turn is sent to does not depend on them.
+ */
+const DEFAULTS = { contextWindow: 123_456, input: ["text"], maxTokens: 6_543 };
 
 /** Every plane × protocol's base under one `endpoint` setting. */
 const basesFor = (endpoint: EndpointChoice): Record<string, string> =>
