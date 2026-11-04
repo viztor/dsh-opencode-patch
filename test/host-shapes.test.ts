@@ -57,9 +57,12 @@ const ZEN_BASE = "https://opencode.ai";
 /**
  * F1/F2, measured per cell: a model-less plane resolves pi's whole catalog.
  * The bases moved twice under the plugin: the legacy family on pi 1.1.0, the
- * root `/inference(/go)/v1` on 1.3.0, and per-protocol roots on 1.5.0, which
- * also dropped four Zen completions models and one Anthropic one. Go gained a
- * Google model on 1.3.0 (F10).
+ * root `/inference(/go)/v1` on 1.3.0, and per-protocol roots on 1.5.0, where
+ * the per-protocol counts moved too (Zen, net of 1.3.0: four fewer
+ * completions models and one fewer Anthropic one). Go gained a Google model
+ * on 1.3.0 (F10). A pi bump whose catalog moved re-measures the `newest`
+ * column in its own pull request, as a reviewed change (CONTRIBUTING, release
+ * step 3).
  */
 const WHOLE_CATALOG: Readonly<
   Record<

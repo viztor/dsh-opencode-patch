@@ -13,9 +13,10 @@
  * - `[KNOWN_DEFECT]` is wrong today, and a phase fixes it;
  * - `[INTENDED_CHANGE]` is right today, and a phase changes it on purpose;
  * - `[BASELINE]` must survive every phase;
- * - `[HOST_LIMITATION]` is something one cell's pi lacks that the vendor's
- *   service needs, named with its channel and pi, reported upstream and never
- *   fixed here (D26). No row in this file carries it yet: P-R1 adds the first.
+ * - `[HOST_LIMITATION]` is something one cell's host lacks or breaks, named
+ *   with its channel and host (the definition is `RowTag` in
+ *   `support/host.ts`). No row in this file carries it yet: P-R1 adds the
+ *   first pi row; the binary e2e records one host-code defect.
  *
  * Where the hosts differ, a row carries one expectation per cell
  * (`S0_TODAY_BY_CELL`, `forHost`), and a title names the cell's tag: a facet
@@ -469,7 +470,7 @@ describe(
         );
       }
       expect(recorded).toMatch(SAVE_BLOCKED_BY_ANY_UNDESCRIBED);
-      // A newer pi that learned gpt-5.3-codex-spark names the next one.
+      // A newer pi that learned the first of ZEN_UNDESCRIBED names the next.
       expect(`provider "opencode" model "${UNKNOWN_ID}" needs an api`).toMatch(
         SAVE_BLOCKED_BY_ANY_UNDESCRIBED
       );

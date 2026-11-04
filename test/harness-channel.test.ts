@@ -44,7 +44,9 @@ import { channelManifest, pinFor } from "../scripts/channel-manifest.ts";
 import {
   type Channel,
   CHANNELS,
+  cordisFamily,
   DEFAULT_CHANNEL,
+  floorOverrides,
   PI_UNION_RANGE,
 } from "./support/host-versions.ts";
 
@@ -465,6 +467,27 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       expect(lock.versionsOf("@deepseek-ai/schemastery")).toEqual([
         record.schemastery,
       ]);
+    });
+
+    it("resolves the cordis family the record names, the e2e-host floor cell's overrides", () => {
+      // `cordisFamily` is what the `e2e-host` job forces on the floor cell, so
+      // a family member here and the record disagreeing would make that cell
+      // run a tree this install never measured. The timer plugin is the one
+      // member nothing here depends on: no lockfile resolves it, and the floor
+      // cell asserts it against the published host's tree instead.
+      const lock = lockfile(record.lockfile);
+      const family = Object.entries(cordisFamily(record));
+      expect(family).toHaveLength(7);
+      const timer = "@deepseek-ai/cordis-plugin-timer";
+      expect(lock.versionsOf(timer), timer).toEqual([]);
+      const resolved = family.filter(([name]) => name !== timer);
+      for (const [name, version] of resolved) {
+        expect(lock.versionsOf(name), name).toEqual([version]);
+      }
+      expect(floorOverrides(record)).toStrictEqual({
+        ...Object.fromEntries(family),
+        "@earendil-works/pi-ai": record.piFloor,
+      });
     });
 
     it("holds no harness package on the other channel's prerelease line", () => {

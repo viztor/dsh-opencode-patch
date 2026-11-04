@@ -26,26 +26,28 @@
  * both channels' records). The installed dsh must be that record's.
  * `DSH_HOST_PI_CELL` says which pi the prefix holds, both unpatched (D14''):
  *
- * - `npm` (the default): pi as npm resolved it for the published host, what an
- *   npm user of the channel runs. Its rows are the `newest` cell's while the
- *   resolved pi is the channel record's `pi`. A pi published since the record
- *   was cut is still asserted to sit in the bridge's range, but the rows that
- *   depend on which ids pi describes (the keyed listing and the per-model
- *   rows) are skipped with a warning: the nightly drift report names the new
- *   pi, and its probe JSON is the record. The save rows still run; they assume
- *   pi lacks at least one of `ZEN_UNDESCRIBED` and still describes every other
- *   declared Zen id, so a pi that learns all of them or retires a declared id
- *   turns them red by design — triage that as a pi change first.
- * - `floor`: pi forced to the range's floor, the pi the desktop app ships. The
- *   resolved pi must be that floor, and every row is the channel's floor cell.
+ * - `npm` (the default): the published host exactly as npm resolved it, cordis
+ *   and pi included, what an npm user of the channel runs. Its rows are the
+ *   `newest` cell's while the resolved pi is the channel record's `pi`. A pi
+ *   published since the record was cut is still asserted to sit in the
+ *   bridge's range, but the rows that depend on which ids pi describes (the
+ *   keyed listing and the per-model rows) are skipped with a warning: the
+ *   nightly drift report names the new pi, and its probe JSON is the record.
+ *   The save rows do not depend on which pi resolved; they assume pi lacks at
+ *   least one of `ZEN_UNDESCRIBED` and still describes every other declared
+ *   Zen id, so a pi that learns all of them or retires a declared id turns
+ *   them red by design — triage that as a pi change first.
+ * - `floor`: the tree the desktop app ships: the channel's cordis family at
+ *   the record's versions (`cordisFamily`) and pi at the range's floor, both
+ *   asserted here. Every row is the channel's floor cell.
  *
- * Neither cell pins cordis or the loader: the published host declares them as
- * `~` ranges, and npm resolves the newest patch, as it does for a user. Where
- * that leaves the host unable to run its own code, the run records a
- * `[HOST_LIMITATION]` row, detected from what the host answered and never from
- * a version, and skips the rows that need the broken path (today: alpha's
- * `0.2.2-alpha.2` under cordis `4.0.6-alpha.2`, where no config-editor save
- * succeeds).
+ * Only the `npm` cell lets cordis float, as the published host's `~` ranges
+ * do for a user. Where what it resolved leaves the host unable to run its own
+ * save path, the run records a `[HOST_LIMITATION]` row and skips the save
+ * rows. That is detected from what the host answered, never from a version:
+ * the plane edit AND a control edit no plugin's listener reads (the probe's
+ * own entry) both fail with a `TypeError` thrown by `dsh-app-boot`. Today
+ * that is alpha's `0.2.2-alpha.2` as npm installs it (cordis `4.0.6-alpha.2`).
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -72,7 +74,11 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { CHANNELS, HOST_VERSIONS } from "../support/host-versions.ts";
+import {
+  CHANNELS,
+  cordisFamily,
+  HOST_VERSIONS,
+} from "../support/host-versions.ts";
 import {
   type ApplyOrder,
   CHARACTERIZED_MODELS,
@@ -162,6 +168,8 @@ interface ProbeOutput {
   readonly dispatch: Record<string, { sent: string[]; finish: string }>;
   readonly describe: { user: string[]; value: string[] } | undefined;
   readonly saveBlocked: { id: string } & EditVerdict;
+  /** The control: an edit of the probe's own entry, made after the saves. */
+  readonly control?: EditVerdict;
   readonly saveCleared?: { dropped: string[] } & EditVerdict;
   readonly save: { id: string } & EditVerdict;
   readonly afterSave?: unknown;
@@ -180,21 +188,30 @@ interface EditVerdict {
 }
 
 /**
- * Whether an edit failed with a TypeError thrown by the host's own cluster
- * code (a `@deepseek-ai/dsh-*` package; cordis and its loader are excluded,
- * since a plugin's bad listener can make them throw), rather than with a
- * verdict pi-ai's checks reached: the host could not run its own save path.
- * Measured on the alpha channel's npm install of `0.2.2-alpha.2`: its
- * `dsh-app-boot` registers an `internal/update` listener in the old call shape
- * (`(config, noSave, next)`), while the cordis its `~` range now resolves
- * (`4.0.6-alpha.2`) calls the new one, so every config-editor save throws
- * `next is not a function` there, before any plugin's code runs. Read from
- * what the edit answered, never from a version, so a host that fixes it
- * reads false the day it ships (D26).
+ * Whether an edit failed the way the host's own save path fails: a TypeError
+ * thrown by `@deepseek-ai/dsh-app-boot`, a package this plugin registers no
+ * listener on. Measured on the alpha channel's npm install of
+ * `0.2.2-alpha.2`: its `dsh-app-boot` registers an `internal/update` listener
+ * in the old call shape (`(config, noSave, next)`), while the cordis its `~`
+ * range now resolves (`4.0.6-alpha.2`) calls the new one, so the save throws
+ * `next is not a function` there.
  */
 const hostListenerFailed = (verdict: EditVerdict | undefined): boolean =>
   verdict?.errorName === "TypeError" &&
-  (verdict.thrownBy?.startsWith("@deepseek-ai/dsh-") ?? false);
+  verdict.thrownBy === "@deepseek-ai/dsh-app-boot";
+
+/**
+ * Whether the host cannot save ANY config edit, whoever makes it: the plane
+ * edit failed in the host's own code, and so did the control — an edit of the
+ * probe's own entry, which no plugin's listener reads — with the same error.
+ * A failure of the plane edit alone is about the plane, and the save rows
+ * report it. Read from what the edits answered, never from a version, so a
+ * host that fixes it reads false the day it ships (D26).
+ */
+const hostCannotSave = (probe: ProbeOutput): boolean =>
+  hostListenerFailed(probe.saveBlocked) &&
+  hostListenerFailed(probe.control) &&
+  probe.control?.rejected === probe.saveBlocked.rejected;
 
 /** The entries of a directory, or none when it cannot be read. */
 const entriesOf = (dir: string): string[] => {
@@ -336,23 +353,24 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
       satisfiesCaret(piVersion, RECORD.piRange),
       `pi ${piVersion} is outside the bridge's ${RECORD.piRange}`
     ).toBe(true);
+    const installedVersion = (name: string): string =>
+      (
+        JSON.parse(
+          readFileSync(
+            join(PREFIX, "node_modules", ...name.split("/"), "package.json"),
+            "utf8"
+          )
+        ) as { version: string }
+      ).version;
     if (CELL === "floor") {
       expect(piVersion).toBe(RECORD.piFloor);
+      // The floor cell is the tree the desktop app ships, so the cordis family
+      // is the record's, not whatever the host's `~` ranges resolve today.
+      for (const [name, version] of Object.entries(cordisFamily(RECORD))) {
+        expect(installedVersion(name), name).toBe(version);
+      }
     }
-    cordisVersion = (
-      JSON.parse(
-        readFileSync(
-          join(
-            PREFIX,
-            "node_modules",
-            "@deepseek-ai",
-            "cordis",
-            "package.json"
-          ),
-          "utf8"
-        )
-      ) as { version: string }
-    ).version;
+    cordisVersion = installedVersion("@deepseek-ai/cordis");
     rowsHold = piVersion === ROWS_PI;
     if (!rowsHold) {
       console.warn(
@@ -586,29 +604,40 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     ]);
   });
 
-  it("[HOST_LIMITATION] the host's own save path runs under the cordis npm resolved for it (it does not on alpha 0.2.2-alpha.2 as npm installs it today: every config-editor save throws inside the host's own code; reported upstream, D26)", () => {
-    if (!hostListenerFailed(out.saveBlocked)) {
-      return;
+  it(`[HOST_LIMITATION] ${CHANNEL} ${RECORD.dsh} (${CELL} cell): no config-editor save succeeds, because the host's own code throws (reported upstream, D26)`, (context) => {
+    if (!hostCannotSave(out)) {
+      // This host saves (or fails only the plane edit, which the save rows
+      // report): the limitation is absent here, so there is nothing to record.
+      context.skip();
     }
     // Recorded, not fixed here: the host's own code cannot run, so no edit
-    // saves, whoever makes it. The two save rows below skip on this host.
-    // What is asserted is that the failure is that one and only that one:
-    // every edit the probe made failed the same way, inside the host's code.
+    // saves, whoever makes it. The save rows below skip on this host. What is
+    // asserted is that the failure is that one and only that one: every edit
+    // the probe made failed the same way, inside the host's code.
     console.warn(
-      `[e2e-host] ${CHANNEL} · ${CELL}: HOST_LIMITATION — the host's own ${String(out.saveBlocked.thrownBy)} throws under cordis ${cordisVersion} on every save (${String(out.saveBlocked.rejected)}); the save rows are skipped`
+      `[e2e-host] ${CHANNEL} · ${CELL}: HOST_LIMITATION — the host's own ${String(out.saveBlocked.thrownBy)} throws under cordis ${cordisVersion} on every save, the control included (${String(out.saveBlocked.rejected)}); the save rows are skipped`
     );
     expect(hostListenerFailed(out.saveCleared)).toBe(true);
     expect(hostListenerFailed(out.save)).toBe(true);
     expect(out.afterSave).toBeUndefined();
   });
 
+  it("[BASELINE] the control edit (the probe's own entry, which no plugin reads) saves", (context) => {
+    if (hostCannotSave(out)) {
+      context.skip();
+    }
+    // The known answer the HOST_LIMITATION detector rests on: where the host
+    // can save, an edit the plugin cannot reach is accepted.
+    expect(out.control).toEqual({ accepted: true });
+  });
+
   it("[KNOWN_DEFECT] a stored gap id blocks saving any new id on its plane", (context) => {
-    if (hostListenerFailed(out.saveBlocked)) {
+    if (hostCannotSave(out)) {
       context.skip();
     }
     // pi-ai's strict check names the FIRST stored id the installed pi cannot
-    // describe. Every recorded cell's pi lacks gpt-5.3-codex-spark, so it is
-    // named; a newer pi may have learned it, and then names the next
+    // describe. Every recorded cell's pi lacks the first of ZEN_UNDESCRIBED,
+    // so it is named; a newer pi may have learned it, and then names the next
     // undescribed id — so that run asserts only that one of them blocks it.
     expect(out.saveBlocked.rejected).toMatch(
       rowsHold ? ROWS.saveBlockedByStoredGap : SAVE_BLOCKED_BY_ANY_UNDESCRIBED
@@ -616,7 +645,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
   });
 
   it("[KNOWN_DEFECT] a catalog-unknown id cannot be saved, once the plane stores no gap id", (context) => {
-    if (hostListenerFailed(out.saveBlocked)) {
+    if (hostCannotSave(out)) {
       context.skip();
     }
     // Clearing only ZEN_UNDESCRIBED assumes the installed pi still describes

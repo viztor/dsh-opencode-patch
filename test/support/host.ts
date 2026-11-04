@@ -494,13 +494,17 @@ export const CHARACTERIZED_MODELS: Readonly<Record<Plane, readonly string[]>> =
   };
 
 /**
- * How a characterization row is tagged, so a later phase flips named rows:
- * `KNOWN_DEFECT` is wrong today and a phase fixes it, `INTENDED_CHANGE` is
- * right today and a phase changes it on purpose, `BASELINE` must survive.
- * `HOST_LIMITATION` is something one host cell's pi lacks that the vendor's
- * service needs: no phase of this plugin fixes it (D26: a host gap is the
- * host's job), its title names the channel and the pi it applies to, and it
- * is reported upstream.
+ * How a characterization row is tagged, so a later phase flips named rows.
+ * This is the one definition; CONTRIBUTING, the plan and the test files point
+ * here:
+ *
+ * - `KNOWN_DEFECT` is wrong today, and a phase fixes it;
+ * - `INTENDED_CHANGE` is right today, and a phase changes it on purpose;
+ * - `BASELINE` must survive every phase;
+ * - `HOST_LIMITATION` is something one host cell lacks or breaks, its pi or
+ *   its own code, that no phase of this plugin fixes (D26: a host gap is the
+ *   host's job): its title names the channel and the host it applies to, and
+ *   it is reported upstream.
  */
 export type RowTag =
   | "BASELINE"
@@ -846,10 +850,10 @@ const S0_ALPHA_FLOOR = withMoved(S0_RC_FLOOR, {
 
 /**
  * pi 1.5.0 (both channels' newest) files completions under the per-protocol
- * family P-R1 targets, and describes both Go gap ids, so each facet that
- * moves here is already what P-R1 keeps and is `BASELINE` on this cell:
- * completions reach `/inference(/go)/openai/v1`, Go gemini-4-argon validates
- * in either apply order, and Go minimax-m3.1-flash is placed (on
+ * family P-R1 targets, and describes both Go gap ids (`PI_GAPS_BY_CELL`), so
+ * each facet that moves here is already what P-R1 keeps and is `BASELINE` on
+ * this cell: completions reach `/inference(/go)/openai/v1`, the Go Gemini row
+ * validates in either apply order, and the other Go gap id is placed (on
  * completions, which is the plugin catalog's SDK too) and sent.
  */
 const S0_NEWEST = withMoved(
@@ -913,8 +917,8 @@ export const ZEN_UNDESCRIBED = ["gpt-5.3-codex-spark", UNKNOWN_ID] as const;
 /**
  * TODAY's rows for an apply order on a host cell. A cell's `rows` is its
  * `plugin-first` table; with `pi-ai-first` the adapter decoration wraps
- * pi-ai's plane adapter and on the floor cells exactly one facet moves — Go
- * gemini-4-argon validates (on `newest` pi already places it, so nothing
+ * pi-ai's plane adapter and on the floor cells exactly one facet moves — the
+ * Go Gemini row validates (on `newest` pi already places it, so nothing
  * moves) —
  * measured in `test/host-characterization.test.ts`, which generates one test
  * per row and facet for each order, titled with that order's tags. The moved
@@ -967,7 +971,7 @@ export const APPLY_ORDERS = Object.keys({
 /**
  * What appending a new id to `opencode` answers while the plane stores ANY of
  * {@link ZEN_UNDESCRIBED}, whichever one the installed pi cannot describe
- * first. Every recorded cell's pi names `gpt-5.3-codex-spark`
+ * first. Every recorded cell's pi names the first of them
  * (`S0_TODAY.saveBlockedByStoredGap`); a binary whose npm-resolved pi moved
  * past its channel record may have learned it and name the next one, so the
  * binary e2e asserts this instead on such a pi.

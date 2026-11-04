@@ -4,8 +4,11 @@
  *
  * - `rc` is `@deepseek-ai/dsh@latest`; `alpha` is `@deepseek-ai/dsh@alpha`.
  *   Each record names the `@deepseek-ai` cluster's tag, cordis and its loader
- *   (each on its own line, at what the cluster's `~` range resolves), and the
- *   `@deepseek-ai/schemastery` the cluster's range resolves.
+ *   (each on its own line, at what the cluster's `~` range resolves), the
+ *   `@deepseek-ai/schemastery` the cluster's range resolves, and the rest of
+ *   the cordis family the published host installs (`cordisFamily`): the
+ *   versions the harness vendors at the channel's tag, which is the tree the
+ *   desktop app ships and the one the `e2e-host` job's floor cell forces.
  * - `piRange` is the range the bridge (`dsh-llm-pi-ai`) declares. Nothing in
  *   the published packages narrows it: no shrinkwrap, no bundled copy, no
  *   install script and no runtime version check, so an npm install runs pi
@@ -40,10 +43,16 @@ export type Channel = "alpha" | "rc";
 export interface ChannelRecord {
   /** `@deepseek-ai/cordis`, what the cluster's `~` range resolves. */
   readonly cordis: string;
+  /** `@deepseek-ai/cosmokit`, cordis's own utility library. */
+  readonly cosmokit: string;
   /** The npm dist-tag the channel publishes `@deepseek-ai/dsh` under. */
   readonly distTag: "alpha" | "latest";
   /** The `@deepseek-ai/dsh-*` cluster's version. */
   readonly dsh: string;
+  /** `@deepseek-ai/cordis-plugin-group`. */
+  readonly group: string;
+  /** `@deepseek-ai/cordis-plugin-include`. */
+  readonly include: string;
   /** `@deepseek-ai/cordis-plugin-loader`, what the cluster's range resolves. */
   readonly loader: string;
   /** The committed lockfile that pins this channel, from the repo root. */
@@ -56,32 +65,84 @@ export interface ChannelRecord {
   readonly piRange: string;
   /** `@deepseek-ai/schemastery`, what the cluster's `~` range resolves. */
   readonly schemastery: string;
+  /**
+   * `@deepseek-ai/cordis-plugin-timer`. The only family member this
+   * repository's own install does not resolve, so no lockfile holds it; the
+   * `e2e-host` job's floor cell asserts it against the published host's tree.
+   */
+  readonly timer: string;
 }
 
 export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
   alpha: {
     cordis: "4.0.6-alpha.1",
+    cosmokit: "1.8.7-alpha.1",
     distTag: "alpha",
     dsh: "0.2.2-alpha.2",
+    group: "1.0.6-alpha.1",
+    include: "1.0.11-alpha.1",
     loader: "1.0.7-alpha.1",
     lockfile: "pnpm-lock.yaml",
     pi: "1.5.0",
     piFloor: "1.3.0",
     piRange: "^1.3.0",
     schemastery: "3.18.6-alpha.1",
+    timer: "1.1.8-alpha.1",
   },
   rc: {
     cordis: "4.0.5",
+    cosmokit: "1.8.6",
     distTag: "latest",
     dsh: "0.2.1-rc.5",
+    group: "1.0.5",
+    include: "1.0.10",
     loader: "1.0.6",
     lockfile: "channels/rc/pnpm-lock.yaml",
     pi: "1.5.0",
     piFloor: "1.1.0",
     piRange: "^1.1.0",
     schemastery: "3.18.5",
+    timer: "1.1.7",
   },
 };
+
+/**
+ * The cordis family the published host installs, by package name, at the
+ * record's versions: cordis, its loader, include, group and timer plugins,
+ * cosmokit and schemastery. They are released together and peer on one
+ * another by `~` ranges, so forcing one of them alone (cordis, say) leaves a
+ * tree nobody ships.
+ *
+ * @param record - a channel's record.
+ * @returns `{ "<package>": "<version>" }` for every family member.
+ */
+export const cordisFamily = (
+  record: ChannelRecord
+): Readonly<Record<string, string>> => ({
+  "@deepseek-ai/cordis": record.cordis,
+  "@deepseek-ai/cordis-plugin-group": record.group,
+  "@deepseek-ai/cordis-plugin-include": record.include,
+  "@deepseek-ai/cordis-plugin-loader": record.loader,
+  "@deepseek-ai/cordis-plugin-timer": record.timer,
+  "@deepseek-ai/cosmokit": record.cosmokit,
+  "@deepseek-ai/schemastery": record.schemastery,
+});
+
+/**
+ * The npm `overrides` the `e2e-host` job's floor cell installs the published
+ * host with: the channel's cordis family at the record's versions and pi at
+ * the bridge range's floor, which is the tree the desktop app ships (its pi
+ * patched there, not here). The npm cell takes no override.
+ *
+ * @param record - a channel's record.
+ * @returns the overrides, keyed by package name.
+ */
+export const floorOverrides = (
+  record: ChannelRecord
+): Readonly<Record<string, string>> => ({
+  ...cordisFamily(record),
+  "@earendil-works/pi-ai": record.piFloor,
+});
 
 /** The channel the root `package.json` and `pnpm-lock.yaml` install. */
 export const DEFAULT_CHANNEL: Channel = "alpha";

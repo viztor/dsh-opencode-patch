@@ -397,13 +397,17 @@ jobs:
   # One run per harness channel (D14''), each the channel's published binary
   # (`dsh@<record>` from `test/support/host-versions.ts`) installed with npm the
   # way a user installs it, pi unpatched in both cells:
-  # - `npm`: pi as npm resolves it for the published host. The record's
-  #   newest pi asserts every row; a pi published since the record skips the
-  #   rows that depend on which ids pi describes, with a warning (the nightly
-  #   `host-drift` job names it). Never cached: re-resolving is the point.
-  # - `floor`: pi forced to the bridge range's floor with npm `overrides`, the
-  #   pi the desktop app ships (patched there, not here; the patch touches
-  #   nothing the plugin reads). Cached by channel, dsh and pi.
+  # - `npm`: the published host exactly as npm resolves it, cordis and pi
+  #   included. The record's newest pi asserts every row; a pi published since
+  #   the record skips the rows that depend on which ids pi describes, with a
+  #   warning (the nightly `host-drift` job names it). Never cached:
+  #   re-resolving is the point.
+  # - `floor`: the tree the desktop app ships, forced with npm `overrides`
+  #   (`floorOverrides` in host-versions.ts): the channel's whole cordis family
+  #   at the record's versions and pi at the bridge range's floor (patched
+  #   there, not here; the patch touches nothing the plugin reads). Cached by
+  #   the channel, its dsh and a hash of those overrides, so a cache filled
+  #   before the record moved is never reused.
   # Pull requests run the `npm` cell of both channels, and only when they touch
   # the host seam; dispatch and the nightly run add both `floor` cells.
   #
@@ -481,41 +485,42 @@ jobs:
         id: versions
         if: steps.scope.outputs.run == 'true'
         run: |
-          node --experimental-strip-types --input-type=module -e "import { CHANNELS } from './test/support/host-versions.ts'; const r = CHANNELS[process.env.DSH_CHANNEL]; console.log('dsh=' + r.dsh); console.log('pi=' + r.pi); console.log('piFloor=' + r.piFloor); console.log('piRange=' + r.piRange)" >> "$GITHUB_OUTPUT"
+          node --experimental-strip-types --input-type=module -e "import { createHash } from 'node:crypto'; import { CHANNELS, floorOverrides } from './test/support/host-versions.ts'; const r = CHANNELS[process.env.DSH_CHANNEL]; const overrides = JSON.stringify(floorOverrides(r)); console.log('dsh=' + r.dsh); console.log('pi=' + r.pi); console.log('piRange=' + r.piRange); console.log('floorOverrides=' + overrides); console.log('floorKey=' + createHash('sha256').update(overrides).digest('hex').slice(0, 16))" >> "$GITHUB_OUTPUT"
           echo "PREFIX=$RUNNER_TEMP/dsh-host" >> "$GITHUB_ENV"
-      # The floor install forces one version, so it is cached by the channel,
-      # its dsh and that pi (the rest of the published host's tree is whatever
-      # its ranges resolved on the miss that filled the cache); the npm one is
-      # the point of re-resolving, so never.
+      # The floor install forces every version that matters (the record's
+      # cordis family and the floor pi), so it is cached by the channel, its
+      # dsh and a hash of those overrides; the npm one is the point of
+      # re-resolving, so never.
       - name: cache the floor host install
         id: host-cache
         if: steps.scope.outputs.run == 'true' && matrix.cell == 'floor'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/dsh-host
-          key: dsh-host-floor-${{ matrix.channel }}-${{ steps.versions.outputs.dsh }}-${{ steps.versions.outputs.piFloor }}
+          key: dsh-host-floor-${{ matrix.channel }}-${{ steps.versions.outputs.dsh }}-${{ steps.versions.outputs.floorKey }}
       - name: install the published host into a throwaway prefix
         if: steps.scope.outputs.run == 'true' && steps.host-cache.outputs.cache-hit != 'true'
         env:
           CELL: ${{ matrix.cell }}
           DSH: ${{ steps.versions.outputs.dsh }}
-          PI_FLOOR: ${{ steps.versions.outputs.piFloor }}
+          FLOOR_OVERRIDES: ${{ steps.versions.outputs.floorOverrides }}
         run: |
           mkdir -p "$PREFIX"
-          # The override must be in the prefix's own package.json BEFORE the
-          # install, or npm resolves the bridge's ^range to the newest pi.
+          # The overrides must be in the prefix's own package.json BEFORE the
+          # install, or npm resolves the bridge's ^range to the newest pi and
+          # the host's ~ ranges to the newest cordis patch.
           if [ "$CELL" = floor ]; then
-            printf '{ "private": true, "overrides": { "@earendil-works/pi-ai": "%s" } }\n' "$PI_FLOOR" > "$PREFIX/package.json"
+            node -e "process.stdout.write(JSON.stringify({ private: true, overrides: JSON.parse(process.env.FLOOR_OVERRIDES) }) + '\n')" > "$PREFIX/package.json"
           else
             printf '{ "private": true }\n' > "$PREFIX/package.json"
           fi
           npm install --prefix "$PREFIX" --no-audit --no-fund "@deepseek-ai/dsh@$DSH"
-      - name: report the pi, cordis and loader the host resolved
+      - name: report the pi and the cordis family the host resolved
         if: steps.scope.outputs.run == 'true'
         env:
           CELL: ${{ matrix.cell }}
           PI: ${{ steps.versions.outputs.pi }}
-          PI_FLOOR: ${{ steps.versions.outputs.piFloor }}
+          FLOOR_OVERRIDES: ${{ steps.versions.outputs.floorOverrides }}
         run: |
           resolved="$(node -p "require(process.env.PREFIX + '/node_modules/@earendil-works/pi-ai/package.json').version")"
           echo "${DSH_CHANNEL} · ${CELL}: pi $resolved"
@@ -524,19 +529,25 @@ jobs:
             echo "::error::expected one copy of pi under the host prefix, found $copies"
             exit 1
           fi
-          if [ "$CELL" = floor ] && [ "$resolved" != "$PI_FLOOR" ]; then
-            echo "::error::the floor cell resolved pi $resolved, not $PI_FLOOR"
-            exit 1
-          fi
           if [ "$CELL" = npm ] && [ "$resolved" != "$PI" ]; then
             echo "::warning::npm resolved pi $resolved for ${DSH_CHANNEL}, not the record's $PI: the rows that depend on which ids pi describes are skipped"
           fi
-          # Reported, not asserted: the published host declares cordis and the
-          # loader as tilde ranges, and a new patch there is the channel's
-          # release, which the nightly drift report names.
-          for name in @deepseek-ai/cordis @deepseek-ai/cordis-plugin-loader; do
-            echo "${DSH_CHANNEL} · ${CELL}: $name $(node -p "require(process.env.PREFIX + '/node_modules/$name/package.json').version")"
+          # Every package the floor cell forces (pi and the cordis family): the
+          # floor cell must hold exactly the record's version, a cached prefix
+          # included; the npm cell reports what npm resolved, which is the
+          # channel's release as a user gets it (the nightly drift report
+          # names a move past the record).
+          failed=0
+          for name in $(node -p "Object.keys(JSON.parse(process.env.FLOOR_OVERRIDES)).join(' ')"); do
+            want="$(node -p "JSON.parse(process.env.FLOOR_OVERRIDES)['$name']")"
+            got="$(node -p "require(process.env.PREFIX + '/node_modules/$name/package.json').version")"
+            echo "${DSH_CHANNEL} · ${CELL}: $name $got"
+            if [ "$CELL" = floor ] && [ "$got" != "$want" ]; then
+              echo "::error::the floor cell resolved $name $got, not the record's $want"
+              failed=1
+            fi
           done
+          exit "$failed"
       - if: steps.scope.outputs.run == 'true'
         run: pnpm run build
       - name: boot the host binary with the probe
