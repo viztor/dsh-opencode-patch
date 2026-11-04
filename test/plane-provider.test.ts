@@ -203,7 +203,7 @@ describe("plane-provider · the adapter", () => {
   });
 
   it("relabels a toggle model's efforts as Off/On in model info and in a prepared call, ids untouched", async () => {
-    const { libraries } = await modules();
+    const { libraries, piAi } = await modules();
     const goProfile = planeProfileFor({
       buildProvider: buildPlaneProvider(libraries),
       catalog: [],
@@ -214,6 +214,14 @@ describe("plane-provider · the adapter", () => {
         ],
       },
       familyApi: OPENCODE_FAMILY_API.go,
+      // pi-ai's own Config fills the route's default window and output
+      // tokens for a model no source sizes; the plugin restates neither.
+      normalize: (raw) =>
+        (
+          piAi.Config({ providers: { "opencode-go": raw } }) as {
+            providers: { get: () => Record<string, unknown> };
+          }
+        ).providers.get()["opencode-go"],
       piModels: [],
       resolveRetryPolicy: libraries.resolveRetryPolicy,
       route: "opencode-go",
