@@ -340,8 +340,8 @@ describe("keyless matrix · the cells", () => {
 describe("keyless matrix · the cells the live run asserts", () => {
   /**
    * The matrix cells one host cell's characterized turns were sent to, and
-   * the URLs that match no cell (the root family, `/inference(/go)/v1`, which
-   * the matrix does not probe yet: P-R2 adds it).
+   * the URLs that match no cell of any of the three shapes, root included —
+   * a turn sent anywhere the matrix does not probe.
    */
   const reachedOn = (cell: (typeof HOST_CELLS)[number]) => {
     const reached = new Set<string>();
@@ -387,14 +387,16 @@ describe("keyless matrix · the cells the live run asserts", () => {
       expect(reached, cell).toEqual([...TODAY_DISPATCH].toSorted());
     }
     // Every protocol on both planes reaches the modern family, completions
-    // included (P-R1), and nothing reaches a legacy cell by default.
+    // included (P-R1), and nothing reaches a legacy or root cell by default.
     expect([...TODAY_DISPATCH].toSorted()).toEqual(
       PLANES.flatMap((plane) =>
         MATRIX_PROTOCOLS.map((protocol) => `${plane} ${protocol} modern`)
       ).toSorted()
     );
     expect(
-      [...TODAY_DISPATCH].filter((cell) => cell.endsWith("legacy"))
+      [...TODAY_DISPATCH].filter(
+        (cell) => cell.endsWith("legacy") || cell.endsWith("root")
+      )
     ).toEqual([]);
     const all = new Set(keylessMatrix({ go: GO, zen: ZEN }).map(key));
     for (const cell of TODAY_DISPATCH) {
