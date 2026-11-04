@@ -710,9 +710,10 @@ export const PI_AI_DEFAULTS: Readonly<
  * against the hidden-route workaround; P-R1 (the plugin owns the plane
  * routes) flipped the fourteen `KNOWN_DEFECT`/`INTENDED_CHANGE` facets its PR
  * body names to `BASELINE`, so every facet here is one no later phase may
- * move — except that P-R2's measured family flip, if a `modern` cell fails,
- * may move the endpoint-family part of a wire facet, re-tagging each one it
- * moves and naming it in its PR body. The plugin builds every model itself,
+ * move — except that the `fix:` that flips `AUTO_ENDPOINT_FAMILY` on P-R2's
+ * measured evidence (`docs/redirect-planes.md` §13) may move the
+ * endpoint-family part of a wire facet, re-tagging each one it moves and
+ * naming it in its PR body. The plugin builds every model itself,
  * so one table serves every cell; a cell's table differs only where the
  * host's own pi or pi-ai decides ({@link S0_TODAY_BY_CELL}).
  *

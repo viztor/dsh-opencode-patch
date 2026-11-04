@@ -8,7 +8,9 @@
  * both shapes are asserted against the live service rather than our idea of it.
  *
  * Opt-in via `OPENCODE_E2E=1`, and each credentialed block skips when its key is
- * absent — so forks and key-less runs stay green instead of failing on a 401.
+ * absent — so forks and key-less runs stay green instead of failing on a 401 —
+ * or when `OPENCODE_E2E_KEYED` names a tier below `full` (unset is `full`; CI
+ * runs `full` nightly and on dispatch).
  *
  *   OPENCODE_E2E=1 OPENCODE_API_KEY=… OPENCODE_GO_API_KEY=… pnpm run test:e2e
  *
@@ -19,6 +21,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { armedKey, keyedTierOf } from "../support/keyed-probes.ts";
 import {
   type GoUsage,
   OPENCODE_ZEN_CATALOG,
@@ -36,8 +39,10 @@ const ZEN_BASE =
 const GO_BASE =
   process.env.OPENCODE_GO_BASE_URL ?? "https://opencode.ai/zen/go/v1";
 
-const ZEN_KEY = process.env.OPENCODE_API_KEY;
-const GO_KEY = process.env.OPENCODE_GO_API_KEY;
+/** What may spend a key: the keyed blocks here run on the `full` tier only. */
+const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
+const ZEN_KEY = armedKey(TIER, "full", process.env.OPENCODE_API_KEY);
+const GO_KEY = armedKey(TIER, "full", process.env.OPENCODE_GO_API_KEY);
 
 /** Generous: these cross the public internet from CI. */
 const TIMEOUT_MS = 30_000;
