@@ -84,7 +84,7 @@ cd ~/.dsh/profiles/web
 npm install dsh-opencode-patch
 ```
 
-包名在所有用到它的地方都是 `dsh-opencode-patch`：你安装的依赖、profile 里的 bundle 条目，以及宿主解析的那一行。它也以 [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) 发布；旧名 `@viztor/dsh-opencode` 已不再发布，仍在使用它的安装请改用上述任一名称。
+包名在所有用到它的地方都是 `dsh-opencode-patch`：你安装的依赖、profile 里的 bundle 条目，以及宿主解析的那一行。它也以 [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch) 发布，而旧名 [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) 继续以**已弃用的薄包装**发布、转导出本包——仍在使用旧名的安装照常可用，换到另外两个名字只是改名，不是修问题。
 
 **2. 启用 bundle**——把该包加入 profile 的 `dsh.profile.bundles` 数组：
 
@@ -423,7 +423,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **更小的公开 API。** 包入口只导出 `apply`、`Config`、`inject` 和 `name`（宿主读取的名称），以及配置类型（`PluginConfig`、`ResolvedPluginConfig`、`ModelOverrideConfig`、`ModelRouteConfig`、`EndpointFamily`、`KeySourcePolicy`）。此前额外重新导出的其余内容现在都是内部实现。
 - **`./src/*` 不再是导出路径。** `src/` 从未包含在发布文件中，所以这个子路径只在仓库内可解析，安装后并不存在。
 - **`internalRoutes` 已移除。** 按协议划分的内部路由总是会挂载。仍带有 `internalRoutes` 的 profile 配置行可以通过校验，该键会被忽略。
-- **`@viztor/dsh-opencode` 不再发布。** 其最后一个版本上的 "Renamed to @viztor/dsh-opencode-patch" 弃用提示即为最终信息；请改装 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
+- **`@viztor/dsh-opencode` 已弃用，但仍在发布。** 它是一个转导出 `dsh-opencode-patch` 的薄包装，所以用旧名的安装照常解析；registry 上标记为弃用并指向正式名称。新安装请用 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 
 ## 📜 兼容性与验证
 

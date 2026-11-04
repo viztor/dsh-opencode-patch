@@ -6,10 +6,14 @@
  * from `publish-scoped.ts` because that script publishes at import time, so the
  * check and its test could not read the list from there.
  *
- * `@viztor/dsh-opencode` is no longer published (retired in 1.x, D9): its last
- * version's "Renamed to @viztor/dsh-opencode-patch" deprecation stands as the
- * final message on the registry.
+ * `@viztor/dsh-opencode` is DEPRECATED and still published: a thin wrapper that
+ * re-exports the canonical package, kept so an existing install keeps resolving.
+ * A compatibility name that stops publishing breaks the installs still using it,
+ * which is the one thing it must not do.
  *
  * @module scripts/scoped-targets
  */
-export const SCOPED_TARGETS: readonly string[] = ["@viztor/dsh-opencode-patch"];
+export const SCOPED_TARGETS: readonly string[] = [
+  "@viztor/dsh-opencode-patch",
+  "@viztor/dsh-opencode",
+];
