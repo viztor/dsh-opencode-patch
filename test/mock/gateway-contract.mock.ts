@@ -16,10 +16,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  cellKey,
+  keylessMatrix,
+  LEGACY_DISPATCH,
+  TODAY_DISPATCH,
+} from "../support/keyless-matrix.ts";
+import {
   DEFAULT_USAGE_BASE_URL,
   LEGACY_PLANE_API,
   OPENCODE_FAMILY_API,
+  OPENCODE_GO_CATALOG,
   OPENCODE_PLANE_API,
+  OPENCODE_ZEN_CATALOG,
 } from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { catalogFor, firstSpecFor, MOCK_SESSION, ZEN_KEY } from "./helpers.ts";
@@ -275,5 +283,47 @@ describe("the mock gateway", () => {
       unserved,
       "bases the plugin can send to and the mock cannot serve"
     ).toEqual([]);
+  });
+
+  it("serves the request of every cell either endpoint setting dispatches to, and no root cell", async () => {
+    // The same invariant per REQUEST rather than per base: each cell the
+    // plugin sends a turn to under `auto`/`modern` (`TODAY_DISPATCH`) or
+    // `endpoint: legacy` (`LEGACY_DISPATCH`), with the protocol's own path
+    // and the bundled catalog's model, must reach a route. The root shape is
+    // the converse: nothing dispatches there, so a mock that served it could
+    // hide a turn sent to the wrong family — it must answer `no_route`.
+    const dispatched = new Set([...TODAY_DISPATCH, ...LEGACY_DISPATCH]);
+    const cells = keylessMatrix({
+      go: OPENCODE_GO_CATALOG,
+      zen: OPENCODE_ZEN_CATALOG,
+    });
+    expect(cells.filter((cell) => dispatched.has(cellKey(cell)))).toHaveLength(
+      dispatched.size
+    );
+    const unserved: string[] = [];
+    const servedRoot: string[] = [];
+    for (const cell of cells) {
+      const name = cellKey(cell);
+      if (!dispatched.has(name) && cell.family !== "root") {
+        continue;
+      }
+      const url = new URL(cell.url);
+      await fetch(`${gateway.origin}${url.pathname}${url.search}`, {
+        body: JSON.stringify(cell.body),
+        headers: { ...cell.headers, "x-opencode-session-id": MOCK_SESSION },
+        method: cell.method,
+      });
+      const reject = (
+        gateway.requests.at(-1) as { reject?: string | null } | undefined
+      )?.reject;
+      if (cell.family === "root" && reject !== "no_route") {
+        servedRoot.push(name);
+      }
+      if (dispatched.has(name) && reject === "no_route") {
+        unserved.push(name);
+      }
+    }
+    expect(unserved, "dispatched cells the mock has no route for").toEqual([]);
+    expect(servedRoot, "root cells the mock routes").toEqual([]);
   });
 });
