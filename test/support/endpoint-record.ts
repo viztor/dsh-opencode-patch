@@ -18,6 +18,7 @@
  *
  * @module test/support/endpoint-record
  */
+import { KEYED_VARIANTS, type KeyedVariant } from "./keyed-probes.ts";
 import {
   cellKey,
   LEGACY_DISPATCH,
@@ -26,6 +27,7 @@ import {
   type MatrixFamily,
   type MatrixPlane,
   type MatrixProtocol,
+  SYSTEM_ONE_URLS,
   TODAY_DISPATCH,
 } from "./keyless-matrix.ts";
 
@@ -133,6 +135,122 @@ export const freeProbeLine = (probe: {
   `Free model on \`/inference/openai/v1/chat/completions\`: ${
     probe.model === undefined ? "no model" : `\`${probe.model}\``
   } → ${probe.verdict}${probe.status === undefined ? "" : ` (${probe.status})`}.`;
+
+/** An answer as one record cell prints it: the verdict, then the status. */
+const answerText = (probe: {
+  readonly status: number | undefined;
+  readonly verdict: string;
+}): string =>
+  probe.status === undefined
+    ? probe.verdict
+    : `${probe.verdict} (${probe.status})`;
+
+/**
+ * The System One family's one line (lesson L13): each shape's path and what
+ * it answered keyless, or `not sent`.
+ *
+ * @param probes - what each shape answered.
+ * @returns the line.
+ */
+export const systemOneLine = (
+  probes: readonly {
+    readonly family: MatrixFamily;
+    readonly status: number | undefined;
+    readonly verdict: string;
+  }[]
+): string =>
+  `System One on the Zen plane, keyless (nothing dispatches there): ${MATRIX_FAMILIES.map(
+    (family) => {
+      const probe = probes.find((candidate) => candidate.family === family);
+      return `\`${new URL(SYSTEM_ONE_URLS[family]).pathname}\` (${family}) → ${
+        probe === undefined ? "not sent" : answerText(probe)
+      }`;
+    }
+  ).join("; ")}.`;
+
+/** One keyed variant as the record keeps it: no header, no body. */
+export interface RecordedVariant {
+  readonly plane: MatrixPlane;
+  readonly variant: KeyedVariant["id"];
+  readonly model: string | undefined;
+  readonly status: number | undefined;
+  readonly verdict: string;
+}
+
+/** The variants table's header. */
+export const VARIANT_HEADER =
+  "| Plane | Probe | Lesson | Model | `/inference(/go)/openai/v1/chat/completions` |";
+
+/** The variants table's alignment row. */
+export const VARIANT_RULE = "| :-- | :-- | :-- | :-- | :-- |";
+
+/** The variants table's rows, in order: Zen then Go, each in {@link KEYED_VARIANTS}' order. */
+export const VARIANT_ROWS: readonly (readonly [MatrixPlane, KeyedVariant])[] = (
+  ["opencode", "opencode-go"] as const
+).flatMap((plane) =>
+  KEYED_VARIANTS.map((variant) => [plane, variant] as const)
+);
+
+/**
+ * The keyed variants' dated table: one row per plane and variant, the
+ * variant's model and what the default completions cell answered.
+ *
+ * @param record.date - the UTC date of the run, `YYYY-MM-DD`.
+ * @param record.run - the run's {@link runReference}.
+ * @param record.probes - what each variant answered.
+ * @returns the heading, a blank line and the table, joined by newlines.
+ */
+export const variantTable = (record: {
+  readonly date: string;
+  readonly run: string;
+  readonly probes: readonly RecordedVariant[];
+}): string => {
+  const rows = VARIANT_ROWS.map(([plane, variant]) => {
+    const probe = record.probes.find(
+      (candidate) =>
+        candidate.plane === plane && candidate.variant === variant.id
+    );
+    const model = probe?.model;
+    return `| \`${plane}\` | ${variant.label} | ${variant.lesson} | ${
+      model === undefined ? "—" : `\`${model}\``
+    } | ${probe === undefined ? "not sent" : answerText(probe)} |`;
+  });
+  return [
+    `### Keyed variants · measured ${record.date} (UTC) · ${record.run}`,
+    "",
+    VARIANT_HEADER,
+    VARIANT_RULE,
+    ...rows,
+  ].join("\n");
+};
+
+/**
+ * A header value as a record line can carry it: a delay in seconds or an
+ * HTTP date, so anything else is dropped and the rest cut to 40 characters —
+ * a value the gateway sends cannot break the line or the table around it.
+ */
+const headerValue = (value: string): string =>
+  value.replaceAll(/[^\w ,:.+-]/gu, "").slice(0, 40);
+
+/**
+ * The `Retry-After` line (lesson L9): every keyed 429 and the delay it named,
+ * or that none was answered.
+ *
+ * @param entries - each 429's cell name and its `Retry-After`, `null` when
+ *   it carried none.
+ * @returns the line.
+ */
+export const retryAfterLine = (
+  entries: readonly { readonly cell: string; readonly value: string | null }[]
+): string =>
+  entries.length === 0
+    ? "`Retry-After` on a keyed 429: no 429 was answered."
+    : `\`Retry-After\` on a keyed 429: ${entries
+        .map(
+          ({ cell, value }) =>
+            `${cell} → ${value === null ? "absent" : `\`${headerValue(value)}\``}`
+        )
+        .join("; ")}.`;
 
 /**
  * The run a record came from: a link to the CI run, or "a local run" when any

@@ -301,16 +301,82 @@ export const keylessMatrix = (catalogs: {
 };
 
 /**
+ * The System One family on the Zen plane, one URL per shape (lesson L13):
+ * TypeSafe's classification protocol, which the gateway serves beside the four
+ * chat protocols and pi files its classifier models under
+ * (`typesafe-system-one`). pi 1.1.0 names the legacy URL and pi 1.5.0 the
+ * modern one in its own provider; the root follows the root shape. The Go
+ * plane carries no System One model in either pi.
+ *
+ * This plugin serves no classifier and reads no base from pi (D26), so nothing
+ * dispatches here: the keyless matrix sends {@link systemOneCells} and records
+ * what each answers, never asserts it.
+ */
+export const SYSTEM_ONE_URLS: Readonly<Record<MatrixFamily, string>> = {
+  legacy: "https://opencode.ai/zen/v1/systemone",
+  modern: "https://opencode.ai/inference/systemone/v1/systemone",
+  root: "https://opencode.ai/inference/v1/systemone",
+};
+
+/** One keyless System One probe: a path question, so it names no model. */
+export interface SystemOneCell {
+  readonly family: MatrixFamily;
+  readonly url: string;
+  readonly method: "POST";
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The System One cells, legacy, root and modern: an empty JSON body and no
+ * credential. The gateway authenticates before it reads a body, so the answer
+ * is the path's — read by {@link classifyKeylessProbe}, a 404 gone and a
+ * 401, a 403 or a 400 there — without naming a model the bundled catalog does
+ * not list.
+ *
+ * @returns the three cells.
+ */
+export const systemOneCells = (): SystemOneCell[] =>
+  MATRIX_FAMILIES.map((family) => ({
+    body: {},
+    family,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    url: SYSTEM_ONE_URLS[family],
+  }));
+
+/**
+ * Whether a body is the free tier's usage cap: `429 FreeUsageLimitError`, the
+ * gate refusing a free model for the caller's usage, which a newer gateway
+ * answers where it used to serve (lesson L3 in `docs/improvement-plan.md`).
+ * It is the gate's decision, not the gateway's load, so it is neither a rate
+ * limit nor worth a retry.
+ *
+ * @param bodyText - the response body, as text.
+ * @returns whether the body names the usage cap.
+ */
+export const isFreeUsageLimit = (bodyText: string): boolean =>
+  /\bFreeUsageLimitError\b/u.test(bodyText);
+
+/**
  * Whether a probe's answer is transient and worth one retry before it is
  * classified: a rate limit, a server error, or no answer at all. The live
  * matrix sends twenty-four requests on every pull request, and one 429 must not
- * turn the job red.
+ * turn the job red. A 429 naming the free tier's usage cap
+ * ({@link isFreeUsageLimit}) is not one: the gate decided, and a retry two
+ * seconds later meets the same cap.
  *
  * @param status - the HTTP status, or `undefined` for a transport error.
+ * @param bodyText - the response body, as text, when there is one.
  * @returns `true` to retry once.
  */
-export const isTransientProbeAnswer = (status: number | undefined): boolean =>
-  status === undefined || status === 429 || status >= 500;
+export const isTransientProbeAnswer = (
+  status: number | undefined,
+  bodyText = ""
+): boolean =>
+  status === undefined ||
+  (status === 429 && !isFreeUsageLimit(bodyText)) ||
+  status >= 500;
 
 /** One answer a probe received: its status, its body, and where a 3xx pointed. */
 export interface ProbeAnswer {
@@ -318,6 +384,8 @@ export interface ProbeAnswer {
   readonly bodyText: string;
   /** The path a 3xx's `Location` names (never its host or query), if any. */
   readonly location?: string;
+  /** A 429's `Retry-After` header, as sent (lesson L9). */
+  readonly retryAfter?: string;
 }
 
 /**
@@ -336,7 +404,9 @@ export type AttemptVerdict = "rate-limited" | "transport-error";
  * the next connection open until the client gives up
  * (`test/e2e/protocol-routing.e2e.ts`). Any other last attempt with no answer
  * is `transport-error` — after no answer, a 5xx, or a busy upstream (a 503 or
- * a 529) alike: only the 429 hang is a measured gateway pattern.
+ * a 529) alike: only the 429 hang is a measured gateway pattern. A 429 naming
+ * the free tier's usage cap ({@link isFreeUsageLimit}) is neither: it is the
+ * gate's answer, so `classify` reads it like any other.
  *
  * @param attempts - each attempt's answer, `undefined` for one that got none.
  * @param classify - how the suite reads an answer.
@@ -346,13 +416,13 @@ export const verdictOfAttempts = <V extends string>(
   attempts: readonly (ProbeAnswer | undefined)[],
   classify: (answer: ProbeAnswer) => V
 ): V | AttemptVerdict => {
+  const isRateLimit = (answer: ProbeAnswer | undefined): boolean =>
+    answer?.status === 429 && !isFreeUsageLimit(answer.bodyText);
   const last = attempts.at(-1);
   if (last === undefined) {
-    return attempts.some((answer) => answer?.status === 429)
-      ? "rate-limited"
-      : "transport-error";
+    return attempts.some(isRateLimit) ? "rate-limited" : "transport-error";
   }
-  return last.status === 429 ? "rate-limited" : classify(last);
+  return isRateLimit(last) ? "rate-limited" : classify(last);
 };
 
 /**
@@ -532,6 +602,7 @@ export const freeProbeCells = (
 export type FreeVerdict =
   | "auth-required"
   | "free-tier-gated"
+  | "free-usage-limited"
   | "model-gone"
   | "other"
   | "path-gone"
@@ -548,7 +619,9 @@ export type FreeVerdict =
  * for a model it used to serve without one. A free model is the one keyless
  * request that reaches the upstream, so a busy upstream
  * ({@link isUpstreamBusy}) is `upstream-busy`, as the keyed probes read it;
- * any other 5xx is `other`.
+ * any other 5xx is `other`. A `429 FreeUsageLimitError` is
+ * `free-usage-limited`: the gate refusing the caller's usage of the free
+ * tier, its own verdict rather than a rate limit (lesson L3).
  *
  * @param answer.status - the HTTP status.
  * @param answer.bodyText - the response body, as text.
@@ -575,6 +648,9 @@ export const classifyFreeProbe = (answer: {
   }
   if (answer.status === 403 && /FreeTierError/u.test(answer.bodyText)) {
     return "free-tier-gated";
+  }
+  if (answer.status === 429 && isFreeUsageLimit(answer.bodyText)) {
+    return "free-usage-limited";
   }
   if (
     answer.status === 401 &&
@@ -697,6 +773,13 @@ export const runFreeProbe = async (
   };
 };
 
+/** The free-probe verdicts that measured the gateway's state, not the path. */
+const FREE_PROBE_SKIPS: ReadonlySet<string> = new Set([
+  "free-usage-limited",
+  "rate-limited",
+  "upstream-busy",
+]);
+
 /** The free-probe verdicts that mean the default completions path parses a free model. */
 const FREE_PROBE_PASSES: ReadonlySet<string> = new Set([
   "served",
@@ -706,10 +789,14 @@ const FREE_PROBE_PASSES: ReadonlySet<string> = new Set([
 /**
  * What the free probe's verdict decides: `pass` when the default
  * completions path parsed the free model (served, or gated by the free tier);
- * `skip` when the gateway was rate-limiting (`rate-limited`) or the upstream
- * busy (`upstream-busy`), which say nothing about the path — free models are
+ * `skip` when the gateway was rate-limiting (`rate-limited`), the upstream
+ * busy (`upstream-busy`), or the free tier's usage cap answered
+ * (`free-usage-limited`), which say nothing about the path — free models are
  * the class it limits, and `test/e2e/protocol-routing.e2e.ts`'s free cases
- * skip on a rate limit too; `fail` on everything else: a gone path, a key
+ * skip on a rate limit too. The usage cap is the one the community plugins
+ * misread: counting it as a pass (as a served model) says the tier serves
+ * the caller when it has just refused to (lesson L3). `fail` on everything
+ * else: a gone path, a key
  * demanded, the wrong wire format, a redirect, an unreadable status, no
  * answer, or three retired free models.
  *
@@ -722,7 +809,5 @@ export const freeProbeOutcome = (
   if (FREE_PROBE_PASSES.has(verdict)) {
     return "pass";
   }
-  return verdict === "rate-limited" || verdict === "upstream-busy"
-    ? "skip"
-    : "fail";
+  return FREE_PROBE_SKIPS.has(verdict) ? "skip" : "fail";
 };

@@ -51,6 +51,14 @@
  * P-R2 decided are recorded, not guarded, and the root shape nothing
  * dispatches to — never fails or passes a plane on its own: it is recorded,
  * and read only beside a default cell of the same protocol.
+ * * A second case per plane sends the keyed VARIANTS of the default
+ * completions cell (`keyedVariantCells`, lessons L4, L5 and L10): the probe
+ * identity beside a minted `x-opencode-request`, `x-opencode-project` as a
+ * folder name and as a 40-hex digest, and a paid completions model that
+ * reasons, with no `reasoning_effort` and with `"none"`. Every 429 either case
+ * meets has its `Retry-After` noted (lesson L9). All of it is recorded —
+ * the variants table and the `Retry-After` line follow the keyed table in
+ * `keyed.md` — and none of it is asserted: P6 and P-R3 act on what it shows.
  *
  * Armed by the `probes` tier (`OPENCODE_E2E_KEYED`, unset meaning `full`):
  * CI runs it on pull requests that touch `src/host/**`, the modules that
@@ -86,17 +94,24 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   type RecordedProbe,
+  type RecordedVariant,
   recordTable,
+  retryAfterLine,
   runReference,
+  variantTable,
 } from "../support/endpoint-record.ts";
 import {
   armedKey,
   excerpt,
   isArmed,
+  KEYED_VARIANTS,
   keyedCell,
   keyedTierOf,
+  keyedVariantCells,
   keyedVerdictOf,
   planeOutcome,
+  reasoningCompletionsModel,
+  retryAfterOf,
 } from "../support/keyed-probes.ts";
 import {
   cellKey,
@@ -106,7 +121,11 @@ import {
   type ProbeAnswer,
   redirectPathOf,
 } from "../support/keyless-matrix.ts";
-import { MODELS_OPENCODE_URL, parseModelsDevCatalog } from "../support/src.ts";
+import {
+  type CatalogModelSpec,
+  MODELS_OPENCODE_URL,
+  parseModelsDevCatalog,
+} from "../support/src.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 /** A mirror the rest of the suite is pointed at, which this file cannot follow. */
@@ -140,10 +159,12 @@ const send = async (cell: MatrixCell): Promise<ProbeAnswer | undefined> => {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     const location = redirectPathOf(response.headers.get("location"), cell.url);
+    const retryAfter = response.headers.get("retry-after");
     return {
       bodyText: await response.text(),
       status: response.status,
       ...(location === undefined ? {} : { location }),
+      ...(retryAfter === null ? {} : { retryAfter }),
     };
   } catch {
     return undefined;
@@ -155,7 +176,7 @@ const sendWithRetry = async (
   cell: MatrixCell
 ): Promise<(ProbeAnswer | undefined)[]> => {
   const answer = await send(cell);
-  if (!isTransientProbeAnswer(answer?.status)) {
+  if (!isTransientProbeAnswer(answer?.status, answer?.bodyText)) {
     return [answer];
   }
   await new Promise((resolve) => {
@@ -183,7 +204,28 @@ describe.skipIf(
     (KEYS.opencode === undefined && KEYS["opencode-go"] === undefined)
 )("live gateway · the keyed probes", () => {
   let cells: MatrixCell[] = [];
+  let slices: Readonly<
+    Record<"opencode" | "opencode-go", readonly CatalogModelSpec[]>
+  > = {
+    opencode: [],
+    "opencode-go": [],
+  };
   const recorded: RecordedProbe[] = [];
+  const variants: RecordedVariant[] = [];
+  /** Every keyed 429 and its `Retry-After` (lesson L9), matrix and variants alike. */
+  const retryAfters: { cell: string; value: string | null }[] = [];
+
+  /** {@link sendWithRetry}, noting the `Retry-After` of every 429 it met. */
+  const sendNoting = async (
+    cell: MatrixCell,
+    name: string
+  ): Promise<(ProbeAnswer | undefined)[]> => {
+    const attempts = await sendWithRetry(cell);
+    retryAfters.push(
+      ...retryAfterOf(attempts).map((value) => ({ cell: name, value }))
+    );
+    return attempts;
+  };
 
   beforeAll(async () => {
     const listing = await fetch(MODELS_OPENCODE_URL, {
@@ -192,20 +234,25 @@ describe.skipIf(
     expect(listing.status).toBe(200);
     const parsed = parseModelsDevCatalog(await listing.json());
     cells = keylessMatrix({ go: parsed.go, zen: parsed.zen });
+    slices = { opencode: parsed.zen, "opencode-go": parsed.go };
   }, PROBE_TIMEOUT_MS + 5000);
 
   /** Print and write the record: after every cell, so a killed job keeps what it measured. */
   const persist = async (print: boolean): Promise<void> => {
-    const record = `${recordTable({
-      date: new Date().toISOString().slice(0, 10),
-      probes: recorded,
-      run: runReference({
-        repository: process.env.GITHUB_REPOSITORY,
-        runId: process.env.GITHUB_RUN_ID,
-        server: process.env.GITHUB_SERVER_URL,
-      }),
-      title: "Keyed",
-    })}\n`;
+    const date = new Date().toISOString().slice(0, 10);
+    const run = runReference({
+      repository: process.env.GITHUB_REPOSITORY,
+      runId: process.env.GITHUB_RUN_ID,
+      server: process.env.GITHUB_SERVER_URL,
+    });
+    const record = [
+      recordTable({ date, probes: recorded, run, title: "Keyed" }),
+      "",
+      variantTable({ date, probes: variants, run }),
+      "",
+      retryAfterLine(retryAfters),
+      "",
+    ].join("\n");
     if (print) {
       console.info(record);
     }
@@ -255,7 +302,7 @@ describe.skipIf(
             verdict: "no-model",
           });
         } else {
-          const attempts = await sendWithRetry(keyedCell(cell, key));
+          const attempts = await sendNoting(keyedCell(cell, key), name);
           const answer = attempts.at(-1);
           const verdict = keyedVerdictOf(attempts);
           rows.push({
@@ -295,6 +342,70 @@ describe.skipIf(
           ? `${outcome.reason}: ${JSON.stringify(outcome.broken)}`
           : undefined
       ).toEqual({ kind: "pass" });
+    }
+  );
+
+  it.for(["opencode", "opencode-go"] as const)(
+    "%s: records the header and reasoning variants on the default completions cell (L4, L5, L10)",
+    {
+      timeout:
+        KEYED_VARIANTS.length * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) +
+        PROBE_TIMEOUT_MS,
+    },
+    async (plane, context) => {
+      const key = KEYS[plane];
+      if (key === undefined) {
+        context.skip(true, "no key for this plane");
+        return;
+      }
+      const representative = cells.find(
+        (cell) =>
+          cell.plane === plane &&
+          cell.protocol === "openai-completions" &&
+          cell.family === "modern"
+      )?.model;
+      const variantCells = keyedVariantCells(
+        plane,
+        { reasoning: reasoningCompletionsModel(slices[plane]), representative },
+        key
+      );
+      // Recorded, never asserted: the variants measure what P6 and P-R3
+      // decide, and no answer here says anything about the default family.
+      const rows: KeyedRow[] = [];
+      for (const cell of variantCells) {
+        const name = `${plane} ${cell.variant.id}`;
+        let row: KeyedRow = {
+          cell: name,
+          model: undefined,
+          status: undefined,
+          verdict: "no-model",
+        };
+        if (cell.body !== undefined) {
+          const attempts = await sendNoting(cell, name);
+          const answer = attempts.at(-1);
+          const verdict = keyedVerdictOf(attempts);
+          row = {
+            cell: name,
+            model: cell.model,
+            status: answer?.status,
+            verdict,
+            ...(verdict === "served" || answer === undefined
+              ? {}
+              : { body: excerpt(answer.bodyText, key) }),
+          };
+        }
+        rows.push(row);
+        variants.push({
+          model: row.model,
+          plane,
+          status: row.status,
+          variant: cell.variant.id,
+          verdict: row.verdict,
+        });
+        await persist(false);
+      }
+      console.table(rows);
+      expect(rows).toHaveLength(KEYED_VARIANTS.length);
     }
   );
 });

@@ -40,6 +40,15 @@ describe("the free tier's refusal", () => {
       freeTierClosed({ status: 403, summary: '{"type":"AuthError"}' })
     ).toBe(false);
   });
+
+  it("includes the tier's usage cap, which is the same gate and not a busy gateway (L3)", () => {
+    const capped = {
+      status: 429,
+      summary: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+    };
+    expect(freeTierClosed(capped)).toBe(true);
+    expect(gatewayBusy(capped)).toBe(false);
+  });
 });
 
 describe("an account-level refusal", () => {

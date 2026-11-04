@@ -29,7 +29,15 @@
  *   decided, with its own model and status); a rate
  *   limit (a 429, or a 429 and then no answer) SKIPS the case, as
  *   `protocol-routing.e2e.ts`'s free cases do, and so does a busy upstream
- *   that no candidate got past.
+ *   that no candidate got past. So does the free tier's usage cap, a
+ *   `429 FreeUsageLimitError`, which is its own verdict
+ *   (`free-usage-limited`): the gate refusing the caller, never retried and
+ *   never read as served (lesson L3).
+ *
+ * Beside them it records the System One family on the Zen plane
+ * (`systemOneCells`: `/zen/v1/systemone`, `/inference/v1/systemone`,
+ * `/inference/systemone/v1/systemone`, lesson L13), keyless and naming no
+ * model, and asserts nothing about it: the plugin serves no classifier.
  *
  * `endpoint: legacy` is recorded, not guarded (P-R2): its cells
  * (`LEGACY_DISPATCH`) must answer readably, like every legacy cell, but their
@@ -65,6 +73,7 @@ import {
   type RecordedProbe,
   recordTable,
   runReference,
+  systemOneLine,
 } from "../support/endpoint-record.ts";
 import {
   type AttemptVerdict,
@@ -83,6 +92,7 @@ import {
   type ProbeAnswer,
   redirectPathOf,
   runFreeProbe,
+  systemOneCells,
   unreadRows,
   verdictOfAttempts,
 } from "../support/keyless-matrix.ts";
@@ -128,7 +138,9 @@ interface ProbeRow {
  * a transport error. A redirect is not followed, so a moved path is not
  * recorded as its target's answer.
  */
-const send = async (cell: MatrixCell): Promise<ProbeAnswer | undefined> => {
+const send = async (
+  cell: Pick<MatrixCell, "body" | "headers" | "method" | "url">
+): Promise<ProbeAnswer | undefined> => {
   try {
     const response = await fetch(cell.url, {
       body: JSON.stringify(cell.body),
@@ -150,11 +162,11 @@ const send = async (cell: MatrixCell): Promise<ProbeAnswer | undefined> => {
 
 /** {@link send}, retried once on a rate limit, a server error or a dropped connection: every attempt's answer. */
 const sendWithRetry = async (
-  cell: MatrixCell
+  cell: Pick<MatrixCell, "body" | "headers" | "method" | "url">
 ): Promise<(ProbeAnswer | undefined)[]> => {
   const answer = await send(cell);
   // One transient answer must not fail every pull request.
-  if (!isTransientProbeAnswer(answer?.status)) {
+  if (!isTransientProbeAnswer(answer?.status, answer?.bodyText)) {
     return [answer];
   }
   await new Promise((resolve) => {
@@ -201,6 +213,11 @@ describe.skipIf(!LIVE || MIRRORED)(
       status: number | undefined;
       verdict: string;
     } = { model: undefined, status: undefined, verdict: "not run" };
+    const systemOne: {
+      family: MatrixFamily;
+      status: number | undefined;
+      verdict: string;
+    }[] = [];
 
     beforeAll(async () => {
       const listing = await fetch(MODELS_OPENCODE_URL, {
@@ -227,6 +244,8 @@ describe.skipIf(!LIVE || MIRRORED)(
         }),
         "",
         freeProbeLine(free),
+        "",
+        systemOneLine(systemOne),
         "",
       ].join("\n");
       if (print) {
@@ -305,7 +324,9 @@ describe.skipIf(!LIVE || MIRRORED)(
         if (outcome === "skip") {
           context.skip(
             true,
-            `the gateway was rate-limiting or the upstream busy: ${detail}`
+            verdict === "free-usage-limited"
+              ? `the free tier's usage cap answered, which measures the caller, not the path: ${detail}`
+              : `the gateway was rate-limiting or the upstream busy: ${detail}`
           );
           return;
         }
@@ -313,6 +334,25 @@ describe.skipIf(!LIVE || MIRRORED)(
       },
       FREE_CANDIDATES * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) +
         PROBE_TIMEOUT_MS
+    );
+
+    it(
+      "records which shapes the System One family answers on (L13)",
+      async () => {
+        // Recorded, never asserted: the plugin serves no classifier, so no
+        // answer here can break a turn.
+        for (const cell of systemOneCells()) {
+          const attempts = await sendWithRetry(cell);
+          systemOne.push({
+            family: cell.family,
+            status: attempts.at(-1)?.status,
+            verdict: verdictOfAttempts(attempts, classifyKeylessProbe),
+          });
+          await persist(false);
+        }
+        expect(systemOne).toHaveLength(MATRIX_FAMILIES.length);
+      },
+      3 * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) + PROBE_TIMEOUT_MS
     );
   }
 );

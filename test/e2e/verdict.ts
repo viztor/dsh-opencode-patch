@@ -41,7 +41,10 @@ export interface Probe {
  * @returns whether the free tier closed the request.
  */
 export const freeTierClosed = (result: Probe): boolean =>
-  result.summary.includes("FreeTierError");
+  result.summary.includes("FreeTierError") ||
+  // The tier's usage cap, `429 FreeUsageLimitError`, is the same gate
+  // refusing for the caller's usage: closed, not busy (lesson L3).
+  result.summary.includes("FreeUsageLimitError");
 
 /**
  * Whether the account cannot spend on this model — an entitlement answer, not a
@@ -91,8 +94,13 @@ export const retiredAtTheGateway = (result: Probe): boolean =>
   result.summary.includes("ModelDeprecated") ||
   (result.status === 400 && result.summary.includes("Model is unavailable"));
 
-/** The gateway is busy: it answered, but not about the route. */
-export const gatewayBusy = (result: Probe): boolean => result.status === 429;
+/**
+ * The gateway is busy: it answered, but not about the route. A 429 naming the
+ * free tier's usage cap is not busy: it is the tier closing
+ * ({@link freeTierClosed}).
+ */
+export const gatewayBusy = (result: Probe): boolean =>
+  result.status === 429 && !result.summary.includes("FreeUsageLimitError");
 
 /**
  * Whether a candidate model may be USED as a case's subject.

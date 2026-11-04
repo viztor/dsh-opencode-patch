@@ -29,14 +29,20 @@ import {
   excerpt,
   FLIP_EVIDENCE,
   isArmed,
+  KEYED_VARIANTS,
   keyedBody,
   keyedCell,
   keyedTierOf,
+  keyedVariantCells,
   keyedVerdictOf,
   planeOutcome,
   pluginIdentityHeaders,
   PROBE_IDENTITY,
+  PROBE_PROJECTS,
+  PROBE_REQUEST_ID,
   PROBE_SESSION_ID,
+  reasoningCompletionsModel,
+  retryAfterOf,
 } from "./support/keyed-probes.ts";
 import {
   cellKey,
@@ -1311,5 +1317,182 @@ describe("keyed probes · the CI wiring", () => {
         expect(step).not.toContain("secrets.OPENCODE");
       }
     }
+  });
+});
+
+describe("keyed probes · the variants on the default completions cell (L4, L5, L9, L10)", () => {
+  const models = { reasoning: "zen-think", representative: "zen-chat" };
+
+  it("each variant is the default completions cell, keyed, changed by its own header or body field and nothing else", () => {
+    const cells = keyedVariantCells("opencode", models, "sk-probe");
+    expect(cells.map((cell) => cell.variant.id)).toEqual([
+      "baseline",
+      "request-id",
+      "project-folder",
+      "project-digest",
+      "reasoning-default",
+      "reasoning-none",
+    ]);
+    const [baseline, request, folder, digest, reasoning, none] = cells;
+    // The baseline is exactly the matrix's keyed modern completions cell.
+    const matrixCell = keylessMatrix({
+      go: GO,
+      zen: [spec("zen-chat"), ...ZEN.slice(1)],
+    }).find(
+      (cell) =>
+        cell.plane === "opencode" &&
+        cell.protocol === "openai-completions" &&
+        cell.family === "modern"
+    );
+    if (matrixCell === undefined || baseline === undefined) {
+      throw new Error("no modern completions cell");
+    }
+    expect(baseline).toEqual({
+      ...keyedCell(matrixCell, "sk-probe"),
+      variant: baseline.variant,
+    });
+    expect(baseline.url).toBe(
+      "https://opencode.ai/inference/openai/v1/chat/completions"
+    );
+    const without = (
+      headers: Readonly<Record<string, string>> | undefined,
+      name: string
+    ) =>
+      Object.fromEntries(
+        Object.entries(headers ?? {}).filter(([header]) => header !== name)
+      );
+    expect(baseline?.headers["x-opencode-request"]).toBeUndefined();
+    expect(request?.headers["x-opencode-request"]).toBe(PROBE_REQUEST_ID);
+    expect(without(request?.headers, "x-opencode-request")).toEqual(
+      baseline?.headers
+    );
+    expect(baseline?.headers["x-opencode-project"]).toBe("global");
+    expect(folder?.headers["x-opencode-project"]).toBe(PROBE_PROJECTS.folder);
+    expect(digest?.headers["x-opencode-project"]).toMatch(/^[0-9a-f]{40}$/u);
+    for (const cell of [request, folder, digest]) {
+      expect(cell?.body).toEqual(baseline?.body);
+      expect(cell?.model).toBe("zen-chat");
+    }
+    expect(without(folder?.headers, "x-opencode-project")).toEqual(
+      without(baseline?.headers, "x-opencode-project")
+    );
+    // The L10 pair: one model, and the one field between them.
+    expect(reasoning?.model).toBe("zen-think");
+    expect(reasoning?.headers).toEqual(baseline?.headers);
+    expect(reasoning?.body).toEqual(
+      keyedBody("openai-completions", "zen-think")
+    );
+    expect(none?.body).toEqual({
+      ...reasoning?.body,
+      reasoning_effort: "none",
+    });
+    expect(none?.headers).toEqual(reasoning?.headers);
+  });
+
+  it("the request id is the client's own msg_ shape, and the folder names no real path", () => {
+    expect(isOpenCodeMessageId(PROBE_REQUEST_ID)).toBe(true);
+    expect(isOpenCodeMessageId(newOpenCodeMessageId())).toBe(true);
+    expect(PROBE_PROJECTS.folder).not.toMatch(/[/\\]/u);
+  });
+
+  it("a variant with no model keeps no body, and is never sent", () => {
+    const cells = keyedVariantCells(
+      "opencode-go",
+      { reasoning: undefined, representative: "go-chat" },
+      "sk-probe"
+    );
+    expect(
+      cells
+        .filter((cell) => cell.body === undefined)
+        .map((cell) => cell.variant.id)
+    ).toEqual(["reasoning-default", "reasoning-none"]);
+    expect(cells[0]?.url).toBe(
+      "https://opencode.ai/inference/go/openai/v1/chat/completions"
+    );
+  });
+
+  it("the reasoning model is the first paid, current completions model that reasons", () => {
+    const thinking = (id: string, provider_npm?: string): CatalogModelSpec => ({
+      ...spec(id, provider_npm),
+      reasoning: true,
+    });
+    expect(
+      reasoningCompletionsModel(
+        [
+          spec("plain"),
+          thinking("resp", "@ai-sdk/openai"),
+          thinking("think-free"),
+          { ...thinking("think-paid-but-free"), is_free: true },
+          thinking("retired"),
+          thinking("think"),
+          thinking("think-2"),
+        ],
+        (id) => id === "retired"
+      )
+    ).toBe("think");
+    expect(reasoningCompletionsModel([spec("plain")])).toBeUndefined();
+    // The bundled catalogs carry one on each plane.
+    expect(reasoningCompletionsModel(OPENCODE_ZEN_CATALOG)).toBeDefined();
+    expect(reasoningCompletionsModel(OPENCODE_GO_CATALOG)).toBeDefined();
+  });
+
+  it("every variant names its lesson and its label once", () => {
+    expect(new Set(KEYED_VARIANTS.map((variant) => variant.id)).size).toBe(
+      KEYED_VARIANTS.length
+    );
+    expect(KEYED_VARIANTS.map((variant) => variant.lesson)).toEqual([
+      "L4, L5",
+      "L4",
+      "L5",
+      "L5",
+      "L10",
+      "L10",
+    ]);
+  });
+
+  it("the offline gateway serves the baseline with the plugin's identity", () => {
+    const representative = keylessMatrix({
+      go: OPENCODE_GO_CATALOG,
+      zen: OPENCODE_ZEN_CATALOG,
+    }).find(
+      (cell) =>
+        cell.plane === "opencode" &&
+        cell.protocol === "openai-completions" &&
+        cell.family === "modern"
+    )?.model;
+    const [baseline] = keyedVariantCells(
+      "opencode",
+      { reasoning: undefined, representative },
+      "sk-probe-0123456789abcdef"
+    );
+    if (baseline?.body === undefined) {
+      throw new Error("the bundled catalog has no completions model");
+    }
+    const url = new URL(baseline.url);
+    const { reply } = handleGatewayRequest({
+      bodyText: JSON.stringify(baseline.body),
+      headers: baseline.headers,
+      method: baseline.method,
+      url: `${url.pathname}${url.search}`,
+    });
+    expect(
+      keyedVerdictOf([{ bodyText: reply.body, status: reply.status }])
+    ).toBe("served");
+  });
+
+  it("reads every 429's Retry-After, and names one that carried none (L9)", () => {
+    expect(
+      retryAfterOf([
+        { bodyText: "", retryAfter: "30", status: 429 },
+        { bodyText: "", status: 429 },
+      ])
+    ).toEqual(["30", null]);
+    expect(
+      retryAfterOf([
+        undefined,
+        { bodyText: "", retryAfter: "30", status: 503 },
+        { bodyText: "", status: 200 },
+      ])
+    ).toEqual([]);
   });
 });

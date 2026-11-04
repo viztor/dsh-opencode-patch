@@ -25,6 +25,7 @@ import {
   freeProbeVerdictOf,
   goneDefaultRows,
   isFreeSpec,
+  isFreeUsageLimit,
   isModelGoneMessage,
   isTransientProbeAnswer,
   isUpstreamBusy,
@@ -37,6 +38,8 @@ import {
   type MatrixCell,
   type MatrixFamily,
   redirectPathOf,
+  SYSTEM_ONE_URLS,
+  systemOneCells,
   unreadRows,
   verdictOfAttempts,
   matrixUrl,
@@ -493,6 +496,12 @@ describe("keyless matrix · the free probe", () => {
     [400, '{"error":{"message":"max_tokens too small"}}', "other"],
     [401, '{"error":{"type":"FreeTierError"}}', "auth-required"],
     [302, "", "redirected"],
+    // The tier's usage cap is the gate's answer, not a rate limit (L3).
+    [
+      429,
+      '{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached"}}',
+      "free-usage-limited",
+    ],
   ] as const)("a free probe's %i %s → %s", (status, bodyText, verdict) => {
     expect(classifyFreeProbe({ bodyText, status })).toBe(verdict);
   });
@@ -513,6 +522,13 @@ describe("keyless matrix · the free probe", () => {
     ],
     ["429, then 429", [answer(429), answer(429)], "skip"],
     ["429, then served", [answer(429), answer(200)], "pass"],
+    // The usage cap is not retried and is not read as usable: a skip with its
+    // own verdict, never the pass a served model would be (L3).
+    [
+      "the free tier's usage cap",
+      [answer(429, '{"error":{"type":"FreeUsageLimitError"}}')],
+      "skip",
+    ],
     ["no answer, twice", [undefined, undefined], "fail"],
     ["500, then 500", [answer(500), answer(500)], "fail"],
     ["503, then 503 (a busy upstream)", [answer(503), answer(503)], "skip"],
@@ -584,6 +600,7 @@ describe("keyless matrix · the free probe", () => {
     // that moved past it could pass on the next candidate's answer.
     ["other", false],
     ["rate-limited", false],
+    ["free-usage-limited", false],
     ["transport-error", false],
   ] as const)("the free probe moves on after %s: %s", (verdict, movesOn) => {
     expect(freeProbeMovesOn(verdict)).toBe(movesOn);
@@ -725,6 +742,18 @@ describe("keyless matrix · reading the attempts and the redirects", () => {
     ["429, then no answer", [answer(429), undefined], "rate-limited"],
     ["429, then 429", [answer(429), answer(429)], "rate-limited"],
     ["429, then 404", [answer(429), answer(404)], "path-gone"],
+    // A usage cap is the gate's answer, read by the classifier, and so is no
+    // answer after one: only a plain 429 is the rate limit (L3).
+    [
+      "a usage cap",
+      [answer(429, '{"error":{"type":"FreeUsageLimitError"}}')],
+      "other",
+    ],
+    [
+      "a usage cap, then no answer",
+      [answer(429, '{"error":{"type":"FreeUsageLimitError"}}'), undefined],
+      "transport-error",
+    ],
     ["no answer, twice", [undefined, undefined], "transport-error"],
     ["503, then no answer", [answer(503), undefined], "transport-error"],
     ["500, then 500", [answer(500), answer(500)], "other"],
@@ -843,5 +872,54 @@ describe("keyless matrix · a transient answer is retried once", () => {
     [200, false],
   ] as const)("%s → %s", (status, retry) => {
     expect(isTransientProbeAnswer(status)).toBe(retry);
+  });
+
+  it("but not a 429 naming the free tier's usage cap, which a retry meets again (L3)", () => {
+    const capped = '{"type":"error","error":{"type":"FreeUsageLimitError"}}';
+    expect(isFreeUsageLimit(capped)).toBe(true);
+    expect(isTransientProbeAnswer(429, capped)).toBe(false);
+    expect(isTransientProbeAnswer(429, '{"error":"rate limited"}')).toBe(true);
+    // The name, not a word that contains it.
+    expect(isFreeUsageLimit("NotFreeUsageLimitErrorish")).toBe(false);
+    expect(isTransientProbeAnswer(500, capped)).toBe(true);
+  });
+});
+
+describe("keyless matrix · the System One family (L13)", () => {
+  it("probes the Zen plane's three shapes, keyless and naming no model", () => {
+    const cells = systemOneCells();
+    expect(cells.map((cell) => [cell.family, cell.url])).toEqual([
+      ["legacy", "https://opencode.ai/zen/v1/systemone"],
+      ["root", "https://opencode.ai/inference/v1/systemone"],
+      ["modern", "https://opencode.ai/inference/systemone/v1/systemone"],
+    ]);
+    expect(Object.keys(SYSTEM_ONE_URLS).toSorted()).toEqual(
+      [...MATRIX_FAMILIES].toSorted()
+    );
+    for (const cell of cells) {
+      expect(cell.method).toBe("POST");
+      expect(cell.body).toEqual({});
+      expect(cell.headers).toEqual({ "content-type": "application/json" });
+    }
+  });
+
+  it("is read by the keyless classifier: a 404 is gone, an auth refusal exists", () => {
+    expect(classifyKeylessProbe({ bodyText: "", status: 404 })).toBe(
+      "path-gone"
+    );
+    expect(classifyKeylessProbe({ bodyText: "", status: 401 })).toBe(
+      "path-exists"
+    );
+  });
+
+  it("is no cell either setting dispatches to", () => {
+    for (const url of Object.values(SYSTEM_ONE_URLS)) {
+      for (const cell of keylessMatrix({
+        go: OPENCODE_GO_CATALOG,
+        zen: OPENCODE_ZEN_CATALOG,
+      })) {
+        expect(cell.url.startsWith(url)).toBe(false);
+      }
+    }
   });
 });
