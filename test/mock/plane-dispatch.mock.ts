@@ -173,6 +173,16 @@ const finishOf = (
  * gateway records a request before it judges it, so the path alone cannot
  * tell an accepted body from a refused one.
  */
+/**
+ * Whether the installed pi sends `model` a thinking budget the mock gateway
+ * refuses: the Go plane's level-only model on a pi whose own
+ * `usesGoogleThinkingLevel` does not name it (pi 1.1.0, the rc floor). That is
+ * a HOST_LIMITATION (D26), detected from pi's own predicate, never a version.
+ */
+const hostSendsBudgetTo = (model: string): boolean =>
+  model === "gemini-4-argon" &&
+  !usesGoogleThinkingLevel({ id: model } as never);
+
 const expectAnswered = (
   label: string,
   model: string,
@@ -180,6 +190,15 @@ const expectAnswered = (
   chunks: readonly Record<string, unknown>[]
 ): void => {
   const kind = finishOf(chunks)?.reason?.kind;
+  if (hostSendsBudgetTo(model)) {
+    // HOST_LIMITATION: the turn still reached its path with its model and
+    // key (the caller asserts those); the gateway refused the budget pi built.
+    expect({ reject: request?.reject, status: request?.status }, label).toEqual(
+      { reject: "thinking_budget", status: 400 }
+    );
+    expect(kind, label).toBe("error");
+    return;
+  }
   if (model === UNKNOWN_ID) {
     expect({ reject: request?.reject, status: request?.status }, label).toEqual(
       { reject: "model_unknown", status: 404 }
