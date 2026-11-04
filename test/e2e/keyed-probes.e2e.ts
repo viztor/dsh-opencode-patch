@@ -51,7 +51,8 @@
  * P-R2 decided are recorded, not guarded, and the root shape nothing
  * dispatches to — never fails or passes a plane on its own: it is recorded,
  * and read only beside a default cell of the same protocol.
- * * A second case per plane sends the keyed VARIANTS of the default
+ *
+ * A second case per plane sends the keyed VARIANTS of the default
  * completions cell (`keyedVariantCells`, lessons L4, L5 and L10): the probe
  * identity beside a minted `x-opencode-request`, `x-opencode-project` as a
  * folder name and as a 40-hex digest, and a paid completions model that

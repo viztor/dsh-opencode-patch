@@ -30,7 +30,8 @@ export interface Probe {
  * gate refusing the caller's usage of the tier. It is one way the tier is
  * closed ({@link freeTierClosed}), but a different fact from the session
  * gate: it measures the account a run spends from, not whether the tier
- * serves this plugin, so a case that met only the cap reports the cap.
+ * serves this plugin, so a walk that met the cap reports the cap
+ * ({@link freeWalkGap}).
  *
  * @param result - the probe's answer.
  * @returns whether the answer names the usage cap.
@@ -136,6 +137,29 @@ export const freeWalkGap = (answers: readonly Probe[]): FreeWalkGap => {
     return "busy";
   }
   return answers.some(freeUsageCapped) ? "capped" : "closed";
+};
+
+/**
+ * The skip reason of a walk whose gap is `capped` ({@link freeWalkGap}). The
+ * rule reads ANY capped answer as the cap, so a mixed walk may also have met
+ * the session gate (`403 FreeTierError`); the reason then says how many
+ * candidates did, so the gate this case exists to surface is still printed.
+ *
+ * @param answers - every candidate's answer, in the order sent.
+ * @returns the reason the walk skips with.
+ */
+export const freeWalkCappedReason = (answers: readonly Probe[]): string => {
+  const reason =
+    "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier";
+  const gated = answers.filter(
+    (answer) =>
+      answer.summary.includes("FreeTierError") && !freeUsageCapped(answer)
+  ).length;
+  if (gated === 0) {
+    return reason;
+  }
+  const candidates = gated === 1 ? "1 candidate" : `${gated} candidates`;
+  return `${reason}; ${candidates} also answered 403 FreeTierError (the session gate)`;
 };
 
 /**

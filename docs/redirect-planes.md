@@ -146,7 +146,7 @@ Measured 2026-10-10 by building one with pi's own protocol implementations and i
 
 **The session header reaches every protocol, and the rest of the gateway headers do not come from the provider.** `buildPlaneProvider` wraps each `api` with pi's own `withOpenCodeSessionHeader` before `createProvider`, and that is all it adds per call: pi's wrapper sets `x-opencode-session` from the turn's session id on all four protocols, and steps aside when the request already carries one. `x-opencode-client`, `x-opencode-project`, the derived `ses_` id and the User-Agent are set by the global fetch patch on the request the protocol sends, not on the call's options; moving them into each call (`options.headers`) is P10a's first move.
 
-**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.5 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
+**The User-Agent is one value on every protocol, Google's included.** The Google implementation sets an agent string of its own inside the protocol, but the fetch patch sets `User-Agent` on the request that protocol sends, which replaces whatever pi and the Google SDK put there rather than appending to it. The offline mock pins the wire value to `OPENCODE_UA` for the Google protocol on both planes (`test/mock/protocol-compat.mock.ts`), so the gateway never sees a combined value, and §13's keyed Google cells measure the agent string a turn actually sends. The question reopens only if P10a moves the agent into each call's options instead of the fetch patch.
 
 ## 10. A catalog route serves every protocol already
 

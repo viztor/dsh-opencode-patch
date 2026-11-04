@@ -120,7 +120,12 @@ import {
   planeModelFor,
 } from "../support/src.ts";
 import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
-import { freeTierClosed, freeWalkGap, gatewayBusy } from "./verdict.ts";
+import {
+  freeTierClosed,
+  freeWalkCappedReason,
+  freeWalkGap,
+  gatewayBusy,
+} from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 /** What may spend a key: the keyed cases here run on the `full` tier only. */
@@ -866,13 +871,12 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
           return;
         }
         if (gap === "capped") {
-          // The free tier's usage cap answered: it measures the account this
-          // run spends from, not whether the tier serves the plugin — the
-          // keyless free probe's `free-usage-limited` skip, for the same reason.
-          context.skip(
-            true,
-            "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier"
-          );
+          // The free tier's usage cap answered for at least one candidate: it
+          // measures the account this run spends from, not whether the tier
+          // serves the plugin — the keyless free probe's `free-usage-limited`
+          // skip, for the same reason. A session gate another candidate met
+          // is named in the reason, not dropped.
+          context.skip(true, freeWalkCappedReason(answers));
           return;
         }
         // Reported rather than skipped: the account (or the vendor) closed the

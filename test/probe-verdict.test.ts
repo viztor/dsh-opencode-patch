@@ -18,6 +18,7 @@ import {
   accessDisabled,
   freeTierClosed,
   freeUsageCapped,
+  freeWalkCappedReason,
   freeWalkGap,
   gatewayBusy,
   retiredAtTheGateway,
@@ -130,14 +131,30 @@ describe("why a walk of free candidates found no completion", () => {
   const busy = { status: 429, summary: "" };
   const retired = { status: 410, summary: "" };
 
-  it("names the usage cap, never the session gate, when the cap answered", () => {
-    // A run whose every candidate met the cap measured the account it spends
-    // from: reporting that as "the tier needs a session token" names a cause
-    // that was not observed.
+  it("is the usage cap when any candidate met it and none was busy", () => {
+    // A walk that met the cap measured the account it spends from: reporting
+    // that as "the tier needs a session token" names a cause it cannot tell
+    // apart from the cap. The rule is ANY, not every: one capped candidate in
+    // a mixed walk (beside a gated and a withdrawn one) still reads as capped.
     expect(freeUsageCapped(capped)).toBe(true);
     expect(freeUsageCapped(gated)).toBe(false);
     expect(freeWalkGap([capped, capped])).toBe("capped");
     expect(freeWalkGap([gated, capped, retired])).toBe("capped");
+  });
+
+  it("still names a session gate the capped walk observed", () => {
+    // The skip reports the cap, but a mixed walk's FreeTierError is the signal
+    // this case exists to surface, so the reason carries it rather than
+    // dropping it.
+    expect(freeWalkCappedReason([capped, capped])).toBe(
+      "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier"
+    );
+    expect(freeWalkCappedReason([gated, capped, retired])).toBe(
+      "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier; 1 candidate also answered 403 FreeTierError (the session gate)"
+    );
+    expect(freeWalkCappedReason([gated, capped, gated])).toContain(
+      "; 2 candidates also answered 403 FreeTierError"
+    );
   });
 
   it("is a busy gateway first, whatever else answered", () => {
