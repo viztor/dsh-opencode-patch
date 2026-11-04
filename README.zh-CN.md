@@ -422,7 +422,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 **已在 DeepSeek Harness `0.2.1` 上验证 —— `alpha` 与 `rc` 两个通道（Node 24+）**
 
-Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件在两个通道上都针对两条线：**`0.2.1`**（`rc` 通道的最新版本），以及两个通道上的 **`0.2.2`** 预发布版本：`alpha` 已到 `0.2.2-alpha.3`，`rc` 以 `0.2.2-rc.1` 开启了这条线（发布在 `next` dist-tag 下；测试安装运行的是 `0.2.2-alpha.2`）。`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
+Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件在两个通道上都针对两条线：**`0.2.1`**（`dsh@latest` 仍停留在它的 `rc` 构建上），以及两个通道上的 **`0.2.2`** 预发布版本：`alpha` 已到 `0.2.2-alpha.3`，`rc` 以 `0.2.2-rc.1` 开启了这条线（发布在 `next` dist-tag 下；测试安装运行的是 `0.2.2-alpha.2`）。`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
 
 ```
 >=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
@@ -430,7 +430,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 
 第一个子句覆盖两个通道上的 `0.2.1` 整条线：下界 `alpha.1` 排序低于同线的所有 `rc`，因此无需单独枚举 rc。第二个子句**并不多余**——除非同一 `major.minor.patch` 的某个比较符带有预发布号，semver 会把预发布版本排除在外，所以只写 `<0.3.0` 会悄悄丢掉所有 `0.2.2-*` 构建，alpha 与 rc 都一样。两个子句都止于 `0.3.0`，下一条线因此是一个单独的决定，而不是悄悄放宽。
 
-可选的 `@deepseek-ai/cordis` peer 跟随 typert 的范围，因为 npm 会安装**最新**被接纳的 typert 构建所依赖（peer）的那个 cordis。每条线都推进了宿主内核：`0.2.1` 的构建依赖 `~4.0.5`（或 `4.0.5` 的预发布版本），`0.2.2` 的 alpha 依赖 `4.0.6` 的预发布版本，`0.2.2-rc.1` 依赖 `~4.1.0`。只要 cordis peer 漏掉其中任何一个，全新安装就会以 `ERESOLVE` 失败，所以它接纳全部，并止于下一个版本元组：
+可选的 `@deepseek-ai/cordis` peer 跟随 typert 的范围。每条线都推进了宿主内核：`0.2.1` 的构建依赖 `~4.0.5`（或 `4.0.5` 的预发布版本），`0.2.2` 的 alpha 依赖 `4.0.6` 的预发布版本，`0.2.2-rc.1` 依赖 `~4.1.0`。全新安装会采用**最新**被接纳的 typert 构建所依赖的那个 cordis，所以 cordis peer 漏掉它就会以 `ERESOLVE` 失败；漏掉较早某条线的 cordis，则会在已安装该线宿主的环境旁安装失败。因此这个 peer 接纳其中每一个，并止于下一个版本元组：
 
 ```
 ~4.0.4 || >=4.0.5-0 <4.1.0 || >=4.0.6-0 <4.1.0 || ~4.1.0
@@ -439,7 +439,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 | 层面 | 目标 |
 | :-- | :-- |
 | **Harness 版本线** | **`0.2.1`** 与 **`0.2.2`** 预发布版本，`alpha` 与 `rc` 通道均可（peer：见上方范围） |
-| **宿主内核** | `@deepseek-ai/cordis` `4.0.5`、`4.0.6` 预发布版本与 `4.1.x`（可选 peer：见上方范围） |
+| **宿主内核** | `@deepseek-ai/cordis` 从 `4.0.4` 到 `4.1.x`，包括 `4.0.5` 与 `4.0.6` 的预发布版本（可选 peer：见上方范围） |
 | **插件包** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **宿主 profile** | DSH Web profile（`patchReload: live`） |
 | **声明的路由** | `opencode`、`opencode-go`、`opencode-responses`、`opencode-anthropic` |
