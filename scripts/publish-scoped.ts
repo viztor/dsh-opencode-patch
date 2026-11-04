@@ -4,16 +4,21 @@
  * The package ships as `dsh-opencode-patch` — the unscoped name DSH resolves,
  * the name the docs use, the name release-please versions.
  *
- * It also publishes under `@viztor/dsh-opencode-patch` — the CANONICAL scoped
- * name. Same tree, same bundle, same version as the unscoped one; this is the
- * name new installs should use, and the one the client bundle registers its
- * card under (`SCOPED_PKG`). The list is `SCOPED_TARGETS`
- * (`scripts/scoped-targets.ts`), which `scripts/check.ts` holds in step with
- * release.yml's verify step.
+ * It also publishes under:
+ * - `@viztor/dsh-opencode-patch` — the CANONICAL scoped name. Same tree, same
+ *   bundle, same version as the unscoped one; this is the name new installs
+ *   should use, and the one the client bundle registers its card under
+ *   (`SCOPED_PKG`).
+ * - `@viztor/dsh-opencode` — DEPRECATED, and still published. A thin wrapper
+ *   that ships no `lib/client.js` and forwards its row to `dsh-opencode-patch`.
+ *   It is kept publishing so an existing install keeps resolving — a name that
+ *   stops publishing breaks the installs that still use it, which is the one
+ *   thing a compatibility alias must not do. Nothing in the source tree
+ *   registers or advertises it, which is what stops one package answering to
+ *   two spellings.
  *
- * The retired name `@viztor/dsh-opencode` is no longer published: its last
- * version's "Renamed to @viztor/dsh-opencode-patch" deprecation stands as the
- * final message on the registry.
+ * The list is `SCOPED_TARGETS` (`scripts/scoped-targets.ts`), which
+ * `scripts/check.ts` holds in step with release.yml's verify step.
  *
  * Usage: node --experimental-strip-types scripts/publish-scoped.ts
  *        PUBLISH_DRY_RUN=1 node --experimental-strip-types scripts/publish-scoped.ts
@@ -37,6 +42,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { SCOPED_TARGETS } from "./scoped-targets.ts";
+import { wrapperForwarder } from "./wrapper-forwarder.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -119,6 +125,79 @@ for (const target of SCOPED_TARGETS) {
           'name: "@viztor/dsh-opencode-patch"'
         )
       );
+    } else if (target === "@viztor/dsh-opencode") {
+      // Point at the CANONICAL name, not the other alias: the message a user
+      // reads on the registry is the one place that should not offer a choice
+      // between two spellings of the same package.
+      manifest.deprecated =
+        "Renamed to @viztor/dsh-opencode-patch. Please install that instead: https://www.npmjs.com/package/@viztor/dsh-opencode-patch";
+      const existingDeps =
+        (manifest.dependencies as Record<string, string> | undefined) ?? {};
+      manifest.dependencies = {
+        ...existingDeps,
+        "dsh-opencode-patch": `^${version}`,
+      };
+
+      // Thin wrapper entrypoints that re-export dsh-opencode-patch directly.
+      //
+      // **The names the canonical package HAS, and no `default`:** it exports
+      // none, and re-exporting one is a link error on every load — which is
+      // what this used to ship. The text comes from one helper so the runtime
+      // entry and the type declaration cannot drift.
+      const forwarder = wrapperForwarder();
+      writeFileSync(path.join(scratch, "lib", "index.mjs"), `${forwarder}\n`);
+      writeFileSync(path.join(scratch, "lib", "index.d.mts"), `${forwarder}\n`);
+
+      // The wrapper carries no client half of its own.
+      //
+      // Its patch forwards to the `dsh-opencode-patch` row, and that row's own
+      // package supplies the browser bundle. Shipping a second copy here — the
+      // manifest's whole-`lib` `files` entry copies it in — would hand the page
+      // the same bundle twice under the same module ids, mounting the client
+      // half twice. A ~38 kB duplicate in a package whose stated job is to
+      // forward two lines is also simply not thin.
+      const dsh = manifest.dsh as Record<string, unknown> | undefined;
+      if (dsh !== undefined) delete dsh.client;
+      const wrapperExports = manifest.exports as
+        | Record<string, unknown>
+        | undefined;
+      if (wrapperExports !== undefined) delete wrapperExports["./client"];
+      rmSync(path.join(scratch, "lib", "client.js"), { force: true });
+
+      // Forwarding cordis patch to mount dsh-opencode-patch
+      const forwarderPatch = [
+        "# Thin wrapper patch forwarding to dsh-opencode-patch",
+        "- insert:",
+        "    - id: dsh-opencode-patch",
+        '      name: "dsh-opencode-patch"',
+      ].join("\n");
+      writeFileSync(
+        path.join(scratch, "cordis.patch.yml"),
+        `${forwarderPatch}\n`
+      );
+
+      // The page leads with the CANONICAL name. A retired name may appear as the
+      // reason the reader is here — never as the package's own title, which is
+      // what made three npm pages look like three packages.
+      const redirectReadme = [
+        "# dsh-opencode-patch",
+        "",
+        "> ⚠️ **This npm name is deprecated.** The package is `dsh-opencode-patch`,",
+        "> scoped as [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch).",
+        "",
+        "You are on the page for the old name `@viztor/dsh-opencode`. It is a **thin compatibility",
+        "wrapper**: it depends on and re-exports `dsh-opencode-patch` and ships no code of its own.",
+        "",
+        "### How to migrate",
+        "",
+        "```sh",
+        '# DSH Web UI (recommended): Settings → Plugins → Install Plugin → "dsh-opencode-patch"',
+        "",
+        "# Or from your profile directory:",
+        "npm install dsh-opencode-patch",
+        "```",
+      ].join("\n");
+      writeFileSync(path.join(scratch, "README.md"), redirectReadme);
     }
     writeFileSync(
       path.join(scratch, "package.json"),

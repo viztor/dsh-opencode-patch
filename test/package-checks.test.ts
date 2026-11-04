@@ -129,14 +129,22 @@ describe("package checks · the publish list and the verify list agree", () => {
     expect(publishListMismatch(["p", "a"], ["p", "a"])).toEqual([]);
   });
 
-  it("the scoped publish list and release.yml's verify list agree, and neither names the retired wrapper", () => {
+  it("the scoped publish list and release.yml's verify list agree, deprecated alias included", () => {
+    // **The deprecated alias is published, so it is verified.** A compatibility
+    // name that stops publishing breaks the installs still on it, which is the
+    // one thing it must not do — and a name that publishes without being
+    // verified is how a release reports success while one of its three packages
+    // sits behind.
     const pkg = readPackage();
     const pending = releasePendingTargets(
       readFileSync(join(ROOT, ".github", "workflows", "release.yml"), "utf8")
     );
     expect(pending).toEqual([pkg.name, ...SCOPED_TARGETS]);
-    expect(SCOPED_TARGETS).toEqual(["@viztor/dsh-opencode-patch"]);
-    expect(pending).not.toContain("@viztor/dsh-opencode");
+    expect(SCOPED_TARGETS).toEqual([
+      "@viztor/dsh-opencode-patch",
+      "@viztor/dsh-opencode",
+    ]);
+    expect(pending).toContain("@viztor/dsh-opencode");
   });
 
   it("the gate and the publish script read those lists rather than keeping their own", () => {
@@ -157,7 +165,9 @@ describe("package checks · the publish list and the verify list agree", () => {
     expect(
       [...publish.matchAll(/for \(const \w+ of (\w+)\)/gu)].map((m) => m[1])
     ).toContain("SCOPED_TARGETS");
-    expect(publish).not.toContain('"@viztor/dsh-opencode"');
+    // The wrapper branch names the deprecated alias on purpose: it is the one
+    // target whose manifest is rewritten rather than copied.
+    expect(publish).toContain('"@viztor/dsh-opencode"');
     const check = code("check.ts");
     expect(check).toMatch(/\bexportsOutsideFiles\(/u);
     expect(check).toMatch(/\bpublishListMismatch\(/u);

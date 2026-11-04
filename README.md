@@ -86,7 +86,7 @@ cd ~/.dsh/profiles/web
 npm install dsh-opencode-patch
 ```
 
-The package is `dsh-opencode-patch` under every name it is used by: the dependency you install, the bundle entry in your profile, and the row the host resolves. It is also published as [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch); the retired name `@viztor/dsh-opencode` is no longer published, so an install still on it should move to either of those.
+The package is `dsh-opencode-patch` under every name it is used by: the dependency you install, the bundle entry in your profile, and the row the host resolves. It is also published as [`@viztor/dsh-opencode-patch`](https://www.npmjs.com/package/@viztor/dsh-opencode-patch), and the older name [`@viztor/dsh-opencode`](https://www.npmjs.com/package/@viztor/dsh-opencode) keeps publishing as a deprecated thin wrapper that re-exports it — an install still on that name keeps working, and moving to either of the other two is a rename rather than a fix.
 
 **2. Enable the bundle** — add the package to the profile's `dsh.profile.bundles` array:
 
@@ -429,7 +429,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 - **A smaller public API.** The package's entry exports `apply`, `Config`, `inject` and `name` — the names the host reads — and the config types (`PluginConfig`, `ResolvedPluginConfig`, `ModelOverrideConfig`, `ModelRouteConfig`, `EndpointFamily`, `KeySourcePolicy`). Everything else it used to re-export is internal now.
 - **`./src/*` is no longer an export.** `src/` was never in the published files, so the subpath resolved in the repository and nowhere else.
 - **`internalRoutes` was removed.** The per-protocol routes always mount. A profile row that still carries `internalRoutes` validates and the key is ignored.
-- **`@viztor/dsh-opencode` is no longer published.** Its last version's "Renamed to @viztor/dsh-opencode-patch" deprecation stands as the final message; install `dsh-opencode-patch` or `@viztor/dsh-opencode-patch` instead.
+- **`@viztor/dsh-opencode` is deprecated, and still published.** It is a thin wrapper that re-exports `dsh-opencode-patch`, so an install on the old name keeps resolving; the registry marks it deprecated and points at the canonical name. New installs should use `dsh-opencode-patch` or `@viztor/dsh-opencode-patch`.
 
 ## 📜 Compatibility & Verification
 
