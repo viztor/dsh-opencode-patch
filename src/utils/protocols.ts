@@ -5,9 +5,13 @@
  * The catalog names an SDK per model only where the model differs from the
  * provider's default, and that SDK is the vendor's own statement of the
  * protocol (D16): {@link PROTOCOL_FOR_SDK} maps it, and nothing here guesses
- * from a model's name. `@ai-sdk/mistral` maps to completions, the
- * OpenAI-compatible path the gateway serves that SDK on
- * (`docs/redirect-planes.md` §2).
+ * from a model's name. `@ai-sdk/mistral` is classified as completions: the
+ * plugin's own rule, consistent with the vendor catalog's family table,
+ * which places that SDK on the OpenAI root
+ * (`OPENCODE_FAMILY_API.zen["@ai-sdk/mistral"]` in the generated
+ * `catalog-data.ts`). Which dialect the gateway serves there is unmeasured,
+ * and rewording the docs' rationale for the row is the plan's P7 item
+ * (`docs/improvement-plan.md`).
  *
  * Every value is a constant or a function of its arguments: this module is in
  * `utils/` and the architecture test holds it to that.

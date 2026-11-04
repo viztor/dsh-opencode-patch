@@ -653,8 +653,8 @@ describe("architecture · host methods are wrapped only through patchMethod", ()
       // A prototype swap shadows a method without leaving an own property.
       "Reflect.setPrototypeOf(llm, proto);",
       "Object.setPrototypeOf(adapter, proto);",
-      // The receiver reached through a property path, as decoratePlaneAdapters
-      // reaches the adapter.
+      // The receiver reached through a property path, as the plane-adapter
+      // decoration P-R1 deleted reached the adapter.
       "Object.assign(registration?.adapter, { modelOf: wrapped });",
       'Object.defineProperty(this.llm, "listModels", { value: wrapped });',
     ].join("\n");

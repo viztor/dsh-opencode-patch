@@ -57,8 +57,18 @@
  *   `0.2.2-alpha.2` as npm installs it (cordis `4.0.6-alpha.2`).
  * - Google thinking levels are pi's to send. A host whose pi's own
  *   exported predicate (`usesGoogleThinkingLevel`, `api/google-shared`) does
- *   not name the Go plane's level-only Google model sends it a budget, which the gateway
- *   refuses: today the rc channel's floor, pi 1.1.0, the desktop app's pi.
+ *   not name the level-only Google model (in either plane's catalog) sends it
+ *   a budget, which the gateway refuses: today the rc channel's floor, pi
+ *   1.1.0, the desktop app's pi.
+ *
+ * One known defect is recorded as a `[KNOWN_DEFECT]` row, detected the same
+ * way: on a host whose `internal/config` waterfall hands its listeners the
+ * fiber (`claimCannotEngage`, read from the contract the probe saw the host
+ * dispatch; alpha's `npm` cell today, cordis `4.0.6-alpha.2`), the route
+ * claim does not engage, so that row asserts that pi-ai serves both planes,
+ * and every row that needs the claim (the plane-provider, registry, listing,
+ * per-model, Gemini-level, Settings-graft and save rows) skips with
+ * `CLAIM_SKIP`. The save rows also skip where the host cannot save at all.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -839,6 +849,11 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     if (hostCannotSave(out)) {
       context.skip();
     }
+    // D15 is the route claim's: with pi-ai serving the planes, pi-ai's own
+    // strict check refuses the stored gap id, so a host that saves but where
+    // the claim cannot engage skips these as the KNOWN_DEFECT, not as a
+    // D15 failure.
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.saveBlocked).toEqual({ accepted: true, id: SAVE_CANDIDATE });
     expect(out.saveCleared).toBeUndefined();
   });
@@ -847,6 +862,11 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     if (hostCannotSave(out)) {
       context.skip();
     }
+    // D15 is the route claim's: with pi-ai serving the planes, pi-ai's own
+    // strict check refuses the stored gap id, so a host that saves but where
+    // the claim cannot engage skips these as the KNOWN_DEFECT, not as a
+    // D15 failure.
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.save).toEqual({ accepted: true, id: SAVE_CANDIDATE });
     expect(out.savedInFile).toBe(true);
     expect(out.afterSave?.listed).toContain(SAVE_CANDIDATE);

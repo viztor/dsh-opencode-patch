@@ -20,10 +20,13 @@
  * P-T1b recorded these rows against the hidden-route workaround; P-R1, where
  * the plugin owns the `opencode` and `opencode-go` routes, flipped the
  * fourteen named cases and fourteen `S0_TODAY` facets its PR body lists, so
- * every row here is now `[BASELINE]`. Since the plugin builds every model
- * itself, the cells' tables agree wherever the plugin decides; a row differs
- * by cell only where the host's own pi or pi-ai decides (`S0_TODAY_BY_CELL`,
- * `forHost`).
+ * every `S0_TODAY` facet and every named case is now `[BASELINE]`, with one
+ * exception: the `[HOST_LIMITATION]` row for the Gemini 4 thinking level,
+ * which runs where pi's own `usesGoogleThinkingLevel` does not name the
+ * level-only model (the rc floor, pi 1.1.0, D26). Since the plugin builds
+ * every model itself, the cells' tables agree wherever the plugin decides; a
+ * row differs by cell only where the host's own pi or pi-ai decides
+ * (`S0_TODAY_BY_CELL`, `forHost`).
  *
  * The per-model expectations live in `S0_TODAY_BY_CELL` (`support/host.ts`;
  * `S0_TODAY` is the installed cell's table), which the binary e2e reads too,
@@ -31,8 +34,8 @@
  * unnoticed. Each model's three facets (model info, the
  * call-config verdict, the wire) carry their own tag there, and this file
  * generates one test per model and facet titled with that tag, in each apply
- * order (`todayRowsFor(order)` carries that order's tags), so the tag is what
- * a reader and a phase's diff go by. Where a measurement contradicted the
+ * order (`todayRowsFor` answers the cell's rows for either order), so the
+ * tag is what a reader and a phase's diff go by. Where a measurement contradicted the
  * plan's expectation the row keeps the measurement and says so.
  *
  * Every case boots its own host. The main block boots in the published host's

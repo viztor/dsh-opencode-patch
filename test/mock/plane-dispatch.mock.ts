@@ -169,7 +169,7 @@ const finishOf = (
 
 /**
  * Whether the installed pi sends `model` a thinking budget the mock gateway
- * refuses: the Go plane's level-only model on a pi whose own
+ * refuses: the level-only Gemini 4 model, on either plane, on a pi whose own
  * `usesGoogleThinkingLevel` does not name it (pi 1.1.0, the rc floor). That is
  * a HOST_LIMITATION (D26), detected from pi's own predicate, never a version.
  */

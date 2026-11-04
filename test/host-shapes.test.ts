@@ -591,8 +591,8 @@ describe(`host · pi ${PI}'s public exports (package.json exports ./providers/*,
    * F10, per cell: pi 1.1.0's Go provider has no Google API; pi 1.3.0 added
    * it and 1.5.0 keeps it. A fact about pi, not a limitation of the plugin:
    * the gateway's Go plane serves Google models whichever pi runs, and the
-   * plugin routes them itself (the Google bridge today, the plane adapter
-   * from P-R1), so neither cell's row is a `HOST_LIMITATION`.
+   * plugin's plane adapter routes them itself, so neither cell's row is a
+   * `HOST_LIMITATION`.
    */
   const GO_HAS_GOOGLE = forHost({
     "alpha-floor": true,
