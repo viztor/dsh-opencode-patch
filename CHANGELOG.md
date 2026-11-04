@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.9.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.0...v1.9.1) (2026-11-04)
+
+
+### Fixes
+
+* keep the deprecated alias publishing, and drop the leaked tool id ([#157](https://github.com/viztor/dsh-opencode-patch/issues/157)) ([cee95a7](https://github.com/viztor/dsh-opencode-patch/commit/cee95a7237243921d5fe0c54d1703bb1858fb845))
+
 ## [1.9.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.8.1...v1.9.0) (2026-11-04)
 
 
