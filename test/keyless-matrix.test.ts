@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { PLANES, S0_TODAY } from "./support/host.ts";
+import { HOST_CELLS, PLANES, S0_TODAY_BY_CELL } from "./support/host.ts";
 import {
   cellKey,
   classifyKeylessProbe,
@@ -278,12 +278,15 @@ describe("keyless matrix · the cells", () => {
 });
 
 describe("keyless matrix · the cells the live run asserts", () => {
-  it("TODAY_DISPATCH is exactly the cells S0_TODAY's measured turns were sent to", () => {
-    // Each URL a characterized turn sent is matched to the one cell whose PATH
-    // it is (the query aside: Messages adds `?beta=true`), with the row's own
-    // model in the Google path. A row that sent nothing adds nothing.
+  /**
+   * The matrix cells one host cell's characterized turns were sent to, and
+   * the URLs that match no cell (the root family, `/inference(/go)/v1`, which
+   * the matrix does not probe yet: P-R2 adds it).
+   */
+  const reachedOn = (cell: (typeof HOST_CELLS)[number]) => {
     const reached = new Set<string>();
-    for (const [rowKey, row] of Object.entries(S0_TODAY.rows)) {
+    const unmatched: string[] = [];
+    for (const [rowKey, row] of Object.entries(S0_TODAY_BY_CELL[cell].rows)) {
       const slash = rowKey.indexOf("/");
       const plane = rowKey.slice(0, slash) as (typeof PLANES)[number];
       const model = rowKey.slice(slash + 1);
@@ -298,13 +301,51 @@ describe("keyless matrix · the cells the live run asserts", () => {
             )
             .map((family) => cellKey({ family, plane, protocol }))
         );
-        expect(matches, `${rowKey} ${sent}`).toHaveLength(1);
-        reached.add(matches[0] ?? "");
+        expect(matches.length, `${cell} ${rowKey} ${sent}`).toBeLessThan(2);
+        if (matches[0] === undefined) {
+          unmatched.push(new URL(sent).pathname);
+        } else {
+          reached.add(matches[0]);
+        }
       }
     }
-    expect([...reached].toSorted()).toEqual([...TODAY_DISPATCH].toSorted());
-    // Completions reach the legacy family today: the modern completions cells
-    // are P-R1's target, asserted live as a forward guard, never as today's.
+    return { reached: [...reached].toSorted(), unmatched };
+  };
+
+  it("TODAY_DISPATCH is exactly the cells the rc floor's measured turns were sent to, and every other host cell's are TODAY_DISPATCH with completions moved by its pi", () => {
+    // Each URL a characterized turn sent is matched to the one cell whose PATH
+    // it is (the query aside: Messages adds `?beta=true`), with the row's own
+    // model in the Google path. A row that sent nothing adds nothing. The
+    // plugin's own routes (Responses, Messages, Google) are the same on every
+    // host cell; completions follow pi's catalog base, which moved twice.
+    const floor = reachedOn("rc-floor");
+    expect(floor.unmatched).toEqual([]);
+    const { reached } = floor;
+    const hidden = [...TODAY_DISPATCH].filter(
+      (cell) => !cell.includes("openai-completions")
+    );
+    // pi 1.5.0 (newest, both channels' npm install) files completions under
+    // the modern family: exactly the cells P-R1 moves every host to.
+    const newest = reachedOn("newest");
+    expect(newest.unmatched).toEqual([]);
+    expect(newest.reached).toEqual([...hidden, ...NEXT_DISPATCH].toSorted());
+    // pi 1.3.0 (alpha's floor) files them under the root family, which no
+    // matrix cell names yet.
+    const alphaFloor = reachedOn("alpha-floor");
+    expect(alphaFloor.reached).toEqual(hidden.toSorted());
+    expect(alphaFloor.unmatched.toSorted()).toEqual([
+      "/inference/go/v1/chat/completions",
+      "/inference/v1/chat/completions",
+    ]);
+    expect(HOST_CELLS.toSorted()).toEqual([
+      "alpha-floor",
+      "newest",
+      "rc-floor",
+    ]);
+    expect(reached).toEqual([...TODAY_DISPATCH].toSorted());
+    // On the rc floor completions reach the legacy family; the modern
+    // completions cells are where pi 1.5.0 sends them already and P-R1 sends
+    // them on every host, so the live run asserts both sets.
     expect([...TODAY_DISPATCH]).toContain("opencode openai-completions legacy");
     expect(
       [...NEXT_DISPATCH].filter((cell) => TODAY_DISPATCH.has(cell))

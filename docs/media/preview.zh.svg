@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300" role="img" aria-label="设置卡片与输入框上方的 Go 计量表">
+<defs><linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4D6BFE"/><stop offset="1" stop-color="#A78BFA"/></linearGradient></defs>
+<rect width="640" height="300" fill="#F5F6FC"/>
+<rect x="20" y="24" width="272" height="256" rx="14" fill="#FFFFFF" stroke="#E7E9F3"/>
+<text x="38" y="50" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="13" font-weight="600" fill="#1B1F2E">OpenCode 补丁</text>
+<rect x="244" y="39" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="47" r="6" fill="#FFFFFF"/>
+<path d="M20 64 H292" stroke="#EFF1F7"/>
+<text x="38" y="84" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="8.5" font-weight="600" fill="#8A8FA3" letter-spacing="0.6">网关请求</text>
+<text x="38" y="104" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">恢复官方 User-Agent</text>
+<rect x="244" y="96" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="104" r="6" fill="#FFFFFF"/>
+<text x="38" y="124" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">注入来源请求头</text>
+<rect x="244" y="116" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="124" r="6" fill="#FFFFFF"/>
+<text x="38" y="144" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">附带工作区项目</text>
+<rect x="244" y="136" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="144" r="6" fill="#FFFFFF"/>
+<text x="38" y="167" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="8.5" font-weight="600" fill="#8A8FA3" letter-spacing="0.6">模型与免费额度</text>
+<text x="38" y="187" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">用官方目录补全</text>
+<rect x="244" y="179" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="187" r="6" fill="#FFFFFF"/>
+<text x="38" y="207" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">核心工具回退</text>
+<rect x="244" y="199" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="207" r="6" fill="#FFFFFF"/>
+<text x="38" y="230" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="8.5" font-weight="600" fill="#8A8FA3" letter-spacing="0.6">配额计量</text>
+<text x="38" y="250" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">输入区计量</text>
+<rect x="244" y="242" width="30" height="16" rx="8" fill="#4D6BFE"/><circle cx="265" cy="250" r="6" fill="#FFFFFF"/>
+<rect x="316" y="44" width="304" height="236" rx="14" fill="#FFFFFF" stroke="#E7E9F3"/>
+<text x="336" y="72" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="12.5" font-weight="600" fill="#1B1F2E">Go 用量</text>
+<text x="600" y="72" text-anchor="end" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="9.5" fill="#8A8FA3">状态正常</text>
+<path d="M336 84 H600" stroke="#EFF1F7"/>
+<text x="472" y="100" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="8" fill="#8A8FA3" letter-spacing="0.5">已用</text>
+<text x="536" y="100" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="8" fill="#8A8FA3" letter-spacing="0.5">剩余</text>
+<circle cx="343" cy="116" r="5" fill="none" stroke="#E7E9F3" stroke-width="2.5"/>
+<text x="358" y="120" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">5 小时</text>
+<text x="472" y="120" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10" fill="#8A8FA3">0%</text>
+<text x="536" y="120" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#1B1F2E">100%</text>
+<circle cx="343" cy="142" r="5" fill="none" stroke="#E7E9F3" stroke-width="2.5"/>
+<circle cx="343" cy="142" r="5" fill="none" stroke="url(#ring)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="0.9 32" transform="rotate(-90 343 142)"/>
+<text x="358" y="146" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">每周</text>
+<text x="472" y="146" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10" fill="#8A8FA3">3%</text>
+<text x="536" y="146" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#1B1F2E">97%</text>
+<circle cx="343" cy="168" r="5" fill="none" stroke="#E7E9F3" stroke-width="2.5"/>
+<circle cx="343" cy="168" r="5" fill="none" stroke="url(#ring)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="28.3 32" transform="rotate(-90 343 168)"/>
+<text x="358" y="172" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" fill="#3A3F52">每月</text>
+<text x="472" y="172" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10" fill="#8A8FA3">90%</text>
+<text x="536" y="172" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#1B1F2E">10%</text>
+<path d="M336 202 H600" stroke="#EFF1F7"/>
+<text x="336" y="224" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="9.5" fill="#8A8FA3">月度额度</text>
+<circle cx="428" cy="220" r="3.5" fill="#4D6BFE"/>
+<text x="438" y="224" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="10.5" font-weight="600" fill="#1B1F2E">deepseek-v4.1-flash</text>
+<text x="336" y="246" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="9.5" fill="#3A3F52">Go $100 · Plus $200</text>
+<rect x="551" y="233" width="49" height="19" rx="9.5" fill="#4D6BFE"/>
+<text x="575.5" y="246" text-anchor="middle" font-family="system-ui, -apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="8.5" font-weight="600" fill="#FFFFFF">刷新</text>
+<rect x="316" y="288" width="304" height="7" rx="3.5" fill="#E7E9F3"/>
+</svg>

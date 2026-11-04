@@ -1,9 +1,12 @@
 /**
  * The real host, in-process: the harness the routing work is judged against.
  *
- * Two tiers, both built from the host packages this repository installs at the
- * versions `host-versions.ts` names (pi 1.1.0 patched, the `@deepseek-ai`
- * cluster at the published host's tag):
+ * Two tiers, both built from the host packages this repository installs: the
+ * harness channel `host-versions.ts` selects (`rc` or `alpha`, each with its
+ * `@deepseek-ai` cluster at the published host's tag), with pi UNPATCHED at
+ * the newest version the bridge's range admits, or at the range's floor after
+ * `scripts/use-channel.ts <channel> --floor`. Where the hosts differ, the rows
+ * below carry one expectation per host cell ({@link HostCell}, {@link forHost}):
  *
  * - **Tier A** ({@link mountTierA}): a bare cordis `Context`, `LlmRuntime`, and
  *   `dsh-llm-pi-ai` mounted as a plugin with a `{ providers }` config, so its
@@ -89,6 +92,7 @@ import { LlmRuntime } from "@deepseek-ai/dsh-llm";
 import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import Settings from "@deepseek-ai/dsh-settings";
 
+import { type Channel, CHANNELS, HOST_VERSIONS } from "./host-versions.ts";
 import { apply, Config, inject, name } from "./src.ts";
 
 /** The package name the plugin looks pi-ai up by (`PI_AI_PACKAGE` in `src/responses-provider.ts`). */
@@ -404,7 +408,8 @@ export const recordingFetch = (
 
 /**
  * The profile run S0 measured: on each plane one known model per protocol plus
- * the models pi 1.1.0 lacks, and a sibling pi-ai route that is not a plane.
+ * the models pi 1.1.0 lacks (the rc channel's floor; a newer pi describes the
+ * Go ones, see {@link PI_GAPS}), and a sibling pi-ai route that is not a plane.
  * `deepseek`'s base is loopback port 9 (discard), so nothing reaches it.
  */
 export const S0_PROFILE = {
@@ -435,7 +440,7 @@ export const S0_PROFILE = {
 } as const;
 
 /**
- * A DECLARED id that neither pi 1.1.0 nor the plugin's catalog describes (G1's
+ * A DECLARED id that no supported pi nor the plugin's catalog describes (G1's
  * second class, beside the gap ids the plugin's catalog still describes).
  */
 export const UNKNOWN_ID = "not-in-any-catalog";
@@ -489,11 +494,119 @@ export const CHARACTERIZED_MODELS: Readonly<Record<Plane, readonly string[]>> =
   };
 
 /**
- * How a characterization row is tagged, so a later phase flips named rows:
- * `KNOWN_DEFECT` is wrong today and a phase fixes it, `INTENDED_CHANGE` is
- * right today and a phase changes it on purpose, `BASELINE` must survive.
+ * How a characterization row is tagged, so a later phase flips named rows.
+ * This is the one definition; CONTRIBUTING, the plan and the test files point
+ * here:
+ *
+ * - `KNOWN_DEFECT` is wrong today, and a phase fixes it;
+ * - `INTENDED_CHANGE` is right today, and a phase changes it on purpose;
+ * - `BASELINE` must survive every phase;
+ * - `HOST_LIMITATION` is something one channel's host, as one install runs
+ *   it, lacks or breaks, its pi or its own code, that no phase of this plugin
+ *   fixes (D26: a host gap is the host's job). The install is a host cell
+ *   (`HostCell`) for an in-process row, or an `e2e-host` cell (`npm` or
+ *   `floor`) for the binary e2e; the title names the channel, the host and
+ *   that install, and it is reported upstream.
  */
-export type RowTag = "BASELINE" | "INTENDED_CHANGE" | "KNOWN_DEFECT";
+export type RowTag =
+  | "BASELINE"
+  | "HOST_LIMITATION"
+  | "INTENDED_CHANGE"
+  | "KNOWN_DEFECT";
+
+// ---------------------------------------------------------------------------
+// The host cells
+// ---------------------------------------------------------------------------
+
+/**
+ * The installs a row is measured on (D14''). `newest` is either channel's
+ * default install: pi UNPATCHED at the newest version the bridge's range
+ * admits, what an npm user of the channel runs. Both channels resolve the same
+ * pi today, so they share the column; a fixture case fails the day the two
+ * records' `pi` differ, and the column is split then rather than silently
+ * shared. `rc-floor` and `alpha-floor` are each channel's range floor, the pi
+ * the harness's own workspace pins and the desktop app ships (patched there,
+ * not here: the patch touches nothing the plugin reads).
+ */
+export type HostCell = "alpha-floor" | "newest" | "rc-floor";
+
+/**
+ * Every {@link HostCell}, built from a `Record` keyed by the union so a cell
+ * added to the type and missing here fails to compile.
+ */
+export const HOST_CELLS = Object.keys({
+  "alpha-floor": true,
+  newest: true,
+  "rc-floor": true,
+} satisfies Record<HostCell, true>) as readonly HostCell[];
+
+/**
+ * The cell an install is, from its record's channel and floor flag.
+ *
+ * @param host - the selected host (`HOST_VERSIONS`, or a probe's record).
+ * @returns the cell.
+ */
+export const hostCellOf = (host: {
+  readonly channel: Channel;
+  readonly floor: boolean;
+}): HostCell => (host.floor ? `${host.channel}-floor` : "newest");
+
+/** The cell the install under test is: `HOST_VERSIONS`, which `DSH_CHANNEL`/`DSH_PI` select. */
+export const HOST_CELL: HostCell = hostCellOf(HOST_VERSIONS);
+
+/** The pi each cell runs, read from the channel records rather than restated. */
+export const PI_OF_CELL: Readonly<Record<HostCell, string>> = {
+  "alpha-floor": CHANNELS.alpha.piFloor,
+  newest: CHANNELS.alpha.pi,
+  "rc-floor": CHANNELS.rc.piFloor,
+};
+
+/**
+ * One expectation per host cell, picked for the install under test. Keyed by
+ * the cell's ROLE, never by a pi version, so a bump that moves `newest` keeps
+ * its rows and fails only where the new pi behaves differently.
+ *
+ * @param values - the expectation for each cell.
+ * @param cell - the cell to read, the install under test's by default.
+ * @returns that cell's expectation.
+ */
+export const forHost = <T>(
+  values: Readonly<Record<HostCell, T>>,
+  cell: HostCell = HOST_CELL
+): T => values[cell];
+
+/**
+ * One expectation per channel, for what the `@deepseek-ai` cluster decides
+ * rather than pi (pi-ai's own defaults, say).
+ *
+ * @param values - the expectation for each channel.
+ * @returns the selected channel's.
+ */
+export const forChannel = <T>(values: Readonly<Record<Channel, T>>): T =>
+  values[HOST_VERSIONS.channel];
+
+/** Which declared S0 ids each plane's pi cannot place, per cell. */
+type PlaneIds = Readonly<Record<Plane, readonly string[]>>;
+
+/**
+ * The declared S0 ids each cell's pi cannot place (its catalog does not
+ * describe them, while the plugin's catalog still does), in declaration
+ * order. pi 1.5.0 describes the two Go ones; no supported pi describes Zen's.
+ */
+export const PI_GAPS_BY_CELL: Readonly<Record<HostCell, PlaneIds>> = {
+  "alpha-floor": {
+    opencode: ["gpt-5.3-codex-spark"],
+    "opencode-go": ["gemini-4-argon", "minimax-m3.1-flash"],
+  },
+  newest: { opencode: ["gpt-5.3-codex-spark"], "opencode-go": [] },
+  "rc-floor": {
+    opencode: ["gpt-5.3-codex-spark"],
+    "opencode-go": ["gemini-4-argon", "minimax-m3.1-flash"],
+  },
+};
+
+/** {@link PI_GAPS_BY_CELL} for the install under test. */
+export const PI_GAPS: PlaneIds = forHost(PI_GAPS_BY_CELL);
 
 /**
  * The three facets a row records, each tagged on its own: one model can be
@@ -503,7 +616,7 @@ export type RowTag = "BASELINE" | "INTENDED_CHANGE" | "KNOWN_DEFECT";
  */
 export type RowFacet = "callConfig" | "info" | "wire";
 
-/** What TODAY's plugin does with one characterized model on pi 1.1.0, as measured. */
+/** What TODAY's plugin does with one characterized model on one host cell, as measured. */
 export interface TodayRow {
   readonly tags: Readonly<Record<RowFacet, RowTag>>;
   /**
@@ -536,10 +649,12 @@ const I = "INTENDED_CHANGE";
 
 /**
  * TODAY's plugin (hidden routes, listing patch, adapter decoration and all) on
- * pi 1.1.0 with {@link CHARACTERIZED_PROFILE} and a key stored for each plane,
- * measured in tier B with the published host's apply order (`plugin-first`,
- * see {@link ApplyOrder}) and shared with the binary e2e so the two cannot
- * drift. Each facet carries its own tag, and the characterization generates
+ * the `rc-floor` cell (pi 1.1.0) with {@link CHARACTERIZED_PROFILE} and a key
+ * stored for each plane, measured in tier B with the published host's apply
+ * order (`plugin-first`, see {@link ApplyOrder}). The other cells are this
+ * table with the facets their pi moves ({@link S0_TODAY_BY_CELL}), and
+ * {@link S0_TODAY} is the install under test's, shared with the binary e2e so
+ * the two cannot drift. Each facet carries its own tag, and the characterization generates
  * one test per row and facet titled with it: P-R1 flips the `KNOWN_DEFECT` and
  * `INTENDED_CHANGE` facets its PR body names, and no `BASELINE` facet moves —
  * except that P-R2's measured family flip, if a `modern` cell fails, may move
@@ -557,7 +672,7 @@ const I = "INTENDED_CHANGE";
  * reads the same table, but its job runs on a PR only when this file is in
  * its path scope (`.github/workflows/ci.yml`, `e2e-host`), which it is.
  */
-export const S0_TODAY = {
+const S0_RC_FLOOR = {
   /** `listModels` before any turn: the plugin sees no key, so it hides paid models. */
   keylessListing: { opencode: [], "opencode-go": [] },
   /** `listModels` once a turn captured a key: pi-resolved ids only. */
@@ -692,20 +807,121 @@ export const S0_TODAY = {
     /provider "opencode" model "not-a-real-model" needs an api/u,
 } as const;
 
+/** A characterized row's key, `<route>/<model>`. */
+export type S0RowKey = keyof typeof S0_RC_FLOOR.rows;
+
+/** One cell's characterization table. */
+export interface S0Table {
+  readonly keylessListing: PlaneIds;
+  readonly keyedListing: PlaneIds;
+  readonly rows: Readonly<Record<S0RowKey, TodayRow>>;
+  readonly saveBlockedByStoredGap: RegExp;
+  readonly saveRejectedUnknown: RegExp;
+}
+
+/**
+ * A cell's table: `base` with the rows `moved` replaces, each replacement a
+ * whole row so its tags are restated with its values.
+ */
+const withMoved = (
+  base: S0Table,
+  moved: Partial<Record<S0RowKey, TodayRow>>,
+  listings: Partial<Pick<S0Table, "keyedListing">> = {}
+): S0Table => ({
+  ...base,
+  ...listings,
+  rows: { ...base.rows, ...moved },
+});
+
+/**
+ * pi 1.3.0 (alpha's floor) files its catalog's completions models under the
+ * root family, `/inference(/go)/v1`: the turn leaves the legacy base, but not
+ * for the per-protocol one P-R1 moves it to, so the facet stays
+ * `INTENDED_CHANGE`. It still lacks both Go gap ids.
+ */
+const S0_ALPHA_FLOOR = withMoved(S0_RC_FLOOR, {
+  "opencode-go/deepseek-v4-pro": {
+    ...S0_RC_FLOOR.rows["opencode-go/deepseek-v4-pro"],
+    sent: [`${ZEN}/inference/go/v1/chat/completions`],
+  },
+  "opencode/deepseek-v4-pro": {
+    ...S0_RC_FLOOR.rows["opencode/deepseek-v4-pro"],
+    sent: [`${ZEN}/inference/v1/chat/completions`],
+  },
+});
+
+/**
+ * pi 1.5.0 (both channels' newest) files completions under the per-protocol
+ * family P-R1 targets, and describes both Go gap ids (`PI_GAPS_BY_CELL`), so
+ * each facet that moves here is already what P-R1 keeps and is `BASELINE` on
+ * this cell: completions reach `/inference(/go)/openai/v1`, the Go Gemini row
+ * validates in either apply order, and the other Go gap id is placed (on
+ * completions, which is the plugin catalog's SDK too) and sent.
+ */
+const S0_NEWEST = withMoved(
+  S0_RC_FLOOR,
+  {
+    "opencode-go/deepseek-v4-pro": {
+      ...S0_RC_FLOOR.rows["opencode-go/deepseek-v4-pro"],
+      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
+    },
+    "opencode-go/gemini-4-argon": {
+      ...S0_RC_FLOOR.rows["opencode-go/gemini-4-argon"],
+      callConfig: "ok",
+      tags: tags(B, B, B),
+    },
+    "opencode-go/minimax-m3.1-flash": {
+      ...S0_RC_FLOOR.rows["opencode-go/minimax-m3.1-flash"],
+      callConfig: "ok",
+      finish: "AUTH",
+      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
+    },
+    "opencode/deepseek-v4-pro": {
+      ...S0_RC_FLOOR.rows["opencode/deepseek-v4-pro"],
+      sent: [`${ZEN}/inference/openai/v1/chat/completions`],
+      tags: tags(B, B, B),
+    },
+  },
+  {
+    keyedListing: {
+      ...S0_RC_FLOOR.keyedListing,
+      "opencode-go": [
+        ...S0_RC_FLOOR.keyedListing["opencode-go"],
+        "gemini-4-argon",
+        "minimax-m3.1-flash",
+      ],
+    },
+  }
+);
+
+/** Every cell's table, for a case that checks them all. */
+export const S0_TODAY_BY_CELL: Readonly<Record<HostCell, S0Table>> = {
+  "alpha-floor": S0_ALPHA_FLOOR,
+  newest: S0_NEWEST,
+  "rc-floor": S0_RC_FLOOR,
+};
+
+/** The install under test's table ({@link HOST_CELL}). */
+export const S0_TODAY: S0Table = forHost(S0_TODAY_BY_CELL);
+
 /** The id the save rows try to add: unknown to every catalog, and not declared. */
 export const SAVE_CANDIDATE = "not-a-real-model";
 
 /**
- * The ids on `opencode` that pi 1.1.0 cannot place: the stored gap id and the
+ * The ids on `opencode` that no supported pi can place: the stored gap id and the
  * declared unknown id. The save sequence (in-process, and the probe's
  * `PROBE_SAVE_DROP`) removes them before saving {@link SAVE_CANDIDATE}.
  */
 export const ZEN_UNDESCRIBED = ["gpt-5.3-codex-spark", UNKNOWN_ID] as const;
 
 /**
- * TODAY's rows for an apply order. `S0_TODAY.rows` is the `plugin-first`
- * table; with `pi-ai-first` the adapter decoration wraps pi-ai's plane adapter
- * and exactly one facet moves — Go gemini-4-argon validates —
+ * TODAY's rows for an apply order on a host cell. A cell's `rows` is its
+ * `plugin-first` table; with `pi-ai-first` the adapter decoration wraps
+ * pi-ai's plane adapter and on the floor cells exactly one facet moves — the
+ * Go Gemini row validates (on `newest` pi already places it, so nothing
+ * moves) —
  * measured in `test/host-characterization.test.ts`, which generates one test
  * per row and facet for each order, titled with that order's tags. The moved
  * facet is `BASELINE` in this table: its `"ok"` is already what P-R1 keeps, so
@@ -715,13 +931,16 @@ export const ZEN_UNDESCRIBED = ["gpt-5.3-codex-spark", UNKNOWN_ID] as const;
  * host the order is a race (F17) the suite must not pin.
  *
  * @param order - the apply order, as inferred from the decoration.
+ * @param cell - the host cell, the install under test's by default.
  * @returns the rows, keyed `<route>/<model>`.
  */
 export const todayRowsFor = (
-  order: ApplyOrder
-): Readonly<Record<keyof typeof S0_TODAY.rows, TodayRow>> => {
+  order: ApplyOrder,
+  cell: HostCell = HOST_CELL
+): Readonly<Record<S0RowKey, TodayRow>> => {
+  const { rows } = S0_TODAY_BY_CELL[cell];
   if (order === "plugin-first") {
-    return S0_TODAY.rows;
+    return rows;
   }
   // Exhaustive on purpose: a probe JSON with a missing or renamed field reads
   // `undefined` here, and must not fall through to the pi-ai-first table.
@@ -729,12 +948,12 @@ export const todayRowsFor = (
     throw new Error(`todayRowsFor: unknown apply order ${String(order)}`);
   }
   return {
-    ...S0_TODAY.rows,
+    ...rows,
     "opencode-go/gemini-4-argon": {
-      ...S0_TODAY.rows["opencode-go/gemini-4-argon"],
+      ...rows["opencode-go/gemini-4-argon"],
       callConfig: "ok",
       tags: {
-        ...S0_TODAY.rows["opencode-go/gemini-4-argon"].tags,
+        ...rows["opencode-go/gemini-4-argon"].tags,
         callConfig: B,
       },
     },
@@ -754,9 +973,10 @@ export const APPLY_ORDERS = Object.keys({
 /**
  * What appending a new id to `opencode` answers while the plane stores ANY of
  * {@link ZEN_UNDESCRIBED}, whichever one the installed pi cannot describe
- * first. The pinned pi always names `gpt-5.3-codex-spark`
- * (`S0_TODAY.saveBlockedByStoredGap`); a floating pi that learned it names the
- * next one, so the floating cell asserts this instead.
+ * first. Every recorded cell's pi names the first of them
+ * (`S0_TODAY.saveBlockedByStoredGap`); a binary whose npm-resolved pi moved
+ * past its channel record may have learned it and name the next one, so the
+ * binary e2e asserts this instead on such a pi.
  */
 export const SAVE_BLOCKED_BY_ANY_UNDESCRIBED = new RegExp(
   `provider "opencode" model "(?:${ZEN_UNDESCRIBED.map((id) =>
@@ -784,7 +1004,8 @@ const piData = (plane: Plane): Record<string, Record<string, unknown>> =>
 /**
  * The protocol the installed pi's catalog files a model under on a plane, or
  * `undefined` when pi does not know it. The data is keyed by protocol, then
- * `chat:<id>`, so a fixture can check which of its ids are gaps on pi 1.1.0.
+ * `chat:<id>`, so a fixture can check which of its ids are gaps on the
+ * installed pi ({@link PI_GAPS}).
  *
  * @param plane - the plane route.
  * @param id - the model id.

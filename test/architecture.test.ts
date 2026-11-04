@@ -269,6 +269,71 @@ describe("architecture · no source module imports a test library", () => {
   });
 });
 
+describe("architecture · src never reads what the desktop's patched pi changes", () => {
+  /**
+   * The harness's own pi patch, which only the desktop app ships, removes pi's
+   * per-delta re-parse of streamed tool-call arguments and round-trips a model's
+   * thought signature on OpenAI-compatible completions. An npm install runs pi
+   * unpatched. The plugin supports both because it reads neither (D14''):
+   * this case fails the day a module starts to, so the difference stays
+   * invisible to the plugin instead of becoming a channel-dependent bug.
+   *
+   * The names are the patch's own, and one shape that names none of them:
+   * the patch deletes the line that refreshes an unfinished tool-call block's
+   * `arguments`, and a caller reaches that block through the `partial`
+   * message pi attaches to every streaming event (text and thinking deltas
+   * included). So a `.partial` property read (dotted, optional-chained or
+   * bracketed) counts too; a `.partial()` call and the `Partial<…>` type do
+   * not, since neither touches a stream event.
+   */
+  const PATCHED_SURFACE =
+    /\b(?:partialJson|partial_json|partialArgs|toolcall_delta|toolCallDelta|parseStreamingJson|thought_signature|thoughtSignature)\b|\.partial\b(?!\s*\()|\[\s*["'`]partial["'`]\s*\]/u;
+
+  const readsPatchedSurface = (source: string): boolean =>
+    PATCHED_SURFACE.test(stripComments(source));
+
+  it("no src module reads a streamed tool-call delta, partial arguments or a thought signature", () => {
+    const files = filesUnder(SRC_DIR);
+    expect(files.length).toBeGreaterThan(10);
+    expect(
+      files.filter((file) =>
+        readsPatchedSurface(readFileSync(join(SRC_DIR, file), "utf8"))
+      )
+    ).toEqual([]);
+  });
+
+  it("flags a planted read, in code but not in a comment, so a pass means something", () => {
+    expect(
+      readsPatchedSurface('if (event.type === "toolcall_delta") {}\n')
+    ).toBe(true);
+    expect(readsPatchedSurface("const json = block.partialJson;\n")).toBe(true);
+    expect(readsPatchedSurface("part.thoughtSignature ??= signature;\n")).toBe(
+      true
+    );
+    expect(
+      readsPatchedSurface("// a comment may name partialJson\nconst a = 1;\n")
+    ).toBe(false);
+    // The in-progress arguments through the event's `partial` message, which
+    // read parsed on an npm install and `{}` on the desktop's patched pi.
+    expect(
+      readsPatchedSurface("const args = event.partial.content[0].arguments;\n")
+    ).toBe(true);
+    expect(
+      readsPatchedSurface("const blocks = event?.partial?.content ?? [];\n")
+    ).toBe(true);
+    expect(readsPatchedSurface('const message = event["partial"];\n')).toBe(
+      true
+    );
+    // Neither a `.partial()` call nor the `Partial<…>` type is a stream read.
+    expect(readsPatchedSurface("const loose = schema.partial();\n")).toBe(
+      false
+    );
+    expect(
+      readsPatchedSurface("const row: Partial<Record<string, number>> = {};\n")
+    ).toBe(false);
+  });
+});
+
 describe("architecture · utils/ holds only pure functions", () => {
   it("has utilities to check", () => {
     // Without this the suite passes vacuously on an empty folder — the exact
@@ -826,7 +891,7 @@ describe("architecture · every test reaches src through one door", () => {
     expect(files).toContain("mock/helpers.ts");
     expect(files).toContain("e2e/protocol-routing.e2e.ts");
     expect(files).not.toContain("support/src.ts");
-    expect(files).toContain("support/catalog-fixture.ts");
+    expect(files).toContain("support/catalogs.ts");
   });
 
   it("no static src import outside the exemptions", () => {

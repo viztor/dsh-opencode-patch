@@ -47,8 +47,9 @@
 #   maxContextWindow: number    optional ceiling clamping model context windows (e.g. 131072).
 #   modelOverrides: object      per-model overrides for contextWindow, maxTokens and metadata (default {}).
 #   modelRoutes: object         per-model wire routing: { <id>: { api, baseURL } } (default {}).
-#   debug: true|false           log every streamed call that receives the header.
-#   debugFile: path             optional append target for stream debug JSONL; written only while debug is on.
+#   debug: true|false           log every streamed call that receives the header to the console.
+#   debugFile: path             optional JSONL file for the request and stream debug entries; naming
+#                               it writes the file whether or not debug is on.
 - insert:
     - id: dsh-opencode-patch
       name: "dsh-opencode-patch"
