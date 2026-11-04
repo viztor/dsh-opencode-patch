@@ -363,8 +363,8 @@ describe("Config schema", () => {
 
   it("accepts each endpoint family and degrades an unknown one to auto", () => {
     // Same rule as the key-source policy, for the same reason: the family is
-    // user-facing and hand-editable, and `auto` follows the catalog, so a typo
-    // degrades to the answer that cannot be wrong about which family is current.
+    // user-facing and hand-editable, so a typo degrades to `auto`, the default,
+    // rather than selecting a family the user never named.
     for (const family of ENDPOINT_FAMILIES) {
       expect(resolveConfig({ endpoint: family }).endpoint).toBe(family);
     }

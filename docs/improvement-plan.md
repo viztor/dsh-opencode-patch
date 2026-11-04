@@ -21,7 +21,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | Phase | PR | Title | State | Restack onto 1.8.0 |
 | :-- | :-- | :-- | :-- | :-- |
 | P0 | #105 | suite hardening, 10 defect fixes, this plan | in review | **merged `main` 1.8.0**; catalog refreshes and the pricing fix dropped (on `main`) |
-| P1a | #106 | `fix:` shipped breakage | in review | pending: merges P0; shrinks hard (title changes) |
+| P1a | #106 | `fix:` the purge row's refusal and the endpoint copy | in review | **merged P0**; shrunk to the purge row's `RemoteError.message`, the `auto` = `modern` copy and the `opencode-google` regression tests; the warning colour drops its token fallback; the catalog's refusal tests gain three cases `main` lacks; the rest is on `main`, and the debug gate follows D24 |
 | P1b | #107 | `chore:` hygiene | in review | pending: merges P1a; drops its tool-fallback variant (D25) |
 | P2 | #108 | `feat:` a smaller public API | in review | pending: merges P1b; re-retires the wrapper (D9) |
 | P-T1a | #109 | `build:` pin the host | in review | pending: merges P2; redone on the alpha cluster and pi 1.3.0 (D14', D22') |
@@ -112,11 +112,11 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | Settings shows pi's snapshot, not the catalog | `models-discovery.ts:142-198,532-539` |
 | Mode merging is done only for Go→Gemini. For the other modes the picker shows catalog levels while dispatch validates against a different profile: toggle models show Minimal…Max with no Off, and Go `minimax-m3` + Xhigh/Max is refused on the internal Anthropic route. | `models-discovery.ts:607-616,735-760,1063-1203`; `pi-provider.ts:351-386`; `responses-provider.ts:111-150` |
 | ~~`isZenProvider("opencode-google")` is false~~ Fixed on `main`: only `opencode-go` and `opencode-go-*` are excluded. P1a adds the regression test. | `utils/request-shape.ts:273-282` |
-| ~~`enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404.~~ Fixed on `main` (#133): a refusal other than 404 passes through. | `models-catalog.ts:731` |
+| ~~`enrichModelsResponse` turns a 401/403/5xx into a 200 catalog. It must still fill the Go plane's 404.~~ Fixed on `main` (#133): a refusal other than 404 passes through. P1a adds the Zen-plane 404 fill, the non-JSON 200 answer and the retry-after passthrough cases. | `models-catalog.ts:731` |
 | ~~The warning token doesn't exist, so warnings render as caption text.~~ Fixed on `main` (#133): both use `--dsw-alias-state-warn-label`. | `settings-card.tsx:159`, `settings-store-inspect.tsx:250` |
 | ~~The Settings spinner animates only if the meter is mounted~~ Fixed on `main` (#133): the card carries its own keyframes. | `settings-usage.tsx:45` |
 | ~~The stream hook writes `debugFile` with `debug` off~~ Not a defect under D24: naming `debugFile` writes both halves. | `stream-hook.ts:327-340` vs `lifecycle.ts:361` |
-| `settings-purge`: the `{ ok: false }` branch and the parser are on `main` (#133). Still open: a refused purge whose `error` is the host's `RemoteError` object, not a string, shows the generic message; P1a reads its `message`. | `settings-purge.ts:56-69` |
+| `settings-purge`: the `{ ok: false }` branch and the parser are on `main` (#133). ~~Still open: a refused purge whose `error` is the host's `RemoteError` object, not a string, shows the generic message.~~ Fixed by P1a: `settings-purge.ts` reads the `RemoteError`'s `message`. | `settings-purge.ts:56-69` |
 | The stream hook's `prepared` handling is dead. The host never reads `options.prepared`. | `stream-hook.ts:44,200-203,258` |
 | The partition test misses `debugFile` | `test/settings-page.test.tsx:1223` |
 | `cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists | `cordis.patch.yml:23,36,61` |
@@ -337,15 +337,13 @@ What stays private is pinned by contract tests against the real host packages:
   - completions models move from `/zen(/go)/v1` to `/inference(/go)/openai/v1`;
   - `decoratePlaneAdapters`' baseUrl repair never reaches the wire.
 
-1. **P1a `fix:` shipped breakage.**
-   - The wrapper's broken `export { default }`.
-   - `isZenProvider("opencode-google")` answers false.
-   - `enrichModelsResponse` passes a 401/403/5xx through, and still fills the Go plane's 404.
-   - The warning colour uses `--dsw-alias-state-warn-label`.
-   - The spinner keyframes are in the settings styles.
-   - The debug gate follows D24.
-   - `settings-purge` uses `parsePurgeResult`.
-   - The endpoint copy (`config.ts`, `config-values.ts`, README) names the per-protocol inference family for `modern`, with `auto` as its alias.
+1. **P1a `fix:` the purge row's refusal and the endpoint copy.** The rest of what shipped broken in 1.4.1 was fixed on `main` (#133, #135) before this phase landed.
+   - `settings-purge` shows the `message` of a refusal whose `error` is the host's `RemoteError` object.
+   - The endpoint copy (`config.ts`, `config-values.ts`, the card, both READMEs) names the per-protocol inference family for `modern`, with `auto` as its alias (D19), pinned by `endpoint-copy.test.ts`.
+   - Regression tests for `isZenProvider("opencode-google")`: the predicate, its agreement with `catalogPlaneForRoute`, and the usage service's Zen fallback on that route.
+   - The warning colour is the bare `--dsw-alias-state-warn-label` (no token fallback), and every token the card names is checked against the host's vocabulary.
+   - The stream hook's debug test asserts D24 rather than the gate this phase first proposed.
+   - The catalog's refusal tests gain three cases `main` lacks: the Zen-plane 404 fill, the non-JSON 200 answer, and a `retry-after` header that survives the passthrough. The passthrough itself is on `main` (#133).
 2. **P1b `chore:` hygiene.**
    - Delete `adapter-replacement.ts` and its test, with a note in the engineering notes on why the approach is unsupported.
    - Delete the dead `prepared` handling and `.freebuff/`.
@@ -452,7 +450,7 @@ How each phase changes now that it sits on `main` 1.8.0 and the alpha host. Each
 | Phase | Adjustment |
 | :-- | :-- |
 | P0 | Shrinks: the three catalog refreshes and the per-plane pricing fix are on `main`. Keeps the suite hardening, the lifecycle, mount and credential fixes, D23's scoping with `--copies`, and this plan. |
-| P1a | Shrinks hard: the purge row shows the host's `RemoteError.message`, the endpoint copy says `auto` is `modern`, and `isZenProvider("opencode-google")` gains a regression test. The wrapper fix, refusal passthrough, warning token, spinner and `parsePurgeResult` are on `main` or superseded; the debug gate follows D24. |
+| P1a | Shrinks hard: the purge row shows the host's `RemoteError.message`, the endpoint copy says `auto` is `modern`, and `isZenProvider("opencode-google")` gains a regression test. The wrapper fix, refusal passthrough, warning token, spinner and `parsePurgeResult` are on `main` or superseded; P1a only drops the warning token's fallback, checks every token the card names against the host's vocabulary, and adds three refusal-passthrough test cases `main` lacks (the Zen-plane 404 fill, the non-JSON 200 answer, the `retry-after` passthrough). The debug gate follows D24. |
 | P1b | Takes `main`'s `coreToolDecision` (D25) and ports only the dead Anthropic branch's deletion; its catalogue fixture merges with `main`'s `test/fixtures/catalogs.ts` behind the one door. |
 | P2 | Re-retires the wrapper `main` revived (D9); the door list grows by every `src` name `main`'s tests import. |
 | P-T1a | Redone on D14' and D22': `main`'s pins, then the pi 1.3.0 override and patch; the 1.1.0 patch is deleted. |

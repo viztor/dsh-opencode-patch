@@ -52,7 +52,8 @@ export const purgeDeprecatedModels = async (
     // **The host's own failure comes first.** The host answers a failure as
     // `{ ok: false, … }`, and reading that as "not a purge result" replaced the
     // message that says WHY with a sentence about shape — which tells the reader
-    // nothing they can act on.
+    // nothing they can act on. The remote protocol sends `{ ok: false, error }`
+    // with `error` a serialized `RemoteError`, so its `message` is read too.
     if (isRecord(value) && value.ok === false) {
       const { error, message: said } = value;
       let message = "the host refused the purge";
@@ -60,6 +61,11 @@ export const purgeDeprecatedModels = async (
         message = said;
       } else if (typeof error === "string") {
         message = error;
+      } else if (isRecord(error)) {
+        const { message: reason } = error;
+        if (typeof reason === "string") {
+          message = reason;
+        }
       }
       return { kind: "failed", message };
     }
