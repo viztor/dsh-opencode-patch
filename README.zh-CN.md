@@ -171,7 +171,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 由此有四条性质：
 
 - **你的挑选仍然有效。** 每个平面服务的正是其 `llm-pi-ai` 条目列出的模型；条目没有列出任何模型时，服务整个目录。你保存的任何 id 都会被接受并服务：目录未归类的 id 按 Chat Completions 发送，除非平面条目指定了路由级的 `api`——它只作用于这类 id。pi 自己的目录从不决定协议或地址，所以 pi 升级即使改写了它，也不会移动任何回合。
-- **你的模型行优先。** 模型的名称、上下文窗口、输出上限与输入模态，先取你自己的模型行，再取目录，最后取 pi 的内置数据。推理档位先取你行里的 `reasoningEfforts`，再取目录。价格与协议不是模型行的字段：价格先取目录、再取 pi，协议先取目录的 SDK、再取 pi 的条目。
+- **你的模型行优先。** 模型的名称、上下文窗口、输出上限与输入模态，先取你自己的模型行，再取目录，最后取 pi 的内置数据。推理档位先取你行里的 `reasoningEfforts`，再取目录。价格与协议不是模型行的字段：价格先取目录、再取 pi；协议先取目录的 SDK，再取平面条目的路由级 `api`（仅用于目录未归类的 id），最后为 Chat Completions。
 - **只有开/关两种推理的模型提供“关 / 开”。** 只有该模型的协议确实能关闭推理时才提供“关”；有真正档位列表的模型只提供它自己的档位；档位列表中含 `none` 的 Chat Completions 模型同样提供“关”，按 pi 自己条目的写法发送 `reasoning_effort: "none"`。
 - **一份凭据，按宿主自己的规则。** 平面的认证方式与 `llm-pi-ai` 相同：条目的 `apiKeyEnv` 经凭据服务解析（未挂载凭据服务时读启动环境），保存在 `llm-pi-ai/opencode` 下的登录记录，否则用 pi 自己的 `OPENCODE_API_KEY` 查找——两个平面读的是同一个变量：请在 Go 条目上写明 `apiKeyEnv: OPENCODE_GO_API_KEY`。只有在没有声明引用、且部署选择开启时，才会读取 OpenCode 安装自己的存储。密钥解析不到的平面仍列出其模型，回合在发出任何请求前以 `MISSING_CREDENTIAL` 失败。
 
@@ -343,7 +343,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 | 配置项 | 默认值 | 保留在配置中的原因 |
 | :-- | :-- | :-- |
 | `providers` | `opencode`, `opencode-go` | 插件为其回合补齐请求的路由 id；两个平面总是包含在内，只有中继路由需要添加 |
-| `gatewayUrls` | `opencode.ai/zen` | 标记网关流量的 URL 子串；只有镜像或中继才会改它们 |
+| `gatewayUrls` | `opencode.ai/zen`, `opencode.ai/inference` | 标记网关流量的 URL 子串；只有镜像或中继才会改它们 |
 | `userAgent` | 空（= 规范 CLI UA） | 字面覆盖；默认值就是网关所期望的值 |
 | `originClient` | `cli` | `x-opencode-client` 的字面值 |
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | 指定一个仅当调用方提供会话 id 时才使用的环境变量名 |
@@ -363,6 +363,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
           - opencode-go
         gatewayUrls:
           - opencode.ai/zen
+          - opencode.ai/inference
         sessionIdEnv: "OPENCODE_SESSION_ID"
         freeModelMarker: "free"
         usageBaseURL: "https://opencode.ai/zen/go/v1"

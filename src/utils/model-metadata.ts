@@ -144,8 +144,8 @@ const offeredLevels = (
  *   (`thinkingLevelMap.off = "none"`), because pi's completions path sends a
  *   string `off` as `reasoning_effort`, both when Off is picked and when no
  *   effort is (`openai-completions.js:717-721`). On Responses the list's
- *   `none` does not offer Off yet: pi 1.1.0's own entries disagree there
- *   (gpt-5.x pin `off: null`, gpt-6 carry `"none"`), and a string `off`
+ *   `none` does not offer Off yet: pi's own Responses entries disagree on
+ *   `none` (some pin `off: null`, others carry `"none"`), and a string `off`
  *   becomes the request sent when no effort is selected
  *   (`openai-responses.js:278-280`), so that is the owner's call, not this
  *   rule's.

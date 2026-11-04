@@ -5,8 +5,9 @@
  * The catalog names an SDK per model only where the model differs from the
  * provider's default, and that SDK is the vendor's own statement of the
  * protocol (D16): {@link PROTOCOL_FOR_SDK} maps it, and nothing here guesses
- * from a model's name. `@ai-sdk/mistral` maps to completions because that is
- * where pi 1.1.0's own data files `mistral-large-4`.
+ * from a model's name. `@ai-sdk/mistral` maps to completions, the
+ * OpenAI-compatible path the gateway serves that SDK on
+ * (`docs/redirect-planes.md` §2).
  *
  * Every value is a constant or a function of its arguments: this module is in
  * `utils/` and the architecture test holds it to that.

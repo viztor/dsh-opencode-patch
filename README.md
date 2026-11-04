@@ -173,7 +173,7 @@ Counts are the **81** active `opencode` models in `models.opencode.ai` as of 202
 Four properties follow:
 
 - **You keep choosing.** Each plane serves exactly the models its `llm-pi-ai` entry lists — and the whole catalog when the entry lists none. Any id you save is accepted and served: one the catalog does not classify is sent as Chat Completions, unless the plane's entry names a route-level `api`, which applies to exactly those ids. pi's own catalog never decides a protocol or a base, so a pi upgrade that reshapes it moves no turn.
-- **Your row wins.** A model's name, context window, output limit and input modalities come from your own model row first, then the catalog, then pi's installed data. Its reasoning efforts come from your row's `reasoningEfforts`, then the catalog. Its cost and its protocol are not row fields: the cost comes from the catalog, then pi, and the protocol from the catalog's SDK, then pi's entry.
+- **Your row wins.** A model's name, context window, output limit and input modalities come from your own model row first, then the catalog, then pi's installed data. Its reasoning efforts come from your row's `reasoningEfforts`, then the catalog. Its cost and its protocol are not row fields: the cost comes from the catalog, then pi; the protocol from the catalog's SDK, then the plane entry's route-level `api` (only for ids the catalog does not classify), then Chat Completions.
 - **A model whose reasoning is only on or off is offered as Off / On.** Off appears only where the model's protocol can actually turn reasoning off; a model with a real effort list offers exactly its levels, and a Chat Completions model whose list names `none` also offers Off, sent as `reasoning_effort: "none"` the way pi's own entries carry it.
 - **One credential, by the host's own rule.** A plane authenticates the way `llm-pi-ai` would: the entry's `apiKeyEnv` through the credentials service (or the launch environment when no credentials service is mounted), a Sign-in record stored under `llm-pi-ai/opencode`, and otherwise pi's own `OPENCODE_API_KEY` lookup, which is the same variable on both planes: name `apiKeyEnv: OPENCODE_GO_API_KEY` on the Go entry. The installation's own OpenCode store is consulted only when no reference is named and the deployment opted in. A plane whose key does not resolve still lists its models, and the turn fails with `MISSING_CREDENTIAL` before any request is sent.
 
@@ -349,7 +349,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 | Knob | Default | Why it stays in config |
 | :-- | :-- | :-- |
 | `providers` | `opencode`, `opencode-go` | Route ids whose turns the plugin decorates; both planes are always included, so only a relay route needs adding |
-| `gatewayUrls` | `opencode.ai/zen` | URL substrings marking gateway traffic; only a mirror or relay changes them |
+| `gatewayUrls` | `opencode.ai/zen`, `opencode.ai/inference` | URL substrings marking gateway traffic; only a mirror or relay changes them |
 | `userAgent` | empty (= canonical CLI UA) | Literal override; the default is what the gateway expects |
 | `originClient` | `cli` | Literal `x-opencode-client` value |
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | Names an env var only a caller-supplied session id uses |
@@ -369,6 +369,7 @@ These exist in the schema but render no control — each is a literal, a marker,
           - opencode-go
         gatewayUrls:
           - opencode.ai/zen
+          - opencode.ai/inference
         sessionIdEnv: "OPENCODE_SESSION_ID"
         freeModelMarker: "free"
         usageBaseURL: "https://opencode.ai/zen/go/v1"
@@ -405,7 +406,7 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 | `403 FreeTierError` on free models | The gateway's gate is not in the request: measured with a real account, its session token, its active org and every header the official client sends, a free-tier model still answers `403` | The three injection switches above are still worth keeping on — they are what makes the traffic identifiable and they restore the tool schemas — but they do not open the free tier on their own. The paid models work with a key; see [docs/opencode-1.19-api.md](./docs/opencode-1.19-api.md) for what was excluded and how |
 | `400 MissingSessionID` | No session header attached | Ensure `dsh-opencode-patch` is listed in the profile's `dsh.profile.bundles` |
 | Auto Review fails with `TRANSPORT: Connection error` | Host process not restarted since the update | Stop and restart `dsh web` so the new `lib/index.mjs` loads |
-| Quota ring never appears for a Go model | **Restart `dsh web`, then read the browser console** — the plugin is loaded through a `link:`, so `lib/index.mjs` is read once at process start and a page reload alone keeps the old host code; the meter reports which of its paths returned nothing | The console names the cause: `no remote to mount on`, `did not mount` with the exception, `still waiting for remote.opencodeGoUsage`, `no opencodeGoUsage service on the remote` with the keys it does expose, or `the answer is not a usage shape` with what came back. A missing or unroutable credential is one cause of several, not the only one |
+| Quota ring never appears for a Go model | **Restart `dsh web`, then read the browser console** — the plugin is loaded through a `link:`, so `lib/index.mjs` is read once at process start and a page reload alone keeps the old host code; the meter reports which of its paths returned nothing | The console names the cause: `no remote to mount on`, `did not mount` with the exception, `still waiting for remote.opencodeGoUsage`, `no opencodeGoUsage service on the remote` with the keys it does expose, or `the answer is not a usage shape` with what came back. A missing or unroutable credential is one cause of several, not the only one: name `apiKeyEnv: OPENCODE_GO_API_KEY` on the `opencode-go` entry and store that key in DSH Credentials |
 | A catalog model is missing from Settings → Fetch, or a retired one persists | Stale host module, enrichment off, or the adapter answered from its packaged catalog | `pnpm run build`, restart `dsh web`, keep **Enrich listings from the OpenCode catalog** on, fetch from the matching route, search the exact id (e.g. `space-bunny-free`) |
 | Popover shows “Limit reached” in red | 100% of a rolling/monthly window reached | Open the [OpenCode Console](https://opencode.ai/console) and enable _Use balance_ to overflow into Zen credits |
 | Non-OpenCode models misbehaving | Unrelated to this patch | Traffic to other providers passes through untouched |

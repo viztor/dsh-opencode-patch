@@ -219,8 +219,7 @@ export const createStreamHook = (
     // some shared ids differently — one costs twice as much on Zen as on Go —
     // and the plane-agnostic lookup searches Go FIRST, so a Zen turn was priced
     // at the Go rate: half of what it cost. The plane decides, because the
-    // route is what the user configured; it is the same lookup the dispatch
-    // above makes.
+    // route is what the user configured.
     //
     // The fallback is for a model the plane's own catalog does not describe,
     // where any price is better than none — and the turn is still attributed to

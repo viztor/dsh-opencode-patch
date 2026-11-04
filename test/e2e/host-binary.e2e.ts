@@ -277,14 +277,6 @@ const hostListenerFailed = (verdict: EditVerdict | undefined): boolean =>
   verdict.thrownBy === "@deepseek-ai/dsh-app-boot";
 
 /**
- * Whether the host cannot save ANY config edit, whoever makes it: the plane
- * edit failed in the host's own code, and so did the control — an edit of the
- * probe's own entry, which no plugin's listener reads — with the same error.
- * A failure of the plane edit alone is about the plane, and the save rows
- * report it. Read from what the edits answered, never from a version, so a
- * host that fixes it reads false the day it ships (D26).
- */
-/**
  * Whether the host's `internal/config` waterfall hands its listeners the fiber
  * and reads the config from `next()`: cordis `4.0.6-alpha.2`'s contract, which
  * npm resolves for `alpha` `0.2.2-alpha.2` today and which `0.2.2-alpha.3`
@@ -299,6 +291,14 @@ const claimCannotEngage = (probe: ProbeOutput): boolean =>
 const CLAIM_SKIP =
   "KNOWN_DEFECT: the host's internal/config waterfall hands listeners the fiber (cordis 4.0.6-alpha.2), a contract the route claim does not speak yet";
 
+/**
+ * Whether the host cannot save ANY config edit, whoever makes it: the plane
+ * edit failed in the host's own code, and so did the control — an edit of the
+ * probe's own entry, which no plugin's listener reads — with the same error.
+ * A failure of the plane edit alone is about the plane, and the save rows
+ * report it. Read from what the edits answered, never from a version, so a
+ * host that fixes it reads false the day it ships (D26).
+ */
 const hostCannotSave = (probe: ProbeOutput): boolean =>
   hostListenerFailed(probe.saveBlocked) &&
   hostListenerFailed(probe.control) &&
@@ -685,7 +685,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     // The plugin is installed as a `link:` to this checkout, whose own
     // development install holds a pi too; the plugin resolves the wrapper
     // from the loader's base URL, so it reaches the host prefix's copy — the
-    // floating cell's floating pi included.
+    // npm cell's pi included.
     expect(out.piLoaded).toEqual({
       fromHostPrefix: true,
       path: "node_modules/@earendil-works/pi-ai",

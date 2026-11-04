@@ -142,16 +142,16 @@ describe("plane-model · protocol (D16)", () => {
     // pi 1.5.0 moved its catalog bases to per-protocol roots and refiled
     // models; nothing the plugin routes may follow. Each declared model is
     // built twice, once with pi's own entry and once with that entry
-    // reshaped (another protocol, another base), and must not move.
-    const reshaped = (pi: PlanePiModel | undefined, id: string) => ({
-      ...pi,
-      api:
-        pi?.api === "anthropic-messages"
-          ? "openai-responses"
-          : "anthropic-messages",
-      baseUrl: "https://opencode.ai/somewhere/else/v1",
-      id,
-    });
+    // reshaped, and must not move. The reshape is the one an earlier rule
+    // would have taken: pi files the model under the protocol it is served
+    // on, on a `/zen` root of its own, so a legacy base read from pi's entry
+    // would move every legacy row here.
+    const OWN_ZEN_ROOT = "https://opencode.ai/zen/beta/v1";
+    const reshaped = (
+      pi: PlanePiModel | undefined,
+      id: string,
+      api: string | undefined
+    ) => ({ ...pi, api, baseUrl: OWN_ZEN_ROOT, id });
     let compared = 0;
     for (const plane of ["opencode", "opencode-go"] as const) {
       const catalog =
@@ -161,7 +161,7 @@ describe("plane-model · protocol (D16)", () => {
           const own = planeModelFor(inputFor(plane, spec.id, { endpoint }));
           const moved = planeModelFor({
             ...inputFor(plane, spec.id, { endpoint }),
-            pi: reshaped(piOf(plane, spec.id), spec.id),
+            pi: reshaped(piOf(plane, spec.id), spec.id, own.model?.api),
           });
           expect(moved.model?.api, `${plane}/${spec.id} ${endpoint}`).toBe(
             own.model?.api
@@ -179,9 +179,39 @@ describe("plane-model · protocol (D16)", () => {
     );
     // And the reshaped entry really differs from what was served.
     const served = modelOf(inputFor("opencode", "deepseek-v4-pro"));
-    expect(reshaped(piOf("opencode", "deepseek-v4-pro"), "x").baseUrl).not.toBe(
-      served.baseUrl
-    );
+    expect(
+      reshaped(piOf("opencode", "deepseek-v4-pro"), "x", served.api).baseUrl
+    ).not.toBe(served.baseUrl);
+    // A catalog model's protocol always comes from its SDK, so the walk
+    // above cannot reach the protocol fallback. An id the catalog does not
+    // classify can: whatever protocol pi files it under, on either plane and
+    // family, it is sent as completions, or as the route's `api` when the
+    // plane entry names one.
+    let uncatalogued = 0;
+    for (const plane of ["opencode", "opencode-go"] as const) {
+      for (const endpoint of ["modern", "legacy"] as const) {
+        for (const api of PROTOCOLS) {
+          if (api === "openai-completions") {
+            continue;
+          }
+          const piFiled = {
+            ...inputFor(plane, "x", { endpoint }),
+            pi: { api, baseUrl: OWN_ZEN_ROOT, id: "x" },
+          };
+          const label = `${plane} ${endpoint}: pi files x under ${api}`;
+          expect(modelOf(piFiled).api, label).toBe("openai-completions");
+          expect(modelOf(piFiled).baseUrl, label).not.toBe(OWN_ZEN_ROOT);
+          const routed = PROTOCOLS.find(
+            (other) => other !== api && other !== "openai-completions"
+          );
+          expect(modelOf({ ...piFiled, routeApi: routed }).api, label).toBe(
+            routed
+          );
+          uncatalogued += 1;
+        }
+      }
+    }
+    expect(uncatalogued).toBe(4 * (PROTOCOLS.length - 1));
   });
 });
 

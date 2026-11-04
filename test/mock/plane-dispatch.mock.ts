@@ -168,12 +168,6 @@ const finishOf = (
     | undefined;
 
 /**
- * Assert the gateway accepted one request (or, for the id no catalog names,
- * refused it the vendor's way) and that the turn finished accordingly. The
- * gateway records a request before it judges it, so the path alone cannot
- * tell an accepted body from a refused one.
- */
-/**
  * Whether the installed pi sends `model` a thinking budget the mock gateway
  * refuses: the Go plane's level-only model on a pi whose own
  * `usesGoogleThinkingLevel` does not name it (pi 1.1.0, the rc floor). That is
@@ -183,6 +177,12 @@ const hostSendsBudgetTo = (model: string): boolean =>
   model === "gemini-4-argon" &&
   !usesGoogleThinkingLevel({ id: model } as never);
 
+/**
+ * Assert the gateway accepted one request (or, for the id no catalog names,
+ * refused it the vendor's way) and that the turn finished accordingly. The
+ * gateway records a request before it judges it, so the path alone cannot
+ * tell an accepted body from a refused one.
+ */
 const expectAnswered = (
   label: string,
   model: string,
@@ -831,7 +831,7 @@ describe("plane dispatch · Google thinking by level, never by budget (D16, D26)
     );
     expect(
       control,
-      "the Zen catalog has a Gemini model the wrapper takes and pi serves by level"
+      "the Zen catalog has a Gemini model the catalog marks level-only and pi serves by level"
     ).toBeDefined();
     const values =
       control?.reasoning_options?.find((option) => option.type === "effort")

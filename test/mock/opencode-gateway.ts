@@ -520,9 +520,9 @@ const sessionLow12 = (id: string): number | undefined => {
 /**
  * The Google models measured to think only in levels: each refuses a token
  * `thinkingBudget` (on the enabled path or `0` on the disabled one) with 400
- * INVALID_ARGUMENT. Keyed on the MEASURED ids, never on a re-derivation of the
- * catalog rule the plugin applies (`usesCatalogThinkingLevels`), so the mock
- * does not mirror the rule under test.
+ * INVALID_ARGUMENT. Keyed on the MEASURED ids, never on the catalog rule the
+ * tests use to pick subjects (`test/support/thinking-levels.ts`), so the mock
+ * does not mirror pi's own rule (`usesGoogleThinkingLevel`) under test.
  */
 const MEASURED_LEVEL_ONLY: ReadonlySet<string> = new Set(["gemini-4-argon"]);
 
