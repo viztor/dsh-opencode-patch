@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { PLANES, S0_TODAY } from "./support/host.ts";
+import { HOST_CELLS, PLANES, S0_TODAY_BY_CELL } from "./support/host.ts";
 import {
   cellKey,
   classifyKeylessProbe,
@@ -278,12 +278,15 @@ describe("keyless matrix · the cells", () => {
 });
 
 describe("keyless matrix · the cells the live run asserts", () => {
-  it("TODAY_DISPATCH is exactly the cells S0_TODAY's measured turns were sent to", () => {
-    // Each URL a characterized turn sent is matched to the one cell whose PATH
-    // it is (the query aside: Messages adds `?beta=true`), with the row's own
-    // model in the Google path. A row that sent nothing adds nothing.
+  /**
+   * The matrix cells one host cell's characterized turns were sent to, and
+   * the URLs that match no cell (the root family, `/inference(/go)/v1`, which
+   * the matrix does not probe yet: P-R2 adds it).
+   */
+  const reachedOn = (cell: (typeof HOST_CELLS)[number]) => {
     const reached = new Set<string>();
-    for (const [rowKey, row] of Object.entries(S0_TODAY.rows)) {
+    const unmatched: string[] = [];
+    for (const [rowKey, row] of Object.entries(S0_TODAY_BY_CELL[cell].rows)) {
       const slash = rowKey.indexOf("/");
       const plane = rowKey.slice(0, slash) as (typeof PLANES)[number];
       const model = rowKey.slice(slash + 1);
@@ -298,11 +301,33 @@ describe("keyless matrix · the cells the live run asserts", () => {
             )
             .map((family) => cellKey({ family, plane, protocol }))
         );
-        expect(matches, `${rowKey} ${sent}`).toHaveLength(1);
-        reached.add(matches[0] ?? "");
+        expect(matches.length, `${cell} ${rowKey} ${sent}`).toBeLessThan(2);
+        if (matches[0] === undefined) {
+          unmatched.push(new URL(sent).pathname);
+        } else {
+          reached.add(matches[0]);
+        }
       }
     }
-    expect([...reached].toSorted()).toEqual([...TODAY_DISPATCH].toSorted());
+    return { reached: [...reached].toSorted(), unmatched };
+  };
+
+  it("TODAY_DISPATCH is exactly the cells every host cell's measured turns were sent to", () => {
+    // Each URL a characterized turn sent is matched to the one cell whose PATH
+    // it is (the query aside: Messages adds `?beta=true`), with the row's own
+    // model in the Google path. A row that sent nothing adds nothing. Since
+    // P-R1 the plugin builds every base from its own endpoint table, so no
+    // host cell's pi moves a turn: each one reaches the same cells.
+    expect(HOST_CELLS.toSorted()).toEqual([
+      "alpha-floor",
+      "newest",
+      "rc-floor",
+    ]);
+    for (const cell of HOST_CELLS) {
+      const { reached, unmatched } = reachedOn(cell);
+      expect(unmatched, cell).toEqual([]);
+      expect(reached, cell).toEqual([...TODAY_DISPATCH].toSorted());
+    }
     // Every protocol on both planes reaches the modern family, completions
     // included (P-R1), and nothing reaches a legacy cell by default.
     expect([...TODAY_DISPATCH].toSorted()).toEqual(

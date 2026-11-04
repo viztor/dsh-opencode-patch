@@ -1,5 +1,7 @@
 /**
- * The plugin on the real host, characterized (tier B, pi 1.1.0).
+ * The plugin on the real host, characterized (tier B), on the host cell the
+ * install under test is (`HOST_CELL`: either channel's newest pi, or a
+ * channel's floor after `scripts/use-channel.ts <channel> --floor`).
  *
  * The plugin is mounted as it ships — its row carries no config, so the
  * shipped defaults apply (`enrichModels` on, `endpoint: auto`) — beside pi-ai
@@ -10,16 +12,23 @@
  *
  * - `[KNOWN_DEFECT]` is wrong, and a phase fixes it;
  * - `[INTENDED_CHANGE]` is right, and a phase changes it on purpose;
- * - `[BASELINE]` must survive every phase.
+ * - `[BASELINE]` must survive every phase;
+ * - `[HOST_LIMITATION]` is something one cell's host lacks or breaks, named
+ *   with its channel and host (the definition is `RowTag` in
+ *   `support/host.ts`), recorded and reported upstream, never fixed here.
  *
  * P-T1b recorded these rows against the hidden-route workaround; P-R1, where
  * the plugin owns the `opencode` and `opencode-go` routes, flipped the
  * fourteen named cases and fourteen `S0_TODAY` facets its PR body lists, so
- * every row here is now `[BASELINE]`.
+ * every row here is now `[BASELINE]`. Since the plugin builds every model
+ * itself, the cells' tables agree wherever the plugin decides; a row differs
+ * by cell only where the host's own pi or pi-ai decides (`S0_TODAY_BY_CELL`,
+ * `forHost`).
  *
- * The per-model expectations live in `S0_TODAY` (`support/host.ts`), which the
- * binary e2e reads too, so the in-process host and the published binary cannot
- * drift apart unnoticed. Each model's three facets (model info, the
+ * The per-model expectations live in `S0_TODAY_BY_CELL` (`support/host.ts`;
+ * `S0_TODAY` is the installed cell's table), which the binary e2e reads too,
+ * so the in-process host and the published binary cannot drift apart
+ * unnoticed. Each model's three facets (model info, the
  * call-config verdict, the wire) carry their own tag there, and this file
  * generates one test per model and facet titled with that tag, in each apply
  * order (`todayRowsFor(order)` carries that order's tags), so the tag is what
@@ -38,6 +47,7 @@ import { readFileSync } from "node:fs";
 import { readProfilePatches } from "@deepseek-ai/dsh-app-boot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CHANNELS } from "./support/host-versions.ts";
 import {
   adaptersOf,
   type ApplyOrder,
@@ -48,6 +58,10 @@ import {
   characterizedProviders,
   drainStream,
   fakeCredentials,
+  HOST_CELL,
+  HOST_CELLS,
+  PI_GAPS,
+  PI_OF_CELL,
   PLANES,
   piAiRestarts,
   piKnows,
@@ -56,6 +70,8 @@ import {
   type RecordingFetch,
   type RowFacet,
   S0_TODAY,
+  S0_TODAY_BY_CELL,
+  type S0RowKey,
   s0Providers,
   SAVE_CANDIDATE,
   type TierB,
@@ -75,7 +91,10 @@ import {
 const modelIds = (models: readonly { id: string }[]): string[] =>
   models.map((model) => model.id);
 
-type RowKey = keyof typeof S0_TODAY.rows;
+type RowKey = S0RowKey;
+
+/** The pi the install under test runs, for the titles. */
+const PI = PI_OF_CELL[HOST_CELL];
 
 let tier: TierB | undefined;
 let wire: RecordingFetch;
@@ -311,15 +330,22 @@ const expectPlanesOwned = (): void => {
 };
 
 describe(
-  "characterization · the plugin on pi 1.1.0, the published host's order (tier B)",
+  `characterization · the plugin on ${HOST_CELL} (pi ${PI}), the published host's order (tier B)`,
   { timeout: 30_000 },
   () => {
     beforeEach(() => bootS0("plugin-first"), 30_000);
 
-    it("fixture: the gap ids are gaps on pi 1.1.0, the unknown id is unknown everywhere, and the known ids are known", () => {
-      expect(piKnows("opencode", "gpt-5.3-codex-spark")).toBeUndefined();
-      expect(piKnows("opencode-go", "gemini-4-argon")).toBeUndefined();
-      expect(piKnows("opencode-go", "minimax-m3.1-flash")).toBeUndefined();
+    it(`fixture: this cell's gap ids are gaps on pi ${PI} and every other declared id is placed, the unknown id is unknown everywhere, and the cells' tables agree on their keys`, () => {
+      for (const plane of PLANES) {
+        for (const id of CHARACTERIZED_MODELS[plane]) {
+          if (id === UNKNOWN_ID) {
+            continue;
+          }
+          expect(piKnows(plane, id), `${plane}/${id}`).toEqual(
+            PI_GAPS[plane].includes(id) ? undefined : expect.any(String)
+          );
+        }
+      }
       expect(piKnows("opencode", "deepseek-v4-pro")).toBe("openai-completions");
       expect(piKnows("opencode", "gemini-3-flash")).toBe(
         "google-generative-ai"
@@ -353,6 +379,14 @@ describe(
           .filter((id) => id.startsWith("opencode"))
           .toSorted()
       ).toEqual([...PLANES]);
+      for (const cell of HOST_CELLS) {
+        expect(Object.keys(S0_TODAY_BY_CELL[cell].rows), cell).toEqual(
+          ROW_KEYS
+        );
+      }
+      // `newest` is one column for both channels only while they resolve one
+      // pi; the day they do not, split it.
+      expect(CHANNELS.rc.pi).toBe(CHANNELS.alpha.pi);
     });
 
     it("fixture: each row's context and efforts are what D17 and D1 derive from the profile row and the bundled catalog, so a catalog refresh that moves a fixture model fails here by name", () => {
@@ -370,10 +404,12 @@ describe(
       const INFO_NOT_FROM_CATALOG = new Set<RowKey>();
       for (const key of INFO_NOT_FROM_CATALOG) {
         expect(ROW_KEYS, `${key} is not a characterized row`).toContain(key);
-        expect(
-          S0_TODAY.rows[key].tags.info,
-          `${key}: a BASELINE info facet cannot be exempted from the catalog`
-        ).not.toBe("BASELINE");
+        for (const cell of HOST_CELLS) {
+          expect(
+            S0_TODAY_BY_CELL[cell].rows[key].tags.info,
+            `${key}: a BASELINE info facet cannot be exempted from the catalog`
+          ).not.toBe("BASELINE");
+        }
       }
       let compared = 0;
       for (const key of ROW_KEYS) {
@@ -385,6 +421,14 @@ describe(
         if (spec === undefined) {
           expect(id, key).toBe(UNKNOWN_ID);
           continue;
+        }
+        // No cell's pi moves an info facet the plugin derives: each comes from
+        // the profile row and the plugin's catalog, so every cell agrees.
+        for (const cell of HOST_CELLS) {
+          expect(
+            S0_TODAY_BY_CELL[cell].rows[key].info,
+            `${cell} ${key}`
+          ).toEqual(S0_TODAY.rows[key].info);
         }
         const stale =
           `S0_TODAY's info for ${key} no longer matches the profile row and ` +
@@ -430,6 +474,11 @@ describe(
       for (const order of APPLY_ORDERS) {
         expect(Object.keys(todayRowsFor(order))).toEqual(ROW_KEYS);
         expect(todayRowsFor(order)).toEqual(S0_TODAY.rows);
+        for (const cell of HOST_CELLS) {
+          expect(todayRowsFor(order, cell), cell).toEqual(
+            S0_TODAY_BY_CELL[cell].rows
+          );
+        }
       }
       // Structural, so no phase has to edit it: a facet whose VALUE differs
       // between the orders is exactly a facet whose TAG differs, and each one
@@ -737,19 +786,22 @@ describe("characterization · the apply order (no host)", () => {
   // gemini-4-argon's callConfig); P-R1 flipped that row and
   // dropped todayRowsFor's pi-ai-first override in the same diff
   // (CONTRIBUTING.md, "Tags").
-  it("[BASELINE] no facet depends on the apply order: todayRowsFor answers S0_TODAY's rows, with S0_TODAY's tags, in both orders", () => {
-    const piAiFirst = todayRowsFor("pi-ai-first");
-    expect(todayRowsFor("plugin-first")).toEqual(S0_TODAY.rows);
-    expect(piAiFirst).toEqual(S0_TODAY.rows);
-    const moved = ROW_KEYS.flatMap((key) =>
-      FACETS.filter(
-        (facet) =>
-          JSON.stringify(expectedFacet(facet, key, piAiFirst)) !==
-            JSON.stringify(expectedFacet(facet, key)) ||
-          piAiFirst[key].tags[facet] !== S0_TODAY.rows[key].tags[facet]
-      ).map((facet) => `${key} · ${facet}`)
-    );
-    expect(moved).toEqual([]);
+  it("[BASELINE] no facet depends on the apply order, on any host cell: todayRowsFor answers the cell's rows, with the cell's tags, in both orders", () => {
+    for (const cell of HOST_CELLS) {
+      const { rows } = S0_TODAY_BY_CELL[cell];
+      const piAiFirst = todayRowsFor("pi-ai-first", cell);
+      expect(todayRowsFor("plugin-first", cell), cell).toEqual(rows);
+      expect(piAiFirst, cell).toEqual(rows);
+      const moved = ROW_KEYS.flatMap((key) =>
+        FACETS.filter(
+          (facet) =>
+            JSON.stringify(expectedFacet(facet, key, piAiFirst)) !==
+              JSON.stringify(expectedFacet(facet, key, rows)) ||
+            piAiFirst[key].tags[facet] !== rows[key].tags[facet]
+        ).map((facet) => `${key} · ${facet}`)
+      );
+      expect(moved, cell).toEqual([]);
+    }
   });
 });
 

@@ -23,6 +23,7 @@ import { pathToFileURL } from "node:url";
 import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { HOST_VERSIONS } from "./support/host-versions.ts";
 import { hostModulesForTests } from "./support/host.ts";
 import {
   asPiAiModule,
@@ -177,7 +178,7 @@ describe("host-modules · the host's tree, found from the context's base URL", (
       await defaultHostModuleSource.libraries({ baseUrl: baseOf(root) })
     ).toBe(viaSource);
     const own = await defaultHostModuleSource.libraries({});
-    expect(own?.version).toBe("1.1.0");
+    expect(own?.version).toBe(HOST_VERSIONS.pi);
     const pi = await loadHostPi({ baseUrl: baseOf(root) });
     expect(pi?.version).toBe("9.9.9");
     expect(pi?.root).toBe(libraries?.root);
@@ -365,7 +366,7 @@ describe("host-modules · the default source", () => {
   it("loads pi, dsh-llm and the loader from the wrapper's own tree, once", async () => {
     const libraries = await defaultHostModuleSource.libraries();
     expect(libraries).toBeDefined();
-    expect(libraries?.version).toBe("1.1.0");
+    expect(libraries?.version).toBe(HOST_VERSIONS.pi);
     expect(Object.keys(libraries?.apis ?? {}).toSorted()).toEqual([
       "anthropic-messages",
       "google-generative-ai",

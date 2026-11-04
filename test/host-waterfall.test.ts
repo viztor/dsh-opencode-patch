@@ -140,8 +140,8 @@ describe("host · the internal/config waterfall (tier A)", () => {
     const input = { providers: s0Providers() };
     tier.piFiber.update(input);
     await tier.piFiber.await();
-    // Two runs: `update` resolves while ACTIVE (fiber.ts:747), then the
-    // restart re-resolves the stored raw (fiber.ts:655). B brackets A both
+    // Two runs: `update` resolves while ACTIVE (fiber.ts:747 on rc, 776 on alpha), then the
+    // restart re-resolves the stored raw (fiber.ts:655 on rc, 682 on alpha). B brackets A both
     // times, so B is outermost and A runs inside the chain B started.
     expect(order).toEqual(["B:enter", "A", "B:exit", "B:enter", "A", "B:exit"]);
     for (const record of seen) {
@@ -212,7 +212,7 @@ describe("host · the internal/config waterfall (tier A)", () => {
     expect(order).toEqual(["B:enter", "A", "B:pi-ai threw"]);
   });
 
-  it("F14 — raw === fiber._config on _reload and on update (cordis fiber.ts:641-644,655,738,747)", async () => {
+  it("F14 — raw === fiber._config on _reload and on update (cordis fiber.ts: rc 641-644,655,738,747; alpha 667-670,682,767,776)", async () => {
     tier = await mountTierA({ providers: s0Providers() });
     const { piFiber } = tier;
     const spy = waterfallSpy(tier.ctx, () => piFiber);
@@ -232,7 +232,7 @@ describe("host · the internal/config waterfall (tier A)", () => {
     expect(rawOf(piFiber)).toBe(next);
   });
 
-  it("F12 — a deep-frozen input is never mutated, and the fiber keeps the outermost listener's return value (cordis fiber.ts:642,655; utils.ts:117-125)", async () => {
+  it("F12 — a deep-frozen input is never mutated, and the fiber keeps the outermost listener's return value (cordis fiber.ts: rc 642,655; alpha 669,682; utils.ts:117-125)", async () => {
     const frozen = deepFreeze({ providers: s0Providers() });
     tier = await mountTierA({
       before: (ctx) => {

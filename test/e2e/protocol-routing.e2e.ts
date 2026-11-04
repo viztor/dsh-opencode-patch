@@ -114,6 +114,7 @@ import {
   planeModelFor,
   usesCatalogThinkingLevels,
 } from "../support/src.ts";
+import { freeTierClosed, gatewayBusy } from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 const ZEN_KEY = process.env.OPENCODE_API_KEY;
@@ -201,30 +202,6 @@ const probe = async (
 
 const otherProtocols = (expected: string) =>
   Object.keys(PATH_FOR).filter((protocol) => protocol !== expected);
-
-/**
- * Whether the gateway is refusing the FREE TIER rather than the route.
- *
- * Measured, one request each, on `step-5-preview-free` — which was the canonical
- * free-tier id when those runs were made and has since been retired, so the
- * cases below now sample `beam-free`: the deployment's `oc_…` key answers
- * `403 FreeTierError` on both `…/zen/v1` and the new `…/inference/openai/v1`,
- * with and without `x-opencode-org-id`; the literal `public` answers the same;
- * and the real client — whose captured request carries an `st_…` session token —
- * is served.
- *
- * **Read that as a statement about the CLIENT, not the credential.** The
- * gateway's own message is "OpenCode's free tier can only be used from within
- * OpenCode", and presenting as that client is what this plugin does — so a free
- * model is OFFERED now, and a refusal names its own reason rather than being
- * pre-empted by an exclusion. What the older runs establish still holds: an
- * org id and a key do not unlock it.
- *
- * `docs/opencode-1.19-api.md` has the endpoints, the captured headers and the
- * login flow.
- */
-const freeTierClosed = (result: Probe): boolean =>
-  result.summary.includes("FreeTierError");
 
 /** The route id each plane is reached by, and its family map. */
 const PLANE_ROUTE = {
@@ -845,12 +822,20 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         (m) => m.id
       );
       let answered: { model: string; status: number } | undefined;
+      let busy = false;
       for (const model of candidates) {
         const response = await probe(
           servedProtocolFor(model) ?? "openai-completions",
           model
         );
-        // A gated, withdrawn or throttled candidate says nothing about whether
+        if (gatewayBusy(response)) {
+          // The gateway answered, but about its own load. That is neither a
+          // completion nor a dead tier, and it must not be reported as one.
+          // Asked before the refusals below, which count a 429 among them.
+          busy = true;
+          continue;
+        }
+        // A gated, withdrawn or refused candidate says nothing about whether
         // the free tier is reachable, so the walk moves on to the next one.
         if (
           freeTierClosed(response) ||
@@ -863,11 +848,16 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         break;
       }
       if (answered === undefined) {
-        // Reported rather than skipped: the account (or the vendor) closed,
-        // withdrew or throttled the whole free tier, and that is worth a line
-        // in the run's output.
+        if (busy) {
+          // No candidate answered and at least one was busy, which says
+          // nothing about the tier.
+          context.skip();
+          return;
+        }
+        // Reported rather than skipped: the account (or the vendor) closed the
+        // whole free tier, and that is worth a line in the run's output.
         console.log(
-          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, or throttled. The header-restoration case did not run.`
+          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, refused for the account (no funds, no entitlement), or never answered. The header-restoration case did not run.`
         );
         return;
       }

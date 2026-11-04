@@ -57,11 +57,13 @@ export const cellKey = (
 
 /**
  * The cells the plugin sends turns to with the default endpoint (`auto`, an
- * alias of `modern`), on both planes: since P-R1 every protocol, completions
- * included, on the MODERN family (`/inference(/go)/…`). A path-gone verdict on
- * one of these breaks a shipped model in the default configuration, so the
- * live matrix asserts them. `test/keyless-matrix.test.ts` derives the same set
- * from the URLs `S0_TODAY` measured (with the default endpoint), so the two
+ * alias of `modern`), on both planes and on every host cell: since P-R1 every
+ * protocol, completions included, on the MODERN family (`/inference(/go)/…`),
+ * from the plugin's own endpoint table whatever the installed pi's catalog
+ * files. A path-gone verdict on one of these breaks a shipped model in the
+ * default configuration, so the live matrix asserts them.
+ * `test/keyless-matrix.test.ts` derives the same set from the URLs each host
+ * cell's `S0_TODAY` table measured (with the default endpoint), so the two
  * cannot drift.
  *
  * Not covered: a user who sets `endpoint: legacy` dispatches to the LEGACY

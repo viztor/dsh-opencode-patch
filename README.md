@@ -1,6 +1,8 @@
 <div align="center">
   <p><b>English</b> &nbsp;·&nbsp; <a href="./README.zh-CN.md">简体中文</a></p>
 
+  <p><img src="docs/media/hero.svg" alt="OpenCode Patch — session affinity, gateway headers and live Go quota" width="100%" /></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />Gateway origin headers · Session affinity · Free-tier tool fallback · Live dual-mode quota meter</p>
@@ -94,7 +96,7 @@ The package is `dsh-opencode-patch` under every name it is used by: the dependen
 // ~/.dsh/profiles/web/package.json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^1.4.1",
+    "dsh-opencode-patch": "^1.8.0",
   },
   "dsh": {
     "profile": {
@@ -160,13 +162,13 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol |
 | :-- | --: | :-- |
-| _(absent)_ | 23 | OpenAI Chat Completions |
+| _(absent)_ | 24 | OpenAI Chat Completions |
 | `@ai-sdk/openai` | 31 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages |
 | `@ai-sdk/google` | 8 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, as pi's own data files it |
 
-Counts are the **80** active `opencode` models in `models.opencode.ai` as of 2026-11-02 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 80 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
+Counts are the **81** active `opencode` models in `models.opencode.ai` as of 2026-11-03 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 81 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 
 Four properties follow:
 
@@ -254,7 +256,7 @@ Go usage                                           Healthy
 ● 5 hours    0% used · resets in 4h 58m           100% left
 ● Weekly    28% used · resets in 3d 2h             72% left
 ● Monthly   14% used · resets Nov 7, 8:55 AM       86% left
-Monthly allowance  mimo-v2.6-pro · Go $60 · Plus $120         ⓘ
+Monthly allowance  mimo-v2.6-flash · Go $60 · Plus $120       ⓘ
 ```
 
 **This build carries the API key path only.** There is no sign-in row and no device flow: a credential comes from the deployment's configuration, from a key captured on a live request, or — when `readOpencodeStore` is on — from the OpenCode installation's own store. The Console login (device flow, session store, credential pool) lives on the `v2` line and is deliberately not in `main`, so nothing here depends on a service the host may not mount.
@@ -354,7 +356,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 | `freeModelMarker` | `free` | Model-id substring; `*` forces the fallback; a blank value inherits the default; catalog-free models always qualify |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | Endpoint override; auto-discovered from the composition |
 | `credentialOrg` | — | The org id an account credential belongs to, when the deployment supplies one out of band |
-| `debug` / `debugFile` | `false` / — | Diagnostic JSONL logging, not a behaviour anyone tunes in the UI; the file is written only while `debug` is on |
+| `debug` / `debugFile` | `false` / — | Diagnostic JSONL logging, not a behaviour anyone tunes in the UI |
 
 ```yaml
 # cordis.patch.yml — the plugin's row; every key is optional.
@@ -380,7 +382,7 @@ These exist in the schema but render no control — each is a literal, a marker,
         enrichModels: true # catalog into the gateway /models listing + Settings model discovery
         usageEnabled: true # off = no meter and no price row
         # File-level only debug options:
-        debug: false # debugFile is written only while this is true
+        debug: false
         debugFile: "/tmp/dsh-opencode-debug.jsonl"
 ```
 
@@ -427,26 +429,28 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 
 ## 📜 Compatibility & Verification
 
-**Verified on DeepSeek Harness `0.2.1` — both the `alpha` and `rc` channels (Node 24+)**
+**Supported: the latest release of both DeepSeek Harness channels, `rc` and `alpha`, installed with npm or shipped in the desktop app (Node 24+)**
 
-The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. Both channels' latest is **`0.2.1`**, and that line is this plugin's target — it is tested against every published `0.2.1` build in both channels, and the `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
+**Support policy.** The plugin supports the **latest** release of **both** channels, as each one actually ships: `rc` is `dsh@latest` (today `0.2.1-rc.5`, whose bridge declares pi `^1.1.0`) and `alpha` is `dsh@alpha` (today `0.2.2-alpha.2`, pi `^1.3.0`). An npm install runs pi **unpatched**, at the newest `1.x` the bridge's range admits; the desktop app ships the pi the harness's own workspace pins (`1.1.0` on `rc`, `1.3.0` on `alpha`). CI runs the unit and offline mock suites on both channels' npm installs on every pull request, and on each channel's floor pi nightly. The plugin neither patches nor re-implements what the host's pi does: where a host's pi lacks something the gateway needs, that is a host limitation, recorded and reported upstream rather than worked around here.
+
+The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, the `rc` channel's latest, and the **`0.2.2`** prereleases the `alpha` channel now carries (the test suite's default install runs `0.2.2-alpha.2`; its `rc` install runs `0.2.1-rc.5`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
 
 ```
->=0.2.1-alpha.1 <0.2.2
+>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
 ```
 
-One range covers the whole line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. A plain `<0.2.2` would **not** work — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, which is how a range written against one channel silently excludes the other.
+The first clause covers the `0.2.1` line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. The second is **not** redundant — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, so `<0.3.0` alone would silently drop every `0.2.2-*` build, alpha and rc alike. Both clauses stop at `0.3.0`, which leaves the next line a separate decision rather than a silent widening.
 
 | Surface | Target |
 | :-- | :-- |
-| **Harness line** | **`0.2.1`**, `alpha` and `rc` channels alike (peer: `>=0.2.1-alpha.1 <0.2.2`) |
+| **Harness line** | **`0.2.1`** and the **`0.2.2`** prereleases, `alpha` and `rc` channels alike (peer: the range above) |
 | **Plugin package** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
 | **Routes claimed** | `opencode`, `opencode-go` — served by the plugin's own adapter; `llm-pi-ai` keeps every other route |
 | **Gateways** | `opencode.ai/inference/{openai,anthropic,google}/…` and `inference/go/{openai,anthropic,google}/…` by default; `opencode.ai/zen/v1` and `zen/go/v1` with `endpoint: legacy` (Go's Google stays on `inference/go/google/v1beta`) |
 | **Catalog** | Generated from `models.opencode.ai/api.json`; retirement follows the registry's own `status: "deprecated"` flag, with no hand-maintained id list |
-| **Upstream pi** | **Not bundled.** The plane adapter loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy |
-| **Verification gate** | `vp check` clean, every deterministic test green (unit + offline gateway mock, in order and shuffled), full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
+| **Upstream pi** | **Not bundled, not patched.** The plane adapter loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy; the suite runs each channel's pi as npm resolves it, and its floor |
+| **Verification gate** | `vp check` clean, the deterministic unit and offline gateway-mock suites green, full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
 
 ---
 

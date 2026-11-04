@@ -24,7 +24,7 @@
  * so this file does not guard that configuration; P-R2 decides whether it
  * should. Go's Google stays on `/inference/go/google/v1beta` under every
  * family (`GO_GOOGLE_BASE_URL`), the modern cell `TODAY_DISPATCH` asserts.
- * The cell table, both sets and the classifier are unit-tested offline in
+ * The cell table, the dispatch set and the classifier are unit-tested offline in
  * `test/keyless-matrix.test.ts`.
  *
  * It always measures the vendor's own gateway: the cells are the vendor's
@@ -165,7 +165,7 @@ describe.skipIf(!LIVE || MIRRORED)(
         );
         expect(
           goneToday,
-          `a path today's plugin dispatches to is gone: ${JSON.stringify(goneToday)}`
+          `a path the plugin dispatches to with the default endpoint, on every host, is gone: ${JSON.stringify(goneToday)}`
         ).toEqual([]);
       },
       16 * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) + PROBE_TIMEOUT_MS

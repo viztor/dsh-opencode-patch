@@ -748,16 +748,26 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
   };
 
   it.each(PLANES)(
-    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for a chosen level and for none, and never a thinkingBudget",
+    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for each chosen level and for none, and never a thinkingBudget",
     async (plane) => {
       const model = "gemini-4-argon";
-      const sent = await thinkingSent(plane, model, ["high", "low", undefined]);
+      const sent = await thinkingSent(plane, model, [
+        "high",
+        "medium",
+        "low",
+        undefined,
+      ]);
       const path = MODERN_PATH(plane, "google-generative-ai", model);
       expect(sent).toEqual([
         {
           path,
           status: 200,
           thinking: { includeThoughts: true, thinkingLevel: "HIGH" },
+        },
+        {
+          path,
+          status: 200,
+          thinking: { includeThoughts: true, thinkingLevel: "MEDIUM" },
         },
         {
           path,

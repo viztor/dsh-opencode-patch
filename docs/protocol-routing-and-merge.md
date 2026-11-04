@@ -4,15 +4,15 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Measured 2026-10-17, shown on the default (modern) family:
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17, shown on the default (modern) family; counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`):
 
 | API shape | Wire endpoint (Zen) | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
-| OpenAI **Chat Completions** | `POST /inference/openai/v1/chat/completions` | **the default**: 23 of 80 | the model names **no** SDK |
-| OpenAI **Responses** | `POST /inference/openai/v1/responses` | 31 of 80 | `@ai-sdk/openai` |
-| Anthropic **Messages** | `POST /inference/anthropic/v1/messages` | 17 of 80 | `@ai-sdk/anthropic` |
-| Google **Generative AI** | `POST /inference/google/v1beta/models/<id>:streamGenerateContent` | 8 of 80 | `@ai-sdk/google` |
-| OpenAI **Chat Completions** (as pi files it) | `POST /inference/openai/v1/chat/completions` | 1 of 80 | `@ai-sdk/mistral` |
+| OpenAI **Chat Completions** | `POST /inference/openai/v1/chat/completions` | **the default**: 24 of 81 | the model names **no** SDK |
+| OpenAI **Responses** | `POST /inference/openai/v1/responses` | 31 of 81 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /inference/anthropic/v1/messages` | 17 of 81 | `@ai-sdk/anthropic` |
+| Google **Generative AI** | `POST /inference/google/v1beta/models/<id>:streamGenerateContent` | 8 of 81 | `@ai-sdk/google` |
+| OpenAI **Chat Completions** (as pi files it) | `POST /inference/openai/v1/chat/completions` | 1 of 81 | `@ai-sdk/mistral` |
 
 Counts are the shipped catalog. They are asserted against this table by `catalog.test.ts`, because a count written into prose does not regenerate with the data it counts. Go's endpoints are the same paths under `/inference/go/…`; `endpoint: legacy` sends every protocol to `/zen/v1` (`/zen/go/v1` on Go), except Go's Google, which only the inference family serves.
 

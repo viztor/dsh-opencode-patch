@@ -32,8 +32,9 @@ const freeModelIds = (): string[] => {
     }
   }
   // The live map keys some ids differently (prefixes). The lookup reads the
-  // Zen plane, the plane every route below posts to and the one the injector
-  // reads with no route, so the set and the injector agree on what is free.
+  // Zen plane because every route below posts to a Zen URL, and the injector
+  // reads its plane from that URL (the plane-blind row is its fallback), so
+  // the set and the injector agree on what is free.
   for (const id of [
     "mimo-v2.6-flash-free",
     "big-pickle",
