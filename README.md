@@ -428,7 +428,7 @@ These exist in the schema but render no control — each is a literal, a marker,
 
 **Verified on DeepSeek Harness `0.2.1` — both the `alpha` and `rc` channels (Node 24+)**
 
-The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, the `rc` channel's latest, and the **`0.2.2`** prereleases the `alpha` channel now carries (the test install runs `0.2.2-alpha.2`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
+The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, whose `rc` builds `dsh@latest` still carries, and the **`0.2.2`** prereleases on both channels: `alpha` is at `0.2.2-alpha.3`, and `rc` opened the line with `0.2.2-rc.1` (published under the `next` dist-tag; the test install runs `0.2.2-alpha.2`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
 
 ```
 >=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
@@ -436,9 +436,16 @@ The harness publishes two **channels**, `alpha` and `rc`, and they are parallel 
 
 The first clause covers the `0.2.1` line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. The second is **not** redundant — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, so `<0.3.0` alone would silently drop every `0.2.2-*` build, alpha and rc alike. Both clauses stop at `0.3.0`, which leaves the next line a separate decision rather than a silent widening.
 
+The optional `@deepseek-ai/cordis` peer follows the typert range. Each line moved the host core: the `0.2.1` builds peer `~4.0.5` (or a `4.0.5` prerelease), the `0.2.2` alphas a `4.0.6` prerelease, and `0.2.2-rc.1` `~4.1.0`. A fresh install takes the cordis the **newest** admitted typert build peers on, so a cordis peer that misses it fails with `ERESOLVE`; one that misses an older line's cordis fails beside a host already installed on that line. The peer therefore admits every one of them and stops at the next tuple:
+
+```
+~4.0.4 || >=4.0.5-0 <4.1.0 || >=4.0.6-0 <4.1.0 || ~4.1.0
+```
+
 | Surface | Target |
 | :-- | :-- |
 | **Harness line** | **`0.2.1`** and the **`0.2.2`** prereleases, `alpha` and `rc` channels alike (peer: the range above) |
+| **Host core** | `@deepseek-ai/cordis` `4.0.4` up to `4.1.x`, including the `4.0.5` and `4.0.6` prereleases (optional peer: the range above) |
 | **Plugin package** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
 | **Routes claimed** | `opencode`, `opencode-go`, `opencode-responses`, `opencode-anthropic` |

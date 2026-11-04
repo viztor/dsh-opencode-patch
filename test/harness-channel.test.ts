@@ -105,6 +105,7 @@ describe("harness channel alignment", () => {
       "0.2.1",
       // 0.2.2 line, both channels, and its stable release.
       "0.2.2-alpha.2",
+      "0.2.2-alpha.3",
       "0.2.2-rc.1",
       "0.2.2",
     ];
@@ -122,6 +123,113 @@ describe("harness channel alignment", () => {
       expect(
         semver.satisfies(version, peer ?? ""),
         `${version} is outside the 0.2.1/0.2.2 lines`
+      ).toBe(false);
+    }
+  });
+
+  it("the cordis peer admits every cordis an admitted typert build can install", () => {
+    // npm resolves the typert peer to the NEWEST build the range admits (the
+    // `latest` dist-tag, 0.1.0-rc.6, is outside it), then installs the newest
+    // PUBLISHED cordis that build peers on. If the plugin's own cordis peer
+    // excludes it, a fresh install fails with ERESOLVE — which is what
+    // happened the morning 0.2.2-rc.1 was published with `~4.1.0` while this
+    // peer stopped below 4.1.0. Beside a host already installed on an older
+    // line, the cordis is whichever published one that line's build admits.
+    // So every published cordis an admitted build admits must satisfy the
+    // cordis peer.
+    //
+    // Checked against concrete PUBLISHED versions, never by range overlap:
+    // `semver.intersects` would call `~4.0.4 || ~4.1.0` compatible with
+    // `~4.0.6-alpha.2` although no 4.0.6 prerelease satisfies it, because the
+    // prerelease-tuple rule npm resolves under is not part of an overlap.
+    //
+    // Both tables are recorded from the registry on 2026-11-04 (`npm view
+    // @deepseek-ai/dsh-typert-protocol@<v> peerDependencies` for every build
+    // on the 0.2.1 and 0.2.2 lines; `npm view @deepseek-ai/cordis versions`).
+    // A new typert build joins the first with its cordis range, and a new
+    // cordis release joins the second, when they are published.
+    const CORDIS_PUBLISHED = [
+      "4.0.4",
+      "4.0.5-alpha.1",
+      "4.0.5-alpha.2",
+      "4.0.5",
+      "4.0.6-alpha.1",
+      "4.0.6-alpha.2",
+      "4.1.0",
+    ];
+    const CORDIS_PEER_OF_TYPERT: Record<string, string> = {
+      "0.2.1-alpha.1": "~4.0.5-alpha.1",
+      "0.2.1-alpha.2": "~4.0.5-alpha.1",
+      "0.2.1-alpha.3": "~4.0.5-alpha.2",
+      "0.2.1-alpha.4": "~4.0.5-alpha.2",
+      "0.2.1-alpha.5": "~4.0.5-alpha.2",
+      "0.2.1-rc.1": "~4.0.5",
+      "0.2.1-rc.2": "~4.0.5",
+      "0.2.1-rc.3": "~4.0.5",
+      "0.2.1-rc.4": "~4.0.5",
+      "0.2.1-rc.5": "~4.0.5",
+      "0.2.2-alpha.2": "~4.0.6-alpha.1",
+      "0.2.2-alpha.3": "~4.0.6-alpha.2",
+      "0.2.2-rc.1": "~4.1.0",
+    };
+    const peers = manifest().peerDependencies ?? {};
+    const typertPeer = peers["@deepseek-ai/dsh-typert-protocol"] ?? "";
+    const cordisPeer = peers["@deepseek-ai/cordis"] ?? "";
+    expect(cordisPeer).not.toBe("");
+
+    // Each `typert@build -> cordis@version` pair npm could install that the
+    // given cordis peer would refuse.
+    const refused = (peer: string): string[] =>
+      Object.entries(CORDIS_PEER_OF_TYPERT).flatMap(([build, range]) =>
+        CORDIS_PUBLISHED.filter(
+          (version) =>
+            semver.satisfies(version, range) && !semver.satisfies(version, peer)
+        ).map((version) => `typert@${build} -> cordis@${version}`)
+      );
+
+    for (const [build, range] of Object.entries(CORDIS_PEER_OF_TYPERT)) {
+      // The table is about builds the typert peer admits, each of which has a
+      // published cordis to install; otherwise a row would check nothing.
+      expect(
+        semver.satisfies(build, typertPeer),
+        `typert ${build} is admitted by ${typertPeer}`
+      ).toBe(true);
+      expect(
+        semver.maxSatisfying(CORDIS_PUBLISHED, range),
+        `typert ${build} peers cordis ${range}, which has a published release`
+      ).not.toBeNull();
+    }
+    expect(refused(cordisPeer)).toEqual([]);
+
+    // Known answers, so the check above is shown to bite: the peer this
+    // repository shipped before 0.2.2-rc.1 refuses that build's cordis, and a
+    // peer without the 4.0.6 clause refuses the alpha line's prereleases
+    // (semver admits a prerelease only through a comparator in its own tuple).
+    expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || >=4.0.6-0 <4.1.0")).toEqual([
+      "typert@0.2.2-rc.1 -> cordis@4.1.0",
+    ]);
+    expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || ~4.1.0")).toEqual(
+      expect.arrayContaining(["typert@0.2.2-alpha.3 -> cordis@4.0.6-alpha.2"])
+    );
+
+    // The concrete cordis each channel ships is admitted, and the range still
+    // stops at the next tuple: a 4.1.x prerelease or 4.2 is a reviewed
+    // widening, not a silent one.
+    for (const version of [
+      "4.0.5",
+      "4.0.6-alpha.1",
+      "4.0.6-alpha.2",
+      "4.1.0",
+    ]) {
+      expect(
+        semver.satisfies(version, cordisPeer),
+        `cordis ${version} is admitted`
+      ).toBe(true);
+    }
+    for (const version of ["4.1.1-alpha.1", "4.2.0", "5.0.0"]) {
+      expect(
+        semver.satisfies(version, cordisPeer),
+        `cordis ${version} is outside the peer`
       ).toBe(false);
     }
   });
