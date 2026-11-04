@@ -41,7 +41,6 @@ import { isAsyncIterableLike, isRecord } from "./utils/guards.ts";
 
 interface StreamOptions {
   messages?: unknown;
-  prepared?: unknown;
   model?: unknown;
   parentId?: unknown;
   parentSession?: unknown;
@@ -197,10 +196,6 @@ export const createStreamHook = (
     // nothing about the response has to be rewritten. Returning here rather than
     // continuing means the redirected call does the session/debug/turn-state
     // work exactly once — its own pass through this hook.
-    //
-    // `prepared` is deliberately dropped. It is bound to the SOURCE route's
-    // adapter and already-resolved model, so re-resolving on the target route is
-    // not a loss — it is the only correct thing to do.
     const redirect = internalRouteFor(
       providerKey,
       options.model,
@@ -255,7 +250,6 @@ export const createStreamHook = (
       if (redirect === GO_GOOGLE_INTERNAL_ROUTE) {
         const stream = ctx.llm.stream({
           ...options,
-          prepared: undefined,
           provider: redirect,
           messages: googleHistoryFor(options.messages, providerKey, redirect),
         });

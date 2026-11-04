@@ -22,13 +22,14 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { payload } from "./support/catalogs.ts";
 import {
+  coreToolDecision,
   findModelSpec,
   findModelSpecOn,
+  isCoreToolModel,
   refreshCatalog,
-} from "../src/models-catalog.ts";
-import { coreToolDecision, isCoreToolModel } from "../src/tool-fallback.ts";
-import { payload } from "./fixtures/catalogs.ts";
+} from "./support/src.ts";
 
 /** A model the two planes describe differently: free on Go, paid on Zen. */
 const DIVERGENT = "acme-divergent-scratchpad";

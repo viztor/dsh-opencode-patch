@@ -22,55 +22,6 @@ import { isGoPlaneUrl } from "./utils/request-shape.ts";
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
 
-/** Placeholder `read` schema formatted for Anthropic-compatible /messages. */
-export const DUMMY_READ_TOOL_ANTHROPIC = {
-  description: "Read a file or directory from the local filesystem.",
-  input_schema: {
-    properties: {
-      filePath: {
-        description: "The absolute path to the file or directory to read",
-        type: "string",
-      },
-      offset: {
-        description: "The line number to start reading from (1-indexed)",
-        type: "number",
-      },
-      limit: {
-        description: "The maximum number of lines to read (defaults to 2000)",
-        type: "number",
-      },
-    },
-    required: ["filePath"],
-    type: "object",
-  },
-  name: "read",
-} as const;
-
-/** Placeholder `bash` schema formatted for Anthropic-compatible /messages. */
-export const DUMMY_BASH_TOOL_ANTHROPIC = {
-  description: "Execute a bash command.",
-  input_schema: {
-    properties: {
-      command: {
-        description: "The command to execute",
-        type: "string",
-      },
-      workdir: {
-        description:
-          "The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.",
-        type: "string",
-      },
-      timeout: {
-        description: "Optional timeout in milliseconds",
-        type: "number",
-      },
-    },
-    required: ["command"],
-    type: "object",
-  },
-  name: "bash",
-} as const;
-
 /** Placeholder `read` schema the gateway's validator accepts. */
 export const DUMMY_READ_TOOL = {
   description: "Read a file or directory from the local filesystem.",
@@ -207,7 +158,7 @@ const toolNames = (
  *
  * **Pure, so the row can be constructed.** The plane-aware lookup that produces
  * `row` cannot be exercised against a divergence the vendor has not produced
- * yet — see `test/fixtures/catalogs.ts` — so the decision takes the row and the
+ * yet — see `test/support/catalogs.ts` — so the decision takes the row and the
  * lookup moves to the caller.
  *
  * @param row - the model's row on ITS plane, or `undefined` when that plane's
@@ -278,7 +229,9 @@ export const maybeInjectCoreTools = (
     return body;
   }
   // Both JSON routes: the gateway checks read+bash on /responses AND
-  // /chat/completions (a toolless completions body 403s the same way).
+  // /chat/completions (a toolless completions body 403s the same way). An
+  // Anthropic `/messages` URL names neither, so it never gets this far — which
+  // is why there are no Anthropic-dialect schemas below.
   const isResponses = url.includes(RESPONSES_PATH);
   const isCompletions =
     url.includes("/chat/completions") || url.includes("/completions");
@@ -331,36 +284,15 @@ export const maybeInjectCoreTools = (
     tools = [];
   }
   const { hasBash, hasRead, isOpenAiFormat } = toolNames(tools);
-  const isAnthropic = url.includes("/messages");
-  const useOpenAi =
-    isOpenAiFormat ||
-    url.includes("/chat/completions") ||
-    url.includes("/completions");
-
-  const getReadTool = () => {
-    if (isAnthropic) {
-      return DUMMY_READ_TOOL_ANTHROPIC;
-    }
-    if (useOpenAi) {
-      return DUMMY_READ_TOOL_FUNCTION;
-    }
-    return DUMMY_READ_TOOL;
-  };
-  const getBashTool = () => {
-    if (isAnthropic) {
-      return DUMMY_BASH_TOOL_ANTHROPIC;
-    }
-    if (useOpenAi) {
-      return DUMMY_BASH_TOOL_FUNCTION;
-    }
-    return DUMMY_BASH_TOOL;
-  };
+  const useOpenAi = isOpenAiFormat || isCompletions;
+  const readTool = useOpenAi ? DUMMY_READ_TOOL_FUNCTION : DUMMY_READ_TOOL;
+  const bashTool = useOpenAi ? DUMMY_BASH_TOOL_FUNCTION : DUMMY_BASH_TOOL;
 
   if (!hasRead) {
-    tools.push(getReadTool());
+    tools.push(readTool);
   }
   if (!hasBash) {
-    tools.push(getBashTool());
+    tools.push(bashTool);
   }
   parsed.tools = tools;
   const newBodyStr = JSON.stringify(parsed);

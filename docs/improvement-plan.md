@@ -22,7 +22,7 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | :-- | :-- | :-- | :-- | :-- |
 | P0 | #105 | suite hardening, 10 defect fixes, this plan | in review | **merged `main` 1.8.0**; catalog refreshes and the pricing fix dropped (on `main`) |
 | P1a | #106 | `fix:` the purge row's refusal and the endpoint copy | in review | **merged P0**; shrunk to the purge row's `RemoteError.message`, the `auto` = `modern` copy and the `opencode-google` regression tests; the warning colour drops its token fallback; the catalog's refusal tests gain three cases `main` lacks; the rest is on `main`, and the debug gate follows D24 |
-| P1b | #107 | `chore:` hygiene | in review | pending: merges P1a; drops its tool-fallback variant (D25) |
+| P1b | #107 | `chore:` hygiene | in review | **merged P1a**; takes `main`'s tool-fallback plane rule (D25) and keeps only the dead Anthropic branch's deletion; its catalogue fixture and `main`'s `test/fixtures/catalogs.ts` become one module behind the one door |
 | P2 | #108 | `feat:` a smaller public API | in review | pending: merges P1b; re-retires the wrapper (D9) |
 | P-T1a | #109 | `build:` pin the host | in review | pending: merges P2; redone on the alpha cluster and pi 1.3.0 (D14', D22') |
 | P-T1b | #110 | `test:` a harness that is the real host | in review | pending: merges P-T1a; re-measured on both cells |
@@ -117,13 +117,13 @@ Phases land as **stacked pull requests**. Each one is based on the previous phas
 | ~~The Settings spinner animates only if the meter is mounted~~ Fixed on `main` (#133): the card carries its own keyframes. | `settings-usage.tsx:45` |
 | ~~The stream hook writes `debugFile` with `debug` off~~ Not a defect under D24: naming `debugFile` writes both halves. | `stream-hook.ts:327-340` vs `lifecycle.ts:361` |
 | `settings-purge`: the `{ ok: false }` branch and the parser are on `main` (#133). ~~Still open: a refused purge whose `error` is the host's `RemoteError` object, not a string, shows the generic message.~~ Fixed by P1a: `settings-purge.ts` reads the `RemoteError`'s `message`. | `settings-purge.ts:56-69` |
-| The stream hook's `prepared` handling is dead. The host never reads `options.prepared`. | `stream-hook.ts:44,200-203,258` |
-| The partition test misses `debugFile` | `test/settings-page.test.tsx:1223` |
-| `cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists | `cordis.patch.yml:23,36,61` |
-| `utils/retry.ts` uses `console` and global timers, against the purity gate | `utils/retry.ts:31,55` |
-| `tool-fallback`: the Anthropic branch can't be reached. (The Go-first lookup is fixed on `main`, D25.) | `tool-fallback.ts:204,237-242` |
+| ~~The stream hook's `prepared` handling is dead. The host never reads `options.prepared`.~~ Fixed by P1b: deleted from `stream-hook.ts`. | `stream-hook.ts:44,200-203,258` |
+| ~~The partition test misses `debugFile`~~ Fixed by P1b: `settings-fields.ts` registers it and the partition test walks `Config.dict`. | `test/settings-page.test.tsx:1223` |
+| ~~`cordis.patch.yml`: phantom `showUsagePrice`, wrong `freeModelMarker: ''` text, incomplete field lists~~ Fixed by P1b: `test/manifest.test.ts` holds the header to the schema. | `cordis.patch.yml:23,36,61` |
+| ~~`utils/retry.ts` uses `console` and global timers, against the purity gate~~ Fixed by P1b: `sleep` and `warn` are parameters (`backoffOver(timer)`). | `utils/retry.ts:31,55` |
+| ~~`tool-fallback`: the Anthropic branch can't be reached.~~ Fixed by P1b: the Anthropic schemas are deleted. (The Go-first lookup is fixed on `main`; the plane rule is D25.) | `tool-fallback.ts:204,237-242` |
 | Hard-coded catalog counts in tests, which the nightly refresh PR breaks by construction | `test/catalog.test.ts:94,200,208` |
-| `.freebuff/project-id` is tracked | repo root |
+| ~~`.freebuff/project-id` is tracked~~ Fixed by P1b: `.freebuff/` is ignored and untracked. | repo root |
 
 ## Routing: the problem, the measured facts, the design
 
@@ -351,6 +351,7 @@ What stays private is pinned by contract tests against the real host packages:
    - `retry.ts` takes its timer and logger as parameters. The architecture test bans `console` and timers in `utils/`, and walks the folder recursively.
    - Remove the dead branches in `tool-fallback`.
    - Add the `test/support/src.ts` indirection.
+   - On the restack: the tool fallback keeps `main`'s plane rule (D25), so only the unreachable Anthropic schemas go; the catalogue fixture this phase wrote and `main`'s `test/fixtures/catalogs.ts` become one module under `test/support/`, which reaches `src` through the door.
 3. **P2 `feat:` a smaller public API.** It ships as a 1.x minor.
    - `index.ts` exports `apply`, `Config`, `inject`, `name` and the config types.
    - `./src/*` goes from `exports`, and `check.ts` asserts that every exports target is inside `files`.
@@ -452,8 +453,8 @@ How each phase changes now that it sits on `main` 1.8.0 and the alpha host. Each
 | P0 | Shrinks: the three catalog refreshes and the per-plane pricing fix are on `main`. Keeps the suite hardening, the lifecycle, mount and credential fixes, D23's scoping with `--copies`, and this plan. |
 | P1a | Shrinks hard: the purge row shows the host's `RemoteError.message`, the endpoint copy says `auto` is `modern`, and `isZenProvider("opencode-google")` gains a regression test. The wrapper fix, refusal passthrough, warning token, spinner and `parsePurgeResult` are on `main` or superseded; P1a only drops the warning token's fallback, checks every token the card names against the host's vocabulary, and adds three refusal-passthrough test cases `main` lacks (the Zen-plane 404 fill, the non-JSON 200 answer, the `retry-after` passthrough). The debug gate follows D24. |
 | P1b | Takes `main`'s `coreToolDecision` (D25) and ports only the dead Anthropic branch's deletion; its catalogue fixture merges with `main`'s `test/fixtures/catalogs.ts` behind the one door. |
-| P2 | Re-retires the wrapper `main` revived (D9); the door list grows by every `src` name `main`'s tests import. |
-| P-T1a | Redone on D14' and D22': `main`'s pins, then the pi 1.3.0 override and patch; the 1.1.0 patch is deleted. |
+| P2 | Re-retires the wrapper `main` revived (D9); the door list grows by every `src` name `main`'s tests import. On the merge, P1b's and P2's door-rule lines in `CONTRIBUTING.md` conflict; take P2's, which names the same exceptions and adds its gate. |
+| P-T1a | Redone on D14' and D22': `main`'s pins, then the pi 1.3.0 override and patch. **Open before it starts:** D14' and D22' verify one channel, while the README's "Verified on" line and `harness-channel.test.ts` name both channels' latest hosts, and the rc host pins an older pi with its own patch and its own defaults (D17), so a peer range cannot stand for it. The owner decides, and the outcome is recorded as D14'' and D22''. The cheapest coverage is a per-channel `HOST_VERSIONS` and an rc row in the e2e-host matrix, which installs into a throwaway prefix: a floating rc install first, and a pinned rc cell with that tag's patch only once the latest rc tag's pi pin is confirmed. The committed install and lockfile stay on the alpha cluster, and the 1.1.0 patch is kept until the decision. |
 | P-T1b | Re-measured on the pinned cell (pi 1.3.0, patched) and the floating one (1.5.0 today); floating rows are version-agnostic; contract-test citations move to cordis `4.0.6-alpha.1`. |
 | P-H | Gains the Chinese "Changed in 1.x" bullet the pairing gate requires. |
 | P-R1 | Restates pi-ai's defaults (D17); deletes `test/google-thinking.test.ts` with `src/google-bridge.ts`, moving its intents to the mock suite; takes `main`'s model lists with its own routing prose. |
