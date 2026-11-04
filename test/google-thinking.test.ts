@@ -1,17 +1,16 @@
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { describe, expect, it } from "vitest";
 
+import { testPi } from "./google-runtime-fixture.ts";
 import {
+  GOOGLE_INTERNAL_ROUTE,
+  GOOGLE_SDK,
   OPENCODE_ZEN_CATALOG,
-  type CatalogModelSpec,
-} from "../src/catalog-data.ts";
-import type { PiRuntime } from "../src/google-bridge.ts";
-import {
   googleProviderFor,
   registerGoogleBridge,
-} from "../src/google-bridge.ts";
-import { GOOGLE_INTERNAL_ROUTE, GOOGLE_SDK } from "../src/responses-routes.ts";
-import { testPi } from "./google-runtime-fixture.ts";
+  type CatalogModelSpec,
+  type PiRuntime,
+} from "./support/src.ts";
 
 const ARGON_ID = "gemini-4-argon";
 const argonSpec = OPENCODE_ZEN_CATALOG.find((spec) => spec.id === ARGON_ID);

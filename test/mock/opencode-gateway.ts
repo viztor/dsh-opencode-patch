@@ -15,8 +15,8 @@ import {
   OPENCODE_GO_CATALOG,
   OPENCODE_PLANE_API,
   OPENCODE_ZEN_CATALOG,
-} from "../../src/catalog-data.ts";
-import { isRecord } from "../../src/utils/guards.ts";
+  isRecord,
+} from "../support/src.ts";
 import {
   anthropicStream,
   anthropicUnary,

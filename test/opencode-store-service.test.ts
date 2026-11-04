@@ -16,7 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { OpencodeStoreService } from "../src/opencode-store-service.ts";
+import { OpencodeStoreService } from "./support/src.ts";
 import { createMockContext } from "./test-helpers.ts";
 
 const temporary: string[] = [];

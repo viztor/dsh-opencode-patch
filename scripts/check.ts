@@ -24,6 +24,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { en as cardCopy } from "../src/settings-copy.ts";
+import {
+  exportsOutsideFiles,
+  publishListMismatch,
+  releasePendingTargets,
+} from "./package-checks.ts";
+import { SCOPED_TARGETS } from "./scoped-targets.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const failures: string[] = [];
@@ -456,6 +462,43 @@ if (releaseYml.includes("scripts/publish-scoped.ts")) {
     "release.yml does not publish the scoped alias; @viztor/dsh-opencode-patch " +
       "would go stale while dsh-opencode-patch moves on"
   );
+}
+
+/* ----------------- 10b. what exports names ships, and what ships is checked */
+
+// An `exports` target outside `files` resolves in this repository and nowhere
+// else: `./src/*` was exported for releases while `src/` was never packed.
+const outside = exportsOutsideFiles(pkg);
+if (outside.length === 0) {
+  ok("every exports target is inside files");
+} else {
+  for (const target of outside) {
+    fail(
+      `exports names ${target}, which files does not pack; a consumer resolving ` +
+        `${target} from the tarball gets ENOENT`
+    );
+  }
+}
+
+// The verify step polls its own list. A name publish-scoped.ts publishes and
+// the step never polls goes unchecked; a name it polls and nothing publishes
+// fails every release.
+const pending = releasePendingTargets(releaseYml);
+if (pending === undefined) {
+  fail(
+    'release.yml must carry exactly one pending="…" verify line (none, or more than one, found); the publish list cannot be checked'
+  );
+} else {
+  const mismatch = publishListMismatch([pkg.name, ...SCOPED_TARGETS], pending);
+  if (mismatch.length === 0) {
+    ok(
+      `release.yml verifies exactly what is published (${pending.join(", ")})`
+    );
+  } else {
+    for (const message of mismatch) {
+      fail(message);
+    }
+  }
 }
 
 /* ------------------------------------------ 11. the client stays lean */

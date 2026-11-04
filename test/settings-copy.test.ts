@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 
 import { describe, expect, it } from "vitest";
 
-import { en, withBundleCopy, zh } from "../src/settings-copy.ts";
+import { en, withBundleCopy, zh } from "./support/src.ts";
 
 /** A seat whose dictionary predates every key: it answers with the key itself. */
 const staleSeat = (key: string): string => key;

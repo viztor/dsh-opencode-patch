@@ -3,22 +3,20 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { describe, expect, it } from "vitest";
 
-import { OPENCODE_GO_CATALOG } from "../src/catalog-data.ts";
-import { resolveConfig } from "../src/config.ts";
-import { patchFetch } from "../src/fetch-patch.ts";
-import {
-  registerGoogleBridge,
-  GO_GOOGLE_BASE_URL,
-} from "../src/google-bridge.ts";
-import { hideResponsesRoute } from "../src/models-discovery.ts";
-import {
-  GO_GOOGLE_INTERNAL_ROUTE,
-  internalRouteFor,
-} from "../src/responses-routes.ts";
-import { getSessionUsage } from "../src/session-cost.ts";
-import { createStreamHook } from "../src/stream-hook.ts";
-import type { ActiveTurnState } from "../src/turn-store.ts";
 import { testPi } from "./google-runtime-fixture.ts";
+import {
+  type ActiveTurnState,
+  GO_GOOGLE_BASE_URL,
+  GO_GOOGLE_INTERNAL_ROUTE,
+  OPENCODE_GO_CATALOG,
+  createStreamHook,
+  getSessionUsage,
+  hideResponsesRoute,
+  internalRouteFor,
+  patchFetch,
+  registerGoogleBridge,
+  resolveConfig,
+} from "./support/src.ts";
 
 interface WirePart {
   functionCall?: { name: string };

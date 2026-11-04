@@ -19,7 +19,7 @@ import { join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { CARD_FIELDS } from "../src/settings-fields.ts";
+import { CARD_FIELDS } from "./support/src.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 

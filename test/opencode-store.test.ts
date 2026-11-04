@@ -23,7 +23,7 @@ import {
   inspectOpencodeStore,
   readOpencodeCredentials,
   summarizeCredential,
-} from "../src/opencode-store.ts";
+} from "./support/src.ts";
 
 const temporary: string[] = [];
 

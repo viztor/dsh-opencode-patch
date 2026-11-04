@@ -17,19 +17,17 @@ import os from "node:os";
 import nodePath from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import type { FetchPatchHooks } from "../../src/fetch-patch.ts";
 import {
-  patchFetch,
-  resolveConfig,
   type ActiveTurnState,
-  type PluginConfig,
-} from "../../src/index.ts";
-import {
+  type FetchPatchHooks,
   OPENCODE_UA,
   PARENT_SESSION_ALT_HEADER,
   PARENT_SESSION_HEADER,
+  type PluginConfig,
   SESSION_AFFINITY_HEADER,
-} from "../../src/session.ts";
+  patchFetch,
+  resolveConfig,
+} from "../support/src.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import {
   GO_KEY,

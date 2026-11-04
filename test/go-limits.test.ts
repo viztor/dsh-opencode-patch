@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { GO_MODEL_LIMITS } from "../src/go-limits-data.ts";
 import {
-  allowanceFor,
-  formatUsd,
+  GO_MODEL_LIMITS,
   GO_PLAN_TIERS,
+  WINDOW_SHARE,
+  allowanceFor,
+  formatAllowanceUsd as formatUsd,
   normalizeModelLabel,
   parseGoLimitsDoc,
-  WINDOW_SHARE,
-} from "../src/go-limits.ts";
+} from "./support/src.ts";
 
 /** The two tier tables, trimmed to what the parser reads. */
 const doc = (go: string, plus: string): string => `

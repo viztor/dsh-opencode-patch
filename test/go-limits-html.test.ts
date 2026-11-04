@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 
 import { htmlToDoc, tableRows } from "../scripts/go-limits-html.ts";
-import { parseGoLimitsDoc } from "../src/go-limits.ts";
+import { parseGoLimitsDoc } from "./support/src.ts";
 
 /**
  * A monthly-limit table, as the page renders one.

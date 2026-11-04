@@ -5,18 +5,18 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { describe, expect, it } from "vitest";
 
-import { OPENCODE_PLANE_API } from "../src/catalog-data.ts";
-import type { CatalogModelSpec } from "../src/catalog-data.ts";
-import { ENDPOINT_FAMILIES } from "../src/config-values.ts";
-import { OPENCODE_USER_AGENT } from "../src/identity.ts";
 import {
   BASE_FOR_PROTOCOL,
+  type CatalogModelSpec,
+  ENDPOINT_FAMILIES,
+  OPENCODE_PLANE_API,
+  OPENCODE_USER_AGENT,
   baseForProtocol,
   piModelFor,
   planeBaseFor,
   protocolFor,
   thinkingLevelMapFor,
-} from "../src/pi-provider.ts";
+} from "./support/src.ts";
 
 /**
  * The headers this test feeds the model.

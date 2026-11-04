@@ -12,16 +12,16 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolveConfig } from "../src/config.ts";
 import {
-  apply,
   type CordisContext,
-  getSessionUsage,
-  clearSessionUsageStore,
   RESPONSES_ROUTE,
-} from "../src/index.ts";
-import { mountInternalRoutes } from "../src/lifecycle.ts";
-import { findModelSpecOn } from "../src/models-catalog.ts";
+  apply,
+  clearSessionUsageStore,
+  findModelSpecOn,
+  getSessionUsage,
+  mountInternalRoutes,
+  resolveConfig,
+} from "./support/src.ts";
 import {
   collectUnknown,
   createMockStream,

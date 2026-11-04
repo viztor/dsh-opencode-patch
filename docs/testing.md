@@ -65,15 +65,14 @@ A gate is a script, and a script that runs at import time cannot be tested — s
 | :-- | :-- | :-- |
 | `generate-go-limits.ts` | `scripts/go-limits-html.ts` | which table is an allowance (by header, not position), the refusal when the page carries none, and the round trip through the real parser |
 | `check-vendor-version.ts` | `scripts/vendor-version.ts` | the constant is found, "read nothing" is distinguishable from "passed", and the scan reads every file a copy can live in but never the generated tables |
-| `publish-scoped.ts` | `scripts/wrapper-forwarder.ts` | the retired alias's entry LINKS against the built barrel in a real Node process |
 
-The pattern is the same one the `utils/` gate enforces inside `src/`, applied to the one place it had not reached: **a decision that lives in a top-level-await script is exercised only by the vendor's schedule**. Two of the three above had already passed while wrong — the version gate twice, the Go-limits reader when the docs moved to HTML.
+The pattern is the same one the `utils/` gate enforces inside `src/`, applied to the one place it had not reached: **a decision that lives in a top-level-await script is exercised only by the vendor's schedule**. Both had already passed while wrong — the version gate twice, the Go-limits reader when the docs moved to HTML.
 
 ## Two habits
 
 ### Plant the violation
 
-A test is only worth its name if it fails when the behaviour it describes is removed. Every guard in this repository was checked by putting the old behaviour back and watching the test go red — the plane-blind lookup, the wrong warning token, the enrichment that answered a refusal with a catalogue, the wrapper's `default` re-export.
+A test is only worth its name if it fails when the behaviour it describes is removed. Every guard in this repository was checked by putting the old behaviour back and watching the test go red — the plane-blind lookup, the wrong warning token, the enrichment that answered a refusal with a catalogue.
 
 The recipe: copy the file, apply the old behaviour, run the one test file, confirm the failure names the behaviour (not something incidental), restore.
 
@@ -83,7 +82,6 @@ A fixture that quietly stopped describing what the test believes is the failure 
 
 - `test/catalog.test.ts` measures that the two planes **disagree about price** and **agree about the free flag** — the second is what makes the first fixture necessary, and it fails the day the vendor breaks it, naming the models.
 - `test/plane-lookup.test.ts` asserts that the synthetic payload **really did** produce a free Go row and a paid Zen row before any decision is exercised.
-- `test/wrapper-forwarder.test.ts` links the generated wrapper against the **built** barrel in a real Node process, because a bundler turns a missing export into `undefined` and stays green.
 
 ## What the gates cover, and what they do not
 

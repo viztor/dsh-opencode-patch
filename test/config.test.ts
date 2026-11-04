@@ -8,19 +8,19 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { CONFIG_DEFAULTS } from "../src/config.ts";
 import {
+  type ActiveTurnState,
+  CONFIG_DEFAULTS,
   Config,
   DEFAULT_ENDPOINT_FAMILY,
   DEFAULT_KEY_SOURCE,
   ENDPOINT_FAMILIES,
-  isOpenCodeRequest,
   KEY_SOURCE_POLICIES,
-  resolveConfig,
-  type ActiveTurnState,
   type ModelOverrideConfig,
   type PluginConfig,
-} from "../src/index.ts";
+  isOpenCodeRequest,
+  resolveConfig,
+} from "./support/src.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -282,6 +282,20 @@ describe("resolveConfig", () => {
 });
 
 describe("Config schema", () => {
+  it("accepts a stale row that still carries internalRoutes, and ignores the key", () => {
+    // Removed in 1.x: the per-protocol routes always mount. An upgrading
+    // deployment's row may still carry the key, and the host validates the
+    // row through the schema's standard validator before the plugin loads,
+    // so a throw or an issue here would stop the plugin. The schema's own
+    // absence is pinned in deleted-settings.test.ts.
+    const stale = { internalRoutes: false } as unknown as PluginConfig;
+    expect(() => Config(stale)).not.toThrow();
+    const result = Config["~standard"].validate(stale);
+    expect(result).not.toBeInstanceOf(Promise);
+    expect((result as { issues?: unknown }).issues).toBeUndefined();
+    expect(resolveConfig(stale)).not.toHaveProperty("internalRoutes");
+  });
+
   it("validates an empty row to the documented defaults", () => {
     // The harness validates the patch row against this schema before the
     // plugin sees it, and the settings UI serves the namespace from it — so
@@ -301,7 +315,6 @@ describe("Config schema", () => {
         "injectOriginHeaders",
         "injectProject",
         "injectUserAgent",
-        "internalRoutes",
         "keySource",
         "maxContextWindow",
         "modelOverrides",

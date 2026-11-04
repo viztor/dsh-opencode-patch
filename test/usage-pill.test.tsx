@@ -11,14 +11,12 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-import type { GoUsage } from "../src/usage-contract.ts";
 import {
+  CIRCUMFERENCE,
+  type GoUsage,
   type ModelDirectoryState,
   type SnapshotStore,
   UsagePill,
-} from "../src/usage-pill.tsx";
-import {
-  CIRCUMFERENCE,
   describeUsage,
   formatRelativeReset,
   getAffectingWindow,
@@ -27,7 +25,7 @@ import {
   matchesAny,
   parseFailure,
   ringGeometry,
-} from "../src/usage-ui.ts";
+} from "./support/src.ts";
 
 const createMockUsage = (overrides?: Partial<GoUsage>): GoUsage => ({
   monthly: {

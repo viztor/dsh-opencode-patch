@@ -15,7 +15,7 @@ import { basename, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { projectNameFrom } from "../src/stream-hook.ts";
+import { projectNameFrom } from "./support/src.ts";
 
 describe("projectNameFrom", () => {
   it("takes the folder name from a POSIX path", () => {

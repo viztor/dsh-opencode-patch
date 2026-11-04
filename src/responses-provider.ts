@@ -764,10 +764,12 @@ const mountScope = (
 /**
  * Declared models that speak a protocol nothing in this composition serves.
  *
- * The case this exists for: `internalRoutes: false` turns the automatic mount off,
- * and a declared model whose protocol differs from its provider's then has no
- * route to answer for it. Silence would be the worst outcome — the model is in the
- * picker and every call fails — so the caller logs these by name and protocol.
+ * The case this exists for: the automatic mount stood down (no `llm-pi-ai` in
+ * this composition, or the early exit with nothing left to mount, where a
+ * route that did not mount is still missing), so a declared model whose
+ * protocol differs from its provider's has no route to answer for it. Silence would
+ * be the worst outcome — the model is in the picker and every call fails — so
+ * the caller logs these by name and protocol.
  *
  * A model the catalog does not describe is skipped: it cannot be known to need
  * anything else, and guessing would produce a warning that is wrong more often
@@ -1047,7 +1049,7 @@ export const registerResponsesProvider = async (
     console.warn(
       `[dsh-opencode-patch] ${gaps.length} declared model(s) speak a protocol no ` +
         `route serves: ${gaps.join(", ")} — declare provider routes for them ` +
-        "(see modelRoutes), or set internalRoutes: true"
+        "(see modelRoutes)"
     );
   };
   // A route the deployment declared is served by that declaration.
@@ -1059,17 +1061,6 @@ export const registerResponsesProvider = async (
     }
   }
 
-  // A curated deployment can turn the mount off: every mounted route is a
-  // provider whose model list is the protocol's catalog, which is how models
-  // nobody selected reach a picker. Such a deployment declares its own provider
-  // entries (and `modelRoutes` for the ids that need them) instead.
-  if (config?.internalRoutes === false) {
-    ctx.logger?.info?.(
-      "[dsh-opencode-patch] internal routes are off (internalRoutes: false); a declared provider must serve each protocol"
-    );
-    reportGaps();
-    return bridgeDispose;
-  }
   const wanted = Object.entries(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
     ([plane, entry]) =>
       Object.entries(entry.routes)

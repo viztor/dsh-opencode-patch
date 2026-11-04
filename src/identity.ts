@@ -2,7 +2,11 @@
  * Component and package identity.
  *
  * The same plugin answers to several names, and they are not interchangeable:
- * see `AGENTS.md` ("Package vs component") for the full mapping. Keeping the
+ * `name` is the component id (and the unscoped npm name), `LEGACY_NAME` and
+ * `LEGACY_PKG` are the pre-rename ids an old row may still use, and
+ * `SCOPED_PKG` in `settings-page.tsx` is the scoped npm name the settings card
+ * registers under. README "Changed in 1.x" records the retired
+ * `@viztor/dsh-opencode` wrapper. Keeping the
  * literals here — rather than scattered across `index.ts`, `lifecycle.ts` and
  * the client bundle — makes the one place that must agree with
  * `package.json`/`cordis.patch.yml` obvious.

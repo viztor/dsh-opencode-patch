@@ -29,12 +29,12 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { describe, expect, it } from "vitest";
 
 import {
-  decorateModelInfo,
-  decoratePlaneAdapters,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
+  decorateModelInfo,
+  decoratePlaneAdapters,
   resolveConfig,
-} from "../../src/index.ts";
+} from "../support/src.ts";
 
 const ENABLED = process.env.OPENCODE_E2E === "1";
 
