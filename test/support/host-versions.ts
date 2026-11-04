@@ -8,8 +8,11 @@
  *   group and timer plugins, cosmokit and schemastery), each at the FLOOR of
  *   the `~` range the published cluster declares for it. That floor is the
  *   version the harness vendors at the channel's tag, the tree the desktop app
- *   ships, what `package.json` pins and the lockfile holds, and what the
- *   `e2e-host` job's floor cell forces. A newer patch inside the same range is
+ *   ships, and what the `e2e-host` job's floor cell forces. `package.json`
+ *   pins every member this repository's install resolves (all but the timer
+ *   plugin, which nothing here depends on; `pinFor` moves each with the
+ *   channel), so each committed lockfile holds them at that floor by
+ *   construction, a relock included. A newer patch inside the same range is
  *   what an npm install resolves; only the e2e-host npm cell runs it, and it
  *   never moves the record: the family moves only with `dsh`, to the new
  *   tag's floors (`scripts/host-drift.ts` reads them off the registry).

@@ -474,8 +474,8 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       // `cordisFamily` is what the `e2e-host` job forces on the floor cell, so
       // a family member here and the record disagreeing would make that cell
       // run a tree this install never measured. The timer plugin is the one
-      // member nothing here depends on, so no lockfile resolves it; the next
-      // case and the drift report hold it instead.
+      // member nothing here depends on, so no lockfile resolves it; the
+      // binary e2e and the nightly drift report hold it instead.
       const lock = lockfile(record.lockfile);
       const family = Object.entries(cordisFamily(record));
       expect(family).toHaveLength(7);
@@ -492,6 +492,33 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       });
     });
 
+    it("holds the family at the record's floors by construction: every member it resolves is a direct pin", () => {
+      // The case above holds every resolved member at the record's floor.
+      // A member that arrives only transitively (include and group as peers
+      // pnpm installs itself, cosmokit as a dependency of cordis) is resolved
+      // afresh by a relock or a regenerated lockfile at the NEWEST patch its
+      // `~` range admits, so the first patch published inside a range would
+      // turn the next routine dependency change red. A direct exact pin is
+      // what pnpm resolves those peers from and dedupes that dependency onto,
+      // so the root importer names every member the lockfile holds, and
+      // `pinFor` moves each with the channel.
+      const lock = lockfile(record.lockfile);
+      const family = Object.entries(cordisFamily(record)).filter(
+        ([name]) => lock.versionsOf(name).length > 0
+      );
+      // Known answer: all but the timer plugin, which nothing here resolves.
+      expect(family.map(([name]) => name)).not.toContain(
+        "@deepseek-ai/cordis-plugin-timer"
+      );
+      expect(family).toHaveLength(6);
+      for (const [name, version] of family) {
+        expect(lock.direct.get(name), `${name} is pinned directly`).toBe(
+          version
+        );
+        expect(pinFor(name, record), name).toBe(version);
+      }
+    });
+
     it("names each family member at the floor of the range the published cluster declares", () => {
       // The record is not its own witness: a family version must be the floor
       // of every `~` range the channel's published packages declare for it.
@@ -501,7 +528,9 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       // desktop app ships; a newer patch inside the range is the npm cell's,
       // never the record's. cosmokit (a dependency of cordis) and the timer
       // plugin (declared by packages no lockfile here holds) are not peers
-      // here; the drift report and the binary e2e read them off the manifests.
+      // here; the drift report reads them off the published manifests, and
+      // the binary e2e off the installed ones (cosmokit only where the
+      // installed cordis is the record's).
       const { packages } = parse(lockfile(record.lockfile).project) as {
         packages: Record<string, { peerDependencies?: Record<string, string> }>;
       };

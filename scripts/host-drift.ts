@@ -13,9 +13,11 @@
  *   same tuple), and `piFloor` is its floor;
  * - each member of the cordis family is the FLOOR of the `~` range the
  *   published cluster declares for it (`FAMILY_DECLARERS`): the version the
- *   harness vendors at the tag, which the desktop app ships, `package.json`
- *   pins and the lockfile holds. A newer patch inside the same range is what
- *   the `e2e-host` job's npm cell runs and logs, never a record bump, so the
+ *   harness vendors at the tag and the desktop app ships. `package.json` pins
+ *   every member this repository's install resolves (all but the timer plugin,
+ *   which nothing here depends on), so each lockfile holds them at that floor
+ *   by construction. A newer patch inside the same range is what the
+ *   `e2e-host` job's npm cell runs and logs, never a record bump, so the
  *   family moves only when `dsh` does.
  *
  * Every function here is a function of its arguments - the registry's answers
@@ -74,11 +76,13 @@ export type RegistryRole = keyof typeof REGISTRY_PACKAGES;
 export type RegistryView = Readonly<Record<RegistryRole, Packument>>;
 
 /**
- * Which published package declares each family member's range. The cluster's
- * packages are read at the record's `dsh`; cosmokit is declared by cordis,
- * read at the cordis floor. Cordis comes first, so its floor is known by the
- * time cosmokit is read. The binary e2e reads the same table off the
- * installed host.
+ * Which published package declares each family member's range. The drift
+ * report reads each cluster declarer at the `dsh` the channel's dist-tag names
+ * today (not the record's, so a new cut's floors are reported before the
+ * record moves), and cosmokit's declarer, cordis, at the cordis floor it read
+ * just before: cordis comes first, so its floor is known by the time cosmokit
+ * is read. The binary e2e reads the same table off the installed host, which
+ * is the record's `dsh`.
  */
 export const FAMILY_DECLARERS: readonly {
   readonly declarer: "appBoot" | "bridge" | "cordis" | "dsh";

@@ -45,7 +45,11 @@
  * In both cells the record's family is held to something the record does not
  * produce: each member must be the floor of the `~` range the installed
  * published package declares for it (`FAMILY_DECLARERS`; overrides rewrite
- * what is installed, never a manifest's declared range).
+ * what is installed, never a manifest's declared range). One rule narrows it:
+ * cosmokit's declarer is cordis, so cosmokit is checked only where the
+ * installed cordis is the record's; elsewhere only the nightly drift report
+ * checks it. Today that leaves it out of alpha's `npm` cell, where cordis
+ * floats to a newer patch.
  *
  * Only the `npm` cell lets cordis float, as the published host's `~` ranges
  * do for a user. Where what it resolved leaves the host unable to run its own

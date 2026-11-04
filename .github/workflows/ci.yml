@@ -458,7 +458,9 @@ jobs:
           # loads that bundle into a real host is this one, and its externals
           # keep cordis and schemastery the host's copies) and the test
           # settings vitest.e2e.config.ts inherits. test/support/host-versions.ts
-          # names the binary each channel installs. package.json is not (every
+          # names the binary each channel installs, and scripts/host-drift.ts
+          # holds the family table the binary e2e asserts against the installed
+          # manifests. package.json is not (every
           # dependency bump touches it), so a change to its `test:e2e:host`
           # script alone is exercised only by the nightly run.
           # Until P-R1 moves the host seam under src/host/, the modules that
@@ -471,7 +473,7 @@ jobs:
           # in-process characterization of the same rows, on both channels, and
           # here by the nightly run.
           if printf '%s\n' "$changed" \
-            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/responses-provider\.ts$|src/responses-routes\.ts$|src/models-discovery\.ts$|src/google-bridge\.ts$|src/fetch-patch\.ts$|src/pi-provider\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
+            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/responses-provider\.ts$|src/responses-routes\.ts$|src/models-discovery\.ts$|src/google-bridge\.ts$|src/fetch-patch\.ts$|src/pi-provider\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
