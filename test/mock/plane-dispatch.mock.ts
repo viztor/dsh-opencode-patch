@@ -458,8 +458,8 @@ describe("plane dispatch · a completions model whose effort list names none (D1
   // pi 1.1.0 files these with `off: "none"`: Off is offered, and the disable
   // is `reasoning_effort: "none"`, sent both for Off and for a turn that
   // selects no effort (`openai-completions.js:717-721`). The mock gateway
-  // has no endpoint for `@ai-sdk/mistral` (which endpoint the vendor serves it
-  // on is unmeasured, docs/redirect-planes.md §2), so it answers Zen
+  // has no endpoint for `@ai-sdk/mistral` (which dialect the vendor serves it
+  // on is unmeasured; the plan's P7 row, docs/improvement-plan.md), so it answers Zen
   // mistral-large-4 with its protocol refusal. The mock carries no body shape
   // check for the completions kind, so that row pins the path, the credential
   // header and the `reasoning_effort` read off the parsed body, not a body the
@@ -689,7 +689,10 @@ describe("plane dispatch · Google thinking by level, never by budget (D16, D26)
   // ask the installed pi's own predicate and skip, naming the limitation,
   // where it does not.
 
-  /** Whether the installed pi sends the Go level-only model by level (its own rule). */
+  /**
+   * Whether the installed pi sends the level-only Gemini 4 model a level, by
+   * its own rule (the id decides, not the plane).
+   */
   const piSendsArgonLevels = usesGoogleThinkingLevel({
     id: "gemini-4-argon",
   } as never);

@@ -415,19 +415,20 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **只有开/关两种推理的模型提供“关 / 开”。** 过去它提供整套档位，每一档发送的都是同一个“开”。此类模型上保存的 Minimal、Xhigh 或 Max 选择不再能解析：请重新选择“开”（或“关”）。只有模型的协议能关闭推理时才提供“关”。
 - **Chat Completions 默认改走推理家族。** Completions 回合在 Zen 上发往 `https://opencode.ai/inference/openai/v1`，在 Go 上发往 `https://opencode.ai/inference/go/openai/v1`，与 Responses、Messages、Google 一致。`endpoint: legacy` 让所有协议留在 `/zen/v1`（Go 为 `/zen/go/v1`），但 Go 的 Google 仍在 `/inference/go/google/v1beta`。
 - **没有 `apiKeyEnv` 的 Go 平面用 `OPENCODE_API_KEY` 认证。** 平面的密钥现在按 `llm-pi-ai` 自己的规则解析（D20），而 pi 自己的 OpenCode 查找在两个平面上读的都是 `OPENCODE_API_KEY`。过去条目未写明任何引用时，Go 的 Responses、Messages 与 Google 模型默认使用 `OPENCODE_GO_API_KEY`（其 Chat Completions 模型早已遵循 pi 的规则），所以没有 `apiKeyEnv` 的 `opencode-go` 条目现在在每种协议上都发送 Zen 密钥。计量随之变化：它捕获 Go 回合携带的密钥并优先使用，因此在第一次 Go 回合之后，它把 Zen 密钥发往 Go 用量端点、被拒绝，并退回到 Zen 胶囊或“需要订阅”。请给 Go 条目加上 `apiKeyEnv: OPENCODE_GO_API_KEY`；只存储在 DSH Credentials 中的 Go 密钥只有通过这个引用才能为 Go 回合认证。
+- **目录中唯一的 `@ai-sdk/mistral` 模型现在会被提供并服务。** 过去因其方言未经实测而不提供；现在它按 Chat Completions 发往供应商的 OpenAI 根路径，这是插件自己对该 SDK 的规则（目录的家族表把它放在那里）。网关为它提供哪种方言仍未实测。
 - **保存的任何 id 都会被服务。** 目录未描述的模型在保存时被接受，并按 Chat Completions 发送；过去它会在保存时被拒绝。
 - **无密钥时的列表过滤已移除。** 密钥解析不到的平面会列出其声明的模型，由回合指出缺失的凭据，而不是隐藏付费模型。
 - **`modelOverrides`、`maxContextWindow` 与 `modelRoutes` 已移除**（以及文档中写过、却从未被读取的 `hiddenModels`）。平面条目中模型自己的行可以写名称、上下文窗口、输出上限、输入模态与推理档位，其余由目录补齐；行里的 `contextWindow` 代替 `maxContextWindow`。仍带有这些已移除键的配置行可以通过校验，这些键会被忽略。
 - **不再能按模型固定协议。** `modelRoutes` 可以让某个模型走你指定的协议；这一点没有替代。目录描述过的模型总是使用其 SDK 指定的协议；平面条目的路由级 `api` 只作用于目录未归类的 id，`baseURL` 也只在路由级。价格同样不是模型行的字段：先取目录，再取 pi。
 - **停用或重载插件会恢复它包装过的宿主方法。** 停用时模型发现与设置嫁接会被撤下，热重载会替换它们而不是再叠一层。两个平面交还给 `llm-pi-ai`——见[移除或停用插件](#移除或停用插件)。
-- **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除：在 pi 为 `1.1.0` 的宿主（`rc` 桌面应用）上，无论哪个平面，开启思考的 `gemini-4-argon` 回合都携带预算，网关会拒绝，直到宿主升级 pi。两个通道的 npm 安装与 `alpha` 桌面应用运行 pi `1.3.0` 或更高版本，不受影响。见[兼容性与验证](#-兼容性与验证)中的**宿主限制**。
+- **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除：在 pi 为 `1.1.0` 的宿主（`rc` 桌面应用）上，无论哪个平面，每个 `gemini-4-argon` 回合都携带思考预算（未选择档位时为 `thinkingBudget: 0`），而不是该模型所需的档位，直到宿主升级 pi；网关拒绝在哪里实测过，见**宿主限制**。两个通道的 npm 安装与 `alpha` 桌面应用运行 pi `1.3.0` 或更高版本，不受影响。见[兼容性与验证](#-兼容性与验证)中的**宿主限制**。
 - **`@viztor/dsh-opencode` 不再发布。** 其最后一个版本上的 "Renamed to @viztor/dsh-opencode-patch" 弃用提示即为最终信息；请改装 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 
 ## 📜 兼容性与验证
 
 **支持范围：DeepSeek Harness `rc` 与 `alpha` 两个通道的最新版本，无论通过 npm 安装还是随桌面应用发布（Node 24+）**
 
-**支持策略。** 本插件支持**两个**通道各自的**最新**版本，以它们实际发布的形态为准：`rc` 即 `dsh@latest`（当前为 `0.2.1-rc.5`，其桥接声明 pi `^1.1.0`），`alpha` 即 `dsh@alpha`（当前为 `0.2.2-alpha.2`，pi `^1.3.0`）。npm 安装运行的是**未打补丁**的 pi，版本为桥接范围所允许的最新 `1.x`；桌面应用随附的是 harness 自身工作区锁定的 pi（`rc` 上为 `1.1.0`，`alpha` 上为 `1.3.0`）。CI 在每个拉取请求上，于各通道的集群上运行单元与离线 mock 套件（pi 为 npm 解析出的版本，cordis 系列为 harness 自带的版本），并每晚在各通道的最低 pi 版本上运行；按 npm 安装的已发布二进制（cordis 浮动）在 `e2e-host` 任务中运行。本插件既不修补也不重新实现宿主 pi 的行为：宿主的 pi 若缺少网关所需的能力，那是宿主的限制，会被记录并报告给上游，而不是在这里绕过。
+**支持策略。** 本插件支持**两个**通道各自的**最新**版本，以它们实际发布的形态为准：`rc` 即 `dsh@latest`（当前为 `0.2.1-rc.5`，其桥接声明 pi `^1.1.0`），`alpha` 即 `dsh@alpha`（当前为 `0.2.2-alpha.2`，pi `^1.3.0`）。`dsh@alpha` 此后已升至 `0.2.2-alpha.3`，它要求 cordis `4.0.6-alpha.2`：通过 npm 安装时，在本插件采用该 cordis 的配置钩子契约之前，两个平面都运行在 pi-ai 自己的路由上（见下文**宿主限制**）。npm 安装运行的是**未打补丁**的 pi，版本为桥接范围所允许的最新 `1.x`；桌面应用随附的是 harness 自身工作区锁定的 pi（`rc` 上为 `1.1.0`，`alpha` 上为 `1.3.0`）。CI 在每个拉取请求上，于各通道的集群上运行单元与离线 mock 套件（pi 为 npm 解析出的版本，cordis 系列为 harness 自带的版本），并每晚在各通道的最低 pi 版本上运行；按 npm 安装的已发布二进制（cordis 浮动）在 `e2e-host` 任务中运行。本插件既不修补也不重新实现宿主 pi 的行为：宿主的 pi 若缺少网关所需的能力，那是宿主的限制，会被记录并报告给上游，而不是在这里绕过。
 
 Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件在两个通道上都针对两条线：**`0.2.1`**（`rc` 通道的最新版本），以及 `alpha` 通道目前发布的 **`0.2.2`** 预发布版本（测试套件的默认安装运行的是 `0.2.2-alpha.2`；其 `rc` 安装运行的是 `0.2.1-rc.5`）。`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
 
@@ -439,8 +440,8 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 
 **宿主限制。** 受支持的宿主目前缺少的能力，由测试套件记录为 `[HOST_LIMITATION]` 行（依据宿主自身的应答检测，从不依据版本号），并报告给上游：
 
-- **`rc` 桌面应用上的 Gemini 4 思考档位。** 其 pi（`1.1.0`）不把 `gemini-4-argon` 列为以 Google 思考**档位**发送的模型，因此无论哪个平面，开启思考的 `gemini-4-argon` 回合携带的都是思考**预算**，网关会拒绝（400 "Thinking budget is not supported for this model"；已在 Go 上实测，Zen 上按同一 pi 规则预期相同，尚未实测）。pi `1.3.0` 及以上发送的是档位，所以两个通道的所有 npm 安装以及 `alpha` 桌面应用都不受影响。升级 pi 是宿主的修复方式；插件发送的是宿主 pi 构造的请求。
-- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。同一个 cordis 还改变了配置钩子的调用形态，本插件的平面路由尚不支持这一形态（已知缺陷，由测试套件记录，随要求该 cordis 的 `0.2.2-alpha.3` 升级一并修复），因此在该安装上两个平面都运行在 pi-ai 自己的路由上。
+- **`rc` 桌面应用上的 Gemini 4 思考档位。** 其 pi（`1.1.0`）不把 `gemini-4-argon` 列为以 Google 思考**档位**发送的模型，因此无论哪个平面，每个 `gemini-4-argon` 回合携带的都是思考**预算**（选择档位时为 token 预算，未选择时为 `thinkingBudget: 0`，因为该模型无法关闭思考），网关会拒绝（400 "Thinking budget is not supported for this model"；已在 Go 上实测，Zen 上按同一 pi 规则预期相同，尚未实测）。pi `1.3.0` 及以上发送的是档位，所以两个通道的所有 npm 安装以及 `alpha` 桌面应用都不受影响。升级 pi 是宿主的修复方式；插件发送的是宿主 pi 构造的请求。
+- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。同一个 cordis 还改变了配置钩子的调用形态，本插件的平面路由尚不支持这一形态（已知缺陷，由测试套件记录，在本插件采用该契约时修复，而迁移到 `0.2.2-alpha.3` 需要这一步），因此在该安装上两个平面都运行在 pi-ai 自己的路由上。当前的 `dsh@alpha`（`0.2.2-alpha.3`）要求这个 cordis，所以在此之前通过 npm 安装时两个平面同样运行在 pi-ai 自己的路由上；其桌面应用尚未实测。
 
 | 层面 | 目标 |
 | :-- | :-- |

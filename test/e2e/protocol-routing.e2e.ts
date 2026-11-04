@@ -577,7 +577,7 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
   it(
     "serves a Gemini model from the path a hand-declared route cannot name",
     async (context) => {
-      // The bridge's endpoint, against the real gateway. The protocol is
+      // The plane adapter's Google path, against the real gateway. The protocol is
       // google-generative-ai, the path carries the model, and the credential
       // rides x-goog-api-key. Measured: 200 with real SSE here, and 400
       // ModelProtocolUnsupported on the completions endpoint — the negative
