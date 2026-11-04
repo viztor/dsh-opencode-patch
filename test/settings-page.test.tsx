@@ -3,21 +3,21 @@ import assert from "node:assert/strict";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  applySettingsPage as apply,
+  CARD_FIELDS,
+  Config,
+  CONFIG_ONLY_FIELDS,
+  en,
   ENDPOINT_FAMILIES,
   KEY_SOURCE_POLICIES,
-} from "../src/config-values.ts";
-import { Config } from "../src/index.ts";
-import { en } from "../src/settings-copy.ts";
-import { CARD_FIELDS, CONFIG_ONLY_FIELDS } from "../src/settings-fields.ts";
-import {
-  apply,
   LEGACY_NS,
-  SCOPED_PKG,
   NS,
   PKG,
+  remoteNamespace,
+  remoteNamespaceOf,
+  SCOPED_PKG,
   SPECS,
-} from "../src/settings-page.tsx";
-import { remoteNamespace, remoteNamespaceOf } from "../src/settings-remote.ts";
+} from "./support/src.ts";
 import {
   elementName,
   findAll,
@@ -1219,8 +1219,14 @@ describe("settings-page: field specs", () => {
     // The card deliberately hides the override knobs, so the two lists must
     // together cover every schema key exactly once. A knob in neither would be
     // unreachable; a knob in both would contradict CONFIG_ONLY_FIELDS.
+    //
+    // The keys come from `Config.dict`, the schema's own field table.
+    // `Config({})` materialises only the keys that carry a default or are
+    // `.volatile()`, which is how `debugFile` (neither) went missing from both
+    // lists without this test noticing.
     // oxlint-disable-next-line unicorn/no-array-sort -- `Object.keys` returns a fresh array, so in-place sort mutates nothing shared.
-    const schemaKeys = Object.keys(Config({})).sort();
+    const schemaKeys = Object.keys(Config.dict ?? {}).sort();
+    expect(schemaKeys).toContain("debugFile");
     const cardFields = CARD_FIELDS.map((entry) => entry.field);
     const configOnly = CONFIG_ONLY_FIELDS.map((entry) => entry.field);
     const covered = [...cardFields, ...configOnly];

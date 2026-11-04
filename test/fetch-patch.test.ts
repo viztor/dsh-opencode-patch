@@ -11,6 +11,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  GO_FREE_PROBE,
+  seedDivergentCatalog,
+  ZEN_FREE_PROBE,
+} from "./support/catalogs.ts";
+import { createOpencodeStore } from "./support/opencode-store-fixture.ts";
+import {
   DUMMY_BASH_TOOL,
   DUMMY_READ_TOOL,
   OPENCODE_UA,
@@ -24,8 +30,7 @@ import {
   patchFetch,
   resolveConfig,
   type ActiveTurnState,
-} from "../src/index.ts";
-import { createOpencodeStore } from "./support/opencode-store-fixture.ts";
+} from "./support/src.ts";
 import {
   createCaptureFetch,
   headerOf,
@@ -803,6 +808,100 @@ describe("patchFetch", () => {
     expect(typeof capture.init?.body).toBe("string");
     const names = toolNamesOf(parseJsonBody(capture.init?.body));
     expect(names).toEqual([DUMMY_READ_TOOL.name, DUMMY_BASH_TOOL.name]);
+  });
+
+  it("classifies a free model by the plane the request is on", async () => {
+    // The catalog's free flag is per plane, and the two planes can disagree.
+    // The seeded probe is free on Zen and paid on Go, under a marker nothing
+    // matches, so only the plane's own row can admit it: a Zen request gains
+    // the schemas, the same body on the Go plane is left alone.
+    await seedDivergentCatalog();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const config = resolveConfig({ freeModelMarker: "none-of-these" });
+    const send = async (
+      provider: string,
+      url: string,
+      model = ZEN_FREE_PROBE
+    ): Promise<unknown> => {
+      const { capture, mockFetch } = createCaptureFetch();
+      const value = openCodeSessionIdFor(`plane-${provider}`);
+      await als.run({ provider, value }, async () => {
+        await patchFetch(
+          mockFetch,
+          als,
+          config
+        )(url, {
+          body: JSON.stringify({ input: "hi", model }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+      });
+      return toolNamesOf(parseJsonBody(capture.init?.body));
+    };
+
+    expect(
+      await send("opencode", "https://opencode.ai/zen/v1/responses")
+    ).toEqual(["read", "bash"]);
+    expect(
+      await send("opencode-go", "https://opencode.ai/zen/go/v1/responses")
+    ).toBeUndefined();
+    // The reverse probe, so a Go-first lookup is red in both directions.
+    expect(
+      await send(
+        "opencode-go",
+        "https://opencode.ai/zen/go/v1/responses",
+        GO_FREE_PROBE
+      )
+    ).toEqual(["read", "bash"]);
+    expect(
+      await send(
+        "opencode",
+        "https://opencode.ai/zen/v1/responses",
+        GO_FREE_PROBE
+      )
+    ).toBeUndefined();
+  });
+
+  it("reads the plane from the URL's path, never from the turn's route", async () => {
+    // A relay serves its Go plane under a path of the same shape, and the route
+    // id there is the user's own name, so the path is the one witness both a
+    // gateway and a relay share. A path that names no Go plane is Zen, whatever
+    // the turn's provider says.
+    await seedDivergentCatalog();
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const config = resolveConfig({ freeModelMarker: "none-of-these" });
+    const send = async (provider: string, url: string): Promise<unknown> => {
+      const { capture, mockFetch } = createCaptureFetch();
+      const value = openCodeSessionIdFor(`route-${provider}-${url}`);
+      await als.run({ provider, value }, async () => {
+        await patchFetch(
+          mockFetch,
+          als,
+          config
+        )(url, {
+          body: JSON.stringify({ input: "hi", model: GO_FREE_PROBE }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+      });
+      return toolNamesOf(parseJsonBody(capture.init?.body));
+    };
+
+    // A relay's Go-shaped path is the Go plane, even on a Zen turn.
+    expect(
+      await send("opencode", "https://relay.example/zen/go/v1/responses")
+    ).toEqual(["read", "bash"]);
+    // A path naming no Go plane is Zen, even on a Go turn.
+    expect(
+      await send("opencode-go", "https://relay.example/v1/responses")
+    ).toBeUndefined();
+    // On the gateway: the URL's plane decides, whatever the turn says.
+    expect(
+      await send("opencode", "https://opencode.ai/zen/go/v1/responses")
+    ).toEqual(["read", "bash"]);
+    expect(
+      await send("opencode-go", "https://opencode.ai/zen/v1/responses")
+    ).toBeUndefined();
   });
 
   it("skips tool injection for paid models, other paths, and invalid JSON", async () => {

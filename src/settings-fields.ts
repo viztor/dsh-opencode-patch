@@ -54,7 +54,16 @@ export const CONFIG_ONLY_FIELDS: readonly {
   },
   {
     field: "debug",
-    reason: "diagnostic JSONL logging, not a behaviour a user tunes in the UI",
+    reason:
+      "diagnostic console logging of streamed calls, not a behaviour a user " +
+      "tunes in the UI",
+  },
+  {
+    field: "debugFile",
+    reason:
+      "the JSONL file both debug halves append to; naming it writes the file " +
+      "whether or not debug is on, and a server-side path is a deployment fact " +
+      "rather than a card control",
   },
   {
     field: "userAgent",

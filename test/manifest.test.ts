@@ -11,7 +11,14 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PROVIDERS, name as PLUGIN_NAME } from "../src/index.ts";
+import {
+  CARD_FIELDS,
+  Config,
+  CONFIG_ONLY_FIELDS,
+  DEFAULT_PROVIDERS,
+  name as PLUGIN_NAME,
+  NS,
+} from "./support/src.ts";
 import { isRecord } from "./test-helpers.ts";
 
 afterEach(() => {
@@ -45,15 +52,8 @@ describe("bundle manifest consistency", () => {
   it("keeps the settings namespace equal to the cordis row id", async () => {
     const patch = await readText("cordis.patch.yml");
     expect(patch).toContain("id: dsh-opencode-patch");
-    // Read the NS constant textually: importing settings-page.tsx would
-    // drag the React + ui-primitives runtime chain (whose own deps are
-    // incomplete for node) into a hermetic suite.
-    const page = await readText("src/settings-page.tsx");
-    const ns = /^export const NS = "([^"]+)";/m.exec(page);
-    if (ns === null || ns[1] === undefined) {
-      throw new Error("NS constant not found in src/settings-page.tsx");
-    }
-    expect(ns[1]).toBe("dsh-opencode-patch");
+    // The constant the client bundle ships, not its spelling in the source.
+    expect(NS).toBe("dsh-opencode-patch");
   });
 
   it("claims every route the layer mounts, in the shipped row", async () => {
@@ -105,5 +105,96 @@ describe("bundle manifest consistency", () => {
       throw new Error("client banner id not found in vite.config.ts");
     }
     expect(banner[1]).toBe(pkgRaw.name);
+  });
+});
+
+/**
+ * The keys `cordis.patch.yml` documents in its header and sets in its row.
+ *
+ * The header lists one key per line as `#   key: type   description`, with
+ * continuation lines indented deeper, so a key is exactly three spaces after
+ * the `#`. The card list runs from the line naming `CARD_FIELDS` to the one
+ * naming `CONFIG_ONLY_FIELDS`, the config-only list from there to the row. The
+ * row's keys sit eight spaces in under `config:`; its list items sit ten in and
+ * start with `-`, so they never read as keys.
+ */
+const manifestKeys = (
+  text: string
+): { card: string[]; configOnly: string[]; set: string[] } => {
+  const lines = text.split("\n");
+  const insert = lines.findIndex((line) => line.startsWith("- insert:"));
+  const cardStart = lines.findIndex((line) => line.includes("CARD_FIELDS"));
+  const configOnlyStart = lines.findIndex((line) =>
+    line.includes("CONFIG_ONLY_FIELDS")
+  );
+  const configStart = lines.findIndex((line) => /^ +config:\s*$/u.test(line));
+  if (
+    insert === -1 ||
+    cardStart === -1 ||
+    configOnlyStart <= cardStart ||
+    insert <= configOnlyStart ||
+    configStart <= insert
+  ) {
+    throw new Error(
+      "cordis.patch.yml no longer has the layout this test reads"
+    );
+  }
+  const keysOf = (slice: string[], pattern: RegExp): string[] =>
+    slice
+      .map((line) => pattern.exec(line)?.[1])
+      .filter((key): key is string => key !== undefined);
+  const documented = /^# {3}([A-Za-z]\w*):/u;
+  return {
+    card: keysOf(lines.slice(cardStart, configOnlyStart), documented),
+    configOnly: keysOf(lines.slice(configOnlyStart, insert), documented),
+    set: keysOf(lines.slice(configStart + 1), /^ {8}([A-Za-z]\w*):/u),
+  };
+};
+
+describe("cordis.patch.yml agrees with the schema and the field registry", () => {
+  const root = path.dirname(import.meta.dirname);
+  const read = async () =>
+    manifestKeys(await readFile(path.join(root, "cordis.patch.yml"), "utf-8"));
+  // `Config.dict` is the schema's own field table; `Config({})` would omit
+  // every key with neither a default nor `.volatile()`.
+  const schemaKeys = Object.keys(Config.dict ?? {});
+
+  it("documents and sets only keys the schema has", async () => {
+    const { card, configOnly, set } = await read();
+    // Known answers, so a layout change fails loudly rather than vacuously.
+    expect(schemaKeys).toContain("debugFile");
+    expect(set).toContain("providers");
+    expect(card).toContain("injectUserAgent");
+
+    const unknown = [...card, ...configOnly, ...set].filter(
+      (key) => !schemaKeys.includes(key)
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it("documents exactly the card fields and exactly the config-only fields", async () => {
+    const { card, configOnly } = await read();
+    expect(card).toContain("injectUserAgent");
+    expect(configOnly).toContain("providers");
+
+    expect(card.toSorted()).toEqual(
+      CARD_FIELDS.map((entry) => entry.field).toSorted()
+    );
+    expect(configOnly.toSorted()).toEqual(
+      CONFIG_ONLY_FIELDS.map((entry) => entry.field).toSorted()
+    );
+  });
+
+  it("documents every schema key exactly once", async () => {
+    const { card, configOnly } = await read();
+    const documented = [...card, ...configOnly];
+    expect(new Set(documented).size).toBe(documented.length);
+    expect(documented.toSorted()).toEqual(schemaKeys.toSorted());
+  });
+
+  it("sets each row key at most once", async () => {
+    const { set } = await read();
+    expect(set).toContain("providers");
+    expect(new Set(set).size).toBe(set.length);
   });
 });

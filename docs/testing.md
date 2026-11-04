@@ -47,12 +47,13 @@ Three properties the unit and mock suites keep by construction rather than by ca
 
 `test/support/opencode-store-fixture.ts` — the OpenCode store fixture. It needs `node:sqlite` and the filesystem, which is why it lives with the other host-only support files rather than in the shared helpers.
 
-`test/fixtures/catalogs.ts` — **synthetic catalogue rows**. Every other fixture quotes something that exists; this one builds the row a test needs, including rows the vendor has not produced. It exists because the plane-aware decisions are only observable when the two planes DISAGREE, and the real catalogue agrees about the free flag for every model it shares.
+`test/support/catalogs.ts` — **synthetic catalogue rows**, reaching `src` through the one door like the other fixtures. Every other fixture quotes something that exists; this one builds the row a test needs, including rows the vendor has not produced. It exists because the plane-aware decisions are only observable when the two planes DISAGREE, and the real catalogue agrees about the free flag for every model it shares.
 
-Two entry points:
+Three entry points:
 
 - `spec(...)` / `divergent(id, { go, zen })` build a row (or a pair of rows) directly, for a decision that takes the row as its parameter — `coreToolDecision`, `calculateTurnCost`.
 - `payload({ go, zen })` builds a whole `models.dev` payload, for the paths that read the LIVE catalogue through `refreshCatalog` (`test/plane-lookup.test.ts`). That world is per TEST: `refreshCatalog` merges by id and cannot remove, but the setup file resets the live catalog after every test, so a file installs its world in `beforeEach` and gives its rows ids no other test names.
+- `seedDivergentCatalog()` installs one such world for the request-path tests: `ZEN_FREE_PROBE` is free on Zen and paid on Go, `GO_FREE_PROBE` the reverse, so a lookup that reads the wrong plane is red in both directions (`test/tool-fallback.test.ts`, `test/fetch-patch.test.ts`).
 
 **A model with no price in a fixture is PAID at a nominal rate, not free.** The parser derives `is_free` from a zero cost, so a "no price" default would silently turn every fixture model into a free tier.
 
