@@ -40,6 +40,7 @@ import {
   LEGACY_DISPATCH,
   TODAY_DISPATCH,
   isFreeSpec,
+  isModelDeprecated,
   isUpstreamBusy,
   matrixUrl,
   verdictOfAttempts,
@@ -250,7 +251,8 @@ const MODEL_NOT_FOUND =
  *
  * - `redirected` is a 3xx: the probe never follows one, so a moved path is
  *   not recorded as its target's answer.
- * - `path-gone` is a 404 whose body names no model; `model-gone` a 410, a 400
+ * - `path-gone` is a 404 whose body names no model; `model-gone` a refusal of
+ *   type `ModelDeprecated` at any status (`isModelDeprecated`), a 410, a 400
  *   "Model is unavailable", or a 404 whose body names a model
  *   (`MODEL_NOT_FOUND`).
  * - `rate-limited` is a 429, and `account` the account rather than the path:
@@ -285,6 +287,9 @@ export const classifyKeyedProbe = (answer: {
   const { bodyText, status } = answer;
   if (status >= 300 && status < 400) {
     return "redirected";
+  }
+  if (isModelDeprecated(status, bodyText)) {
+    return "model-gone";
   }
   if (status === 404) {
     return MODEL_NOT_FOUND.test(bodyText) ? "model-gone" : "path-gone";

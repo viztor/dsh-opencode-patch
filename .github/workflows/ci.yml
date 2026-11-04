@@ -375,11 +375,15 @@ jobs:
   # the `tier` step:
   #
   # - `none`: spends no key, so only the keyless cases run — the keyless
-  #   matrix, the keyless free-model probe, and the keyless cases of
-  #   protocol-routing and opencode-live. Every pull request that does not
+  #   matrix, the keyless free-model probe, the System One family's three
+  #   shapes (recorded), and the keyless cases of protocol-routing and
+  #   opencode-live. Every pull request that does not
   #   touch the scope below, and a push to main.
   # - `probes`: adds the minimal keyed probes (keyed-probes.e2e.ts), one
-  #   request of a few tokens per plane × protocol × URL shape. A pull request
+  #   request of a few tokens per plane × protocol × URL shape, plus six
+  #   recorded variants of each plane's default completions cell (request
+  #   id, project, reasoning effort; KEYED_VARIANTS) and every 429's
+  #   Retry-After. A pull request
   #   that touches src/host/**; src/utils/protocols.ts, which decides the
   #   legacy URLs the probes send and the protocol each probe model speaks;
   #   src/utils/plane-model.ts, which decides the family the plugin

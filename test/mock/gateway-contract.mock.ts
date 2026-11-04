@@ -289,9 +289,17 @@ describe("the mock gateway", () => {
     // The same invariant per REQUEST rather than per base: each cell the
     // plugin sends a turn to under `auto`/`modern` (`TODAY_DISPATCH`) or
     // `endpoint: legacy` (`LEGACY_DISPATCH`), with the protocol's own path
-    // and the bundled catalog's model, must reach a route. The root shape is
-    // the converse: nothing dispatches there, so a mock that served it could
-    // hide a turn sent to the wrong family — it must answer `no_route`.
+    // and the bundled catalog's model, must reach the endpoint of its OWN
+    // protocol on its own plane. Reaching a route is not enough: a family
+    // root the mock serves answers `unknown_endpoint` for a protocol path it
+    // lacks, and a path could land on another protocol's endpoint — both are
+    // the per-protocol hole this case exists to catch (the per-base case
+    // above probes `<base>/models` and cannot see it). The record's protocol
+    // is set before the credential check, so a cell the mock then refuses
+    // for its key still names the endpoint it reached; a method refusal does
+    // not count as served. The root shape is the converse: nothing
+    // dispatches there, so a mock that served it could hide a turn sent to
+    // the wrong family — it must answer `no_route`.
     const dispatched = new Set([...TODAY_DISPATCH, ...LEGACY_DISPATCH]);
     const cells = keylessMatrix({
       go: OPENCODE_GO_CATALOG,
@@ -313,17 +321,23 @@ describe("the mock gateway", () => {
         headers: { ...cell.headers, "x-opencode-session-id": MOCK_SESSION },
         method: cell.method,
       });
-      const reject = (
-        gateway.requests.at(-1) as { reject?: string | null } | undefined
-      )?.reject;
-      if (cell.family === "root" && reject !== "no_route") {
+      const record = gateway.requests.at(-1) as GatewayRequest | undefined;
+      if (cell.family === "root" && record?.reject !== "no_route") {
         servedRoot.push(name);
       }
-      if (dispatched.has(name) && reject === "no_route") {
-        unserved.push(name);
+      if (
+        dispatched.has(name) &&
+        (record?.protocol !== cell.protocol ||
+          record.plane !== cell.plane ||
+          record.reject === "method")
+      ) {
+        unserved.push(`${name} → ${record?.reject ?? record?.protocol}`);
       }
     }
-    expect(unserved, "dispatched cells the mock has no route for").toEqual([]);
+    expect(
+      unserved,
+      "dispatched cells the mock does not serve on their own endpoint"
+    ).toEqual([]);
     expect(servedRoot, "root cells the mock routes").toEqual([]);
   });
 });

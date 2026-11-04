@@ -26,6 +26,19 @@ export interface Probe {
 }
 
 /**
+ * Whether the free tier's usage cap answered: `429 FreeUsageLimitError`, the
+ * gate refusing the caller's usage of the tier. It is one way the tier is
+ * closed ({@link freeTierClosed}), but a different fact from the session
+ * gate: it measures the account a run spends from, not whether the tier
+ * serves this plugin, so a case that met only the cap reports the cap.
+ *
+ * @param result - the probe's answer.
+ * @returns whether the answer names the usage cap.
+ */
+export const freeUsageCapped = (result: Probe): boolean =>
+  result.summary.includes("FreeUsageLimitError");
+
+/**
  * Whether the gateway is refusing the FREE TIER rather than the route.
  *
  * Measured: the deployment's key answers `403 FreeTierError` on every endpoint,
@@ -44,15 +57,17 @@ export const freeTierClosed = (result: Probe): boolean =>
   result.summary.includes("FreeTierError") ||
   // The tier's usage cap, `429 FreeUsageLimitError`, is the same gate
   // refusing for the caller's usage: closed, not busy (lesson L3).
-  result.summary.includes("FreeUsageLimitError");
+  freeUsageCapped(result);
 
 /**
  * Whether the account cannot spend on this model — an entitlement answer, not a
  * routing answer.
  *
  * Four shapes, and they are not the same refusal: `402` is "no funds", a `403`
- * naming `Model access is disabled` is a per-model entitlement, `429` is the
- * gateway's own load and says nothing about the route, and `0` is silence.
+ * naming `Model access is disabled` is a per-model entitlement, a `429` is the
+ * gateway's own load ({@link gatewayBusy}) or the free tier's usage cap
+ * ({@link freeUsageCapped}) — neither says anything about the route — and `0`
+ * is silence.
  *
  * @param result - the probe's answer.
  * @returns whether the account (or the gateway) refused for a reason other than
@@ -100,7 +115,28 @@ export const retiredAtTheGateway = (result: Probe): boolean =>
  * ({@link freeTierClosed}).
  */
 export const gatewayBusy = (result: Probe): boolean =>
-  result.status === 429 && !result.summary.includes("FreeUsageLimitError");
+  result.status === 429 && !freeUsageCapped(result);
+
+/** Why a walk of free candidates ended without a completion. */
+export type FreeWalkGap = "busy" | "capped" | "closed";
+
+/**
+ * Why no free candidate answered with a completion, from every answer the
+ * walk read: `busy` when the gateway was loaded for any of them
+ * ({@link gatewayBusy}), which says nothing about the tier; else `capped`
+ * when any met the usage cap ({@link freeUsageCapped}), which measures the
+ * account, not the tier; else `closed` — each was gated, withdrawn or
+ * refused for the account, which is worth reporting rather than skipping.
+ *
+ * @param answers - every candidate's answer, in the order sent.
+ * @returns why the walk found no completion.
+ */
+export const freeWalkGap = (answers: readonly Probe[]): FreeWalkGap => {
+  if (answers.some(gatewayBusy)) {
+    return "busy";
+  }
+  return answers.some(freeUsageCapped) ? "capped" : "closed";
+};
 
 /**
  * Whether a candidate model may be USED as a case's subject.

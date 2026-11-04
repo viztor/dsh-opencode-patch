@@ -485,6 +485,22 @@ describe("keyless matrix · the free probe", () => {
     [410, "", "model-gone"],
     [400, "Model is unavailable", "model-gone"],
     [500, "", "other"],
+    // The vendor's withdrawal, by type at any status (the rule a turn is
+    // read by): never a gone path, never a shape that parsed the request.
+    [
+      400,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [404, '{"error":{"type":"ModelDeprecated"}}', "model-gone"],
+    [
+      410,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [400, '{"error":{"type":"ModelDeprecatedish"}}', "other"],
+    [404, '{"error":{"type":"ModelDeprecatedish"}}', "path-gone"],
+    [200, '{"choices":[{"message":{"content":"ModelDeprecated"}}]}', "served"],
     // The upstream busy: the one keyless request that reaches the upstream
     // is the free model's, and a busy one says nothing about the path.
     [503, "", "upstream-busy"],
@@ -672,6 +688,29 @@ describe("keyless matrix · the free probe", () => {
       });
     });
 
+    it("withdrawn at 400 (ModelDeprecated), then served: moves on past the withdrawn model", async () => {
+      const { send, sent } = scripted({
+        "free-a": [
+          answer(
+            400,
+            '{"type":"error","error":{"type":"ModelDeprecated","message":"Model free-a has been deprecated."}}'
+          ),
+        ],
+        "free-b": [answer(200)],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a", "free-b"]);
+      expect(result.candidates.map((candidate) => candidate.verdict)).toEqual([
+        "model-gone",
+        "served",
+      ]);
+      expect(result.decided).toMatchObject({
+        model: "free-b",
+        verdict: "served",
+      });
+      expect(freeProbeOutcome(result.decided.verdict)).toBe("pass");
+    });
+
     it("served, then nothing more is sent even if a later model would retire", async () => {
       const { send, sent } = scripted({
         "free-a": [answer(200)],
@@ -834,6 +873,22 @@ describe("keyless matrix · reading an answer", () => {
     [400, "model is UNAVAILABLE for this plan", "model-gone"],
     [400, "Invalid API key", "path-exists"],
     [200, "{}", "other"],
+    // The vendor's withdrawal, by type at any status (the rule a turn is
+    // read by): never a gone path, never a shape that parsed the request.
+    [
+      400,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [404, '{"error":{"type":"ModelDeprecated"}}', "model-gone"],
+    [
+      410,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [400, '{"error":{"type":"ModelDeprecatedish"}}', "path-exists"],
+    [404, '{"error":{"type":"ModelDeprecatedish"}}', "path-gone"],
+    [200, '{"choices":[{"message":{"content":"ModelDeprecated"}}]}', "other"],
     [500, "", "other"],
     [301, "", "redirected"],
     [308, "", "redirected"],

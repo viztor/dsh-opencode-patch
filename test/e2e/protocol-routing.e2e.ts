@@ -120,7 +120,7 @@ import {
   planeModelFor,
 } from "../support/src.ts";
 import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
-import { freeTierClosed, gatewayBusy } from "./verdict.ts";
+import { freeTierClosed, freeWalkGap, gatewayBusy } from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 /** What may spend a key: the keyed cases here run on the `full` tier only. */
@@ -832,17 +832,17 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         (m) => m.id
       );
       let answered: { model: string; status: number } | undefined;
-      let busy = false;
+      const answers: Probe[] = [];
       for (const model of candidates) {
         const response = await probe(
           servedProtocolFor(model) ?? "openai-completions",
           model
         );
+        answers.push(response);
         if (gatewayBusy(response)) {
           // The gateway answered, but about its own load. That is neither a
           // completion nor a dead tier, and it must not be reported as one.
           // Asked before the refusals below, which count a 429 among them.
-          busy = true;
           continue;
         }
         // A gated, withdrawn or refused candidate says nothing about whether
@@ -858,10 +858,21 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         break;
       }
       if (answered === undefined) {
-        if (busy) {
+        const gap = freeWalkGap(answers);
+        if (gap === "busy") {
           // No candidate answered and at least one was busy, which says
           // nothing about the tier.
           context.skip();
+          return;
+        }
+        if (gap === "capped") {
+          // The free tier's usage cap answered: it measures the account this
+          // run spends from, not whether the tier serves the plugin — the
+          // keyless free probe's `free-usage-limited` skip, for the same reason.
+          context.skip(
+            true,
+            "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier"
+          );
           return;
         }
         // Reported rather than skipped: the account (or the vendor) closed the

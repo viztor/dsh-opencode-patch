@@ -17,6 +17,8 @@ import { describe, expect, it } from "vitest";
 import {
   accessDisabled,
   freeTierClosed,
+  freeUsageCapped,
+  freeWalkGap,
   gatewayBusy,
   retiredAtTheGateway,
   usableAsSubject,
@@ -116,6 +118,38 @@ describe("the busy gateway", () => {
     // the account, so it must not be reported as either.
     expect(gatewayBusy({ status: 429, summary: "" })).toBe(true);
     expect(gatewayBusy({ status: 403, summary: "FreeTierError" })).toBe(false);
+  });
+});
+
+describe("why a walk of free candidates found no completion", () => {
+  const capped = {
+    status: 429,
+    summary: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+  };
+  const gated = { status: 403, summary: '{"type":"FreeTierError"}' };
+  const busy = { status: 429, summary: "" };
+  const retired = { status: 410, summary: "" };
+
+  it("names the usage cap, never the session gate, when the cap answered", () => {
+    // A run whose every candidate met the cap measured the account it spends
+    // from: reporting that as "the tier needs a session token" names a cause
+    // that was not observed.
+    expect(freeUsageCapped(capped)).toBe(true);
+    expect(freeUsageCapped(gated)).toBe(false);
+    expect(freeWalkGap([capped, capped])).toBe("capped");
+    expect(freeWalkGap([gated, capped, retired])).toBe("capped");
+  });
+
+  it("is a busy gateway first, whatever else answered", () => {
+    expect(freeWalkGap([capped, busy])).toBe("busy");
+    expect(freeWalkGap([gated, busy, retired])).toBe("busy");
+  });
+
+  it("is a closed tier when each was gated, withdrawn or never answered", () => {
+    expect(freeWalkGap([gated, retired, { status: 0, summary: "" }])).toBe(
+      "closed"
+    );
+    expect(freeWalkGap([])).toBe("closed");
   });
 });
 

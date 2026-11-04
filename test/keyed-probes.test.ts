@@ -500,6 +500,22 @@ describe("keyed probes · reading an answer", () => {
     [410, "", "model-gone"],
     [400, '{"error":{"message":"Model is unavailable"}}', "model-gone"],
     [400, '{"error":{"type":"ModelProtocolUnsupported"}}', "wrong-protocol"],
+    // The vendor's withdrawal, by type at any status (the rule a turn is
+    // read by): never a gone path, never a shape that parsed the request.
+    [
+      400,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [404, '{"error":{"type":"ModelDeprecated"}}', "model-gone"],
+    [
+      410,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [400, '{"error":{"type":"ModelDeprecatedish"}}', "path-exists"],
+    [404, '{"error":{"type":"ModelDeprecatedish"}}', "path-gone"],
+    [200, '{"choices":[{"message":{"content":"ModelDeprecated"}}]}', "served"],
     [400, '{"error":{"message":"max_output_tokens too small"}}', "path-exists"],
     [
       400,

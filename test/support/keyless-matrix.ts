@@ -359,6 +359,24 @@ export const isFreeUsageLimit = (bodyText: string): boolean =>
   /\bFreeUsageLimitError\b/u.test(bodyText);
 
 /**
+ * Whether a refusal is the gateway's `ModelDeprecated`: the vendor withdrew
+ * the model, at whatever status it answers it with — measured as a `400` for
+ * a model the catalog still listed, and held as gone at `404` and `410` too —
+ * the rule {@link isModelGoneMessage} and `modelGone` in
+ * `test/support/live-probe.ts` read a turn by (P-R1), extended to every probe
+ * classifier here and in `test/support/keyed-probes.ts`. Only a refusal
+ * (`status >= 400`) counts, so a served answer whose text happens to carry
+ * the word is never read as a withdrawn model; the word is bounded, so a
+ * longer type that merely starts with it is not either.
+ *
+ * @param status - the HTTP status.
+ * @param bodyText - the response body, as text.
+ * @returns whether the answer is a withdrawn model.
+ */
+export const isModelDeprecated = (status: number, bodyText: string): boolean =>
+  status >= 400 && /\bModelDeprecated\b/u.test(bodyText);
+
+/**
  * Whether a probe's answer is transient and worth one retry before it is
  * classified: a rate limit, a server error, or no answer at all. The live
  * matrix sends twenty-four requests on every pull request, and one 429 must not
@@ -477,11 +495,11 @@ const isRedirect = (status: number): boolean => status >= 300 && status < 400;
 /**
  * Whether a live turn's failure message says the gateway withdrew the model.
  *
- * The same two answers {@link classifyKeylessProbe} reads as `model-gone` — a
- * `410`, or a `400` saying "Model is unavailable" — as they reach a turn's
- * failure message rather than a raw response, plus the gateway's
- * `ModelDeprecated` error type, which it now answers for a model the catalog
- * still lists (measured 2026-11-02 on `gemini-3-flash`). It is a PRE-FILTER, not a
+ * The same answers {@link classifyKeylessProbe} reads as `model-gone` — a
+ * `410`, a `400` saying "Model is unavailable", or the gateway's
+ * `ModelDeprecated` error type ({@link isModelDeprecated}), which it now
+ * answers for a model the catalog still lists (measured 2026-11-02) — as they
+ * reach a turn's failure message rather than a raw response. It is a PRE-FILTER, not a
  * verdict: the gateway answers "Model is unavailable" for an id sent where it
  * is not served too (`docs/upstream-findings.md` §3.8), so the live adapter
  * blocks move past such a model only once a raw probe of the same id
@@ -495,7 +513,10 @@ export const isModelGoneMessage = (message: string): boolean =>
   /\b410\b|model is unavailable|\bModelDeprecated\b/iu.test(message);
 
 /**
- * Read one keyless answer.
+ * Read one keyless answer. A refusal of type `ModelDeprecated`
+ * ({@link isModelDeprecated}) is `model-gone` at any status, read before the
+ * 404 arm, so a withdrawn model answered with a 404 never reads as a gone
+ * default path.
  *
  * @param answer.status - the HTTP status.
  * @param answer.bodyText - the response body, as text.
@@ -507,6 +528,9 @@ export const classifyKeylessProbe = (answer: {
 }): Exclude<KeylessVerdict, "no-model"> => {
   if (isRedirect(answer.status)) {
     return "redirected";
+  }
+  if (isModelDeprecated(answer.status, answer.bodyText)) {
+    return "model-gone";
   }
   if (answer.status === 404) {
     return "path-gone";
@@ -621,7 +645,10 @@ export type FreeVerdict =
  * ({@link isUpstreamBusy}) is `upstream-busy`, as the keyed probes read it;
  * any other 5xx is `other`. A `429 FreeUsageLimitError` is
  * `free-usage-limited`: the gate refusing the caller's usage of the free
- * tier, its own verdict rather than a rate limit (lesson L3).
+ * tier, its own verdict rather than a rate limit (lesson L3). A refusal of
+ * type `ModelDeprecated` ({@link isModelDeprecated}) is `model-gone` at any
+ * status, as a 410 or a 400 "Model is unavailable" is: the vendor withdrew a
+ * model the catalog still lists, so the probe moves on to the next candidate.
  *
  * @param answer.status - the HTTP status.
  * @param answer.bodyText - the response body, as text.
@@ -633,6 +660,9 @@ export const classifyFreeProbe = (answer: {
 }): FreeVerdict => {
   if (isRedirect(answer.status)) {
     return "redirected";
+  }
+  if (isModelDeprecated(answer.status, answer.bodyText)) {
+    return "model-gone";
   }
   if (answer.status === 404) {
     return "path-gone";
