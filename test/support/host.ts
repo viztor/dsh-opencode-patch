@@ -104,13 +104,9 @@ import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import Settings from "@deepseek-ai/dsh-settings";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
-import { lazyStream } from "@earendil-works/pi-ai/api/lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import {
-  clampThinkingLevel,
-  createProvider,
-} from "@earendil-works/pi-ai/models";
+import { createProvider } from "@earendil-works/pi-ai/models";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
@@ -120,8 +116,6 @@ import { type Channel, CHANNELS, HOST_VERSIONS } from "./host-versions.ts";
 import {
   apply,
   Config,
-  type GoogleLevelPieces,
-  type GoogleLevelSource,
   type HostLibraries,
   type HostModuleSource,
   inject,
@@ -318,6 +312,8 @@ export interface RecordedRequest {
   readonly model: string | undefined;
   /** Lower-cased names; a credential header's value is replaced by its length. */
   readonly headers: Readonly<Record<string, string | number>>;
+  /** A Google body's `generationConfig.thinkingConfig`, when it carries one. */
+  readonly thinkingConfig?: unknown;
 }
 
 /** The hosts the recording fetch answers; everything else is refused. */
@@ -416,10 +412,15 @@ export const recordingFetch = (
     }
     const text = await bodyTextOf(input, init);
     let model: string | undefined;
+    let thinkingConfig: unknown;
     try {
-      const parsed: unknown = JSON.parse(text ?? "");
-      const candidate = (parsed as { model?: unknown } | null)?.model;
+      const parsed = JSON.parse(text ?? "") as {
+        model?: unknown;
+        generationConfig?: { thinkingConfig?: unknown };
+      } | null;
+      const candidate = parsed?.model;
       model = typeof candidate === "string" ? candidate : undefined;
+      thinkingConfig = parsed?.generationConfig?.thinkingConfig;
     } catch {
       model = undefined;
     }
@@ -430,6 +431,7 @@ export const recordingFetch = (
       ).toUpperCase(),
       model,
       url,
+      ...(thinkingConfig === undefined ? {} : { thinkingConfig }),
     };
     requests.push(request);
     return respond(request);
@@ -1180,30 +1182,6 @@ export const logLines = (
 };
 
 /**
- * pi's Google level pieces from this repository's install, the Google ones
- * imported on first use as the plugin's default source imports them.
- */
-const googleLevelsForTests = (): GoogleLevelSource => ({
-  lazyStream: lazyStream as unknown as GoogleLevelSource["lazyStream"],
-  load: async () => {
-    const [google, shared, simple] = await Promise.all([
-      import("@earendil-works/pi-ai/api/google-generative-ai"),
-      import("@earendil-works/pi-ai/api/google-shared"),
-      import("@earendil-works/pi-ai/api/simple-options"),
-    ]);
-    return {
-      buildBaseOptions: simple.buildBaseOptions,
-      clampThinkingLevel,
-      resolveGoogleThinkingLevel: shared.resolveGoogleThinkingLevel,
-      stream: google.stream,
-      toGoogleSdkThinkingLevel: shared.toGoogleSdkThinkingLevel,
-      toGoogleThinkingLevel: shared.toGoogleThinkingLevel,
-      usesGoogleThinkingLevel: shared.usesGoogleThinkingLevel,
-    } as unknown as GoogleLevelPieces;
-  },
-});
-
-/**
  * The host modules from this repository's own install, statically imported:
  * what the plugin reads through its loader on a real host, handed in through
  * the seam where there is no loader (tier A).
@@ -1225,7 +1203,6 @@ export const hostModulesForTests = (): HostModuleSource => {
       >,
     createProvider:
       createProvider as unknown as HostLibraries["createProvider"],
-    googleLevels: googleLevelsForTests(),
     interpolate: interpolate as HostLibraries["interpolate"],
     LlmError: LlmError as unknown as HostLibraries["LlmError"],
     opencodeAuth: opencodeProvider().auth,

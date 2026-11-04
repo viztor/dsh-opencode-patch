@@ -32,7 +32,6 @@ import { resolveOpencodeStoreKey } from "../go-discovery.ts";
 import { isFunctionLike, isRecord } from "../utils/guards.ts";
 import type { PlaneProviderBuilder } from "../utils/plane-profile.ts";
 import { PROTOCOLS } from "../utils/protocols.ts";
-import { withCatalogThinkingLevels } from "./google-levels.ts";
 
 /** A resolved plane profile, as far as this module reads one. */
 export interface PlaneProfileLike {
@@ -544,31 +543,21 @@ export const planeApiKeyResolver =
 /**
  * pi's provider for one plane: `createProvider` over all four protocols, each
  * wrapped with pi's own OpenCode session header, and pi's own OpenCode auth so
- * a profile naming no key keeps pi's ambient discovery. Google is wired on Go
- * too, which pi 1.1.0's own Go provider is not (F10), and serves the ids the
- * catalog describes by thinking level by level (`host/google-levels.ts`, D16).
+ * a profile naming no key keeps pi's ambient discovery. Every protocol is
+ * wired on both planes: the plugin routes each catalog model to the protocol
+ * its SDK names (D16), Google on Go included, whatever pi's own Go provider
+ * lists. What a protocol sends is pi's, thinking controls included (D26).
  *
  * @param libraries - the host's pi.
  */
 export const buildPlaneProvider =
   (libraries: HostLibraries): PlaneProviderBuilder =>
-  ({ id, levelThinkingModels = new Set(), models, name }) =>
+  ({ id, models, name }) =>
     libraries.createProvider({
       api: Object.fromEntries(
         PROTOCOLS.map((protocol) => {
           const api = libraries.apis[protocol]();
-          return [
-            protocol,
-            libraries.withOpenCodeSessionHeader(
-              protocol === "google-generative-ai"
-                ? withCatalogThinkingLevels(
-                    api,
-                    levelThinkingModels,
-                    libraries.googleLevels
-                  )
-                : api
-            ),
-          ];
+          return [protocol, libraries.withOpenCodeSessionHeader(api)];
         })
       ),
       auth:

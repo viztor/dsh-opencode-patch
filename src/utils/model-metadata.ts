@@ -22,7 +22,7 @@
  * @module dsh-opencode-patch/utils/model-metadata
  */
 
-import { type Protocol, protocolForSdk } from "./protocols.ts";
+import type { Protocol } from "./protocols.ts";
 
 /** pi's thinking levels, in escalation order, `off` first. */
 export const PI_LEVELS = [
@@ -103,49 +103,6 @@ const effortValuesOf = (spec: ReasoningSpec): readonly string[] | undefined =>
   spec.reasoning_options?.find(
     (option) => option.type === "effort" && (option.values?.length ?? 0) > 0
   )?.values;
-
-/** Google's discrete thinking levels (`thinkingConfig.thinkingLevel`). */
-const GOOGLE_THINKING_LEVELS: ReadonlySet<string> = new Set([
-  "minimal",
-  "low",
-  "medium",
-  "high",
-]);
-
-/**
- * Whether the catalog describes a model's reasoning as Google's discrete
- * thinking levels: a reasoning model served on the Google protocol whose
- * effort list names only `minimal`/`low`/`medium`/`high` (D16).
- *
- * Google's two thinking controls are not interchangeable: a model that thinks
- * in levels refuses a token `thinkingBudget` with 400 INVALID_ARGUMENT
- * ("Thinking budget is not supported for this model. Use thinking level
- * instead."), measured live on Go `gemini-4-argon`. pi 1.1.0 decides the
- * control by an id pattern (`usesGoogleThinkingLevel`), which misses any id
- * it was not written for; this answers the same question from the catalog.
- *
- * The first effort list with values decides, the one {@link reasoningFor}
- * turns into the model's levels: a `budget_tokens` option beside it says a
- * budget is ALSO accepted, which leaves the level request valid, so it does
- * not change the answer.
- *
- * @param spec - the catalog spec.
- */
-export const usesCatalogThinkingLevels = (
-  spec: ReasoningSpec & { readonly provider_npm?: string }
-): boolean => {
-  if (
-    spec.reasoning !== true ||
-    protocolForSdk(spec.provider_npm) !== "google-generative-ai"
-  ) {
-    return false;
-  }
-  const values = effortValuesOf(spec);
-  return (
-    values !== undefined &&
-    values.every((value) => GOOGLE_THINKING_LEVELS.has(value))
-  );
-};
 
 /** The values in a catalog effort list that name an explicit disable. */
 const DISABLE_VALUES: readonly string[] = ["none", "off"];

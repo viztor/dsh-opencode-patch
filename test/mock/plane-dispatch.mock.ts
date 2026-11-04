@@ -44,8 +44,8 @@ import {
   clearCapturedApiKeys,
   headerValueFor,
   OPENCODE_ZEN_CATALOG,
-  usesCatalogThinkingLevels,
 } from "../support/src.ts";
+import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { GO_KEY, ZEN_KEY } from "./helpers.ts";
 
@@ -657,13 +657,25 @@ describe("plane dispatch · Go Gemini replay stays on one provider label", () =>
   });
 });
 
-describe("plane dispatch · Google thinking by level, never by budget (D16)", () => {
+describe("plane dispatch · Google thinking by level, never by budget (D16, D26)", () => {
   // Google's discrete `thinkingLevel` and its token `thinkingBudget` are not
   // interchangeable: a model that thinks in levels refuses a budget with 400
   // INVALID_ARGUMENT ("Thinking budget is not supported for this model. Use
-  // thinking level instead."), measured live on Go gemini-4-argon. pi 1.1.0
-  // picks the level control only by an id pattern, so the catalog's own
-  // effort levels are what decide it for an id the pattern misses.
+  // thinking level instead."), measured live on Go gemini-4-argon. Which
+  // control a request carries is pi's own rule (`usesGoogleThinkingLevel`),
+  // never the plugin's (D26): pi 1.3 and later name that model, pi 1.1.0 (the
+  // rc channel's floor, the desktop app's pi) does not, and sends it a
+  // budget. That is a HOST_LIMITATION, recorded in
+  // test/host-characterization.test.ts; the cases that need pi to name the id
+  // ask the installed pi's own predicate and skip, naming the limitation,
+  // where it does not.
+
+  /** Whether the installed pi sends the Go level-only model by level (its own rule). */
+  const piSendsArgonLevels = usesGoogleThinkingLevel({
+    id: "gemini-4-argon",
+  } as never);
+  const HOST_LIMITATION =
+    "HOST_LIMITATION: the installed pi's own usesGoogleThinkingLevel does not name gemini-4-argon, so pi sends it a thinking budget (pi 1.1.0, the rc floor; D26)";
 
   /** The thinking config one Google request carried. */
   const thinkingConfigOf = (body: unknown): unknown =>
@@ -747,9 +759,10 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     });
   };
 
-  it.each(PLANES)(
-    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for each chosen level and for none, and never a thinkingBudget",
-    async (plane) => {
+  it.for(PLANES)(
+    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for each chosen level and for none, and never a thinkingBudget, where the installed pi names it",
+    async (plane, context) => {
+      context.skip(!piSendsArgonLevels, HOST_LIMITATION);
       const model = "gemini-4-argon";
       const sent = await thinkingSent(plane, model, [
         "high",
@@ -784,14 +797,12 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     }
   );
 
-  it("a Gemini 3 id pi already serves by level keeps pi's own request, for a chosen level and for none", async () => {
+  it("a Gemini 3 id every supported pi serves by level gets pi's own level request, for a chosen level and for none", async () => {
     // Picked from the shipped Zen catalog by shape: a Google model the catalog
-    // describes by level (so the wrapper takes it) whose id pi's own pattern
-    // (`usesGoogleThinkingLevel`, asked of the installed pi) also serves by
-    // level (so the wrapper hands it back). The case runs that hand-back over
-    // the real adapter and pi's real `lazyStream`; which path answered is
-    // pinned by test/google-levels.test.ts, and this case pins that the wire
-    // is pi's.
+    // describes by level whose id pi's own pattern (`usesGoogleThinkingLevel`,
+    // asked of the installed pi) also serves by level, on every supported pi.
+    // The case runs it over the real adapter and pi's real Google protocol,
+    // and pins that the plugin hands pi's request to the wire unchanged.
     const control = OPENCODE_ZEN_CATALOG.find(
       (spec) =>
         spec.provider_npm === "@ai-sdk/google" &&
@@ -833,7 +844,8 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     ]);
   });
 
-  it("a profile that declares Off for gemini-4-argon gets pi's own disable, thinkingBudget: 0, which the model refuses (a profile error)", async () => {
+  it("a profile that declares Off for gemini-4-argon gets pi's own disable, thinkingBudget: 0, which the model refuses (a profile error), where the installed pi names it", async (context) => {
+    context.skip(!piSendsArgonLevels, HOST_LIMITATION);
     // The catalog never offers Off on Google; a profile that declares one
     // makes Off supported, and pi disables a level model with a budget of 0
     // for an id its pattern misses, as it does for its own level ids. Pinned

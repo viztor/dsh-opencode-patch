@@ -441,6 +441,11 @@ The harness publishes two **channels**, `alpha` and `rc`, and they are parallel 
 
 The first clause covers the `0.2.1` line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. The second is **not** redundant — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, so `<0.3.0` alone would silently drop every `0.2.2-*` build, alpha and rc alike. Both clauses stop at `0.3.0`, which leaves the next line a separate decision rather than a silent widening.
 
+**Host limitations.** What a supported host lacks today, recorded by the test suite as `[HOST_LIMITATION]` rows (detected from the host's own answer, never from a version) and reported upstream:
+
+- **Gemini 4 thinking levels on the `rc` desktop app.** Its pi (`1.1.0`) does not name `gemini-4-argon` among the models it sends Google's thinking _level_, so a Go Gemini 4 turn carries a thinking _budget_, which the gateway refuses (400 "Thinking budget is not supported for this model"). pi `1.3.0` and later send the level, so every npm install of either channel, and the `alpha` desktop app, are unaffected. Bumping pi is the host's fix; the plugin sends what the host's pi builds.
+- **Saving settings on `alpha` `0.2.2-alpha.2` as npm installs it.** npm resolves cordis `4.0.6-alpha.2`, which calls the host's own `internal/update` listener in a new shape, so every config-editor save throws inside `dsh-app-boot` (`next is not a function`), whoever makes it. The `alpha` desktop app, on the cordis the harness vendors, saves.
+
 | Surface | Target |
 | :-- | :-- |
 | **Harness line** | **`0.2.1`** and the **`0.2.2`** prereleases, `alpha` and `rc` channels alike (peer: the range above) |

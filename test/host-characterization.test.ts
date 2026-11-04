@@ -45,9 +45,10 @@
 import { readFileSync } from "node:fs";
 
 import { readProfilePatches } from "@deepseek-ai/dsh-app-boot";
+import { usesGoogleThinkingLevel } from "@earendil-works/pi-ai/api/google-shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CHANNELS } from "./support/host-versions.ts";
+import { CHANNELS, HOST_VERSIONS } from "./support/host-versions.ts";
 import {
   adaptersOf,
   type ApplyOrder,
@@ -95,6 +96,16 @@ type RowKey = S0RowKey;
 
 /** The pi the install under test runs, for the titles. */
 const PI = PI_OF_CELL[HOST_CELL];
+
+/**
+ * Whether the installed pi sends the Go plane's level-only Google model by
+ * thinking level,
+ * asked of pi's own exported rule: the feature the HOST_LIMITATION row below
+ * detects, never a version compare (D26).
+ */
+const PI_SENDS_ARGON_LEVELS = usesGoogleThinkingLevel({
+  id: "gemini-4-argon",
+} as never);
 
 let tier: TierB | undefined;
 let wire: RecordingFetch;
@@ -682,6 +693,33 @@ describe(
       // pi maps a Google 401 to its own code, not AUTH (as with pi alone).
       expect(drained.finish).toEqual({ code: "PI_AI_ERROR", kind: "error" });
     });
+
+    // Which Google thinking control a request carries is pi's own rule, never
+    // the plugin's (D26): the plugin hands the turn to pi's Google protocol
+    // and sends what pi builds. pi 1.3 and later name that model and send it a
+    // level; pi 1.1.0, the rc channel's floor and the desktop app's pi, does
+    // not, and sends a budget the gateway refuses (measured live, 400
+    // "Thinking budget is not supported for this model"). Recorded, reported
+    // upstream, not fixed here.
+    it.runIf(PI_SENDS_ARGON_LEVELS)(
+      `[BASELINE] Go gemini-4-argon is sent a thinking level and no thinkingBudget: pi ${PI}'s own rule names it (D26)`,
+      async () => {
+        const { requests } = await sentBy("opencode-go", "gemini-4-argon");
+        expect(requests.map((request) => request.thinkingConfig)).toEqual([
+          { thinkingLevel: "LOW" },
+        ]);
+      }
+    );
+
+    it.runIf(!PI_SENDS_ARGON_LEVELS)(
+      `[HOST_LIMITATION] ${HOST_VERSIONS.channel} ${HOST_VERSIONS.dsh} (${HOST_CELL}, pi ${PI}): pi's own rule does not name Go gemini-4-argon, so the turn carries a thinkingBudget the gateway refuses (reported upstream, D26)`,
+      async () => {
+        const { requests } = await sentBy("opencode-go", "gemini-4-argon");
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.thinkingConfig).toHaveProperty("thinkingBudget");
+        expect(requests[0]?.thinkingConfig).not.toHaveProperty("thinkingLevel");
+      }
+    );
 
     it("[BASELINE] a stored gap id blocks no save: a catalog-unknown id is appended and a displayName changed, the file holds both, and the new id is listed, validates and is sent as completions (D15)", async () => {
       const host = booted();

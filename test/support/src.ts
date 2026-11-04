@@ -147,13 +147,6 @@ export {
 } from "../../src/host/host-modules.ts";
 export type { HostPi } from "../../src/host/host-modules.ts";
 
-// host/google-levels.ts
-export { withCatalogThinkingLevels } from "../../src/host/google-levels.ts";
-export type {
-  GoogleLevelPieces,
-  GoogleLevelSource,
-} from "../../src/host/google-levels.ts";
-
 // host/plane-provider.ts
 export {
   buildPlaneProvider,
@@ -415,8 +408,8 @@ export {
   PI_LEVELS,
   piReasoningFromEfforts,
   reasoningFor,
-  usesCatalogThinkingLevels,
 } from "../../src/utils/model-metadata.ts";
+export type { ReasoningSpec } from "../../src/utils/model-metadata.ts";
 
 // utils/plane-model.ts
 export { baseUrlFor, planeModelFor } from "../../src/utils/plane-model.ts";

@@ -46,13 +46,19 @@
  * checks it. Today that leaves it out of alpha's `npm` cell, where cordis
  * floats to a newer patch.
  *
- * Only the `npm` cell lets cordis float, as the published host's `~` ranges
- * do for a user. Where what it resolved leaves the host unable to run its own
- * save path, the run records a `[HOST_LIMITATION]` row and skips the save
- * rows. That is detected from what the host answered, never from a version:
- * the plane edit AND a control edit no plugin's listener reads (the probe's
- * own entry) both fail with a `TypeError` thrown by `dsh-app-boot`. Today
- * that is alpha's `0.2.2-alpha.2` as npm installs it (cordis `4.0.6-alpha.2`).
+ * Two host limitations are recorded as `[HOST_LIMITATION]` rows, each detected
+ * from what the host itself answers, never from a version (D26):
+ *
+ * - Only the `npm` cell lets cordis float, as the published host's `~` ranges
+ *   do for a user. Where what it resolved leaves the host unable to run its
+ *   own save path, the save rows skip: the plane edit AND a control edit no
+ *   plugin's listener reads (the probe's own entry) both fail with a
+ *   `TypeError` thrown by `dsh-app-boot`. Today that is alpha's
+ *   `0.2.2-alpha.2` as npm installs it (cordis `4.0.6-alpha.2`).
+ * - Google thinking levels are pi's to send. A host whose pi's own
+ *   exported predicate (`usesGoogleThinkingLevel`, `api/google-shared`) does
+ *   not name the Go plane's level-only Google model sends it a budget, which the gateway
+ *   refuses: today the rc channel's floor, pi 1.1.0, the desktop app's pi.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -75,7 +81,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -122,6 +128,41 @@ const ROWS_PI = CELL === "floor" ? RECORD.piFloor : RECORD.pi;
 let rowsHold = false;
 /** The cordis the prefix resolved, for the HOST_LIMITATION row's message. */
 let cordisVersion = "";
+/** The Go plane's Google model the gateway serves by thinking level only (the measured case). */
+const GEMINI_LEVEL_ID = "gemini-4-argon";
+/**
+ * Whether the prefix's own pi sends {@link GEMINI_LEVEL_ID} by thinking level;
+ * set in `beforeAll` by {@link piNamesLevelModel}.
+ */
+let piSendsArgonLevels = false;
+
+/**
+ * Whether the prefix's pi sends `id` by Google thinking level, asked of pi's
+ * own exported rule (`usesGoogleThinkingLevel`, `api/google-shared`, through
+ * pi's `./api/*` export): the feature detection D26 asks for, never a version
+ * compare.
+ *
+ * @param piRoot - the prefix's pi package root.
+ * @param id - the model id.
+ * @returns pi's own answer, or `false` when pi exports no such rule.
+ */
+const piNamesLevelModel = async (
+  piRoot: string,
+  id: string
+): Promise<boolean> => {
+  const manifest = JSON.parse(
+    readFileSync(join(piRoot, "package.json"), "utf8")
+  ) as { exports?: Record<string, string | { import?: string }> };
+  const target = manifest.exports?.["./api/*"];
+  const pattern = typeof target === "string" ? target : target?.import;
+  if (pattern === undefined) {
+    return false;
+  }
+  const shared = (await import(
+    pathToFileURL(join(piRoot, pattern.replace("*", "google-shared"))).href
+  )) as { usesGoogleThinkingLevel?: (model: { id: string }) => boolean };
+  return shared.usesGoogleThinkingLevel?.({ id }) === true;
+};
 
 /**
  * Whether `version` satisfies a caret range `^x.y.z` (x >= 1): the same
@@ -380,6 +421,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     expect(dshVersion, "the prefix holds another channel's host").toBe(
       RECORD.dsh
     );
+    piSendsArgonLevels = await piNamesLevelModel(piRoot, GEMINI_LEVEL_ID);
     expect(piCopies(join(PREFIX, "node_modules"))).toHaveLength(1);
     expect(
       satisfiesCaret(piVersion, RECORD.piRange),
@@ -652,21 +694,41 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
         sent: row.sent,
       });
     }
-    expect(out.dispatch["opencode-go/gemini-4-argon"]?.sent).toEqual([
-      "https://opencode.ai/inference/go/google/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse",
+    expect(out.dispatch[`opencode-go/${GEMINI_LEVEL_ID}`]?.sent).toEqual([
+      `https://opencode.ai/inference/go/google/v1beta/models/${GEMINI_LEVEL_ID}:streamGenerateContent?alt=sse`,
     ]);
-    expect(out.callConfig["opencode-go/gemini-4-argon"]).toBe("ok");
+    expect(out.callConfig[`opencode-go/${GEMINI_LEVEL_ID}`]).toBe("ok");
   });
 
-  // The probe's turn chooses no effort, so a model the catalog describes by
-  // level is sent the level pi falls back to, never a budget: on the pinned
-  // pi through the plugin's Google wrapper (D16), on a newer pi through pi's
-  // own pattern. The live 400 was a `thinkingBudget` here.
-  it("[BASELINE] the Go Gemini level model is sent a thinking level and no thinkingBudget, through the shipped bundle (D16)", () => {
-    const sent = out.thinking?.["opencode-go/gemini-4-argon"] ?? [];
+  // The probe's turn chooses no effort, so a model pi sends by level is sent
+  // the level pi falls back to, never a budget. Which ids pi sends by level is
+  // pi's own rule (`usesGoogleThinkingLevel`); the live 400 was a
+  // `thinkingBudget` here.
+  it("[BASELINE] the Go Gemini level model is sent a thinking level and no thinkingBudget, through the shipped bundle, where the host's pi names it", (context) => {
+    if (!piSendsArgonLevels) {
+      context.skip();
+    }
+    const sent = out.thinking?.[`opencode-go/${GEMINI_LEVEL_ID}`] ?? [];
     expect(sent.length).toBeGreaterThan(0);
     for (const config of sent) {
       expect(config).toEqual({ thinkingLevel: "LOW" });
+    }
+  });
+
+  it(`[HOST_LIMITATION] ${CHANNEL} ${RECORD.dsh} (${CELL} cell): the host's pi sends the Go Gemini level model a thinking budget (reported upstream, D26)`, (context) => {
+    if (piSendsArgonLevels) {
+      context.skip();
+    }
+    // Recorded, not fixed here: pi's own pattern does not name the id, so pi
+    // builds a budget for it, which the gateway refuses. The plugin sends what
+    // the host's pi builds; bumping pi is the host's fix.
+    console.warn(
+      `[e2e-host] ${CHANNEL} · ${CELL}: HOST_LIMITATION — pi ${hostPiVersion} sends ${GEMINI_LEVEL_ID} a thinking budget, not a level`
+    );
+    const sent = out.thinking?.[`opencode-go/${GEMINI_LEVEL_ID}`] ?? [];
+    expect(sent.length).toBeGreaterThan(0);
+    for (const config of sent) {
+      expect(config).not.toHaveProperty("thinkingLevel");
     }
   });
 

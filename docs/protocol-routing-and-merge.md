@@ -136,7 +136,7 @@ What belongs here is only the part that is a routing consequence: the meter is a
 | Concern | Module |
 | :-- | :-- |
 | Which protocol and endpoint a model is served on | `utils/protocols.ts`, `utils/plane-model.ts`, `utils/plane-profile.ts` |
-| Serving the planes | `host/route-claim.ts`, `host/plane-provider.ts`, `host/google-levels.ts`, `host/describe-graft.ts` |
+| Serving the planes | `host/route-claim.ts`, `host/plane-provider.ts`, `host/describe-graft.ts` |
 | Catalog merge | `models-catalog.ts`, `models-discovery.ts`, `catalog-data.ts` |
 | Allowance table | `go-limits-data.ts` (generated) |
 | Credentials and the `/usage` endpoint | `go-discovery.ts`, `key-capture.ts` |

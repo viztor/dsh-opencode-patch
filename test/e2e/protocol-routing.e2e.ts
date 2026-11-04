@@ -112,8 +112,8 @@ import {
   findModelSpecOn,
   isServableSdk,
   planeModelFor,
-  usesCatalogThinkingLevels,
 } from "../support/src.ts";
+import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
 import { freeTierClosed, gatewayBusy } from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
@@ -1045,7 +1045,7 @@ describe.skipIf(!LIVE)(
     );
 
     it.for(ADAPTER_PLANES)(
-      "$route: a Google model the catalog describes by level completes a turn at its highest offered level (D16)",
+      "$route: a Google model the catalog describes by level completes a turn at its highest offered level, where the installed pi names it (D16, D26)",
       { timeout: ADAPTER_BUDGET_MS },
       async (plane, context) => {
         context.skip(
@@ -1057,20 +1057,28 @@ describe.skipIf(!LIVE)(
             undefined,
           "a base override is set: the adapter sends where the plugin sends"
         );
-        // A level model pi's own pattern misses, so the turn exercises the
-        // plugin's Google wrapper; once pi learns every such id the case
-        // names that and skips, rather than re-testing pi's own path.
-        const candidates = plane.catalog
-          .filter(
-            (spec) =>
-              paidProtocolOf(spec) === "google-generative-ai" &&
-              usesCatalogThinkingLevels(spec) &&
-              !usesGoogleThinkingLevel({ id: spec.id } as never)
-          )
+        // Which control a level model is sent is pi's own rule
+        // (`usesGoogleThinkingLevel`), never the plugin's (D26). A level model
+        // the installed pi does not name is sent a budget the gateway refuses:
+        // a HOST_LIMITATION (pi 1.1.0, the rc floor), which skips by name.
+        const levelModels = plane.catalog.filter(
+          (spec) =>
+            paidProtocolOf(spec) === "google-generative-ai" &&
+            usesCatalogThinkingLevels(spec)
+        );
+        const missed = levelModels.filter(
+          (spec) => !usesGoogleThinkingLevel({ id: spec.id } as never)
+        );
+        const candidates = levelModels
+          .filter((spec) => !missed.includes(spec))
           .slice(0, ADAPTER_CANDIDATES);
         context.skip(
+          candidates.length === 0 && missed.length > 0,
+          `HOST_LIMITATION: the installed pi's own usesGoogleThinkingLevel names none of ${missed.map((spec) => spec.id).join(", ")}, so pi sends a thinking budget (D26)`
+        );
+        context.skip(
           candidates.length === 0,
-          "no paid Google model the catalog describes by level that pi's own pattern misses"
+          "no paid Google model the catalog describes by level"
         );
         const tier = await mountTierA({
           credentials: fakeCredentials({
