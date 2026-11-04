@@ -283,9 +283,12 @@ type KeySourceStep =
  * then credentials/env, then any captured key. `request` promotes both captured
  * steps above the declared sources; `configured` does the reverse.
  *
- * Tier safety is orthogonal and applies to all three: a step that returns a key
- * for the wrong tier is never consulted, because the Go endpoint rejects a Zen
- * key outright.
+ * The captured steps read only keys filed under the Go plane, in all three
+ * policies — but a key is filed by the plane its request went to, not by what
+ * it is entitled to. Nothing here can tell a Zen key from a Go key: a Go entry
+ * without `apiKeyEnv` sends pi's `OPENCODE_API_KEY` on its turns (D20), that
+ * bearer is filed as a Go key, and `auto` then sends it to the Go usage
+ * endpoint, which refuses it. Naming the reference on the Go entry is the fix.
  *
  * The store is appended to all three, and to none of them in the middle: the
  * policy orders the sources the user declared, and the installation's store is
@@ -532,118 +535,4 @@ export const resolveZenCreditInfo = async (
 
   const zenKey = await resolveRef(ctx, "OPENCODE_API_KEY");
   return { isConfigured: zenKey !== undefined };
-};
-
-/** One model entry as the operator declared it in a provider row. */
-export interface DeclaredModel {
-  readonly id: string;
-  readonly name?: string;
-}
-
-/**
- * The models a provider row DECLARES, read from the loader's configuration.
- *
- * **Credential-free, which is the point.** `ctx.llm.listModels(route)` resolves
- * the route's credential first and answers `[]` when it cannot, so at boot — the
- * ordinary case — a route that declares nineteen models reads as declaring none.
- * Measured consequences, both from the same cause:
- *
- *   - no internal route was mounted for the plane;
- *   - the composer's picker offered none of that route's models at all.
- *
- * The declaration itself needs no credential: it is the `models:` array the
- * operator wrote, in the loader entry's config — the same shape
- * {@link discoverGoConfig} already walks.
- *
- * `ctx.get` first, because `ctx.loader` throws without the name in `inject`; the
- * property is the guarded fallback for a context that serves only that.
- *
- * @param ctx - the host context.
- * @param route - the provider route id (`opencode`, `opencode-go`, ...).
- * @returns the declared entries, or `undefined` when the loader holds no row for
- *   that route — "cannot read" and "declares nothing" must stay distinguishable.
- */
-export const declaredProviderModels = (
-  ctx: unknown,
-  route: string
-): readonly DeclaredModel[] | undefined => {
-  if (!isRecord(ctx)) {
-    return undefined;
-  }
-  let loader: unknown;
-  const { get } = ctx as { get?: unknown };
-  if (typeof get === "function") {
-    try {
-      loader = Reflect.apply(get, ctx, ["loader"]);
-    } catch {
-      loader = undefined;
-    }
-  }
-  if (loader === undefined) {
-    try {
-      const { loader: viaProperty } = ctx as { loader?: unknown };
-      loader = viaProperty;
-    } catch {
-      return undefined;
-    }
-  }
-  if (!isRecord(loader) || typeof loader.entries !== "function") {
-    return undefined;
-  }
-  let entries: unknown;
-  try {
-    entries = Reflect.apply(loader.entries, loader, []);
-  } catch {
-    return undefined;
-  }
-  // **An ITERABLE, not an array.** The host's `loader.entries()` is a
-  // generator (`cordis-plugin-loader/lib/index.js`: `*entries() { for (const
-  // entry of Object.values(this.store)) yield entry; … }`), so an
-  // `Array.isArray` guard rejected it and this reader answered `undefined` for
-  // a loader that was working perfectly — measured as the routes still not
-  // mounting after the first version of this fix.
-  if (entries === null || typeof entries !== "object") {
-    return undefined;
-  }
-  if (
-    typeof (entries as { [Symbol.iterator]?: unknown })[Symbol.iterator] !==
-    "function"
-  ) {
-    return undefined;
-  }
-  const declared: DeclaredModel[] = [];
-  let found = false;
-  for (const entry of entries as Iterable<unknown>) {
-    if (!isRecord(entry) || !isRecord(entry.options)) {
-      continue;
-    }
-    const config: unknown = entry.options.config;
-    if (!isRecord(config) || !isRecord(config.providers)) {
-      continue;
-    }
-    const provider: unknown = config.providers[route];
-    if (!isRecord(provider)) {
-      continue;
-    }
-    found = true;
-    const models: unknown = provider.models;
-    if (!Array.isArray(models)) {
-      continue;
-    }
-    for (const model of models) {
-      if (!isRecord(model) || typeof model.id !== "string") {
-        continue;
-      }
-      if (model.id.length === 0) {
-        continue;
-      }
-      declared.push({
-        id: model.id,
-        ...(typeof model.name === "string" && model.name.length > 0
-          ? { name: model.name }
-          : {}),
-      });
-    }
-  }
-  return found ? declared : undefined;
 };

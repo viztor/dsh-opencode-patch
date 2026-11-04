@@ -69,7 +69,7 @@ interface Manifest {
 }
 
 describe(`host install · ${EXPECTED}`, () => {
-  it("the pi the bridge loads at runtime is the channel's", async () => {
+  it("the pi the plane adapter loads at runtime is the channel's", async () => {
     // `loadHostPi` resolves the wrapper and walks up from its real location to
     // the first pi it finds — the copy the wrapper itself would load.
     const pi = await loadHostPi();
@@ -79,7 +79,7 @@ describe(`host install · ${EXPECTED}`, () => {
 
   it("the root pi the tests import is that same copy", async () => {
     // `loadHostPi` hands pi's function through untouched, so identity proves
-    // one module instance — the tests and the bridge read one file.
+    // one module instance — the tests and the plane adapter read one file.
     const pi = await loadHostPi();
     expect(pi?.getBuiltinModels).toBe(getBuiltinModels);
     expect(versionOf(piRoot()), EXPECTED).toBe(HOST.piInstalled);

@@ -33,10 +33,12 @@ import {
   adaptersOf,
   drainStream,
   fakeCredentials,
+  hostModulesForTests,
   forChannel,
   forHost,
   HOST_CELL,
   mountTierA,
+  PI_AI_DEFAULTS,
   PI_GAPS,
   PI_OF_CELL,
   PLANES,
@@ -45,6 +47,12 @@ import {
   s0Providers,
   type TierA,
 } from "./support/host.ts";
+import {
+  buildPlaneProvider,
+  OPENCODE_FAMILY_API,
+  OPENCODE_ZEN_CATALOG,
+  planeProfileFor,
+} from "./support/src.ts";
 
 /** The pi the install under test runs, for the titles. */
 const PI = PI_OF_CELL[HOST_CELL];
@@ -291,9 +299,9 @@ describe("host · pi-ai's Config (llm-pi-ai/src/config.ts)", () => {
     // raised both (llm-pi-ai config.ts:65,68), the rc one keeps the old pair.
     expect(resolved).toEqual({
       compat: { chatTemplateArgs: {}, chatTemplateKwargs: {} },
-      defaultContextWindow: forChannel({ alpha: 1_000_000, rc: 262_144 }),
+      defaultContextWindow: forChannel(PI_AI_DEFAULTS).contextWindow,
       defaultInput: ["text"],
-      defaultMaxTokens: forChannel({ alpha: 128_000, rc: 32_768 }),
+      defaultMaxTokens: forChannel(PI_AI_DEFAULTS).maxTokens,
       headers: {},
       maxRequestImageBytes: 20_971_520,
       modelOverrides: {},
@@ -583,8 +591,8 @@ describe(`host · pi ${PI}'s public exports (package.json exports ./providers/*,
    * F10, per cell: pi 1.1.0's Go provider has no Google API; pi 1.3.0 added
    * it and 1.5.0 keeps it. A fact about pi, not a limitation of the plugin:
    * the gateway's Go plane serves Google models whichever pi runs, and the
-   * plugin routes them itself (the Google bridge today, the plane adapter
-   * from P-R1), so neither cell's row is a `HOST_LIMITATION`.
+   * plugin's plane adapter routes them itself, so neither cell's row is a
+   * `HOST_LIMITATION`.
    */
   const GO_HAS_GOOGLE = forHost({
     "alpha-floor": true,
@@ -678,5 +686,61 @@ describe(`host · pi ${PI}'s public exports (package.json exports ./providers/*,
       headers: { "X-OpenCode-Session": "mine" },
       sessionId: "ses_x",
     });
+  });
+});
+
+describe("host · parity of the plane profile with pi-ai's own resolution", () => {
+  it("planeProfileFor resolves a catalog-known plane entry's scalar fields exactly as pi-ai resolves them", async () => {
+    const entry = {
+      apiKeyEnv: "OPENCODE_API_KEY",
+      displayName: "Zen",
+      headers: { "x-a": "1" },
+      maxRequestImageBytes: 1024,
+      models: [{ id: "deepseek-v4-pro", maxTokens: 9 }],
+      reasoning: "high",
+      retryPolicy: { maxRetries: 2, mode: "normal" },
+      streamIdleTimeoutMs: 1000,
+      thinkingBudgets: { high: 7 },
+    };
+    tier = await mountTierA({
+      providers: { opencode: structuredClone(entry) },
+    });
+    const piAi = profileOf(tier, "opencode");
+    const libraries = await hostModulesForTests().libraries();
+    if (libraries === undefined) {
+      throw new Error("no libraries");
+    }
+    const { profile } = planeProfileFor({
+      buildProvider: buildPlaneProvider(libraries),
+      catalog: OPENCODE_ZEN_CATALOG,
+      endpoint: "auto",
+      entry,
+      familyApi: OPENCODE_FAMILY_API.zen,
+      normalize: (raw) =>
+        (
+          LlmPiAi.Config({
+            providers: { opencode: raw },
+          } as never) as unknown as {
+            providers: { get: () => Record<string, unknown> };
+          }
+        ).providers.get().opencode,
+      piModels: libraries.builtinModels("opencode"),
+      resolveRetryPolicy: libraries.resolveRetryPolicy,
+      route: "opencode",
+    });
+    const scalar = (resolved: Record<string, unknown>) => {
+      const {
+        configuredMaxTokens,
+        modelErrors,
+        piProvider: _provider,
+        ...rest
+      } = resolved;
+      return {
+        ...rest,
+        configuredMaxTokens: [...(configuredMaxTokens as Map<string, number>)],
+        modelErrors: [...(modelErrors as Map<string, string>)],
+      };
+    };
+    expect(scalar(profile)).toEqual(scalar(piAi));
   });
 });

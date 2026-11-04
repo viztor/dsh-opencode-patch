@@ -118,8 +118,8 @@ export default defineConfig({
           "@deepseek-ai/cordis",
           "@deepseek-ai/dsh-typert-protocol",
           "@deepseek-ai/schemastery",
-          // Not a runtime dependency any more: `google-bridge.ts` loads the
-          // harness's own pi at runtime, so a pinned copy here would ship the
+          // Not a runtime dependency: `src/host/host-modules.ts` loads the
+          // host's own pi at runtime, so a pinned copy here would ship the
           // second pi this plugin deliberately stopped carrying. Kept external
           // for the devDependency the unit tests import directly.
           "@earendil-works/pi-ai",
@@ -227,16 +227,6 @@ export default defineConfig({
       // regression worth catching, and a threshold set above today's number would
       // just block every PR. Raise it whenever the suite genuinely grows.
       //
-      // `functions` came DOWN from 94 to 93 on that pass, and to 92.9 on the
-      // next one, and that is worth naming rather than hiding: later commits
-      // added defensive closures to `responses-provider.ts` (the facade's no-op
-      // directory handle, the property binder behind it, and the no-op handle a
-      // fully-taken registration is answered with) and the suite grew more
-      // slowly than the file did. The five functions still uncovered there are
-      // dead by construction — nothing calls a `dispose`/`replace` for a
-      // registration that was never made — so reaching them would mean making
-      // the test harness call a handle only it can see. That is coverage
-      // theatre: it buys a number rather than a behaviour.
       // Floors are set just below the measured value rather than at it, so a
       // single removed test fails the build — a ratchet, not a target.
       //
@@ -246,39 +236,88 @@ export default defineConfig({
       // on". Getting there from here is real work across 25 files, so this
       // raises the floor first and the per-file work follows.
       thresholds: {
-        statements: 95.9,
+        // Re-measured after the P-R1 review at 97.66 / 94.24 / 97.48 / 97.65,
+        // once the hidden-route modules (about 4,000 lines, the least covered
+        // in the tree) were deleted and the plane modules that replaced them
+        // landed at 100% where they are pure. Set just below that measurement.
+        statements: 97.5,
         // 91.5 -> 91.3: two tests that pinned hand-rolled menu-material CSS were
         // replaced by two that assert the panel renders MenuSurface, which is a
         // smaller assertion about a bigger fix. The floor follows the measured
-        // value rather than the other way round.
-        branches: 91.3,
-        functions: 95.9,
-        lines: 95.9,
+        // value rather than the other way round. 94 since P-R1 (above).
+        branches: 94,
+        functions: 97.4,
+        lines: 97.5,
         // Floors on the load-bearing modules only, so a well-covered average
-        // cannot hide one that stopped being exercised: the protocol mount is
-        // the piece with four host contracts to survive, and it must stay
-        // covered. Not `perFile: true` — that would hold every file to the
-        // aggregate number, which is a different (and much noisier) promise.
-        "src/responses-provider.ts": {
-          statements: 87,
-          branches: 72,
-          // Was 100 while the file held only the mount. See the note above: the
-          // same five unreachable closures are what moved it.
-          functions: 89,
-          lines: 87,
-        },
-        "src/responses-routes.ts": {
-          statements: 100,
-          branches: 100,
-          functions: 100,
-          lines: 100,
-        },
+        // cannot hide one that stopped being exercised. Not `perFile: true` —
+        // that would hold every file to the aggregate number, which is a
+        // different (and much noisier) promise. Every key here must name a
+        // file that exists: `test/architecture.test.ts` fails the build on a
+        // floor whose file moved or was deleted, which is a floor on nothing.
         // The one way to patch a host method: every branch is a reload case.
         "src/host/patch-method.ts": {
           statements: 100,
           branches: 100,
           functions: 100,
           lines: 100,
+        },
+        // The plane routes' pure decisions (P-R1): every branch is a protocol,
+        // a precedence or one of pi-ai's checks, so all of them are covered.
+        "src/utils/protocols.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/utils/model-metadata.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/utils/plane-model.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/utils/plane-profile.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // The plane routes' host half, measured rather than aspirational: what
+        // is left uncovered are guards for host shapes no composition offers.
+        "src/host/route-claim.ts": {
+          statements: 97,
+          branches: 86,
+          functions: 95,
+          lines: 97,
+        },
+        "src/host/plane-provider.ts": {
+          statements: 99,
+          branches: 97,
+          functions: 100,
+          lines: 99,
+        },
+        "src/host/describe-graft.ts": {
+          statements: 100,
+          branches: 94,
+          functions: 100,
+          lines: 100,
+        },
+        // Where every host library the planes run on is found. Its fallbacks
+        // (a tree missing a package, a manifest of another shape) are driven
+        // through stand-in installs; what is left uncovered are guards for
+        // shapes no install produces (a manifest that is not an object, a
+        // module namespace that is not a record) and a host with no wrapper
+        // reachable from anywhere.
+        "src/host/host-modules.ts": {
+          statements: 96,
+          branches: 92,
+          functions: 100,
+          lines: 96,
         },
       },
     },

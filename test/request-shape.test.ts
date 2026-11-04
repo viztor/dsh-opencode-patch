@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   ANTHROPIC_VERSION,
-  INTERNAL_ROUTES,
   authHeaderFor,
   catalogPlaneForRoute,
   gatewayPlaneFor,
@@ -25,10 +24,11 @@ import {
 
 describe("request-shape · isZenProvider", () => {
   it("request-shape · isZenProvider: the Zen Google route is Zen, the Go routes are Go", () => {
-    // `opencode-google` is the Zen plane's Google route. It starts with
-    // `opencode-go`, so a predicate that looked for `go` anywhere read it as the
-    // subscription plan; the plane is `opencode-go` or one of its own
-    // `opencode-go-*` routes, and nothing else.
+    // `opencode-google` was the Zen plane's Google route before P-R1, and a
+    // relay row may still carry the name. It starts with `opencode-go`, so a
+    // predicate that looked for `go` anywhere read it as the subscription
+    // plan; the plane is `opencode-go` or an `opencode-go-*` route, and
+    // nothing else.
     expect(isZenProvider("opencode-google")).toBe(true);
     expect(isZenProvider("opencode-go-google")).toBe(false);
     expect(isZenProvider("opencode-go-responses")).toBe(false);
@@ -45,10 +45,19 @@ describe("request-shape · isZenProvider", () => {
 
   it("agrees with catalogPlaneForRoute on every route the plugin serves", () => {
     // The defect was these two predicates disagreeing; a route added to or
-    // renamed in responses-routes.ts must not let them drift apart again. The
+    // renamed in either reader must not let them drift apart again. The
     // set is bounded on purpose: outside OpenCode routes the two differ by
     // design (isZenProvider wants an `opencode` name; the plane defaults).
-    const routes = ["opencode", "opencode-go", ...INTERNAL_ROUTES];
+    // Literal ids: the planes, and route ids a relay or an older row may still
+    // carry, which must classify the same way under both readers.
+    const routes = [
+      "opencode",
+      "opencode-go",
+      "opencode-responses",
+      "opencode-go-responses",
+      "opencode-relay",
+      "opencode-go-relay",
+    ];
     expect(routes.length).toBeGreaterThan(2);
     for (const route of routes) {
       expect(isZenProvider(route), route).toBe(

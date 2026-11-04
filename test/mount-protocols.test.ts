@@ -1,5 +1,3 @@
-import { supportedProtocols } from "@deepseek-ai/dsh-llm-pi-ai";
-import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import semver from "semver";
 import { describe, expect, it } from "vitest";
@@ -10,73 +8,19 @@ import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
   PROTOCOL_FOR_SDK,
-  protocolFor,
-  ROUTE_FOR_PLANE_PROTOCOL,
-  SELF_MOUNTED_ROUTES,
-  UNSERVED_PLANE_SDKS,
-  UNSERVED_SDKS,
+  protocolForSdk,
+  PROTOCOLS,
 } from "./support/src.ts";
 
-/**
- * The protocols this plugin mounts must be ones the harness's own pi-ai layer
- * can build, and every SDK the catalog names must map to one of them.
- *
- * Two claims, each against the real package rather than a stand-in:
- *
- * - The routes the WRAPPER mounts may only name a protocol in
- *   `dsh-llm-pi-ai`'s own `PROTOCOLS` table, which refuses anything else
- *   outright. That is how `mistral-conversations` once shipped: it is in
- *   `COMPAT_GATES`, which looks like a protocol registry and is not one.
- * - Every catalog row resolves, through `protocolFor` (which reads
- *   `GATEWAY_PROTOCOL_FOR_SDK`), to a protocol pi's exported `api/*` modules
- *   implement — independent of which models any of pi's own gateway providers
- *   happen to list. The plugin's own SDK table, `PROTOCOL_FOR_SDK`
- *   (`src/responses-routes.ts`), is checked against the same modules as a
- *   second step. In this file "the wrapper's table" means only
- *   `dsh-llm-pi-ai`'s `PROTOCOLS`.
+/*
+ * The protocols the plane adapter serves are the four `PROTOCOLS` names, each
+ * built from pi's own `api/<protocol>.lazy` module (`buildPlaneProvider`), and
+ * every SDK the catalog names maps to one of them. Both claims are made
+ * against pi's exported implementations below, not a table kept here.
  *
  * The pi and harness versions these run against are named once, in
  * `test/support/host-versions.ts`.
  */
-describe("mount · the protocols the harness can build", () => {
-  it("names only protocols dsh-llm-pi-ai supports, for the routes it mounts", () => {
-    // The wrapper's mount may only name a protocol in its own table, so the
-    // claim splits by mechanism: routes the wrapper mounts are claimed
-    // against its table, and routes the plugin mounts itself are claimed
-    // against pi directly, in the companion below.
-    const supported = new Set(supportedProtocols());
-    const named = [
-      ...new Set(
-        Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap((plane) =>
-          Object.entries(plane.routes)
-            .filter(([, route]) => !SELF_MOUNTED_ROUTES.has(route))
-            .map(([protocol]) => protocol)
-        )
-      ),
-    ];
-    expect(named.filter((protocol) => !supported.has(protocol))).toEqual([]);
-  });
-
-  it("serves every self-mounted route a protocol pi itself implements", () => {
-    // The wrapper's table refuses to name these — that refusal is why the
-    // bridge exists — so the claim to verify is the different one: pi ships
-    // the implementation the bridge hands its adapter, with the two stream
-    // entry points the provider delegates to.
-    const api = googleGenerativeAIApi();
-    expect(typeof api.stream).toBe("function");
-    expect(typeof api.streamSimple).toBe("function");
-    const selfMounted = Object.values(ROUTE_FOR_PLANE_PROTOCOL).flatMap(
-      (plane) =>
-        Object.entries(plane.routes)
-          .filter(([, route]) => SELF_MOUNTED_ROUTES.has(route))
-          .map(([protocol]) => protocol)
-    );
-    expect(selfMounted).toEqual([
-      "google-generative-ai",
-      "google-generative-ai",
-    ]);
-  });
-});
 
 /**
  * What the harness's pi-ai layer can do for the gateway, measured against the
@@ -188,7 +132,7 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
  * implement.
  *
  * The per-model `api` in our catalog is the vendor's own SDK (`@ai-sdk/…`), and
- * `protocolFor` turns it into a wire protocol — `openai-completions` for a row
+ * `protocolForSdk` turns it into a wire protocol — `openai-completions` for a row
  * that names no SDK, the provider's own default. This walks the whole catalog
  * rather than a sample, because the failure this catches is one model in a
  * refreshed catalog naming an SDK nobody has a protocol for - and a picker that
@@ -200,13 +144,9 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
  * whether it carried a model on the same protocol, which made the answer a
  * fact about pi's catalog: pi 1.3.0 listed a Go Gemini model and so passed,
  * while pi 1.1.0 (the rc channel's floor) lists none (characterized above,
- * F10) although the
- * bridge serves those models through the same `google-generative-ai` module.
- * Models whose SDK is a recorded decision (`UNSERVED_SDKS`) are skipped: that
- * is the plugin saying so, not a gap. Plane-level decisions in
- * `UNSERVED_PLANE_SDKS` likewise, so the rows here are the rows the picker
- * offers (`isServableModel`, src/models-discovery.ts) and `test/catalog.test.ts`
- * walks.
+ * F10) although the plane adapter serves those models through the same
+ * `google-generative-ai` module. No SDK is withheld any more (D16), so every
+ * catalog row is walked.
  */
 describe("routing · every catalog SDK maps to a protocol pi's api/* modules implement", () => {
   /**
@@ -246,20 +186,11 @@ describe("routing · every catalog SDK maps to a protocol pi's api/* modules imp
         ["opencode-go", OPENCODE_GO_CATALOG],
       ] as const
     ).flatMap(([plane, catalog]) =>
-      catalog
-        .filter(
-          (model) =>
-            model.provider_npm === undefined ||
-            // The `${plane} + ${sdk}` key is the one `isServableModel` reads
-            // (the route ids `opencode` / `opencode-go`). The set is empty
-            // today; an entry that withholds a protocol on every plane then
-            // turns the "four protocols" constant below red, for review.
-            !(
-              UNSERVED_SDKS.has(model.provider_npm) ||
-              UNSERVED_PLANE_SDKS.has(`${plane} + ${model.provider_npm}`)
-            )
-        )
-        .map((model) => ({ model, plane, protocol: protocolFor(model) }))
+      catalog.map((model) => ({
+        model,
+        plane,
+        protocol: protocolForSdk(model.provider_npm),
+      }))
     );
 
   it("names no SDK whose protocol pi does not implement", async () => {
@@ -271,6 +202,7 @@ describe("routing · every catalog SDK maps to a protocol pi's api/* modules imp
         [
           ...rows.map((row) => row.protocol),
           ...Object.values(PROTOCOL_FOR_SDK),
+          ...PROTOCOLS,
         ].filter((name) => name !== undefined)
       ),
     ];
@@ -289,10 +221,11 @@ describe("routing · every catalog SDK maps to a protocol pi's api/* modules imp
           `${row.plane} ${row.model.id}: ${row.model.provider_npm ?? "(default)"} -> ${row.protocol ?? "no protocol"}`
       );
     expect(unsupported).toEqual([]);
-    // The plugin's own SDK table (`PROTOCOL_FOR_SDK`, src/responses-routes.ts)
-    // names nothing pi lacks either.
+    // The plugin's own SDK table (`PROTOCOL_FOR_SDK`, src/utils/protocols.ts)
+    // and the protocols the plane provider is built from name nothing pi
+    // lacks either.
     expect(
-      Object.values(PROTOCOL_FOR_SDK).filter(
+      [...Object.values(PROTOCOL_FOR_SDK), ...PROTOCOLS].filter(
         (protocol) => verdicts.get(protocol) !== true
       )
     ).toEqual([]);
@@ -307,6 +240,13 @@ describe("routing · every catalog SDK maps to a protocol pi's api/* modules imp
         (a ?? "").localeCompare(b ?? "")
       )
     ).toEqual([
+      "anthropic-messages",
+      "google-generative-ai",
+      "openai-completions",
+      "openai-responses",
+    ]);
+    // And it is the set the plane provider is built from, no more.
+    expect([...PROTOCOLS].toSorted()).toEqual([
       "anthropic-messages",
       "google-generative-ai",
       "openai-completions",

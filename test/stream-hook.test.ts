@@ -18,12 +18,7 @@ import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  GO_GOOGLE_INTERNAL_ROUTE,
-  projectNameFrom,
-  recordDebug,
-  RESPONSES_ROUTE,
-} from "./support/src.ts";
+import { projectNameFrom, recordDebug } from "./support/src.ts";
 import { collectUnknown, createMockStream } from "./test-helpers.ts";
 
 // The debug sink is observed rather than written: a negative assertion over a
@@ -163,35 +158,6 @@ describe("stream-hook · the pass-through guards", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it("says WHY a model cannot be served, instead of leaving the picker empty", async () => {
-    // The diagnostic a reader gets when a model they declared is filtered out.
-    // The three reasons are checked in the order the filter applies them, so the
-    // sentence names the decision that actually fired — naming a protocol for a
-    // model filtered on its tier sends the reader to the routing table for an
-    // entitlement problem.
-    //
-    // `@ai-sdk/mistral` is the reachable case: the catalogue carries one such
-    // model and `isServableSdk` keeps it out of every picker, deliberately.
-    const hook = await hookWith(["opencode"]);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const next = vi.fn(() => "next-result");
-      expect(
-        hook({ model: "mistral-large-4", provider: "opencode" }, next)
-      ).toBe("next-result");
-      expect(next).toHaveBeenCalledTimes(1);
-      const said = warn.mock.calls.map((call) => String(call[0])).join("\n");
-      expect(said).toContain("opencode/mistral-large-4 cannot be served");
-      expect(said).toContain("@ai-sdk/mistral");
-      // And once per pair: the hook runs on every request, and the same missing
-      // route must not warn on each one.
-      hook({ model: "mistral-large-4", provider: "opencode" }, next);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
   it("accepts a numeric provider id, which the seam may carry", async () => {
     // `provider` is `unknown` on the seam; a number is stringified before the
     // allow-list is consulted, and the call still reaches `next`.
@@ -199,138 +165,6 @@ describe("stream-hook · the pass-through guards", () => {
     const next = vi.fn(() => "next-result");
     expect(hook({ provider: 7, model: "x" }, next)).toBe("next-result");
     expect(next).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("stream-hook · the redirect forwards the caller's request", () => {
-  /**
-   * A model the plane serves on another protocol is handed to the route that
-   * speaks it. The caller's request goes with it whole: only `provider` changes
-   * (and, for Go-Google, the history is replayed into Google's shape).
-   *
-   * `toEqual` deliberately: it ignores a key whose value is `undefined`, so the
-   * pin holds whether or not the spread carries one.
-   */
-  const hookFor = async (
-    providers: string[],
-    api: string,
-    route: string,
-    stream: (options: unknown) => unknown
-  ) => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
-    return createStreamHook(
-      {
-        llm: { adapters: new Map([[route, {}]]), stream },
-        logger: { info: () => {} },
-      } as never,
-      resolveConfig({
-        modelRoutes: { "probe-model": { api } },
-        providers,
-        usageEnabled: false,
-      } as never),
-      new AsyncLocalStorage()
-    );
-  };
-
-  let warn: { mockRestore: () => void } | undefined;
-
-  beforeEach(() => {
-    // The probe id is in no catalog, so the hook warns once that the picker
-    // would not offer it. That line is not what these cases are about.
-    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    warn?.mockRestore();
-  });
-
-  it("hands the whole request to the protocol route with only provider replaced", async () => {
-    const stream = vi.fn((_options: unknown) => "redirected");
-    const hook = await hookFor(
-      ["opencode"],
-      "openai-responses",
-      RESPONSES_ROUTE,
-      stream
-    );
-    const options = {
-      messages: [],
-      model: "probe-model",
-      provider: "opencode",
-      sessionId: "s",
-    };
-    const next = vi.fn(() => "next-result");
-
-    expect(hook(options, next)).toBe("redirected");
-    expect(next).not.toHaveBeenCalled();
-    expect(stream).toHaveBeenCalledTimes(1);
-    expect(stream.mock.calls[0]?.[0]).toEqual({
-      ...options,
-      provider: RESPONSES_ROUTE,
-    });
-  });
-
-  it("hands a Go-Google request over with its history in Google's shape", async () => {
-    const sentinel = { notIterable: true };
-    const stream = vi.fn((_options: unknown) => sentinel);
-    const hook = await hookFor(
-      ["opencode-go"],
-      "google-generative-ai",
-      GO_GOOGLE_INTERNAL_ROUTE,
-      stream
-    );
-    // The user message is the control: only an assistant turn the Go plane's
-    // Google adapter answered carries a replay identity to translate.
-    const user = { content: "hi", role: "user" };
-    const replayState = {
-      response: {
-        api: "google-generative-ai",
-        kind: "pi-ai",
-        provider: "opencode-go",
-      },
-      signature: "sig",
-    };
-    const assistant = {
-      content: "hello",
-      role: "assistant",
-      source: { provider: "opencode-go", replayState },
-    };
-    const options = {
-      messages: [user, assistant],
-      model: "probe-model",
-      provider: "opencode-go",
-      sessionId: "s",
-    };
-    const next = vi.fn(() => "next-result");
-
-    expect(hook(options, next)).toBe(sentinel);
-    expect(next).not.toHaveBeenCalled();
-    expect(stream).toHaveBeenCalledTimes(1);
-    // A literal expectation, not one re-derived through the function under
-    // test: forwarding the history raw must fail here.
-    expect(stream.mock.calls[0]?.[0]).toEqual({
-      ...options,
-      messages: [
-        user,
-        {
-          content: "hello",
-          role: "assistant",
-          source: {
-            provider: GO_GOOGLE_INTERNAL_ROUTE,
-            replayState: {
-              response: {
-                api: "google-generative-ai",
-                kind: "pi-ai",
-                provider: GO_GOOGLE_INTERNAL_ROUTE,
-              },
-              signature: "sig",
-            },
-          },
-        },
-      ],
-      provider: GO_GOOGLE_INTERNAL_ROUTE,
-    });
   });
 });
 

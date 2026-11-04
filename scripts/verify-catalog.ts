@@ -14,7 +14,8 @@
  *    `410 ModelDeprecated` (needs `--probe`; otherwise skipped).
  * 3. **The picker's join** — every servable model must reach `listModels(parentRoute)`,
  *    which is `listProviders() × listModels(id)` and is where 55 models went missing.
- * 4. **Routing** — every servable model must resolve to a route this plugin mounts.
+ * 4. **Routing** — every servable model must resolve, on its own plane's route,
+ *    to a protocol and a base on that plane (`planeModelFor`, D13).
  * 5. **Free-tier tools** — every free model must get the core-tool fallback.
  *
  * Usage:
@@ -29,22 +30,18 @@
  * @module scripts/verify-catalog
  */
 
+import { OPENCODE_FAMILY_API } from "../src/catalog-data.ts";
 import {
   getLiveGoCatalog,
   getLiveZenCatalog,
   MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
 } from "../src/models-catalog.ts";
-import {
-  isServableModel,
-  mergeDiscoveredModels,
-} from "../src/models-discovery.ts";
-import {
-  internalRouteFor,
-  ROUTE_FOR_PLANE_PROTOCOL,
-} from "../src/responses-routes.ts";
+import { mergeDiscoveredModels } from "../src/models-discovery.ts";
 import { openCodeSessionIdFor } from "../src/session.ts";
 import { isCoreToolModel } from "../src/tool-fallback.ts";
+import { planeModelFor } from "../src/utils/plane-model.ts";
+import { isServableSdk, protocolForSdk } from "../src/utils/protocols.ts";
 
 const PROBE = process.argv.includes("--probe");
 const failures: string[] = [];
@@ -56,17 +53,6 @@ const fail = (message: string): void => {
 
 const ok = (message: string): void => {
   console.log(`  ok    ${message}`);
-};
-
-/** The routes this plugin mounts: both plane roots plus the plane table. */
-const mountedRoutes = (): ReadonlySet<string> => {
-  const routes = new Set<string>(["opencode", "opencode-go"]);
-  for (const plane of Object.values(ROUTE_FOR_PLANE_PROTOCOL)) {
-    for (const route of Object.values(plane.routes)) {
-      routes.add(route);
-    }
-  }
-  return routes;
 };
 
 // ── 1. Shim freshness ───────────────────────────────────────────────────────
@@ -190,12 +176,10 @@ for (const [route, catalog, plane] of [
   // earlier revision merged the whole catalog in, which silently overrode every
   // `models:` array. This asserts the opposite: declared in, declared out.
   const declared = catalog
-    .filter((m) => isServableModel(m.id, route))
+    .filter((m) => isServableSdk(m.provider_npm))
     .slice(0, 3)
     .map((m) => ({ id: m.id, name: m.name }));
-  const listed = mergeDiscoveredModels(declared, plane).filter((m) =>
-    isServableModel(m.id, route)
-  );
+  const listed = mergeDiscoveredModels(declared, plane);
   const listedIds = new Set(listed.map((m) => m.id));
   const declaredIds = declared.map((m) => m.id);
   const added = [...listedIds].filter((id) => !declaredIds.includes(id));
@@ -213,28 +197,48 @@ for (const [route, catalog, plane] of [
 // ── 4. Routing ──────────────────────────────────────────────────────────────
 console.log("\n4. routing");
 {
-  const mounted = mountedRoutes();
+  // One route per plane serves every protocol (D13), so a model is routable
+  // when the plane adapter builds it on the protocol its SDK names and on a
+  // base of its own plane.
   const unroutable: string[] = [];
-  for (const [route, catalog] of [
-    ["opencode", getLiveZenCatalog()],
-    ["opencode-go", getLiveGoCatalog()],
+  let served = 0;
+  for (const [route, catalog, family] of [
+    ["opencode", getLiveZenCatalog(), OPENCODE_FAMILY_API.zen],
+    ["opencode-go", getLiveGoCatalog(), OPENCODE_FAMILY_API.go],
   ] as const) {
-    for (const model of catalog) {
-      if (!isServableModel(model.id, route)) {
+    for (const spec of catalog) {
+      const { model, error } = planeModelFor({
+        defaults: {
+          contextWindow: 262_144,
+          input: ["text"],
+          maxTokens: 32_768,
+        },
+        endpoint: "modern",
+        entry: { id: spec.id },
+        familyApi: family,
+        route,
+        spec,
+      });
+      const onGo =
+        model !== undefined &&
+        new URL(model.baseUrl).pathname.startsWith("/inference/go/");
+      if (
+        model === undefined ||
+        model.api !== protocolForSdk(spec.provider_npm) ||
+        onGo !== (route === "opencode-go")
+      ) {
+        unroutable.push(
+          `${route}/${spec.id} -> ${model === undefined ? error : `${model.api} ${model.baseUrl}`}`
+        );
         continue;
       }
-      const target = internalRouteFor(route, model.id, model.provider_npm);
-      if (target !== undefined && !mounted.has(target)) {
-        unroutable.push(`${route}/${model.id} -> ${target}`);
-      }
+      served += 1;
     }
   }
   if (unroutable.length > 0) {
     fail(`unroutable: ${unroutable.join(", ")}`);
   } else {
-    ok(
-      `every servable model resolves to one of ${mounted.size} mounted routes`
-    );
+    ok(`every catalog model (${served}) resolves on its own plane's route`);
   }
 }
 

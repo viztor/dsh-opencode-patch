@@ -29,13 +29,12 @@ const VALUE_EXPORTS: readonly string[] = ["Config", "apply", "inject", "name"];
 
 /**
  * The type-only names: erased at runtime, still part of the contract.
- * `ModelRouteConfig` is here because `PluginConfig.modelRoutes` names it.
+ * `ModelOverrideConfig` and `ModelRouteConfig` left with the settings that
+ * named them (D19).
  */
 const TYPE_EXPORTS: readonly string[] = [
   "EndpointFamily",
   "KeySourcePolicy",
-  "ModelOverrideConfig",
-  "ModelRouteConfig",
   "PluginConfig",
   "ResolvedPluginConfig",
 ];
@@ -118,7 +117,7 @@ describe("public API · src/index.ts", () => {
     );
     expect(typeof barrel.apply).toBe("function");
     expect(typeof barrel.Config).toBe("function");
-    expect(barrel.inject).toEqual(["llm"]);
+    expect(barrel.inject).toEqual([]);
     expect(barrel.name).toBe((pkg as { name: string }).name);
   });
 });

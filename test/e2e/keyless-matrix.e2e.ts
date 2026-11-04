@@ -15,13 +15,8 @@
  *   is one the matrix can read — an empty or reshaped catalog fails here
  *   rather than measuring nothing;
  * - no cell the plugin dispatches to with the default endpoint (`auto`, an
- *   alias of `modern`) on the rc floor, the desktop app's pi 1.1.0, answers
- *   "path gone" (`TODAY_DISPATCH`: completions on the legacy family, the
- *   hidden routes' Responses, Messages and Google on the modern one);
- * - nor do the modern completions cells (`NEXT_DISPATCH`), where both
- *   channels' npm install (pi 1.5.0) already sends completions and where
- *   P-R1 moves every host: a 404 there breaks every npm user's completions
- *   today, and the failure says so.
+ *   alias of `modern`; `TODAY_DISPATCH`: all four protocols on the modern
+ *   family, on both planes) answers "path gone".
  *
  * The other legacy verdicts are recorded, not asserted: P-R2 decides the
  * family from them. They include the cells an `endpoint: legacy` user
@@ -29,7 +24,7 @@
  * so this file does not guard that configuration; P-R2 decides whether it
  * should. Go's Google stays on `/inference/go/google/v1beta` under every
  * family (`GO_GOOGLE_BASE_URL`), the modern cell `TODAY_DISPATCH` asserts.
- * The cell table, both sets and the classifier are unit-tested offline in
+ * The cell table, the dispatch set and the classifier are unit-tested offline in
  * `test/keyless-matrix.test.ts`.
  *
  * It always measures the vendor's own gateway: the cells are the vendor's
@@ -50,7 +45,6 @@ import {
   type KeylessVerdict,
   keylessMatrix,
   type MatrixCell,
-  NEXT_DISPATCH,
   TODAY_DISPATCH,
 } from "../support/keyless-matrix.ts";
 import { MODELS_OPENCODE_URL, parseModelsDevCatalog } from "../support/src.ts";
@@ -171,14 +165,7 @@ describe.skipIf(!LIVE || MIRRORED)(
         );
         expect(
           goneToday,
-          `a path the plugin dispatches to on the rc floor (the desktop app's pi 1.1.0) is gone: ${JSON.stringify(goneToday)}`
-        ).toEqual([]);
-        const goneNext = rows.filter(
-          (row) => NEXT_DISPATCH.has(row.cell) && row.verdict === "path-gone"
-        );
-        expect(
-          goneNext,
-          `a path both channels' npm install (pi 1.5.0) dispatches completions to, and P-R1 moves every host to, is gone: ${JSON.stringify(goneNext)}`
+          `a path the plugin dispatches to with the default endpoint, on every host, is gone: ${JSON.stringify(goneToday)}`
         ).toEqual([]);
       },
       16 * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) + PROBE_TIMEOUT_MS

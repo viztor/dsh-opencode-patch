@@ -389,6 +389,8 @@ Fixture ids that pointed at now-dead models were retargeted to served ones: `ste
 
 ## 3.10 The picker and the protocol-routed models — the fix was withdrawn
 
+> **Superseded by P-R1 (D13).** There is one route per plane now, and no `internalRouteFor`: the plane adapter serves every protocol a plane carries on the plane's own route, and lists exactly the declared ids. The invariants this section describes are held by `test/mock/plane-dispatch.mock.ts` (every declared id dispatches on its protocol's path) and the declared-listing cases in `test/host-planes.test.ts` ("lists every declared id on both planes, keyless or not"); `test/picker-integration.test.ts` went with the hidden routes. The section is kept as the record of why a route's list is not ours to widen, which still holds.
+
 `buildModelCatalog` (the composer's list) is `listProviders()` × `listModels(id)`, read from the host's own `@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js`. The internal protocol routes are hidden from `listProviders`, and each carries only its own protocol's models, because `registerResponsesProvider` builds every route with `sdksForProtocol(protocol).flatMap(sdk => modelsForSdk(sdk, catalog))`.
 
 So enumerating a parent route returns that route's own models, and a Responses / Messages / Google model is only listed if the deployment declared it:
@@ -404,6 +406,8 @@ So enumerating a parent route returns that route's own models, and a Responses /
 The rule that replaced it: **a route's list is not ours to widen.** `listModels` filters (a model the plane cannot serve is dropped, because offering one produces a failure with nothing in the row to explain it) and otherwise returns exactly what the deployment declared. `internalRouteFor` still redirects a _declared_ model whose protocol differs, so a Responses / Messages / Google id keeps working — it just has to be listed. `test/picker-integration.test.ts` holds the picker to the declaration, and `models-discovery.test.ts` asserts that a servable catalogued model which was not declared stays out.
 
 ## 3.11 The provider list was wrong in both directions — FIXED
+
+> **Superseded by P-R1 (D19).** There are no mounted routes, no Google bridge and no `SELF_MOUNTED_ROUTES` any more. `DEFAULT_PROVIDERS` is the two planes, and `providers` always includes both, whatever the row says (`src/config.ts`); `test/config.test.ts` ("always claims both planes, whatever the row lists") and `test/deleted-settings.test.ts` ("the shipped row claims exactly the two planes") hold that. The section is kept as the record of the drift.
 
 `DEFAULT_PROVIDERS` exists to cover every route this layer mounts; an unclaimed route gets no session header, no origin headers and no key injection, silently and only on the requests that reach it. It was wrong twice:
 
