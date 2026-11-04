@@ -501,10 +501,12 @@ export const CHARACTERIZED_MODELS: Readonly<Record<Plane, readonly string[]>> =
  * - `KNOWN_DEFECT` is wrong today, and a phase fixes it;
  * - `INTENDED_CHANGE` is right today, and a phase changes it on purpose;
  * - `BASELINE` must survive every phase;
- * - `HOST_LIMITATION` is something one host cell lacks or breaks, its pi or
- *   its own code, that no phase of this plugin fixes (D26: a host gap is the
- *   host's job): its title names the channel and the host it applies to, and
- *   it is reported upstream.
+ * - `HOST_LIMITATION` is something one channel's host, as one install runs
+ *   it, lacks or breaks, its pi or its own code, that no phase of this plugin
+ *   fixes (D26: a host gap is the host's job). The install is a host cell
+ *   (`HostCell`) for an in-process row, or an `e2e-host` cell (`npm` or
+ *   `floor`) for the binary e2e; the title names the channel, the host and
+ *   that install, and it is reported upstream.
  */
 export type RowTag =
   | "BASELINE"

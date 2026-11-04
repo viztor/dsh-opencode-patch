@@ -107,12 +107,14 @@ jobs:
       - name: the switch left the tree clean
         run: git diff --exit-code && test -z "$(git status --porcelain)"
 
-  # The channel records name what each channel installs TODAY, and the harness
+  # The channel records name each channel's latest release, and the harness
   # cuts a release without telling this repository. Nightly and on dispatch,
-  # `scripts/report-host-drift.ts` reads the registry the way npm resolves a
-  # channel (dsh at its dist-tag; cordis, the loader, schemastery and pi at the
-  # newest version the bridge's declared ranges admit) and prints one warning
-  # per field that moved past `test/support/host-versions.ts`. It REPORTS and
+  # `scripts/report-host-drift.ts` reads the registry the way the records are
+  # defined (dsh at its dist-tag; pi at the newest version the bridge's range
+  # admits, and that range's floor; each cordis-family member at the floor of
+  # the `~` range the tagged cluster declares for it, the desktop's tree, so a
+  # newer patch inside a range is not drift) and prints one warning per field
+  # it compares that moved past `test/support/host-versions.ts`. It REPORTS and
   # never gates, so it exits 0 whatever it finds: a channel moving is the
   # harness's release, not a regression. P-T3 turns the report into a proposed
   # bump pull request; the bump follows CONTRIBUTING's release step 3.
@@ -404,10 +406,13 @@ jobs:
   #   re-resolving is the point.
   # - `floor`: the tree the desktop app ships, forced with npm `overrides`
   #   (`floorOverrides` in host-versions.ts): the channel's whole cordis family
-  #   at the record's versions and pi at the bridge range's floor (patched
-  #   there, not here; the patch touches nothing the plugin reads). Cached by
-  #   the channel, its dsh and a hash of those overrides, so a cache filled
-  #   before the record moved is never reused.
+  #   at the record's versions (the floors of the ranges the cluster declares,
+  #   what the harness vendors at the tag) and pi with its telemetry package
+  #   at the bridge range's floor (pi patched there, not here; the patch
+  #   touches nothing the plugin reads). Cached by the channel, its dsh and a
+  #   hash of those overrides, so a cache filled before the record or its
+  #   overrides moved is never reused; the rest of the tree is what npm
+  #   resolved when the cache was filled.
   # Pull requests run the `npm` cell of both channels, and only when they touch
   # the host seam; dispatch and the nightly run add both `floor` cells.
   #
@@ -488,8 +493,8 @@ jobs:
           node --experimental-strip-types --input-type=module -e "import { createHash } from 'node:crypto'; import { CHANNELS, floorOverrides } from './test/support/host-versions.ts'; const r = CHANNELS[process.env.DSH_CHANNEL]; const overrides = JSON.stringify(floorOverrides(r)); console.log('dsh=' + r.dsh); console.log('pi=' + r.pi); console.log('piRange=' + r.piRange); console.log('floorOverrides=' + overrides); console.log('floorKey=' + createHash('sha256').update(overrides).digest('hex').slice(0, 16))" >> "$GITHUB_OUTPUT"
           echo "PREFIX=$RUNNER_TEMP/dsh-host" >> "$GITHUB_ENV"
       # The floor install forces every version that matters (the record's
-      # cordis family and the floor pi), so it is cached by the channel, its
-      # dsh and a hash of those overrides; the npm one is the point of
+      # cordis family and the floor pi pair), so it is cached by the channel,
+      # its dsh and a hash of those overrides; the npm one is the point of
       # re-resolving, so never.
       - name: cache the floor host install
         id: host-cache
@@ -532,11 +537,14 @@ jobs:
           if [ "$CELL" = npm ] && [ "$resolved" != "$PI" ]; then
             echo "::warning::npm resolved pi $resolved for ${DSH_CHANNEL}, not the record's $PI: the rows that depend on which ids pi describes are skipped"
           fi
-          # Every package the floor cell forces (pi and the cordis family): the
-          # floor cell must hold exactly the record's version, a cached prefix
-          # included; the npm cell reports what npm resolved, which is the
-          # channel's release as a user gets it (the nightly drift report
-          # names a move past the record).
+          # Every package the floor cell forces (the pi pair and the cordis
+          # family): the floor cell must hold exactly the override, a cached
+          # prefix included, which catches npm ignoring one; the npm cell
+          # reports what npm resolved, which is the channel's release as a
+          # user gets it. Whether the record's values are right is not this
+          # step's: the binary e2e holds them to the ranges the installed
+          # published packages declare, and the nightly drift report to the
+          # registry's.
           failed=0
           for name in $(node -p "Object.keys(JSON.parse(process.env.FLOOR_OVERRIDES)).join(' ')"); do
             want="$(node -p "JSON.parse(process.env.FLOOR_OVERRIDES)['$name']")"

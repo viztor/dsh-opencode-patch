@@ -37,9 +37,15 @@
  *   least one of `ZEN_UNDESCRIBED` and still describes every other declared
  *   Zen id, so a pi that learns all of them or retires a declared id turns
  *   them red by design — triage that as a pi change first.
- * - `floor`: the tree the desktop app ships: the channel's cordis family at
- *   the record's versions (`cordisFamily`) and pi at the range's floor, both
- *   asserted here. Every row is the channel's floor cell.
+ * - `floor`: the tree the desktop app ships: npm `overrides`
+ *   (`floorOverrides`) force the channel's cordis family at the record's
+ *   versions and pi (with its telemetry package) at the range's floor; this
+ *   file asserts npm applied each one. Every row is the channel's floor cell.
+ *
+ * In both cells the record's family is held to something the record does not
+ * produce: each member must be the floor of the `~` range the installed
+ * published package declares for it (`FAMILY_DECLARERS`; overrides rewrite
+ * what is installed, never a manifest's declared range).
  *
  * Only the `npm` cell lets cordis float, as the published host's `~` ranges
  * do for a user. Where what it resolved leaves the host unable to run its own
@@ -75,8 +81,14 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  declaredRanges,
+  FAMILY_DECLARERS,
+  floorOf,
+  REGISTRY_PACKAGES,
+} from "../../scripts/host-drift.ts";
+import {
   CHANNELS,
-  cordisFamily,
+  floorOverrides,
   HOST_VERSIONS,
 } from "../support/host-versions.ts";
 import {
@@ -362,15 +374,42 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
           )
         ) as { version: string }
       ).version;
+    const installedManifest = (name: string) =>
+      JSON.parse(
+        readFileSync(
+          join(PREFIX, "node_modules", ...name.split("/"), "package.json"),
+          "utf8"
+        )
+      ) as {
+        dependencies?: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+        version: string;
+      };
     if (CELL === "floor") {
       expect(piVersion).toBe(RECORD.piFloor);
-      // The floor cell is the tree the desktop app ships, so the cordis family
-      // is the record's, not whatever the host's `~` ranges resolve today.
-      for (const [name, version] of Object.entries(cordisFamily(RECORD))) {
+      // npm applied every override: the floor cell is the tree the desktop
+      // app ships, not whatever the host's `~` ranges resolve today.
+      for (const [name, version] of Object.entries(floorOverrides(RECORD))) {
         expect(installedVersion(name), name).toBe(version);
       }
     }
     cordisVersion = installedVersion("@deepseek-ai/cordis");
+    // The record's family is the floor of the range the installed published
+    // package declares (cosmokit's declarer, cordis, only where the record's
+    // cordis is the one installed): an independent witness in either cell.
+    const witnessed: string[] = [];
+    for (const { declarer, field, name } of FAMILY_DECLARERS) {
+      const manifest = installedManifest(REGISTRY_PACKAGES[declarer]);
+      if (declarer === "cordis" && manifest.version !== RECORD.cordis) {
+        continue;
+      }
+      expect(
+        floorOf(declaredRanges(manifest)[name] ?? ""),
+        `${REGISTRY_PACKAGES[declarer]}@${manifest.version} declares ${name}`
+      ).toBe(RECORD[field]);
+      witnessed.push(field);
+    }
+    expect(witnessed).toContain("timer");
     rowsHold = piVersion === ROWS_PI;
     if (!rowsHold) {
       console.warn(

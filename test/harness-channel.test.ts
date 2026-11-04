@@ -41,6 +41,7 @@ import { describe, expect, it } from "vitest";
 import { parse, parseAllDocuments } from "yaml";
 
 import { channelManifest, pinFor } from "../scripts/channel-manifest.ts";
+import { floorOf } from "../scripts/host-drift.ts";
 import {
   type Channel,
   CHANNELS,
@@ -473,8 +474,8 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       // `cordisFamily` is what the `e2e-host` job forces on the floor cell, so
       // a family member here and the record disagreeing would make that cell
       // run a tree this install never measured. The timer plugin is the one
-      // member nothing here depends on: no lockfile resolves it, and the floor
-      // cell asserts it against the published host's tree instead.
+      // member nothing here depends on, so no lockfile resolves it; the next
+      // case and the drift report hold it instead.
       const lock = lockfile(record.lockfile);
       const family = Object.entries(cordisFamily(record));
       expect(family).toHaveLength(7);
@@ -487,7 +488,53 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       expect(floorOverrides(record)).toStrictEqual({
         ...Object.fromEntries(family),
         "@earendil-works/pi-ai": record.piFloor,
+        "@earendil-works/pi-telemetry": record.piFloor,
       });
+    });
+
+    it("names each family member at the floor of the range the published cluster declares", () => {
+      // The record is not its own witness: a family version must be the floor
+      // of every `~` range the channel's published packages declare for it.
+      // A lockfile keeps a package's declared PEER ranges (its dependencies
+      // only as resolved versions), so this reads every cluster package's
+      // peers. That floor is what the harness vendors at the tag and the
+      // desktop app ships; a newer patch inside the range is the npm cell's,
+      // never the record's. cosmokit (a dependency of cordis) and the timer
+      // plugin (declared by packages no lockfile here holds) are not peers
+      // here; the drift report and the binary e2e read them off the manifests.
+      const { packages } = parse(lockfile(record.lockfile).project) as {
+        packages: Record<string, { peerDependencies?: Record<string, string> }>;
+      };
+      const family = cordisFamily(record);
+      const checked = new Set<string>();
+      for (const [key, entry] of Object.entries(packages)) {
+        if (
+          !key.startsWith("@deepseek-ai/") ||
+          !(key.endsWith(`@${record.dsh}`) || key.endsWith(`@${record.cordis}`))
+        ) {
+          continue;
+        }
+        for (const [name, range] of Object.entries(
+          entry.peerDependencies ?? {}
+        )) {
+          const version = family[name];
+          if (version === undefined) {
+            continue;
+          }
+          expect(floorOf(range), `${key} declares ${name} ${range}`).toBe(
+            version
+          );
+          checked.add(name);
+        }
+      }
+      // Known answer: the five members the cluster peers on.
+      expect([...checked].toSorted()).toStrictEqual([
+        "@deepseek-ai/cordis",
+        "@deepseek-ai/cordis-plugin-group",
+        "@deepseek-ai/cordis-plugin-include",
+        "@deepseek-ai/cordis-plugin-loader",
+        "@deepseek-ai/schemastery",
+      ]);
     });
 
     it("holds no harness package on the other channel's prerelease line", () => {
