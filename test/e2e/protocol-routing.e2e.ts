@@ -81,6 +81,7 @@
  *   OPENCODE_E2E=1 OPENCODE_API_KEY=… pnpm run test:e2e
  */
 
+import { usesGoogleThinkingLevel } from "@earendil-works/pi-ai/api/google-shared";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -118,6 +119,13 @@ import {
   isServableSdk,
   planeModelFor,
 } from "../support/src.ts";
+import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
+import {
+  freeTierClosed,
+  freeWalkCappedReason,
+  freeWalkGap,
+  gatewayBusy,
+} from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
 /** What may spend a key: the keyed cases here run on the `full` tier only. */
@@ -208,30 +216,6 @@ const probe = async (
 const otherProtocols = (expected: string) =>
   Object.keys(PATH_FOR).filter((protocol) => protocol !== expected);
 
-/**
- * Whether the gateway is refusing the FREE TIER rather than the route.
- *
- * Measured, one request each, on `step-5-preview-free` — which was the canonical
- * free-tier id when those runs were made and has since been retired, so the
- * cases below now sample `beam-free`: the deployment's `oc_…` key answers
- * `403 FreeTierError` on both `…/zen/v1` and the new `…/inference/openai/v1`,
- * with and without `x-opencode-org-id`; the literal `public` answers the same;
- * and the real client — whose captured request carries an `st_…` session token —
- * is served.
- *
- * **Read that as a statement about the CLIENT, not the credential.** The
- * gateway's own message is "OpenCode's free tier can only be used from within
- * OpenCode", and presenting as that client is what this plugin does — so a free
- * model is OFFERED now, and a refusal names its own reason rather than being
- * pre-empted by an exclusion. What the older runs establish still holds: an
- * org id and a key do not unlock it.
- *
- * `docs/opencode-1.19-api.md` has the endpoints, the captured headers and the
- * login flow.
- */
-const freeTierClosed = (result: Probe): boolean =>
-  result.summary.includes("FreeTierError");
-
 /** The route id each plane is reached by, and its family map. */
 const PLANE_ROUTE = {
   go: { family: OPENCODE_FAMILY_API.go, route: "opencode-go" },
@@ -257,7 +241,9 @@ const servedOn = (
     return undefined;
   }
   return planeModelFor({
-    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
+    // Stand-ins for what pi-ai's `Config` fills; the routing read here
+    // ignores them, and the plugin restates none of them (D17).
+    defaults: { contextWindow: 123_456, input: ["text"], maxTokens: 6_543 },
     endpoint: "modern",
     entry: { id: model },
     familyApi: PLANE_ROUTE[plane].family,
@@ -604,7 +590,7 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
   it(
     "serves a Gemini model from the path a hand-declared route cannot name",
     async (context) => {
-      // The bridge's endpoint, against the real gateway. The protocol is
+      // The plane adapter's Google path, against the real gateway. The protocol is
       // google-generative-ai, the path carries the model, and the credential
       // rides x-goog-api-key. Measured: 200 with real SSE here, and 400
       // ModelProtocolUnsupported on the completions endpoint — the negative
@@ -851,12 +837,20 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         (m) => m.id
       );
       let answered: { model: string; status: number } | undefined;
+      const answers: Probe[] = [];
       for (const model of candidates) {
         const response = await probe(
           servedProtocolFor(model) ?? "openai-completions",
           model
         );
-        // A gated, withdrawn or throttled candidate says nothing about whether
+        answers.push(response);
+        if (gatewayBusy(response)) {
+          // The gateway answered, but about its own load. That is neither a
+          // completion nor a dead tier, and it must not be reported as one.
+          // Asked before the refusals below, which count a 429 among them.
+          continue;
+        }
+        // A gated, withdrawn or refused candidate says nothing about whether
         // the free tier is reachable, so the walk moves on to the next one.
         if (
           freeTierClosed(response) ||
@@ -869,11 +863,26 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         break;
       }
       if (answered === undefined) {
-        // Reported rather than skipped: the account (or the vendor) closed,
-        // withdrew or throttled the whole free tier, and that is worth a line
-        // in the run's output.
+        const gap = freeWalkGap(answers);
+        if (gap === "busy") {
+          // No candidate answered and at least one was busy, which says
+          // nothing about the tier.
+          context.skip();
+          return;
+        }
+        if (gap === "capped") {
+          // The free tier's usage cap answered for at least one candidate: it
+          // measures the account this run spends from, not whether the tier
+          // serves the plugin — the keyless free probe's `free-usage-limited`
+          // skip, for the same reason. A session gate another candidate met
+          // is named in the reason, not dropped.
+          context.skip(true, freeWalkCappedReason(answers));
+          return;
+        }
+        // Reported rather than skipped: the account (or the vendor) closed the
+        // whole free tier, and that is worth a line in the run's output.
         console.log(
-          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, or throttled. The header-restoration case did not run.`
+          `[e2e] no free candidate answered with a completion — each was gated (FreeTierError: the free tier needs a session token this plugin does not hold; see docs/opencode-1.19-api.md), withdrawn upstream, refused for the account (no funds, no entitlement), or never answered. The header-restoration case did not run.`
         );
         return;
       }
@@ -931,6 +940,71 @@ const paidProtocolOf = (
     : (PROTOCOL_FOR_SDK[spec.provider_npm] ?? DEFAULT_PROTOCOL);
 };
 
+/** One adapter plane, as {@link ADAPTER_PLANES} lists it. */
+type AdapterPlane = (typeof ADAPTER_PLANES)[number];
+
+/**
+ * One turn through the plane adapter, read the way the walk reads it: a
+ * completion, an answer about the account, a confirmed withdrawal, or a
+ * refusal that fails the case (a 400 INVALID_ARGUMENT thinking refusal among
+ * them, the live D16 failure).
+ */
+const adapterVerdict = async (
+  tier: Awaited<ReturnType<typeof mountTierA>>,
+  plane: AdapterPlane,
+  protocol: string,
+  id: string,
+  extra: Readonly<Record<string, unknown>> = {}
+): Promise<TurnVerdict> => {
+  const drained = await drainStream(tier.llm, plane.route, id, {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    ...extra,
+  });
+  if (
+    drained.error === undefined &&
+    drained.finish?.kind !== undefined &&
+    drained.finish.kind !== "error"
+  ) {
+    return { kind: "ok" };
+  }
+  const message = drained.failureMessage ?? drained.error ?? "";
+  if (ADAPTER_ENTITLEMENT.test(message)) {
+    return { kind: "entitlement" };
+  }
+  if (isModelGoneMessage(message)) {
+    // The gateway answers "Model is unavailable" for an id sent where it is
+    // not served, too (upstream-findings §3.8). Ask the endpoint the plugin
+    // should use, by hand, before reading it as the vendor's state.
+    const planeName = plane.route === "opencode" ? "zen" : "go";
+    const raw = await probe(protocol, id, plane.key, planeName);
+    if (modelGone(raw)) {
+      return { kind: "gone" };
+    }
+    if (accessDisabled(raw)) {
+      return { kind: "entitlement" };
+    }
+    return {
+      detail: `the turn says the model is gone (${message}), a raw probe of the same id answered ${raw.summary}`,
+      kind: "refused",
+    };
+  }
+  return { detail: message, kind: "refused" };
+};
+
+/** Google's discrete thinking levels, lowest first. */
+const GOOGLE_LEVELS = ["minimal", "low", "medium", "high"] as const;
+
+/** The highest level a catalog spec's first effort list offers. */
+const highestLevelOf = (
+  spec: (typeof OPENCODE_ZEN_CATALOG)[number]
+): string | undefined => {
+  const values =
+    spec.reasoning_options?.find(
+      (option) => option.type === "effort" && (option.values?.length ?? 0) > 0
+    )?.values ?? [];
+  return GOOGLE_LEVELS.findLast((level) => values.includes(level));
+};
+
 describe.skipIf(!LIVE)(
   "live protocol routing · through the plugin's plane adapter",
   () => {
@@ -948,7 +1022,6 @@ describe.skipIf(!LIVE)(
             undefined,
           "a base override is set: the adapter sends where the plugin sends"
         );
-        const planeName = plane.route === "opencode" ? "zen" : "go";
         const groups = new Map(
           [
             ...candidatesByProtocol(
@@ -980,46 +1053,85 @@ describe.skipIf(!LIVE)(
         });
         try {
           await waitForPlaneOwner(tier.llm, [plane.route]);
-          const walk = await walkPerProtocol(
-            groups,
-            async (protocol, id): Promise<TurnVerdict> => {
-              const drained = await drainStream(tier.llm, plane.route, id, {
-                signal: AbortSignal.timeout(TIMEOUT_MS),
-              });
-              if (
-                drained.error === undefined &&
-                drained.finish?.kind !== undefined &&
-                drained.finish.kind !== "error"
-              ) {
-                return { kind: "ok" };
-              }
-              const message = drained.failureMessage ?? drained.error ?? "";
-              if (ADAPTER_ENTITLEMENT.test(message)) {
-                return { kind: "entitlement" };
-              }
-              if (isModelGoneMessage(message)) {
-                // The gateway answers "Model is unavailable" for an id sent
-                // where it is not served, too (upstream-findings §3.8). Ask
-                // the endpoint the plugin should use, by hand, before
-                // reading it as the vendor's state.
-                const raw = await probe(protocol, id, plane.key, planeName);
-                if (modelGone(raw)) {
-                  return { kind: "gone" };
-                }
-                if (accessDisabled(raw)) {
-                  return { kind: "entitlement" };
-                }
-                return {
-                  detail: `the turn says the model is gone (${message}), a raw probe of the same id answered ${raw.summary}`,
-                  kind: "refused",
-                };
-              }
-              return { detail: message, kind: "refused" };
-            }
+          const walk = await walkPerProtocol(groups, (protocol, id) =>
+            adapterVerdict(tier, plane, protocol, id)
           );
           expect(walk.refused).toEqual([]);
           // A protocol no candidate reached was not tested: a skip that names
           // it, never a pass on the others.
+          context.skip(
+            walk.unreached.length > 0,
+            `unreached (every candidate refused on entitlement or withdrawn): ${walk.unreached.join(", ")}`
+          );
+        } finally {
+          await tier.dispose();
+        }
+      }
+    );
+
+    it.for(ADAPTER_PLANES)(
+      "$route: a Google model the catalog describes by level completes a turn at its highest offered level, where the installed pi names it (D16, D26)",
+      { timeout: ADAPTER_BUDGET_MS },
+      async (plane, context) => {
+        context.skip(
+          plane.key === undefined || plane.key.length === 0,
+          "no key for this plane"
+        );
+        context.skip(
+          BASE_OVERRIDE[plane.route === "opencode" ? "zen" : "go"] !==
+            undefined,
+          "a base override is set: the adapter sends where the plugin sends"
+        );
+        // Which control a level model is sent is pi's own rule
+        // (`usesGoogleThinkingLevel`), never the plugin's (D26). A level model
+        // the installed pi does not name is sent a budget the gateway refuses:
+        // a HOST_LIMITATION (pi 1.1.0, the rc floor), which skips by name.
+        const levelModels = plane.catalog.filter(
+          (spec) =>
+            paidProtocolOf(spec) === "google-generative-ai" &&
+            usesCatalogThinkingLevels(spec)
+        );
+        const missed = levelModels.filter(
+          (spec) => !usesGoogleThinkingLevel({ id: spec.id } as never)
+        );
+        const candidates = levelModels
+          .filter((spec) => !missed.includes(spec))
+          .slice(0, ADAPTER_CANDIDATES);
+        context.skip(
+          candidates.length === 0 && missed.length > 0,
+          `HOST_LIMITATION: the installed pi's own usesGoogleThinkingLevel names none of ${missed.map((spec) => spec.id).join(", ")}, so pi sends a thinking budget (D26)`
+        );
+        context.skip(
+          candidates.length === 0,
+          "no paid Google model the catalog describes by level"
+        );
+        const tier = await mountTierA({
+          credentials: fakeCredentials({
+            refs: { [plane.ref]: plane.key ?? "" },
+          }),
+          plugin: {},
+          providers: {
+            [plane.route]: {
+              apiKeyEnv: plane.ref,
+              models: candidates.map((spec) => ({ id: spec.id })),
+            },
+          },
+        });
+        try {
+          await waitForPlaneOwner(tier.llm, [plane.route]);
+          const levelOf = new Map(
+            candidates.map((spec) => [spec.id, highestLevelOf(spec)])
+          );
+          const walk = await walkPerProtocol(
+            new Map([
+              ["google-generative-ai", candidates.map((spec) => spec.id)],
+            ]),
+            (protocol, id) =>
+              adapterVerdict(tier, plane, protocol, id, {
+                reasoningEffort: levelOf.get(id),
+              })
+          );
+          expect(walk.refused).toEqual([]);
           context.skip(
             walk.unreached.length > 0,
             `unreached (every candidate refused on entitlement or withdrawn): ${walk.unreached.join(", ")}`

@@ -1,9 +1,12 @@
 /**
  * The real host, in-process: the harness the routing work is judged against.
  *
- * Two tiers, both built from the host packages this repository installs at the
- * versions `host-versions.ts` names (pi 1.1.0 patched, the `@deepseek-ai`
- * cluster at the published host's tag):
+ * Two tiers, both built from the host packages this repository installs: the
+ * harness channel `host-versions.ts` selects (`rc` or `alpha`, each with its
+ * `@deepseek-ai` cluster at the published host's tag), with pi UNPATCHED at
+ * the newest version the bridge's range admits, or at the range's floor after
+ * `scripts/use-channel.ts <channel> --floor`. Where the hosts differ, the rows
+ * below carry one expectation per host cell ({@link HostCell}, {@link forHost}):
  *
  * - **Tier A** ({@link mountTierA}): a bare cordis `Context`, `LlmRuntime`, and
  *   `dsh-llm-pi-ai` mounted as a plugin with a `{ providers }` config, so its
@@ -109,6 +112,7 @@ import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { withOpenCodeSessionHeader } from "@earendil-works/pi-ai/providers/opencode-headers";
 
+import { type Channel, CHANNELS, HOST_VERSIONS } from "./host-versions.ts";
 import {
   apply,
   Config,
@@ -308,6 +312,8 @@ export interface RecordedRequest {
   readonly model: string | undefined;
   /** Lower-cased names; a credential header's value is replaced by its length. */
   readonly headers: Readonly<Record<string, string | number>>;
+  /** A Google body's `generationConfig.thinkingConfig`, when it carries one. */
+  readonly thinkingConfig?: unknown;
 }
 
 /** The hosts the recording fetch answers; everything else is refused. */
@@ -406,10 +412,15 @@ export const recordingFetch = (
     }
     const text = await bodyTextOf(input, init);
     let model: string | undefined;
+    let thinkingConfig: unknown;
     try {
-      const parsed: unknown = JSON.parse(text ?? "");
-      const candidate = (parsed as { model?: unknown } | null)?.model;
+      const parsed = JSON.parse(text ?? "") as {
+        model?: unknown;
+        generationConfig?: { thinkingConfig?: unknown };
+      } | null;
+      const candidate = parsed?.model;
       model = typeof candidate === "string" ? candidate : undefined;
+      thinkingConfig = parsed?.generationConfig?.thinkingConfig;
     } catch {
       model = undefined;
     }
@@ -420,6 +431,7 @@ export const recordingFetch = (
       ).toUpperCase(),
       model,
       url,
+      ...(thinkingConfig === undefined ? {} : { thinkingConfig }),
     };
     requests.push(request);
     return respond(request);
@@ -433,7 +445,8 @@ export const recordingFetch = (
 
 /**
  * The profile run S0 measured: on each plane one known model per protocol plus
- * the models pi 1.1.0 lacks, and a sibling pi-ai route that is not a plane.
+ * the models pi 1.1.0 lacks (the rc channel's floor; a newer pi describes the
+ * Go ones, see {@link PI_GAPS}), and a sibling pi-ai route that is not a plane.
  * `deepseek`'s base is loopback port 9 (discard), so nothing reaches it.
  */
 export const S0_PROFILE = {
@@ -464,7 +477,7 @@ export const S0_PROFILE = {
 } as const;
 
 /**
- * A DECLARED id that neither pi 1.1.0 nor the plugin's catalog describes (G1's
+ * A DECLARED id that no supported pi nor the plugin's catalog describes (G1's
  * second class, beside the gap ids the plugin's catalog still describes).
  */
 export const UNKNOWN_ID = "not-in-any-catalog";
@@ -518,11 +531,119 @@ export const CHARACTERIZED_MODELS: Readonly<Record<Plane, readonly string[]>> =
   };
 
 /**
- * How a characterization row is tagged, so a later phase flips named rows:
- * `KNOWN_DEFECT` is wrong today and a phase fixes it, `INTENDED_CHANGE` is
- * right today and a phase changes it on purpose, `BASELINE` must survive.
+ * How a characterization row is tagged, so a later phase flips named rows.
+ * This is the one definition; CONTRIBUTING, the plan and the test files point
+ * here:
+ *
+ * - `KNOWN_DEFECT` is wrong today, and a phase fixes it;
+ * - `INTENDED_CHANGE` is right today, and a phase changes it on purpose;
+ * - `BASELINE` must survive every phase;
+ * - `HOST_LIMITATION` is something one channel's host, as one install runs
+ *   it, lacks or breaks, its pi or its own code, that no phase of this plugin
+ *   fixes (D26: a host gap is the host's job). The install is a host cell
+ *   (`HostCell`) for an in-process row, or an `e2e-host` cell (`npm` or
+ *   `floor`) for the binary e2e; the title names the channel, the host and
+ *   that install, and it is reported upstream.
  */
-export type RowTag = "BASELINE" | "INTENDED_CHANGE" | "KNOWN_DEFECT";
+export type RowTag =
+  | "BASELINE"
+  | "HOST_LIMITATION"
+  | "INTENDED_CHANGE"
+  | "KNOWN_DEFECT";
+
+// ---------------------------------------------------------------------------
+// The host cells
+// ---------------------------------------------------------------------------
+
+/**
+ * The installs a row is measured on (D14''). `newest` is either channel's
+ * default install: pi UNPATCHED at the newest version the bridge's range
+ * admits, what an npm user of the channel runs. Both channels resolve the same
+ * pi today, so they share the column; a fixture case fails the day the two
+ * records' `pi` differ, and the column is split then rather than silently
+ * shared. `rc-floor` and `alpha-floor` are each channel's range floor, the pi
+ * the harness's own workspace pins and the desktop app ships (patched there,
+ * not here: the patch touches nothing the plugin reads).
+ */
+export type HostCell = "alpha-floor" | "newest" | "rc-floor";
+
+/**
+ * Every {@link HostCell}, built from a `Record` keyed by the union so a cell
+ * added to the type and missing here fails to compile.
+ */
+export const HOST_CELLS = Object.keys({
+  "alpha-floor": true,
+  newest: true,
+  "rc-floor": true,
+} satisfies Record<HostCell, true>) as readonly HostCell[];
+
+/**
+ * The cell an install is, from its record's channel and floor flag.
+ *
+ * @param host - the selected host (`HOST_VERSIONS`, or a probe's record).
+ * @returns the cell.
+ */
+export const hostCellOf = (host: {
+  readonly channel: Channel;
+  readonly floor: boolean;
+}): HostCell => (host.floor ? `${host.channel}-floor` : "newest");
+
+/** The cell the install under test is: `HOST_VERSIONS`, which `DSH_CHANNEL`/`DSH_PI` select. */
+export const HOST_CELL: HostCell = hostCellOf(HOST_VERSIONS);
+
+/** The pi each cell runs, read from the channel records rather than restated. */
+export const PI_OF_CELL: Readonly<Record<HostCell, string>> = {
+  "alpha-floor": CHANNELS.alpha.piFloor,
+  newest: CHANNELS.alpha.pi,
+  "rc-floor": CHANNELS.rc.piFloor,
+};
+
+/**
+ * One expectation per host cell, picked for the install under test. Keyed by
+ * the cell's ROLE, never by a pi version, so a bump that moves `newest` keeps
+ * its rows and fails only where the new pi behaves differently.
+ *
+ * @param values - the expectation for each cell.
+ * @param cell - the cell to read, the install under test's by default.
+ * @returns that cell's expectation.
+ */
+export const forHost = <T>(
+  values: Readonly<Record<HostCell, T>>,
+  cell: HostCell = HOST_CELL
+): T => values[cell];
+
+/**
+ * One expectation per channel, for what the `@deepseek-ai` cluster decides
+ * rather than pi (pi-ai's own defaults, say).
+ *
+ * @param values - the expectation for each channel.
+ * @returns the selected channel's.
+ */
+export const forChannel = <T>(values: Readonly<Record<Channel, T>>): T =>
+  values[HOST_VERSIONS.channel];
+
+/** Which declared S0 ids each plane's pi cannot place, per cell. */
+type PlaneIds = Readonly<Record<Plane, readonly string[]>>;
+
+/**
+ * The declared S0 ids each cell's pi cannot place (its catalog does not
+ * describe them, while the plugin's catalog still does), in declaration
+ * order. pi 1.5.0 describes the two Go ones; no supported pi describes Zen's.
+ */
+export const PI_GAPS_BY_CELL: Readonly<Record<HostCell, PlaneIds>> = {
+  "alpha-floor": {
+    opencode: ["gpt-5.3-codex-spark"],
+    "opencode-go": ["gemini-4-argon", "minimax-m3.1-flash"],
+  },
+  newest: { opencode: ["gpt-5.3-codex-spark"], "opencode-go": [] },
+  "rc-floor": {
+    opencode: ["gpt-5.3-codex-spark"],
+    "opencode-go": ["gemini-4-argon", "minimax-m3.1-flash"],
+  },
+};
+
+/** {@link PI_GAPS_BY_CELL} for the install under test. */
+export const PI_GAPS: PlaneIds = forHost(PI_GAPS_BY_CELL);
 
 /**
  * The three facets a row records, each tagged on its own: one model can be
@@ -532,7 +653,7 @@ export type RowTag = "BASELINE" | "INTENDED_CHANGE" | "KNOWN_DEFECT";
  */
 export type RowFacet = "callConfig" | "info" | "wire";
 
-/** What TODAY's plugin does with one characterized model on pi 1.1.0, as measured. */
+/** What TODAY's plugin does with one characterized model on one host cell, as measured. */
 export interface TodayRow {
   readonly tags: Readonly<Record<RowFacet, RowTag>>;
   /**
@@ -562,17 +683,39 @@ const tags = (
 const B = "BASELINE";
 
 /**
- * What the plugin does with each characterized model on pi 1.1.0, measured in
- * tier B with {@link CHARACTERIZED_PROFILE} and a key stored for each plane,
- * and shared with the binary e2e so the two cannot drift. Each facet carries
- * its own tag, and the characterization generates one test per row and facet
- * titled with it. P-T1b recorded these against the hidden-route workaround;
- * P-R1 (the plugin owns the plane routes) flipped the fourteen
- * `KNOWN_DEFECT`/`INTENDED_CHANGE` facets its PR body names to `BASELINE`, so
- * every facet here is one no later phase may move — except that the `fix:`
- * that flips `AUTO_ENDPOINT_FAMILY` on P-R2's measured evidence
- * (`docs/redirect-planes.md` §13) may move the endpoint-family part of a wire
- * facet, re-tagging each one it moves and naming it in its PR body.
+ * pi-ai's own defaults for a model no source describes, per channel: the
+ * `@deepseek-ai` cluster decides them, not pi (`DEFAULT_CONTEXT_WINDOW` and
+ * `DEFAULT_MAX_TOKENS` in `llm-pi-ai/src/config.ts`, applied by its `Config`
+ * schema). The alpha cluster raised both; the rc one keeps the old pair. The
+ * plugin restates neither (D17): it hands the entry to pi-ai's `Config` and
+ * reads back what pi-ai filled in, so these are pi-ai's facts, pinned against
+ * the installed pi-ai in `test/host-shapes.test.ts`.
+ */
+export const PI_AI_DEFAULTS: Readonly<
+  Record<
+    Channel,
+    { readonly contextWindow: number; readonly maxTokens: number }
+  >
+> = {
+  alpha: { contextWindow: 1_000_000, maxTokens: 128_000 },
+  rc: { contextWindow: 262_144, maxTokens: 32_768 },
+};
+
+/**
+ * What the plugin does with each characterized model, measured in tier B
+ * with {@link CHARACTERIZED_PROFILE} and a key stored for each plane on every
+ * host cell ({@link HostCell}), and shared with the binary e2e so the two
+ * cannot drift. Each facet carries its own tag, and the characterization
+ * generates one test per row and facet titled with it. P-T1b recorded these
+ * against the hidden-route workaround; P-R1 (the plugin owns the plane
+ * routes) flipped the fourteen `KNOWN_DEFECT`/`INTENDED_CHANGE` facets its PR
+ * body names to `BASELINE`, so every facet here is one no later phase may
+ * move — except that the `fix:` that flips `AUTO_ENDPOINT_FAMILY` on P-R2's
+ * measured evidence (`docs/redirect-planes.md` §13) may move the
+ * endpoint-family part of a wire facet, re-tagging each one it moves and
+ * naming it in its PR body. The plugin builds every model itself,
+ * so one table serves every cell; a cell's table differs only where the
+ * host's own pi or pi-ai decides ({@link S0_TODAY_BY_CELL}).
  *
  * `context` and `efforts` follow D17 and D1: the user's row first (Zen
  * gpt-5.3-codex-spark's 400000), then the bundled catalog
@@ -583,158 +726,195 @@ const B = "BASELINE";
  * job runs on a PR only when this file is in its path scope
  * (`.github/workflows/ci.yml`, `e2e-host`), which it is.
  */
-export const S0_TODAY = {
-  /**
-   * `listModels` before any turn, with the keys stored: every declared id
-   * (D21). The keyless boot is `test/host-planes.test.ts`'s declared-listing
-   * case.
-   */
-  listingBeforeTurn: CHARACTERIZED_MODELS,
-  /** `listModels` once a turn ran: the same declared ids. */
-  listingAfterTurn: CHARACTERIZED_MODELS,
-  rows: {
-    "opencode/deepseek-v4-pro": {
-      callConfig: "ok",
-      info: { context: 1_000_000, efforts: ["high", "max"] },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/openai/v1/chat/completions`],
-      tags: tags(B, B, B),
-    },
-    "opencode/gpt-5.4": {
-      callConfig: "ok",
-      info: { context: 1_050_000, efforts: ["low", "medium", "high", "xhigh"] },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/openai/v1/responses`],
-      tags: tags(B, B, B),
-    },
-    "opencode/claude-haiku-5-5": {
-      callConfig: "ok",
-      info: {
-        context: 1_000_000,
-        efforts: ["low", "medium", "high", "xhigh", "max"],
+const s0PluginFor = (channel: Channel) =>
+  ({
+    /**
+     * `listModels` before any turn, with the keys stored: every declared id
+     * (D21). The keyless boot is `test/host-planes.test.ts`'s declared-listing
+     * case.
+     */
+    listingBeforeTurn: CHARACTERIZED_MODELS,
+    /** `listModels` once a turn ran: the same declared ids. */
+    listingAfterTurn: CHARACTERIZED_MODELS,
+    rows: {
+      "opencode/deepseek-v4-pro": {
+        callConfig: "ok",
+        info: { context: 1_000_000, efforts: ["high", "max"] },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/openai/v1/chat/completions`],
+        tags: tags(B, B, B),
       },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/anthropic/v1/messages?beta=true`],
-      tags: tags(B, B, B),
-    },
-    "opencode/gemini-3-flash": {
-      callConfig: "ok",
-      info: {
-        context: 1_048_576,
-        efforts: ["minimal", "low", "medium", "high"],
+      "opencode/gpt-5.4": {
+        callConfig: "ok",
+        info: {
+          context: 1_050_000,
+          efforts: ["low", "medium", "high", "xhigh"],
+        },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/openai/v1/responses`],
+        tags: tags(B, B, B),
       },
-      finish: "PI_AI_ERROR",
-      sent: [
-        `${ZEN}/inference/google/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse`,
-      ],
-      tags: tags(B, B, B),
-    },
-    // The user's row (name "My Spark", contextWindow 400000) wins (D17).
-    "opencode/gpt-5.3-codex-spark": {
-      callConfig: "ok",
-      info: { context: 400_000, efforts: ["low", "medium", "high", "xhigh"] },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/openai/v1/responses`],
-      tags: tags(B, B, B),
-    },
-    // Neither catalog describes it: served as completions on the defaults (D15, D16).
-    "opencode/not-in-any-catalog": {
-      callConfig: "ok",
-      finish: "AUTH",
-      info: { context: 262_144, efforts: [] },
-      sent: [`${ZEN}/inference/openai/v1/chat/completions`],
-      tags: tags(B, B, B),
-    },
-    "opencode-go/deepseek-v4-pro": {
-      callConfig: "ok",
-      info: { context: 1_000_000, efforts: ["high", "max"] },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
-      tags: tags(B, B, B),
-    },
-    "opencode-go/muse-spark-1.2-contributor": {
-      callConfig: "ok",
-      info: {
-        context: 1_048_576,
-        efforts: ["minimal", "low", "medium", "high", "xhigh"],
+      "opencode/claude-haiku-5-5": {
+        callConfig: "ok",
+        info: {
+          context: 1_000_000,
+          efforts: ["low", "medium", "high", "xhigh", "max"],
+        },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/anthropic/v1/messages?beta=true`],
+        tags: tags(B, B, B),
       },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/go/openai/v1/responses`],
-      tags: tags(B, B, B),
-    },
-    // A toggle-only model on Messages: Off / On (D1).
-    "opencode-go/minimax-m3": {
-      callConfig: "ok",
-      info: { context: 1_000_000, efforts: ["off", "high"] },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/go/anthropic/v1/messages?beta=true`],
-      tags: tags(B, B, B),
-    },
-    "opencode-go/gemini-4-argon": {
-      callConfig: "ok",
-      info: { context: 1_048_576, efforts: ["low", "medium", "high"] },
-      finish: "PI_AI_ERROR",
-      sent: [
-        `${ZEN}/inference/go/google/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse`,
-      ],
-      tags: tags(B, B, B),
-    },
-    "opencode-go/minimax-m3.1-flash": {
-      callConfig: "ok",
-      info: {
-        context: 1_000_000,
-        efforts: ["low", "medium", "high", "xhigh", "max"],
+      "opencode/gemini-3-flash": {
+        callConfig: "ok",
+        info: {
+          context: 1_048_576,
+          efforts: ["minimal", "low", "medium", "high"],
+        },
+        finish: "PI_AI_ERROR",
+        sent: [
+          `${ZEN}/inference/google/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse`,
+        ],
+        tags: tags(B, B, B),
       },
-      finish: "AUTH",
-      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
-      tags: tags(B, B, B),
-    },
-    "opencode-go/not-in-any-catalog": {
-      callConfig: "ok",
-      finish: "AUTH",
-      info: { context: 262_144, efforts: [] },
-      sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
-      tags: tags(B, B, B),
-    },
-  } satisfies Record<string, TodayRow>,
-  /**
-   * What appending a new id to `opencode` answers on pi-ai ALONE (the plugin
-   * disposed) while the plane stores a gap id: pi-ai's strict check names the
-   * STORED gap id, whatever is being saved. With the plugin, any id saves (D15).
-   */
-  saveBlockedByStoredGap:
-    /provider "opencode" model "gpt-5\.3-codex-spark" needs an api/u,
-} as const;
+      // The user's row (name "My Spark", contextWindow 400000) wins (D17).
+      "opencode/gpt-5.3-codex-spark": {
+        callConfig: "ok",
+        info: { context: 400_000, efforts: ["low", "medium", "high", "xhigh"] },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/openai/v1/responses`],
+        tags: tags(B, B, B),
+      },
+      // Neither catalog describes it: served as completions on pi-ai's own
+      // defaults, which the channel's cluster decides (D15, D16, D17).
+      "opencode/not-in-any-catalog": {
+        callConfig: "ok",
+        finish: "AUTH",
+        info: { context: PI_AI_DEFAULTS[channel].contextWindow, efforts: [] },
+        sent: [`${ZEN}/inference/openai/v1/chat/completions`],
+        tags: tags(B, B, B),
+      },
+      "opencode-go/deepseek-v4-pro": {
+        callConfig: "ok",
+        info: { context: 1_000_000, efforts: ["high", "max"] },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+        tags: tags(B, B, B),
+      },
+      "opencode-go/muse-spark-1.2-contributor": {
+        callConfig: "ok",
+        info: {
+          context: 1_048_576,
+          efforts: ["minimal", "low", "medium", "high", "xhigh"],
+        },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/go/openai/v1/responses`],
+        tags: tags(B, B, B),
+      },
+      // A toggle-only model on Messages: Off / On (D1).
+      "opencode-go/minimax-m3": {
+        callConfig: "ok",
+        info: { context: 1_000_000, efforts: ["off", "high"] },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/go/anthropic/v1/messages?beta=true`],
+        tags: tags(B, B, B),
+      },
+      "opencode-go/gemini-4-argon": {
+        callConfig: "ok",
+        info: { context: 1_048_576, efforts: ["low", "medium", "high"] },
+        finish: "PI_AI_ERROR",
+        sent: [
+          `${ZEN}/inference/go/google/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse`,
+        ],
+        tags: tags(B, B, B),
+      },
+      "opencode-go/minimax-m3.1-flash": {
+        callConfig: "ok",
+        info: {
+          context: 1_000_000,
+          efforts: ["low", "medium", "high", "xhigh", "max"],
+        },
+        finish: "AUTH",
+        sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+        tags: tags(B, B, B),
+      },
+      "opencode-go/not-in-any-catalog": {
+        callConfig: "ok",
+        finish: "AUTH",
+        info: { context: PI_AI_DEFAULTS[channel].contextWindow, efforts: [] },
+        sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
+        tags: tags(B, B, B),
+      },
+    } satisfies Record<string, TodayRow>,
+    /**
+     * What appending a new id to `opencode` answers on pi-ai ALONE (the plugin
+     * disposed) while the plane stores a gap id: pi-ai's strict check names the
+     * STORED gap id, whatever is being saved. With the plugin, any id saves (D15).
+     */
+    saveBlockedByStoredGap:
+      /provider "opencode" model "gpt-5\.3-codex-spark" needs an api/u,
+  }) as const;
+
+/** A characterized row's key, `<route>/<model>`. */
+export type S0RowKey = keyof ReturnType<typeof s0PluginFor>["rows"];
+
+/** One cell's characterization table. */
+export interface S0Table {
+  readonly listingBeforeTurn: PlaneIds;
+  readonly listingAfterTurn: PlaneIds;
+  readonly rows: Readonly<Record<S0RowKey, TodayRow>>;
+  readonly saveBlockedByStoredGap: RegExp;
+}
+
+/**
+ * Every cell's table, for a case that checks them all. Since P-R1 the plugin
+ * places, describes and routes every declared id itself, from its own catalog
+ * and endpoint table, so no cell's pi moves a facet: a cell's table is its
+ * channel's ({@link s0PluginFor}), which differs from the other channel's only
+ * where pi-ai decides (its defaults for the catalog-unknown id). `newest` is
+ * either channel's default install, so it is the selected channel's table;
+ * a fixture case in `test/host-characterization.test.ts` holds the cells to
+ * one key set.
+ */
+export const S0_TODAY_BY_CELL: Readonly<Record<HostCell, S0Table>> = {
+  "alpha-floor": s0PluginFor("alpha"),
+  newest: s0PluginFor(HOST_VERSIONS.channel),
+  "rc-floor": s0PluginFor("rc"),
+};
+
+/** The install under test's table ({@link HOST_CELL}). */
+export const S0_TODAY: S0Table = forHost(S0_TODAY_BY_CELL);
 
 /** The id the save rows try to add: unknown to every catalog, and not declared. */
 export const SAVE_CANDIDATE = "not-a-real-model";
 
 /**
- * The ids on `opencode` that pi 1.1.0 cannot place: the stored gap id and the
+ * The ids on `opencode` that no supported pi can place: the stored gap id and the
  * declared unknown id. The save sequence (in-process, and the probe's
  * `PROBE_SAVE_DROP`) removes them before saving {@link SAVE_CANDIDATE}.
  */
 export const ZEN_UNDESCRIBED = ["gpt-5.3-codex-spark", UNKNOWN_ID] as const;
 
 /**
- * The rows for an apply order. With the plugin owning the planes, the apply
- * order no longer moves any facet, so both orders answer `S0_TODAY.rows`. Only
- * the in-process characterization calls it, once per order it boots (the binary
- * e2e reads `S0_TODAY.rows` directly); an order this function does not know is
- * refused rather than read as one it does.
+ * The rows for an apply order on a host cell. With the plugin owning the
+ * planes, the apply order no longer moves any facet, so both orders answer the
+ * cell's `rows`. The in-process characterization calls it once per order it
+ * boots; the binary e2e reads the cell's `rows` directly. An order this
+ * function does not know is refused rather than read as one it does.
  *
  * @param order - the apply order.
+ * @param cell - the host cell, the install under test's by default.
  * @returns the rows, keyed `<route>/<model>`.
  */
 export const todayRowsFor = (
-  order: ApplyOrder
-): Readonly<Record<keyof typeof S0_TODAY.rows, TodayRow>> => {
+  order: ApplyOrder,
+  cell: HostCell = HOST_CELL
+): Readonly<Record<S0RowKey, TodayRow>> => {
   // Exhaustive on purpose: a probe JSON with a missing or renamed field reads
   // `undefined` here.
   if (order !== "plugin-first" && order !== "pi-ai-first") {
     throw new Error(`todayRowsFor: unknown apply order ${String(order)}`);
   }
-  return S0_TODAY.rows;
+  return S0_TODAY_BY_CELL[cell].rows;
 };
 
 /**
@@ -766,7 +946,8 @@ const piData = (plane: Plane): Record<string, Record<string, unknown>> =>
 /**
  * The protocol the installed pi's catalog files a model under on a plane, or
  * `undefined` when pi does not know it. The data is keyed by protocol, then
- * `chat:<id>`, so a fixture can check which of its ids are gaps on pi 1.1.0.
+ * `chat:<id>`, so a fixture can check which of its ids are gaps on the
+ * installed pi ({@link PI_GAPS}).
  *
  * @param plane - the plane route.
  * @param id - the model id.

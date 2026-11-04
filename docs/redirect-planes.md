@@ -10,8 +10,10 @@ A **plane** is one gateway base URL with its own catalog and its own credential.
 
 | Plane | Route id | Base URL | Credential | Models |
 | :-- | :-- | :-- | :-- | --: |
-| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | the entry's `apiKeyEnv`; without one, pi's `OPENCODE_API_KEY` | 82 served / 127 listed |
-| Go (subscription) | `opencode-go` | the `endpoint` family's | the entry's `apiKeyEnv` (name `OPENCODE_GO_API_KEY`); without one, pi's `OPENCODE_API_KEY` | 30 served / 34 listed |
+| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | the entry's `apiKeyEnv`; without one, pi's `OPENCODE_API_KEY` | 81 served / 131 listed |
+| Go (subscription) | `opencode-go` | the `endpoint` family's | the entry's `apiKeyEnv` (name `OPENCODE_GO_API_KEY`); without one, pi's `OPENCODE_API_KEY` | 30 served / 37 listed |
+
+Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`); the document's 2026-10-09 stamp is for its measurements.
 
 **There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto`, the default, is an alias of `modern` (`AUTO_ENDPOINT_FAMILY` in `src/utils/plane-model.ts`), the per-protocol `…/inference/{openai,anthropic,google}/…` and `…/inference/go/…`; `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`, except Go's Google, which has no legacy base and stays on `…/inference/go/google/v1beta`. Which families answer, keyless and with each plane's own key, is measured in CI (§13), not assumed. The dated measurement below was taken on the legacy family.
 
@@ -21,21 +23,21 @@ A plane is a property of the **account and the base URL**, never of a model. The
 
 ## 2. Shapes
 
-A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions.
+A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions. Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`).
 
 | SDK in the catalog  | Protocol               | Zen |    Go |
 | :------------------ | :--------------------- | --: | ----: |
-| _(none)_            | `openai-completions`   |  25 |    19 |
+| _(none)_            | `openai-completions`   |  24 |    19 |
 | `@ai-sdk/openai`    | `openai-responses`     |  31 | **5** |
 | `@ai-sdk/anthropic` | `anthropic-messages`   |  17 | **5** |
 | `@ai-sdk/mistral`   | `openai-completions`   |   1 |     — |
 | `@ai-sdk/google`    | `google-generative-ai` |   8 | **1** |
 
-**Absence is the signal, and it is a real one.** Both planes set a provider-level `npm` of `@ai-sdk/openai-compatible` in `models.dev`, and **no model declares it explicitly**: 0 of 82 on Zen, 0 of 30 on Go. A model that speaks the completions shape simply omits `provider.npm` and inherits it. So "no SDK" does not mean "unknown"; it means _the provider default_, which is the protocol the route was itself registered with.
+**Absence is the signal, and it is a real one.** Both planes set a provider-level `npm` of `@ai-sdk/openai-compatible` in `models.dev`, and **no model declares it explicitly**: 0 of 81 on Zen, 0 of 30 on Go. A model that speaks the completions shape simply omits `provider.npm` and inherits it. So "no SDK" does not mean "unknown"; it means _the provider default_, which is the protocol the route was itself registered with.
 
 That is why the servability check treats `undefined` as servable, and why `@ai-sdk/openai-compatible` is deliberately **not** in `PROTOCOL_FOR_SDK`: listing it would record the default as though it were an override. The coverage guard still covers the case where a model declares it explicitly. None do today, and if one did, the test would name it rather than drop the model.
 
-**The two bold cells were the gap, and they are closed.** The Go plane serves 12 models on shapes other than completions; both planes now serve every shape either one carries, on the plane's own route (§3).
+**The two bold cells were the gap, and they are closed.** The Go plane serves 11 models on shapes other than completions; both planes now serve every shape either one carries, on the plane's own route (§3).
 
 **`@ai-sdk/mistral` is completions (D16).** pi's own data files `mistral-large-4` under `openai-completions`, so the plugin follows it rather than keeping the SDK unserved; nothing is withheld for its protocol any more.
 
@@ -143,9 +145,9 @@ Measured 2026-10-10 by building one with pi's own protocol implementations and i
 
 **The Google path is the one a hand-declared route cannot reach.** Its protocol name is not in the wrapper's three-entry table, so no route may name it; a self-built provider dispatches to it without any special case — which is what the plane adapter is (`buildPlaneProvider`, P-R1).
 
-**The session header reaches every protocol.** Wrapping each `api` before `createProvider` puts our `x-opencode-session`, `x-opencode-client` and `x-opencode-project` on all four, and pi's own session header defers when ours is already present.
+**The session header reaches every protocol, and the rest of the gateway headers do not come from the provider.** `buildPlaneProvider` wraps each `api` with pi's own `withOpenCodeSessionHeader` before `createProvider`, and that is all it adds per call: pi's wrapper sets `x-opencode-session` from the turn's session id on all four protocols, and steps aside when the request already carries one. `x-opencode-client`, `x-opencode-project`, the derived `ses_` id and the User-Agent are set by the global fetch patch on the request the protocol sends, not on the call's options; moving them into each call (`options.headers`) is P10a's first move.
 
-**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.4 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
+**The User-Agent is one value on every protocol, Google's included.** The Google implementation sets an agent string of its own inside the protocol, but the fetch patch sets `User-Agent` on the request that protocol sends, which replaces whatever pi and the Google SDK put there rather than appending to it. The offline mock pins the wire value to `OPENCODE_UA` for the Google protocol on both planes (`test/mock/protocol-compat.mock.ts`), so the gateway never sees a combined value, and §13's keyed Google cells measure the agent string a turn actually sends. The question reopens only if P10a moves the agent into each call's options instead of the fetch patch.
 
 ## 10. A catalog route serves every protocol already
 
@@ -191,8 +193,9 @@ What carried over from the bridge, and why:
 - **The credential is the deployment's own**, resolved by pi-ai's exact rule (D20): a named reference through the credentials service when one is mounted, the launch environment only when none is, and a miss that fails loud with `MISSING_CREDENTIAL` before any request.
 - **The route names stay the vendor's.** No `google` route is taken; there are no hidden routes at all.
 - **A Go Gemini turn's replay state carries `provider: "opencode-go"`**, the label it is replayed under, so a signed tool call replays natively and the translators that bridged two labels (`utils/google-replay.ts`) are gone — decided by a mock-gateway replay test (`test/mock/plane-dispatch.mock.ts`).
+- **A Gemini model's thinking control is pi's own (D26).** Google has two thinking controls and a model accepts only its own: a level model refuses a token `thinkingBudget` with 400 INVALID_ARGUMENT ("Thinking budget is not supported for this model. Use thinking level instead.", measured live on Go `gemini-4-argon`). pi decides which control a request carries by its own rule (`usesGoogleThinkingLevel`), which names Gemini 4 from pi `1.3.0` on; the plugin sends what the host's pi builds and re-derives nothing. pi `1.1.0`, the `rc` channel's floor and its desktop app's pi, does not name it, so every `gemini-4-argon` turn there carries a thinking budget on either plane, a token budget for a chosen effort and `thinkingBudget: 0` (pi's disable) when none is chosen, which that model cannot honour since it cannot turn thinking off (the rule reads the model id, not the plane; the refusal is measured live on Go, and Zen's, expected under the same rule, is not yet measured): a `[HOST_LIMITATION]` row (`test/host-characterization.test.ts`, and the binary e2e's floor cell), reported upstream, with the mock and live cases that need the level skipping by pi's own predicate. A profile that declares Off for a level model gets pi's own disable, `thinkingBudget: 0`; a model that cannot turn thinking off (`gemini-4-argon`) refuses it, so declaring Off there is a profile error.
 
-What is verified, and in what composition: the in-process characterization (`test/host-characterization.test.ts`) and the real-host suite (`test/host-planes.test.ts`) run the plugin on the real `llm` service and `llm-pi-ai` in both apply orders, and the binary e2e (`test/e2e/host-binary.e2e.ts`) runs the built bundle on a published host, asserting that both planes are the plugin's `PlaneAdapter` and that a Go Gemini turn is sent to `https://opencode.ai/inference/go/google/v1beta`.
+What is verified, and in what composition: the in-process characterization (`test/host-characterization.test.ts`) and the real-host suite (`test/host-planes.test.ts`) run the plugin on the real `llm` service and `llm-pi-ai` in both apply orders, and the binary e2e (`test/e2e/host-binary.e2e.ts`) runs the built bundle on a published host, asserting, in every cell where the route claim engages, that both planes are the plugin's `PlaneAdapter` and that a Go Gemini turn is sent to `https://opencode.ai/inference/go/google/v1beta`, with a `thinkingLevel` and no `thinkingBudget` wherever the host's pi names the model (the `[HOST_LIMITATION]` row above elsewhere). On a host whose `internal/config` waterfall hands listeners the fiber (alpha's npm cell today, cordis `4.0.6-alpha.2`), the claim does not engage yet: a `[KNOWN_DEFECT]` row asserts that pi-ai serves both planes and the claim rows skip by name; the `0.2.2-alpha.3` bump adopts that contract and flips the row.
 
 ## 13. Measured: which endpoint families the gateway serves
 
@@ -212,11 +215,17 @@ The root shape is the provider-level base `models.opencode.ai` declared for each
 
 How to read a cell. Each is the verdict, then the HTTP status:
 
-- **Keyless** (no credential; one PAID model per plane and protocol): `path-gone` is a 404, the path does not exist; `path-exists` is a 401 or 403, or a 400 that is not about the model; `model-gone` is a 410 or a 400 "Model is unavailable"; `redirected` is a 3xx, which no probe follows, and its cell names the path it pointed at (`redirected (308 → /…)`); `other` is anything else; `no-model` means the live catalog had no paid model for the protocol, so nothing was sent.
+- **Keyless** (no credential; one PAID model per plane and protocol): `path-gone` is a 404, the path does not exist; `path-exists` is a 401 or 403, or a 400 that is not about the model; `model-gone` is a 410, a 400 "Model is unavailable", or a refusal of type `ModelDeprecated` at any status (read before the 404, so a withdrawn model never reads as a gone path); `redirected` is a 3xx, which no probe follows, and its cell names the path it pointed at (`redirected (308 → /…)`); `other` is anything else; `no-model` means the live catalog had no paid model for the protocol, so nothing was sent.
 - **Every table** (a probe is retried once after a 429, a 5xx or no answer): `rate-limited` is a 429 on the last attempt, or a 429 and then no answer — the gateway's measured rate-limit hang; `transport-error` is no answer on the last attempt, unless an earlier one was a 429 (no answer after a 5xx or a busy upstream is `transport-error` too: only the 429 hang is measured).
-- **Free** (one free completions model, keyless, on the default completions path): `served` or `free-tier-gated` (a `403 FreeTierError`: the free tier parsed the request) pass; `rate-limited` skips; `wrong-format`, `auth-required`, `path-gone`, `redirected`, `other` (a 500 or 502 included) and `transport-error` fail; `model-gone` and `upstream-busy` (a 503, a 529 or a 5xx whose body names an overload: the free model is the one keyless request that reaches the upstream) move on to the next free model; when every candidate moved on, a busy one among them skips, and the line names that busy candidate's model and status; three retired ones fail; `not run` means the run never reached the probe.
-- **Keyed** (the plane's own key, in the header the protocol reads, with the identity headers the fetch patch puts on a turn, its user agent included; on Go that is `OPENCODE_GO_API_KEY`, the key a Go entry naming `apiKeyEnv: OPENCODE_GO_API_KEY` sends — README step 3 — not the Zen key a Go entry without it sends, which these probes do not measure): `served` is a 2xx; `path-exists` a 400 about the content; `wrong-protocol` a `400 ModelProtocolUnsupported`; `auth-refused` a 401 or 403 with the key; `session-refused` the request's session refused (`MissingSessionID`, or a `FreeTierError` on a paid model); `account` no funds or a model the account may not use, which shows the key was read and the path exists, but nothing about whether the path serves the protocol or the model; `path-gone` a 404 whose body names no model, and `model-gone` a 410, a 400 "Model is unavailable" or a 404 whose body names a model — Anthropic's `not_found_error` with a `model: …` message, `model_not_found`, or Gemini's `models/<id> is not found`; Anthropic's bare `not_found_error`, which every Anthropic 404 carries, is `path-gone` (a keyed request can reach the upstream); `upstream-busy` a 503, a 529 or a 5xx whose body names an overload — the upstream was busy, or the gateway's front answered before reading the request, so like a rate limit it neither fails nor passes a plane, and never counts as a shape accepting the request; `redirected` and `other` as keyless, a 500 or 502 included; `no-key` means the run had no key for that plane.
+- **Free** (one free completions model, keyless, on the default completions path): `served` or `free-tier-gated` (a `403 FreeTierError`: the free tier parsed the request) pass; `rate-limited` skips, and so does `free-usage-limited`, a `429 FreeUsageLimitError` — the tier's usage cap refusing the caller, which is the gate's decision rather than a rate limit, so it is neither retried nor read as served (L3 in the plan's lessons); `wrong-format`, `auth-required`, `path-gone`, `redirected`, `other` (a 500 or 502 included) and `transport-error` fail; `model-gone` and `upstream-busy` (a 503, a 529 or a 5xx whose body names an overload: the free model is the one keyless request that reaches the upstream) move on to the next free model — `model-gone` being a 410, a 400 "Model is unavailable", or a refusal of type `ModelDeprecated` at any status (measured as a 400 for a model the catalog still listed); when every candidate moved on, a busy one among them skips, and the line names that busy candidate's model and status; three retired ones fail; `not run` means the run never reached the probe.
+- **Keyed** (the plane's own key, in the header the protocol reads, with the identity headers the fetch patch puts on a turn, its user agent included; on Go that is `OPENCODE_GO_API_KEY`, the key a Go entry naming `apiKeyEnv: OPENCODE_GO_API_KEY` sends — README step 3 — not the Zen key a Go entry without it sends, which these probes do not measure): `served` is a 2xx; `path-exists` a 400 about the content; `wrong-protocol` a `400 ModelProtocolUnsupported`; `auth-refused` a 401 or 403 with the key; `session-refused` the request's session refused (`MissingSessionID`, or a `FreeTierError` on a paid model); `account` no funds or a model the account may not use, which shows the key was read and the path exists, but nothing about whether the path serves the protocol or the model; `path-gone` a 404 whose body names no model, and `model-gone` a refusal of type `ModelDeprecated` at any status, a 410, a 400 "Model is unavailable" or a 404 whose body names a model — Anthropic's `not_found_error` with a `model: …` message, `model_not_found`, or Gemini's `models/<id> is not found`; Anthropic's bare `not_found_error`, which every Anthropic 404 carries, is `path-gone` (a keyed request can reach the upstream); `upstream-busy` a 503, a 529 or a 5xx whose body names an overload — the upstream was busy, or the gateway's front answered before reading the request, so like a rate limit it neither fails nor passes a plane, and never counts as a shape accepting the request; `redirected` and `other` as keyless, a 500 or 502 included; `no-key` means the run had no key for that plane.
 - `*` marks a cell the default family dispatches to (`TODAY_DISPATCH`), `†` one `endpoint: legacy` dispatches to (`LEGACY_DISPATCH`), and `not sent` a cell the run did not reach.
+
+Three records sit beside the tables, each measured and never asserted (the plan's lessons L4, L5, L9, L10 and L13; P6 and P-R3 act on them):
+
+- **System One** (keyless, the Zen plane only, no model named): TypeSafe's classification protocol on its three shapes, `/zen/v1/systemone`, `/inference/v1/systemone` and `/inference/systemone/v1/systemone`, read as the keyless matrix reads a cell. The plugin serves no classifier, so nothing dispatches there.
+- **Keyed variants** (each plane's default completions cell with its own key): the probe identity (no `x-opencode-request`, `x-opencode-project: global`) beside one change each — a minted `x-opencode-request` in the client's `msg_` shape, `x-opencode-project` as a folder name and as a 40-hex digest — and a paid completions model that reasons, sent with no `reasoning_effort` and with `"none"`. Each answer is read as a keyed cell.
+- **`Retry-After`**: the header of every keyed 429, matrix and variants alike, or `absent`.
 
 The CI `e2e` job writes these tables to its run summary and to the `endpoint-families` artifact (`test/support/endpoint-record.ts` formats them). A run's tables are pasted here with their date and run link; they are never hand-written, and `test/endpoint-record.test.ts` holds this section to the formatter's columns and row order.
 
@@ -235,6 +244,8 @@ The CI `e2e` job writes these tables to its run summary and to the `endpoint-fam
 
 Free model on `/inference/openai/v1/chat/completions`: pending the first CI run.
 
+System One on the Zen plane, keyless (nothing dispatches there): pending the first CI run.
+
 ### Keyed · pending the first CI run
 
 | Plane | Protocol | Model | `/zen(/go)/v1` (legacy) | `/inference(/go)/v1` (root) | `/inference(/go)/{openai,anthropic,google}/…` (modern) |
@@ -247,3 +258,22 @@ Free model on `/inference/openai/v1/chat/completions`: pending the first CI run.
 | `opencode-go` | `openai-responses` | pending | pending † | pending | pending * |
 | `opencode-go` | `anthropic-messages` | pending | pending † | pending | pending * |
 | `opencode-go` | `google-generative-ai` | pending | pending | pending | pending * † |
+
+### Keyed variants · pending the first CI run
+
+| Plane | Probe | Lesson | Model | `/inference(/go)/openai/v1/chat/completions` |
+| :-- | :-- | :-- | :-- | :-- |
+| `opencode` | the probe identity: no `x-opencode-request`, `x-opencode-project: global` | L4, L5 | pending | pending |
+| `opencode` | `x-opencode-request: msg_…` | L4 | pending | pending |
+| `opencode` | `x-opencode-project: <folder name>` | L5 | pending | pending |
+| `opencode` | `x-opencode-project: <40 hex>` | L5 | pending | pending |
+| `opencode` | a reasoning model, no `reasoning_effort` | L10 | pending | pending |
+| `opencode` | `reasoning_effort: "none"` | L10 | pending | pending |
+| `opencode-go` | the probe identity: no `x-opencode-request`, `x-opencode-project: global` | L4, L5 | pending | pending |
+| `opencode-go` | `x-opencode-request: msg_…` | L4 | pending | pending |
+| `opencode-go` | `x-opencode-project: <folder name>` | L5 | pending | pending |
+| `opencode-go` | `x-opencode-project: <40 hex>` | L5 | pending | pending |
+| `opencode-go` | a reasoning model, no `reasoning_effort` | L10 | pending | pending |
+| `opencode-go` | `reasoning_effort: "none"` | L10 | pending | pending |
+
+`Retry-After` on a keyed 429: pending the first CI run.

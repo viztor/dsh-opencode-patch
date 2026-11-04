@@ -42,12 +42,17 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 /** pi-ai's credential-ref grammar (`dsh-credentials` `REF_PATTERN`). */
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
-/** pi-ai's defaults for a profile that states none (`config.ts`). */
+/**
+ * pi-ai's defaults for the route-level settings the plugin validates before
+ * pi-ai's `Config` has filled them (`config.ts`). The default context window
+ * and output tokens are NOT here: they are the channel's (`dsh-llm-pi-ai`
+ * moved them between releases), and pi-ai's own `Config` fills them into the
+ * entry the plugin reads back (`defaultContextWindow`, `defaultMaxTokens`), so
+ * no copy here can go stale and understate a window (D17, D26).
+ */
 const DEFAULTS = {
-  contextWindow: 262_144,
   input: ["text"],
   maxRequestImageBytes: 20 * 1024 * 1024,
-  maxTokens: 32_768,
   requestImageMaxBytes: 1024 * 1024,
   requestImagePixelBudget: 2048 * 2048,
   streamIdleTimeoutMs: 300_000,
@@ -368,9 +373,12 @@ export const planeProfileFor = (
   let piProvider: unknown;
   if (routeError === undefined) {
     try {
+      const served = models.filter(
+        (model) => !modelErrors.has(String(model.id))
+      );
       piProvider = input.buildProvider({
         id: route,
-        models: models.filter((model) => !modelErrors.has(String(model.id))),
+        models: served,
         name: displayName,
       });
     } catch (error) {
@@ -487,17 +495,20 @@ const resolveModels = (
   const routeCompat = isRecord(source.compat) ? source.compat : undefined;
   const seen = new Set<string>();
   const models: Readonly<Record<string, unknown>>[] = [];
+  // pi-ai's `Config` (the `normalize` seam) fills the route's default window
+  // and output tokens with the channel's own values; the plugin states none.
   const defaults = {
-    contextWindow: numberOr(
-      source.defaultContextWindow,
-      DEFAULTS.contextWindow
-    ),
+    ...(typeof source.defaultContextWindow === "number"
+      ? { contextWindow: source.defaultContextWindow }
+      : {}),
     input: Array.isArray(source.defaultInput)
       ? source.defaultInput.filter(
           (item): item is string => typeof item === "string"
         )
       : [...DEFAULTS.input],
-    maxTokens: numberOr(source.defaultMaxTokens, DEFAULTS.maxTokens),
+    ...(typeof source.defaultMaxTokens === "number"
+      ? { maxTokens: source.defaultMaxTokens }
+      : {}),
   };
   for (const candidate of entries) {
     const entry: PlaneModelEntry = isRecord(candidate) ? candidate : {};

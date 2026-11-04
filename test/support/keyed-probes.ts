@@ -22,7 +22,8 @@
  * Pure: no environment read and no fetch — the tier takes the variable's
  * VALUE, and a key comes in as an argument. It reaches `src` only through the
  * test door (`./src.ts`), as `./keyless-matrix.ts` does, for the user agent a
- * turn carries, so the identity the live suite sends is defined here once
+ * turn carries and the SDK → protocol table the L10 variant's model is chosen
+ * by, so the identity the live suite sends is defined here once
  * ({@link PROBE_IDENTITY}) and the offline case that holds it to the real
  * fetch patch checks that same value. The keyless module still has no code
  * path that can set a credential; {@link keyedCell} is the one place a key is
@@ -33,14 +34,18 @@
 import {
   type AttemptVerdict,
   type MatrixCell,
+  type MatrixPlane,
   type MatrixProtocol,
   type ProbeAnswer,
   LEGACY_DISPATCH,
   TODAY_DISPATCH,
+  isFreeSpec,
+  isModelDeprecated,
   isUpstreamBusy,
+  matrixUrl,
   verdictOfAttempts,
 } from "./keyless-matrix.ts";
-import { OPENCODE_UA } from "./src.ts";
+import { type CatalogModelSpec, OPENCODE_UA, protocolForSdk } from "./src.ts";
 
 /** How much of the live suite may spend a key, from `OPENCODE_E2E_KEYED`. */
 export const KEYED_TIERS = ["none", "probes", "full"] as const;
@@ -246,7 +251,8 @@ const MODEL_NOT_FOUND =
  *
  * - `redirected` is a 3xx: the probe never follows one, so a moved path is
  *   not recorded as its target's answer.
- * - `path-gone` is a 404 whose body names no model; `model-gone` a 410, a 400
+ * - `path-gone` is a 404 whose body names no model; `model-gone` a refusal of
+ *   type `ModelDeprecated` at any status (`isModelDeprecated`), a 410, a 400
  *   "Model is unavailable", or a 404 whose body names a model
  *   (`MODEL_NOT_FOUND`).
  * - `rate-limited` is a 429, and `account` the account rather than the path:
@@ -281,6 +287,9 @@ export const classifyKeyedProbe = (answer: {
   const { bodyText, status } = answer;
   if (status >= 300 && status < 400) {
     return "redirected";
+  }
+  if (isModelDeprecated(status, bodyText)) {
+    return "model-gone";
   }
   if (status === 404) {
     return MODEL_NOT_FOUND.test(bodyText) ? "model-gone" : "path-gone";
@@ -617,4 +626,193 @@ export const excerpt = (bodyText: string, key: string): string =>
   (key.length === 0 ? bodyText : bodyText.split(key).join("<redacted>")).slice(
     0,
     200
+  );
+
+/**
+ * The `x-opencode-request` value the L4 variant sends: the client's
+ * `msg_<12 hex><14 base62>` shape (`newOpenCodeMessageId` in
+ * `src/session.ts`), constant so a run is reproducible.
+ */
+export const PROBE_REQUEST_ID = "msg_000000000ffeKeyedProbe0001";
+
+/**
+ * The two `x-opencode-project` values the L5 variants send beside the
+ * baseline's `global`: a folder name, which is what the plugin sends inside a
+ * workspace (`src/stream-hook.ts`), and a 40-hex digest, the shape one
+ * community plugin derives. Neither names a real folder.
+ */
+export const PROBE_PROJECTS = {
+  digest: "5f2b3c1d9e8a7b6c4d3e2f1a0b9c8d7e6f5a4b3c",
+  folder: "my-app",
+} as const;
+
+/** One keyed variant of the default completions cell. */
+export interface KeyedVariant {
+  readonly id:
+    | "baseline"
+    | "project-digest"
+    | "project-folder"
+    | "reasoning-default"
+    | "reasoning-none"
+    | "request-id";
+  /** The lesson in `docs/improvement-plan.md` it measures. */
+  readonly lesson: string;
+  /** What it changes, as the record's Probe column prints it. */
+  readonly label: string;
+  /** Which model it sends: the matrix's representative, or a reasoning one. */
+  readonly model: "reasoning" | "representative";
+  /** Headers set over the probe identity. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Fields set over the keyed body. */
+  readonly body?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The variants the keyed suite sends on each plane's default completions
+ * cell, recorded and never asserted (P-R2 measures; P6 and P-R3 decide):
+ *
+ * - L4 — `x-opencode-request`. The plugin sends a minted message id on every
+ *   turn, and one community plugin reports any value refused; the baseline
+ *   sends none, the variant one in the client's shape.
+ * - L5 — `x-opencode-project`. Three claims disagree: `global` (the
+ *   baseline), a folder name (the plugin's own default inside a workspace),
+ *   and a 40-hex digest.
+ * - L10 — `reasoning_effort: "none"` on a paid completions model that
+ *   reasons: whether the gateway takes `none`, which would let the picker
+ *   offer Off on plain completions models. Its own baseline sends the same
+ *   model with no effort, so the pair differs in the one field.
+ *
+ * Lesson L9, `Retry-After`, is read off every keyed 429 instead
+ * ({@link retryAfterOf}).
+ */
+export const KEYED_VARIANTS: readonly KeyedVariant[] = [
+  {
+    id: "baseline",
+    label:
+      "the probe identity: no `x-opencode-request`, `x-opencode-project: global`",
+    lesson: "L4, L5",
+    model: "representative",
+  },
+  {
+    headers: { "x-opencode-request": PROBE_REQUEST_ID },
+    id: "request-id",
+    label: "`x-opencode-request: msg_…`",
+    lesson: "L4",
+    model: "representative",
+  },
+  {
+    headers: { "x-opencode-project": PROBE_PROJECTS.folder },
+    id: "project-folder",
+    label: "`x-opencode-project: <folder name>`",
+    lesson: "L5",
+    model: "representative",
+  },
+  {
+    headers: { "x-opencode-project": PROBE_PROJECTS.digest },
+    id: "project-digest",
+    label: "`x-opencode-project: <40 hex>`",
+    lesson: "L5",
+    model: "representative",
+  },
+  {
+    id: "reasoning-default",
+    label: "a reasoning model, no `reasoning_effort`",
+    lesson: "L10",
+    model: "reasoning",
+  },
+  {
+    body: { reasoning_effort: "none" },
+    id: "reasoning-none",
+    label: '`reasoning_effort: "none"`',
+    lesson: "L10",
+    model: "reasoning",
+  },
+];
+
+/**
+ * The paid completions model the L10 pair sends: the first catalog row that
+ * speaks completions, reasons, is not free and is not deprecated.
+ *
+ * @param specs - the plane's catalog slice.
+ * @param isDeprecated - which ids the catalog retired (default: none).
+ * @returns the id, or `undefined` when the slice has none.
+ */
+export const reasoningCompletionsModel = (
+  specs: readonly CatalogModelSpec[],
+  isDeprecated: (id: string) => boolean = () => false
+): string | undefined =>
+  specs.find(
+    (spec) =>
+      protocolForSdk(spec.provider_npm) === "openai-completions" &&
+      spec.reasoning === true &&
+      !isFreeSpec(spec) &&
+      !isDeprecated(spec.id)
+  )?.id;
+
+/** One variant, ready to send: a keyed cell and the variant it carries. */
+export interface VariantCell extends MatrixCell {
+  readonly variant: KeyedVariant;
+}
+
+/**
+ * The variants' cells for one plane: each one the plane's default
+ * completions cell (the modern family) made keyed ({@link keyedCell}) and
+ * then changed by exactly the variant's headers or body fields. A variant
+ * with no model keeps no body: it is never sent.
+ *
+ * @param plane - the plane.
+ * @param models.representative - the matrix's completions model.
+ * @param models.reasoning - {@link reasoningCompletionsModel}'s.
+ * @param key - the plane's key.
+ * @returns one cell per {@link KEYED_VARIANTS} entry, in order.
+ */
+export const keyedVariantCells = (
+  plane: MatrixPlane,
+  models: {
+    readonly reasoning: string | undefined;
+    readonly representative: string | undefined;
+  },
+  key: string
+): VariantCell[] =>
+  KEYED_VARIANTS.map((variant) => {
+    const model = models[variant.model];
+    const keyed = keyedCell(
+      {
+        body: undefined,
+        family: "modern",
+        headers: { "content-type": "application/json" },
+        method: "POST",
+        model,
+        plane,
+        protocol: "openai-completions",
+        url: matrixUrl(plane, "openai-completions", "modern", model),
+      },
+      key
+    );
+    return {
+      ...keyed,
+      body:
+        keyed.body === undefined
+          ? undefined
+          : { ...keyed.body, ...variant.body },
+      headers: { ...keyed.headers, ...variant.headers },
+      variant,
+    };
+  });
+
+/**
+ * What a 429 said about when to come back (lesson L9): the `Retry-After`
+ * value of every attempt answered 429, or `null` for one that carried none.
+ * The host can honour a provider's delay (dsh-llm's `providerRetryAfterMs`)
+ * but its pi bridge never fills it; whether the gateway sends one decides
+ * whether P-R3 should.
+ *
+ * @param attempts - each attempt's answer, `undefined` for one that got none.
+ * @returns one entry per 429, in order; empty when none was answered.
+ */
+export const retryAfterOf = (
+  attempts: readonly (ProbeAnswer | undefined)[]
+): (string | null)[] =>
+  attempts.flatMap((answer) =>
+    answer?.status === 429 ? [answer.retryAfter ?? null] : []
   );

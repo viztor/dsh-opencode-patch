@@ -1,6 +1,8 @@
 <div align="center">
   <p><a href="./README.md">English</a> &nbsp;·&nbsp; <b>简体中文</b></p>
 
+  <p><img src="docs/media/hero.svg" alt="OpenCode 补丁——会话保持、网关请求头与实时 Go 额度" width="100%" /></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />网关来源头 · 会话亲和 · 免费层工具回退 · 实时双模式额度计量</p>
@@ -35,7 +37,7 @@
 
 **默认状态。** 把 DSH 直接指向 OpenCode、不装任何插件，模型是**完全不能用**的——不是某一种形状不能用，而是全部：
 
-- **请求不会被识别为"编码 agent"发出的。** DSH 发的是自己的 `User-Agent`，不带 `x-opencode-client`、`x-opencode-project`，也不带 `x-opencode-session`；网关看到的就是一次匿名 SDK 调用：免费层模型返回 `403 FreeTierError`，流量还要受厂商对"不表明身份的客户端"所设的滥用规则约束。
+- **请求不会被识别为"编码 agent"发出的。** DSH 发的是自己的 `User-Agent`，不带 `x-opencode-client`、`x-opencode-project`，也不带 `x-opencode-session`；网关看到的就是一次匿名 SDK 调用，流量要受厂商对"不表明身份的客户端"所设的滥用规则约束。**免费层是另一回事，原因也不在这里**：把这些请求头全部恢复、换上 CLI 的 `User-Agent`、带上有效的会话 id 以及回退注入的 `read`/`bash` 工具定义之后，在 OpenCode 之外调用 Zen 的 `-free` 模型仍然返回 `403 FreeTierError`，而同一个请求换成付费模型返回 `200`。这些 id 依然会列出——拒绝本身会说明原因，而把厂商可能仍在服务的模型藏起来是更糟的失败——补丁恢复的请求头服务于付费路由以及厂商声明的客户端规则。
 - **没有会话 id 的一轮会被拒、或失去关联。** 每一轮都必须带一个稳定的 `ses_…` 形状的 id，而 DSH 在子代理、后台评估以及 **Auto Review** 这类模式下会完全省略 `sessionId`。
 - **免费层的 `/responses` 请求体缺少 `read` 与 `bash` 会被拒**，而 DSH 是刻意不发这两个工具的。
 - **目录很单薄。** 裸 `/models` 列表只有 id，几乎没有别的信息，所以选择器里是一堆没有名字、没有价格、没有上下文窗口的行。
@@ -92,7 +94,7 @@ npm install dsh-opencode-patch
 // ~/.dsh/profiles/web/package.json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^0.12.0",
+    "dsh-opencode-patch": "^1.8.0",
   },
   "dsh": {
     "profile": {
@@ -115,7 +117,7 @@ npm install dsh-opencode-patch
 
 | 没有补丁时 | 使用 `dsh-opencode-patch` 后 |
 | :-- | :-- |
-| Zen 免费模型报 `403 FreeTierError` | 自动恢复**网关来源头与工具回退** |
+| Zen 免费模型报 `403 FreeTierError` | **照常列出，由网关用自己的话拒绝。** 请求头与工具回退会为付费路由恢复，但它们不是这个错误的原因——在全部就位的情况下实测，Zen 的 `-free` id 仍返回 `403`，而付费模型返回 `200`；拒绝来自控制台背后的服务，而不是请求携带的任何内容。所以这些 id 留在选择器里，拒绝以 `400 free_tier_restricted` 呈现，而不是变成一行被隐藏的模型 |
 | 一条路由只能说一种形状——基础问题解决后，其余模型返回 `500` | **逐模型路由**——按目录里每个模型自己声明的 SDK 派发到对应端点 |
 | 会话 ID 被拒并返回 `400 MissingSessionID` | **确定性的 `ses_…` 会话哈希**与跨轮次亲和 |
 | 子代理丢失对话上下文 | **父会话跟踪**（`x-opencode-parent-session-id`、`x-parent-session-id`） |
@@ -140,15 +142,15 @@ npm install dsh-opencode-patch
 ### 1. OpenCode Zen (`provider: opencode`) — 按量计费与免费额度
 
 - **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`)：`claude-sonnet-4-5`、`claude-opus-4-7`、`claude-haiku-4-5`、`qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`space-bunny-free`，以及免费层的 `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `nemotron-3-ultra-free`、`ling-3.0-flash-fin-free`、`mimo-v2.6-flash-free`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`)：`gpt-5.4`、`gpt-5.2`、`gpt-5.1-codex-max`、`muse-spark-1.3`、`grok-4.7`、`muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`)：`deepseek-v4.1-flash`、`kimi-k2.5`、`kimi-k3`、`minimax-m2.5`、`glm-5.2`，外加免费层的 `mimo-v2.6-flash-free`、`nemotron-3.5-lightning-free`、`deepseek-v4.1-flash-free`
 - **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`)：`gemini-3.8-flash`、`gemini-3.1-pro`、`gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — 订阅额度
 
-- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon`，支持图片附件和带签名的工具调用回放。Go 没有旧版 Google 接口，因此两个家族都使用这一个地址。
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
 
@@ -158,18 +160,18 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 |
 | :-- | --: | :-- |
-| _（缺失）_ | 25 | OpenAI Chat Completions |
+| _（缺失）_ | 24 | OpenAI Chat Completions |
 | `@ai-sdk/openai` | 31 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages |
 | `@ai-sdk/google` | 8 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions（与 pi 自己的数据一致） |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 82 个**在用**模型，统计于 2026-10-23 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 82 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim` 重新生成该文件。
+数量为 `models.opencode.ai` 中 `opencode` 的 81 个**在用**模型，统计于 2026-11-03 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 81 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
 
 由此有四条性质：
 
-- **你的挑选仍然有效。** 每个平面服务的正是其 `llm-pi-ai` 条目列出的模型；条目没有列出任何模型时，服务整个目录。在**用 OpenCode 官方目录补全列表**开启时（默认），Settings → Models → Fetch 提供整个目录：pi 自己的列表，加上目录里 pi 未列出的每个可服务、未下线的模型。它提供的每一行带的是目录的名称、上下文窗口、输出上限与模态——即输入框所服务的值——只有目录没有时才用 pi 的；从中采纳的模型与其他 id 一样保存，并由插件服务。你保存的任何 id 都会被接受并服务：目录与 pi 都未描述的 id 按 Chat Completions 发送，除非平面条目指定了路由级的 `api`——它只作用于这类 id。
-- **你的模型行优先。** 模型的名称、上下文窗口、输出上限与输入模态，先取你自己的模型行，再取目录，最后取 pi 的内置数据。推理档位先取你行里的 `reasoningEfforts`，再取目录。价格与协议不是模型行的字段：价格先取目录、再取 pi，协议先取目录的 SDK、再取 pi 的条目。
+- **你的挑选仍然有效。** 每个平面服务的正是其 `llm-pi-ai` 条目列出的模型；条目没有列出任何模型时，服务整个目录。在**用 OpenCode 官方目录补全列表**开启时（默认），Settings → Models → Fetch 提供整个目录：pi 自己的列表，加上目录里 pi 未列出的每个可服务、未下线的模型。它提供的每一行带的是目录的名称、上下文窗口、输出上限与模态——即输入框所服务的值——只有目录没有时才用 pi 的；从中采纳的模型与其他 id 一样保存，并由插件服务。你保存的任何 id 都会被接受并服务：目录未归类的 id 按 Chat Completions 发送，除非平面条目指定了路由级的 `api`——它只作用于这类 id。pi 自己的目录从不决定协议或地址，所以 pi 升级即使改写了它，也不会移动任何回合。
+- **你的模型行优先。** 模型的名称、上下文窗口、输出上限与输入模态，先取你自己的模型行，再取目录，最后取 pi 的内置数据。推理档位先取你行里的 `reasoningEfforts`，再取目录。价格与协议不是模型行的字段：价格先取目录、再取 pi；协议先取目录的 SDK，再取平面条目的路由级 `api`（仅用于目录未归类的 id），最后为 Chat Completions。
 - **只有开/关两种推理的模型提供“关 / 开”。** 只有该模型的协议确实能关闭推理时才提供“关”；有真正档位列表的模型只提供它自己的档位；档位列表中含 `none` 的 Chat Completions 模型同样提供“关”，按 pi 自己条目的写法发送 `reasoning_effort: "none"`。
 - **一份凭据，按宿主自己的规则。** 平面的认证方式与 `llm-pi-ai` 相同：条目的 `apiKeyEnv` 经凭据服务解析（未挂载凭据服务时读启动环境），保存在 `llm-pi-ai/opencode` 下的登录记录，否则用 pi 自己的 `OPENCODE_API_KEY` 查找——两个平面读的是同一个变量：请在 Go 条目上写明 `apiKeyEnv: OPENCODE_GO_API_KEY`。只有在没有声明引用、且部署选择开启时，才会读取 OpenCode 安装自己的存储。密钥解析不到的平面仍列出其模型，回合在发出任何请求前以 `MISSING_CREDENTIAL` 失败。
 
@@ -182,7 +184,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | **交互式多轮对话** | 通过每会话稳定的 `ses_…` id 提供 KV 提示缓存亲和 |
 | **子代理与分叉** | 子、父会话都参与哈希；谱系由父级请求头携带 |
 | **Agent 团队** | 跨编排轮次保留共享工作区的归属信息 |
-| **实验性 Auto Review** | 即使后台审计调用省略 `sessionId`，仍会得到确定性的轮次状态、请求头与工具回退 |
+| **实验性 Auto Review** | 即使后台审计调用省略 `sessionId`，仍会得到确定性的轮次状态、请求头与工具回退——而且它们的路由取自会话，所以会话正在用哪个模型，它们就跑哪个模型 |
 
 ---
 
@@ -197,11 +199,11 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | 网关的 `/models` | **这个账号**实际能用什么 |
 | 设置的获取（`discoverModels`） | 在 `opencode`/`opencode-go` 上：先是 pi 自己的列表，再是 pi 缺少的每个目录模型 |
 
-合并是**增量式**的：适配器给的行保留，规范行只在缺失时追加，只有当按 provider 记录的退役名单点名某个模型时才省略它——那是事实，不是猜测。显示名与价格取自目录（`models.opencode.ai`），因为网关列表只给 id，别的几乎没有。
+合并是**增量式**的：适配器给的行保留，规范行只在缺失时追加，只有当目录（registry）把某个模型标为 `status: "deprecated"` 时才省略它——那是事实，不是猜测。显示名与价格取自目录（`models.opencode.ai`），因为网关列表只给 id，别的几乎没有。
 
 有两点你在使用中会注意到。**冷启动永远不为空**——内置 shim 在第一次刷新前就能回答，选择器立刻有模型可选。而且**目录里没有条目的模型照样出现**，费率位置显示 `—`：既不猜，也不会退回去显示上一个模型的名字。
 
-两个生成文件都在 CI 里校验（`catalog:shim`、`limits:shim`）；厂商数据变动时它们以非零码退出——这是唯一能发现厂商注册表在你背后变了的办法。
+两个生成文件都在 CI 里校验（`catalog:shim`、`limits:shim`）；厂商数据变动时它们以非零码退出——这是唯一能发现厂商注册表在你背后变了的办法。只有当拉取请求改动了生成该文件的代码时，CI 才会因此失败；否则只给出警告，由每晚的任务以单独的拉取请求提出刷新。
 
 → 协议路由、合并与界面的技术细节： [`docs/protocol-routing-and-merge.md`](./docs/protocol-routing-and-merge.md) · [English](./docs/protocol-routing-and-merge.md)
 
@@ -229,7 +231,6 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | **模型与免费额度** | 用 OpenCode 官方目录补全列表（默认开启） | `on` | 让网关 `/models` 列表带上完整目录，并把目录提供给设置页的模型发现。本身**不会**往选择器里添加模型——选择器显示你声明的模型；条目未声明任何模型时显示该平面的目录，此开关不改变这两者。要声明更多，请在 OpenCode 平面上使用 **Settings → Models → Fetch**：它会提供 pi 的列表以及 pi 缺少的目录模型，选用一行并保存即完成声明。已声明模型自身的信息（上下文、模态、思考档位）始终来自你的模型行与目录，与此开关无关 |
 | **模型与免费额度** | 自动补全核心工具（默认开启） | `on` | 补上免费层 `/responses` 请求体所需的 `read` + `bash` schema |
 | **配额计量** | 开启输入区用量计量（默认开启） | `on` | 在输入框停靠栏挂载实时计量表——Go 额度环，或 Zen 会话消耗 |
-| **配额计量** | 显示会话消耗与模型费率（默认开启） | `on` | 追加显示本会话累计花费与当前模型每百万 Token 费率 |
 | **账户与端点** | API 端点 | `auto` | 请求发往哪个端点家族：**自动**（同新端点） · **旧端点**（`zen/v1`、`zen/go/v1`） · **新端点**（按协议的 `inference/{openai,anthropic,google}/…`，Go 为 `inference/go/…`） |
 | **账户与端点** | 凭据来源 | `auto` | 多个密钥同时可用时以哪个为准：**自动** · **优先实时请求** · **优先已声明密钥** |
 | **账户与端点** | 读取 OpenCode 安装版的密钥（默认关闭） | `off` | 允许本插件读取 OpenCode 自己保存的凭据，且仅作最后手段——默认关闭 |
@@ -251,8 +252,12 @@ Go 用量                                             状态正常
 ● 5 小时   0% 已用 · 4小时58分钟后重置              100% 剩余
 ● 每周    28% 已用 · 3天2小时后重置                  72% 剩余
 ● 每月    14% 已用 · 11月7日8点55分重置              86% 剩余
-月度额度  mimo-v2.6-pro · Go $60 · Plus $120              ⓘ
+月度额度  mimo-v2.6-flash · Go $60 · Plus $120            ⓘ
 ```
+
+**这个版本只带 API 密钥路径。** 没有登录行，也没有设备流：凭据来自部署的配置、来自从实际请求中捕获的密钥，或者——在开启 `readOpencodeStore` 时——来自 OpenCode 安装自身的存储。Console 登录（设备流、会话存储、凭据池）在 `v2` 线上，刻意不放进 `main`，因此这里不依赖宿主可能没有挂载的服务。
+
+**如果更新后卡片看起来还是上一版，说明宿主进程没有重启。** 宿主包只在进程启动时读取一次，所以浏览器刷新仍在运行上一版的 `lib/index.mjs`；请停止并重启 `dsh web`。这一行是最快的判断办法，因为它和其他所有改动在同一个版本里新加入。
 
 「剩余」是百分比，不是美元数：`/usage` 每个窗口只给一个百分比、完全没有余额接口，而套餐档位也无法探测——任何美元余额都会是猜的。这一点由 ⓘ 说明。读不到配额时它明说读不到，并且不打印任何数字，而不是打一排会被当成真实读数的 `0%`。
 
@@ -338,13 +343,14 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 | 配置项 | 默认值 | 保留在配置中的原因 |
 | :-- | :-- | :-- |
 | `providers` | `opencode`, `opencode-go` | 插件为其回合补齐请求的路由 id；两个平面总是包含在内，只有中继路由需要添加 |
-| `gatewayUrls` | `opencode.ai/zen` | 标记网关流量的 URL 子串；只有镜像或中继才会改它们 |
+| `gatewayUrls` | `opencode.ai/zen`, `opencode.ai/inference` | 标记网关流量的 URL 子串；只有镜像或中继才会改它们 |
 | `userAgent` | 空（= 规范 CLI UA） | 字面覆盖；默认值就是网关所期望的值 |
 | `originClient` | `cli` | `x-opencode-client` 的字面值 |
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | 指定一个仅当调用方提供会话 id 时才使用的环境变量名 |
 | `freeModelMarker` | `free` | 模型 id 子串；`*` 强制启用回退；留空则沿用默认值；目录标记为免费的模型始终适用 |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | 端点覆盖；从组合中自动发现 |
-| `debug` / `debugFile` | `false` / — | 诊断用 JSONL 日志，不是谁会在 UI 里调节的行为；仅在 `debug` 开启时才写入该文件 |
+| `credentialOrg` | — | 账户凭据所属的组织 id，在部署从带外提供一个时使用 |
+| `debug` / `debugFile` | `false` / — | 诊断用 JSONL 日志，不是谁会在 UI 里调节的行为 |
 
 ```yaml
 # cordis.patch.yml — the plugin's row; every key is optional.
@@ -357,6 +363,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
           - opencode-go
         gatewayUrls:
           - opencode.ai/zen
+          - opencode.ai/inference
         sessionIdEnv: "OPENCODE_SESSION_ID"
         freeModelMarker: "free"
         usageBaseURL: "https://opencode.ai/zen/go/v1"
@@ -370,7 +377,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
         enrichModels: true # catalog into the gateway /models listing + Settings model discovery
         usageEnabled: true # off = no meter and no price row
         # File-level only debug options:
-        debug: false # 仅在 debug 开启时写入 debugFile
+        debug: false
         debugFile: "/tmp/dsh-opencode-debug.jsonl"
 ```
 
@@ -390,7 +397,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 
 | 症状 | 可能原因 | 解决方法 |
 | :-- | :-- | :-- |
-| 免费模型报 `403 FreeTierError` | 网关请求头被剥离，或缺少工具定义 | 保持**恢复 User-Agent**、**注入客户端来源头**与**自动补全核心工具**开启 |
+| 免费模型报 `403 FreeTierError` | 网关的门槛不在请求里：用真实账号、它的会话令牌、它的当前组织以及官方客户端发送的全部请求头实测，免费层模型仍返回 `403` | 上面三个注入开关（**恢复 User-Agent**、**注入客户端来源头**、**自动补全核心工具**）仍值得保持开启——它们让流量可被识别，并恢复工具定义——但单靠它们打不开免费层。付费模型配上密钥即可使用；排除了什么、如何排除，见 [docs/opencode-1.19-api.md](./docs/opencode-1.19-api.md) |
 | `400 MissingSessionID` | 未附带会话请求头 | 确认 `dsh-opencode-patch` 已列入 profile 的 `dsh.profile.bundles` |
 | Auto Review 报 `TRANSPORT: Connection error` | 更新后宿主进程未重启 | 停止并重启 `dsh web`，让新的 `lib/index.mjs` 加载 |
 | Go 模型始终不显示额度环 | **重启 `dsh web`，然后查看浏览器控制台**——插件通过 `link:` 加载，`lib/index.mjs` 只在进程启动时读取一次，仅刷新页面仍运行旧的宿主代码；计量会报告它的哪条路径没有返回 | 控制台会指出原因：`no remote to mount on`、带异常的 `did not mount`、`still waiting for remote.opencodeGoUsage`、列出其实际暴露键的 `no opencodeGoUsage service on the remote`，或带返回内容的 `the answer is not a usage shape`。缺失或无法路由的凭据只是几个原因之一：在 `opencode-go` 条目上写明 `apiKeyEnv: OPENCODE_GO_API_KEY` 并在 DSH Credentials 中存储该密钥 |
@@ -408,36 +415,45 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **只有开/关两种推理的模型提供“关 / 开”。** 过去它提供整套档位，每一档发送的都是同一个“开”。此类模型上保存的 Minimal、Xhigh 或 Max 选择不再能解析：请重新选择“开”（或“关”）。只有模型的协议能关闭推理时才提供“关”。
 - **Chat Completions 默认改走推理家族。** Completions 回合在 Zen 上发往 `https://opencode.ai/inference/openai/v1`，在 Go 上发往 `https://opencode.ai/inference/go/openai/v1`，与 Responses、Messages、Google 一致。`endpoint: legacy` 让所有协议留在 `/zen/v1`（Go 为 `/zen/go/v1`），但 Go 的 Google 仍在 `/inference/go/google/v1beta`。
 - **没有 `apiKeyEnv` 的 Go 平面用 `OPENCODE_API_KEY` 认证。** 平面的密钥现在按 `llm-pi-ai` 自己的规则解析（D20），而 pi 自己的 OpenCode 查找在两个平面上读的都是 `OPENCODE_API_KEY`。过去条目未写明任何引用时，Go 的 Responses、Messages 与 Google 模型默认使用 `OPENCODE_GO_API_KEY`（其 Chat Completions 模型早已遵循 pi 的规则），所以没有 `apiKeyEnv` 的 `opencode-go` 条目现在在每种协议上都发送 Zen 密钥。计量随之变化：它捕获 Go 回合携带的密钥并优先使用，因此在第一次 Go 回合之后，它把 Zen 密钥发往 Go 用量端点、被拒绝，并退回到 Zen 胶囊或“需要订阅”。请给 Go 条目加上 `apiKeyEnv: OPENCODE_GO_API_KEY`；只存储在 DSH Credentials 中的 Go 密钥只有通过这个引用才能为 Go 回合认证。
+- **目录中唯一的 `@ai-sdk/mistral` 模型现在会被提供并服务。** 过去因其方言未经实测而不提供；现在它按 Chat Completions 发往供应商的 OpenAI 根路径，这是插件自己对该 SDK 的规则（目录的家族表把它放在那里）。网关为它提供哪种方言仍未实测。
 - **保存的任何 id 都会被服务。** 目录未描述的模型在保存时被接受，并按 Chat Completions 发送；过去它会在保存时被拒绝。
 - **无密钥时的列表过滤已移除。** 密钥解析不到的平面会列出其声明的模型，由回合指出缺失的凭据，而不是隐藏付费模型。
 - **`modelOverrides`、`maxContextWindow` 与 `modelRoutes` 已移除**（以及文档中写过、却从未被读取的 `hiddenModels`）。平面条目中模型自己的行可以写名称、上下文窗口、输出上限、输入模态与推理档位，其余由目录补齐；行里的 `contextWindow` 代替 `maxContextWindow`。仍带有这些已移除键的配置行可以通过校验，这些键会被忽略。
-- **不再能按模型固定协议。** `modelRoutes` 可以让某个模型走你指定的协议；这一点没有替代。目录或 pi 描述过的模型总是使用它们指定的协议；平面条目的路由级 `api` 只作用于两者都未描述的 id，`baseURL` 也只在路由级。价格同样不是模型行的字段：先取目录，再取 pi。
+- **不再能按模型固定协议。** `modelRoutes` 可以让某个模型走你指定的协议；这一点没有替代。目录描述过的模型总是使用其 SDK 指定的协议；平面条目的路由级 `api` 只作用于目录未归类的 id，`baseURL` 也只在路由级。价格同样不是模型行的字段：先取目录，再取 pi。
 - **停用或重载插件会恢复它包装过的宿主方法。** 停用时模型发现与设置嫁接会被撤下，热重载会替换它们而不是再叠一层。两个平面交还给 `llm-pi-ai`——见[移除或停用插件](#移除或停用插件)。
 - **Settings → Models → Fetch 会提供 pi 未列出的目录模型。** 在**用 OpenCode 官方目录补全列表**开启时（默认），它在两个平面上先回答 pi 的列表，再回答 pi 缺少的每个可服务、未下线的目录模型（例如 Zen 的 `gpt-5.3-codex-spark`、Go 的 `minimax-m3.1-flash`）；`llm-pi-ai` 重启期间，它只回答目录，而不是报错。以前它只回答 pi 的列表。它在平面上提供的每一行现在带的是目录的名称、上下文窗口、输出上限与模态，只有目录没有时才用 pi 的，因此从中采纳的模型保存的正是输入框所服务的值：采纳 Zen 的 `claude-sonnet-4-5` 会保存 1,000,000 的上下文窗口，以前保存的是 pi 的 200,000。此开关关闭时，Fetch 只回答 pi 的列表，重启期间显示 `llm-pi-ai` 的错误。
+- **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除：在 pi 为 `1.1.0` 的宿主（`rc` 桌面应用）上，无论哪个平面，每个 `gemini-4-argon` 回合都携带思考预算（未选择档位时为 `thinkingBudget: 0`），而不是该模型所需的档位，直到宿主升级 pi；网关拒绝在哪里实测过，见**宿主限制**。两个通道的 npm 安装与 `alpha` 桌面应用运行 pi `1.3.0` 或更高版本，不受影响。见[兼容性与验证](#-兼容性与验证)中的**宿主限制**。
 - **`@viztor/dsh-opencode` 不再发布。** 其最后一个版本上的 "Renamed to @viztor/dsh-opencode-patch" 弃用提示即为最终信息；请改装 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 
 ## 📜 兼容性与验证
 
-**已在 DeepSeek Harness `0.2.1` 上验证 —— `alpha` 与 `rc` 两个通道（Node 24+）**
+**支持范围：DeepSeek Harness `rc` 与 `alpha` 两个通道的最新版本，无论通过 npm 安装还是随桌面应用发布（Node 24+）**
 
-Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。两个通道的最新版本都是 **`0.2.1`**，本插件针对这条线——对两个通道中每一个已发布的 `0.2.1` 构建都做过验证，`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
+**支持策略。** 本插件支持**两个**通道各自的**最新**版本，以它们实际发布的形态为准：`rc` 即 `dsh@latest`（当前为 `0.2.1-rc.5`，其桥接声明 pi `^1.1.0`），`alpha` 即 `dsh@alpha`（当前为 `0.2.2-alpha.2`，pi `^1.3.0`）。`dsh@alpha` 此后已升至 `0.2.2-alpha.3`，它要求 cordis `4.0.6-alpha.2`：通过 npm 安装时，在本插件采用该 cordis 的配置钩子契约之前，两个平面都运行在 pi-ai 自己的路由上（见下文**宿主限制**）。npm 安装运行的是**未打补丁**的 pi，版本为桥接范围所允许的最新 `1.x`；桌面应用随附的是 harness 自身工作区锁定的 pi（`rc` 上为 `1.1.0`，`alpha` 上为 `1.3.0`）。CI 在每个拉取请求上，于各通道的集群上运行单元与离线 mock 套件（pi 为 npm 解析出的版本，cordis 系列为 harness 自带的版本），并每晚在各通道的最低 pi 版本上运行；按 npm 安装的已发布二进制（cordis 浮动）在 `e2e-host` 任务中运行。本插件既不修补也不重新实现宿主 pi 的行为：宿主的 pi 若缺少网关所需的能力，那是宿主的限制，会被记录并报告给上游，而不是在这里绕过。
+
+Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布线而非版本先后：semver 中 `0.2.1-rc.2` 排序在 `0.2.1-alpha.5` **之上**。本插件在两个通道上都针对两条线：**`0.2.1`**（`rc` 通道的最新版本），以及 `alpha` 通道目前发布的 **`0.2.2`** 预发布版本（测试套件的默认安装运行的是 `0.2.2-alpha.2`；其 `rc` 安装运行的是 `0.2.1-rc.5`）。`@deepseek-ai/dsh-typert-protocol` 的 peer 范围正是这么写的：
 
 ```
->=0.2.1-alpha.1 <0.2.2
+>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
 ```
 
-一个范围就覆盖了两个通道的整条线：下界 `alpha.1` 排序低于同线的所有 `rc`，因此无需单独枚举 rc。反之，只写 `<0.2.2` **不行**——除非同一 `major.minor.patch` 的某个比较符带有预发布号，semver 会把预发布版本排除在外，这正是"按一个通道写的范围会悄悄排除另一个通道"的原因。
+第一个子句覆盖两个通道上的 `0.2.1` 整条线：下界 `alpha.1` 排序低于同线的所有 `rc`，因此无需单独枚举 rc。第二个子句**并不多余**——除非同一 `major.minor.patch` 的某个比较符带有预发布号，semver 会把预发布版本排除在外，所以只写 `<0.3.0` 会悄悄丢掉所有 `0.2.2-*` 构建，alpha 与 rc 都一样。两个子句都止于 `0.3.0`，下一条线因此是一个单独的决定，而不是悄悄放宽。
+
+**宿主限制。** 受支持的宿主目前缺少的能力，由测试套件记录为 `[HOST_LIMITATION]` 行（依据宿主自身的应答检测，从不依据版本号），并报告给上游：
+
+- **`rc` 桌面应用上的 Gemini 4 思考档位。** 其 pi（`1.1.0`）不把 `gemini-4-argon` 列为以 Google 思考**档位**发送的模型，因此无论哪个平面，每个 `gemini-4-argon` 回合携带的都是思考**预算**（选择档位时为 token 预算，未选择时为 `thinkingBudget: 0`，因为该模型无法关闭思考），网关会拒绝（400 "Thinking budget is not supported for this model"；已在 Go 上实测，Zen 上按同一 pi 规则预期相同，尚未实测）。pi `1.3.0` 及以上发送的是档位，所以两个通道的所有 npm 安装以及 `alpha` 桌面应用都不受影响。升级 pi 是宿主的修复方式；插件发送的是宿主 pi 构造的请求。
+- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。同一个 cordis 还改变了配置钩子的调用形态，本插件的平面路由尚不支持这一形态（已知缺陷，由测试套件记录，在本插件采用该契约时修复，而迁移到 `0.2.2-alpha.3` 需要这一步），因此在该安装上两个平面都运行在 pi-ai 自己的路由上。当前的 `dsh@alpha`（`0.2.2-alpha.3`）要求这个 cordis，所以在此之前通过 npm 安装时两个平面同样运行在 pi-ai 自己的路由上；其桌面应用尚未实测。
 
 | 层面 | 目标 |
 | :-- | :-- |
-| **Harness 版本线** | **`0.2.1`**，`alpha` 与 `rc` 通道均可（peer：`>=0.2.1-alpha.1 <0.2.2`） |
+| **Harness 版本线** | **`0.2.1`** 与 **`0.2.2`** 预发布版本，`alpha` 与 `rc` 通道均可（peer：见上方范围） |
 | **插件包** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **宿主 profile** | DSH Web profile（`patchReload: live`） |
 | **声明的路由** | `opencode`、`opencode-go`——由插件自己的适配器服务；其他路由仍归 `llm-pi-ai` |
 | **网关** | 默认为 `opencode.ai/inference/{openai,anthropic,google}/…` 与 `inference/go/{openai,anthropic,google}/…`；`endpoint: legacy` 时为 `opencode.ai/zen/v1` 与 `zen/go/v1`（Go 的 Google 仍在 `inference/go/google/v1beta`） |
 | **模型目录** | 由 `models.opencode.ai/api.json` 生成；下线判定直接跟随目录自身的 `status: "deprecated"` 标记，不维护任何手工 id 列表 |
-| **上游 pi** | **不随包携带。** 平面适配器在运行时加载 harness 已安装的那份 `@earendil-works/pi-ai`，因此 harness 升级不会与本插件锁定的副本产生版本错位 |
-| **验证关卡** | `vp check` 干净、全部确定性测试全绿（单元 + 离线网关模拟，顺序与乱序）、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
+| **上游 pi** | **不随包携带，也不打补丁。** 平面适配器在运行时加载 harness 已安装的那份 `@earendil-works/pi-ai`，因此 harness 升级不会与本插件锁定的副本产生版本错位；测试套件运行各通道经 npm 解析出的 pi，以及其最低版本 |
+| **验证关卡** | `vp check` 干净、确定性单元与离线网关 mock 套件全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
 
 ---
 

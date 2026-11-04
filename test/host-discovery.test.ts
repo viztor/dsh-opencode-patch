@@ -44,6 +44,7 @@ import {
   type HostLlm,
   mountTierA,
   ownerOf,
+  PI_GAPS,
   type Plane,
   PLANES,
   piKnows,
@@ -222,6 +223,7 @@ describe(
       await waitForPlaneOwner(llm);
       const schema = descriptor().result.create();
       const answers: Partial<Record<Plane, Row[]>> = {};
+      let gaps = 0;
       for (const plane of PLANES) {
         const ns = nsOf(llm, plane);
         expect(ns, plane).toBe("llm-pi-ai");
@@ -229,12 +231,14 @@ describe(
           provider: plane,
         })) as Row[];
         expect(idsOf(rows), plane).toEqual(expected(plane));
-        // Non-vacuous: the catalog has models pi does not list on this plane.
-        expect(
-          servable(plane).filter((id) => piKnows(plane, id) === undefined)
-            .length,
-          plane
-        ).toBeGreaterThan(0);
+        // The catalog models this cell's pi does not list include every S0
+        // id the cell's pi cannot place (a newer pi lists more of them: the
+        // newest cell's pi lists every Go catalog model).
+        const gap = servable(plane).filter(
+          (id) => piKnows(plane, id) === undefined
+        );
+        expect(gap, plane).toEqual(expect.arrayContaining([...PI_GAPS[plane]]));
+        gaps += gap.length;
         // The Remote's codec keeps every row as it is: no unknown key, and
         // modalities are text/image only.
         expect(schema.parse(rows), plane).toStrictEqual(rows);
@@ -259,8 +263,11 @@ describe(
         }
         answers[plane] = rows;
       }
+      // Non-vacuous: on every cell the catalog has models pi does not list.
+      expect(gaps).toBeGreaterThan(0);
       // Non-vacuous: pi knows a Zen model at a capacity the catalog does not
-      // (measured on pi 1.1.0: claude-sonnet-4-5 at 200000, catalog 1000000).
+      // (measured on every cell's pi, 1.1.0, 1.3.0 and 1.5.0: claude-sonnet-4-5
+      // at 200000, catalog 1000000).
       const differing = (
         getBuiltinModels("opencode" as never) as {
           contextWindow?: number;
@@ -554,20 +561,24 @@ describe(
           live: true,
         },
       ]);
+      let gaps = 0;
       for (const plane of PLANES) {
         const pi = piKept(plane);
         const rows = (await llm.discoverModels("llm-pi-ai", {
           provider: plane,
         })) as Row[];
         expect(idsOf(rows), plane).toEqual(pi);
-        // Non-vacuous: a live claim would have offered these.
+        // A live claim would have offered these (none on a plane whose pi
+        // lists the whole catalog, the newest cell's Go).
         const gap = servable(plane).filter((id) => !pi.includes(id));
-        expect(gap.length, plane).toBeGreaterThan(0);
+        gaps += gap.length;
         expect(
           idsOf(rows).filter((id) => gap.includes(id)),
           plane
         ).toEqual([]);
       }
+      // Non-vacuous: on every cell some plane has a model a live claim would add.
+      expect(gaps).toBeGreaterThan(0);
     });
   }
 );

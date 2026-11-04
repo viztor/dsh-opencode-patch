@@ -58,7 +58,10 @@ const prependStrip = (root: Context): void => {
   root.on("internal/config", stripPlanesForPiAi, { prepend: true });
 };
 
-/** S0 without the ids pi 1.1.0 cannot place, so pi-ai's save check passes. */
+/**
+ * S0 without the ids the floor cells' pi cannot place (`PI_GAPS_BY_CELL`), so
+ * pi-ai's save check passes on every cell with the same profile.
+ */
 const knownProviders = (): Record<string, Record<string, unknown>> => {
   const providers = s0Providers();
   const gaps = new Set([

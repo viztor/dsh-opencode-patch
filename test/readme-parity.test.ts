@@ -9,7 +9,9 @@
  * entry that names no reference. `docs/engineering-notes.md` records an
  * earlier drift of the same kind. This pins the parts that drifted: the
  * number of "Changed in 1.x" bullets, the retracted isolation claim, the Go
- * `apiKeyEnv` instruction, and the `keySource` hint's order, which is
+ * `apiKeyEnv` instruction, the install snippet's version range (which had
+ * drifted to two different 0.x ranges, neither reaching a 1.x release), and
+ * the `keySource` hint's order, which is
  * `KEY_SOURCE_ORDER.auto` in `src/go-discovery.ts` (literal, captured,
  * configured).
  *
@@ -75,6 +77,21 @@ describe("README parity", () => {
         file
       ).toBe(true);
     }
+  });
+
+  it("both install snippets pin one range, on package.json's major", () => {
+    const ranges = READMES.map(([file]) => {
+      const found = [
+        ...read(file).matchAll(/"dsh-opencode-patch": "\^\d+\.\d+\.\d+"/gu),
+      ];
+      // Non-vacuous: each README carries exactly one snippet range.
+      expect(found, file).toHaveLength(1);
+      return found[0]?.[0];
+    });
+    expect(ranges[1]).toBe(ranges[0]);
+    const pkg = JSON.parse(read("package.json")) as { version: string };
+    const [major] = pkg.version.split(".");
+    expect(ranges[0]).toContain(`"^${major}.`);
   });
 
   it("the keySource hint names auto's order: literal, captured, then declared", () => {

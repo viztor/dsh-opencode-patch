@@ -11,10 +11,11 @@
  * file.
  *
  * It never reaches the network: `fetch` is replaced at module load, so every
- * request to `opencode.ai` or `models.opencode.ai` is recorded (URL and model
- * only — never a header, so never a key) and answered with a 401, and every
- * other host passes through untouched. What it writes is URLs, model ids,
- * verdicts and host error messages — never a header or a key value — and
+ * request to `opencode.ai` or `models.opencode.ai` is recorded (URL, model and
+ * a Google body's `generationConfig.thinkingConfig` only — never a header, so
+ * never a key) and answered with a 401, and every other host passes through
+ * untouched. What it writes is URLs, model ids, thinking configs, verdicts and
+ * host error messages — never a header or a key value — and
  * every error message is cut to {@link MESSAGE_LIMIT} characters, since one
  * could name a path on the runner.
  *
@@ -26,8 +27,13 @@
  *   editor, the way the Settings page saves one. It is tried onto the plane as
  *   booted (`saveBlocked`); only if that is refused are the ids in
  *   `PROBE_SAVE_DROP` removed (`saveCleared`) and the id tried once more
- *   (`save`), so the last answer is about the id itself;
+ *   (`save`), so the last answer is about the id itself. A rejection also
+ *   names the error's class and the PACKAGE whose code threw it (never a
+ *   path);
  * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove on a refusal;
+ *   after the saves, one CONTROL edit (`control`) of the probe's OWN entry,
+ *   which no plugin's listener reads, so a failure there is the host's save
+ *   path failing whoever edits, not a verdict about the plane;
  * - `PROBE_PLANES`: `["<route>", …]`, the plane routes to wait for until an
  *   adapter other than pi-ai's serves each (the plugin's own);
  * - `PROBE_PI_PACKAGE`: the package name pi-ai's loader entry carries;
@@ -82,6 +88,23 @@ const piLoadedFrom = (adapter) => {
 const messageOf = (error) =>
   String(error?.message ?? error).slice(0, MESSAGE_LIMIT);
 
+/**
+ * The package whose code threw `error`: the package of the top stack frame,
+ * read after its LAST `node_modules/`, or `"(not a package)"` when that frame
+ * is outside one, or `"(no stack)"` without a stack. Only the name is written,
+ * never the path, which would name the runner's directories.
+ */
+const thrownByOf = (error) => {
+  const frame = String(error?.stack ?? "")
+    .split("\n")
+    .find((line) => /^\s+at /u.test(line));
+  if (frame === undefined) return "(no stack)";
+  const parts = frame.replaceAll("\\", "/").split("node_modules/");
+  if (parts.length < 2) return "(not a package)";
+  const [first, second] = (parts.at(-1) ?? "").split("/");
+  return first?.startsWith("@") ? `${first}/${second}` : first;
+};
+
 /** A service the measurement needs, or a named failure where it is missing. */
 const required = (ctx, service) => {
   const value = ctx.get(service);
@@ -107,17 +130,31 @@ const hostOf = (url) => {
   }
 };
 
-const modelOf = async (input, init) => {
+/** A request's JSON body, or `null` where it has none. */
+const bodyOf = async (input, init) => {
   let body = init?.body;
   if (body === undefined && input instanceof Request) {
     body = await input.clone().text();
   }
   try {
-    const { model } = JSON.parse(String(body));
-    return typeof model === "string" ? model : null;
+    return JSON.parse(String(body));
   } catch {
     return null;
   }
+};
+
+/**
+ * What one gateway request is recorded as: its URL, the model its body names,
+ * and — on the Google protocol, whose body names no model — the thinking
+ * config the body carries (the D16 wire: a level, or pi's budget).
+ */
+const recordOf = async (input, init, url) => {
+  const body = await bodyOf(input, init);
+  const model = typeof body?.model === "string" ? body.model : null;
+  const thinkingConfig = body?.generationConfig?.thinkingConfig;
+  return thinkingConfig === undefined
+    ? { model, url }
+    : { model, thinkingConfig, url };
 };
 
 const probeFetch = async (input, init) => {
@@ -125,7 +162,7 @@ const probeFetch = async (input, init) => {
   if (!GATEWAY_HOSTS.has(hostOf(url))) {
     return passThrough(input, init);
   }
-  requests.push({ model: await modelOf(input, init), url });
+  requests.push(await recordOf(input, init, url));
   return Response.json(
     { error: { message: "probe: offline", type: "AuthError" } },
     { status: 401 }
@@ -145,6 +182,8 @@ const settle = async (run) => {
       error: {
         code: typeof error?.code === "string" ? error.code : undefined,
         message: messageOf(error),
+        name: typeof error?.name === "string" ? error.name : undefined,
+        thrownBy: thrownByOf(error),
       },
     };
   }
@@ -207,18 +246,47 @@ const askAbout = async (llm, ids) => {
   return { callConfig, listModels, modelInfo };
 };
 
-/** One config-editor edit of `opencode`, as the Settings page makes it. */
-const editZen = async (editor, entry, mutate) => {
-  const saved = await settle(() =>
-    editor.edit(entry, (current) => {
-      const providers = { ...current.providers };
-      providers.opencode = mutate(providers.opencode ?? {});
-      return { ...current, providers };
-    })
-  );
+/** One config-editor edit of `entry`, as the Settings page makes it. */
+const editEntry = async (editor, entry, change) => {
+  const saved = await settle(() => editor.edit(entry, change));
+  // `errorName` and `thrownBy` let the e2e tell the host's own failure (a
+  // TypeError inside the host's own code) from a verdict pi-ai's checks
+  // reached.
   return saved.error === undefined
     ? { accepted: true }
-    : { rejected: saved.error.message };
+    : {
+        errorName: saved.error.name,
+        rejected: saved.error.message,
+        thrownBy: saved.error.thrownBy,
+      };
+};
+
+/** One config-editor edit of `opencode` in pi-ai's entry. */
+const editZen = (editor, entry, mutate) =>
+  editEntry(editor, entry, (current) => {
+    const providers = { ...current.providers };
+    providers.opencode = mutate(providers.opencode ?? {});
+    return { ...current, providers };
+  });
+
+/**
+ * The control: one edit of the probe's own entry, which no plugin's listener
+ * reads. The host restarts the probe's fiber when it applies, which
+ * `apply` tells apart from a real stop (`state.controlling`).
+ */
+const controlEdit = async (editor, state) => {
+  const entry = editor
+    .entries()
+    .find((candidate) => candidate.options?.name === name);
+  if (entry === undefined) {
+    return {
+      errorName: "Error",
+      rejected: "probe: the config editor lists no entry of the probe's own",
+      thrownBy: "(probe)",
+    };
+  }
+  state.controlling = true;
+  return editEntry(editor, entry, (current) => ({ ...current, control: 1 }));
 };
 
 /**
@@ -270,7 +338,7 @@ const saveSequence = async (llm, editor, saveId, drop) => {
   };
 };
 
-const measure = async (ctx) => {
+const measure = async (ctx, state) => {
   if (PLANES.length === 0 || PI_AI_PACKAGE.length === 0) {
     throw new Error("probe: PROBE_PLANES and PROBE_PI_PACKAGE must be set");
   }
@@ -350,9 +418,18 @@ const measure = async (ctx) => {
       : answered;
   }
   const dispatch = {};
+  const thinking = {};
   for (const [route, models] of Object.entries(ids)) {
     for (const model of models) {
+      const before = requests.length;
       dispatch[`${route}/${model}`] = await turn(llm, route, model);
+      const sent = requests
+        .slice(before)
+        .filter((request) => request.thinkingConfig !== undefined)
+        .map((request) => request.thinkingConfig);
+      if (sent.length > 0) {
+        thinking[`${route}/${model}`] = sent;
+      }
     }
   }
   const listModelsAfter = {};
@@ -408,35 +485,69 @@ const measure = async (ctx) => {
   const drop = JSON.parse(process.env.PROBE_SAVE_DROP ?? "[]");
   const saving =
     saveId.length === 0 ? {} : await saveSequence(llm, editor, saveId, drop);
+  const describe =
+    piDescriptor === undefined
+      ? undefined
+      : {
+          user: Object.keys(piDescriptor.user?.providers ?? {}),
+          value: Object.keys(piDescriptor.value?.providers ?? {}),
+        };
+  // Last: a control that saves restarts this fiber.
+  const control =
+    saveId.length === 0 ? undefined : await controlEdit(editor, state);
   return {
     ...registered,
     ...asked,
     ...saving,
-    describe:
-      piDescriptor === undefined
-        ? undefined
-        : {
-            user: Object.keys(piDescriptor.user?.providers ?? {}),
-            value: Object.keys(piDescriptor.value?.providers ?? {}),
-          },
+    // Which contract the host's `internal/config` waterfall speaks, as one of
+    // its own dispatches showed it: "config" when a listener is handed the
+    // config (with the fiber as `this`), "fiber" when it is handed the fiber
+    // and reads the config from `next()`. Observed, never inferred from a
+    // version.
+    configHook: state.configHook ?? null,
+    control,
+    describe,
     describeEntries,
     discovery,
     dispatch,
     modelsJoin,
     listModelsAfter,
+    thinking,
   };
 };
 
+/**
+ * Whether a measurement has started in this process: the control edit
+ * restarts the probe's fiber, and the restarted `apply` must not measure
+ * again (the module, and so this flag, outlives the fiber).
+ */
+let started = false;
+
 export const apply = (ctx) => {
+  if (started) return;
+  started = true;
   let stopped = false;
+  const state = { configHook: undefined, controlling: false };
+  ctx.on?.("internal/config", (first, next) => {
+    state.configHook ??=
+      typeof first === "object" &&
+      first !== null &&
+      "uid" in first &&
+      "runtime" in first
+        ? "fiber"
+        : "config";
+    return next();
+  });
   ctx.effect?.(() => () => {
-    stopped = true;
+    // The control edit's own restart is not a stop: its answer is still
+    // written.
+    if (!state.controlling) stopped = true;
   });
   // Not awaited: `apply` returns at once, and the measurement runs once the
   // loader has settled every row.
   void (async () => {
     try {
-      const out = await measure(ctx);
+      const out = await measure(ctx, state);
       if (stopped) return;
       writeFileSync(OUT, `${JSON.stringify(out, null, 2)}\n`);
       setTimeout(() => process.exit(0), 200);

@@ -25,15 +25,19 @@ The `configured` key-source policy skips the captured fallback; an API key alrea
 
 Authentication follows the wire format: Bearer for OpenAI, `x-api-key` for Anthropic `/messages`, and `x-goog-api-key` for Google generation. Header extraction skips placeholders when another header carries a real key; placeholder detection is case-insensitive. The URL's pathname determines the plane, not query text or a conflicting turn provider.
 
+## (`v2` record) The login reader's contracts
+
+What the login reader guaranteed when the branch carried one; none of it is wired in this build.
+
 **Absence permits fallback; refusal does not.** A missing grant may fall through to the other plane or opt-in installation account. An existing grant whose refresh is refused raises a secret-free `MISSING_CREDENTIAL` error and sends no model request, rather than silently selecting a different owner. The reader returns only the access token and org, not refresh tokens or owner metadata.
 
 The login reader returns the token **and its own org**. The primary request uses that pair directly, not a cached org from another credential; a login without an org removes a stale org header. `credentialOrg` remains the explicit override. Unknown gateway planes do not consult logins. No grant is copied into the installation's database, and its account remains off unless `readOpencodeStore` is on.
 
-One reader is shared by the lifecycle and bridge. It retains per-plane sessions but reads one grant snapshot per operation, so a login written after startup is visible and concurrent callers share one refresh. Refresh preserves the grant's account, owner, org list and selected org while replacing the token pair. Missing, nonnumeric or nonfinite expiry is stale, never an indefinitely current token. The Console client uses the original fetch: refreshing under an active OpenCode turn must not recursively enter the credential fallback.
+One reader was shared by the lifecycle and the Google bridge (deleted in 1.x). It retains per-plane sessions but reads one grant snapshot per operation, so a login written after startup is visible and concurrent callers share one refresh. Refresh preserves the grant's account, owner, org list and selected org while replacing the token pair. Missing, nonnumeric or nonfinite expiry is stale, never an indefinitely current token. The Console client uses the original fetch: refreshing under an active OpenCode turn must not recursively enter the credential fallback.
 
 **Concurrency limit:** refresh deduplication is per shared reader/session, not across independent readers or processes. The seam writes a pair atomically, but does not lock the network exchange; a pending refresh can still race a new login or sign-out. Cross-process coordination and conditional replacement are separate work, not guarantees made by this wiring.
 
-These contracts are exercised with fixture grants and SQLite databases through `apply`, the fetch patch, and the bridge's reader. They verify credential selection and outgoing headers, **not** whether a live gateway accepts a session token on every model endpoint or grants free-tier access. The historical notes below describe earlier investigations; their attempted/reverted edits are not outstanding implementation work.
+These contracts are exercised with fixture grants and SQLite databases through `apply`, the fetch patch and that shared reader. They verify credential selection and outgoing headers, **not** whether a live gateway accepts a session token on every model endpoint or grants free-tier access. The historical notes below describe earlier investigations; their attempted/reverted edits are not outstanding implementation work.
 
 ## The resolution chain
 
@@ -348,7 +352,7 @@ Every combination below was sent to `https://opencode.ai/zen/v1` against a Zen `
 | :-- | :-- |
 | credential | bare API key (`oc_sk_…`, 51 chars) · account session token (`st_…`, 39 chars) · the token **with** its org (`wrk_…`) · **no credential at all** · the literal `public`, the client's own keyless value |
 | structure | bare body · with the `read` and `bash` tool schemas the fallback injects |
-| headers | `x-opencode-client: cli` · `user-agent: opencode/1.19.4` · a valid `x-opencode-session-id` (`ses_…`) · **the complete set captured from the client**, `x-opencode-request` included |
+| headers | `x-opencode-client: cli` · `user-agent: opencode/1.19.5` · a valid `x-opencode-session-id` (`ses_…`) · **the complete set captured from the client**, `x-opencode-request` included |
 | endpoint | `/chat/completions` · `/responses` · `/inference/openai/v1` |
 | runtime | Node's fetch · Python's urllib · **Bun**, the runtime the real client ships on |
 

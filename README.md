@@ -1,6 +1,8 @@
 <div align="center">
   <p><b>English</b> &nbsp;·&nbsp; <a href="./README.zh-CN.md">简体中文</a></p>
 
+  <p><img src="docs/media/hero.svg" alt="OpenCode Patch — session affinity, gateway headers and live Go quota" width="100%" /></p>
+
   <img src="icon.svg" alt="OpenCode on DeepSeek Harness" width="112" />
   <h1>dsh-opencode-patch</h1>
   <p><b>OpenCode on DeepSeek Harness</b><br />Gateway origin headers · Session affinity · Free-tier tool fallback · Live dual-mode quota meter</p>
@@ -94,7 +96,7 @@ The package is `dsh-opencode-patch` under every name it is used by: the dependen
 // ~/.dsh/profiles/web/package.json
 {
   "dependencies": {
-    "dsh-opencode-patch": "^0.14.0",
+    "dsh-opencode-patch": "^1.8.0",
   },
   "dsh": {
     "profile": {
@@ -142,15 +144,15 @@ Those endpoints authenticate in **three ways**, because they speak three wire sh
 ### 1. OpenCode Zen (`provider: opencode`) — pay-as-you-go & free tier
 
 - **Anthropic Messages** (`https://opencode.ai/inference/anthropic/v1/messages`): `claude-sonnet-4-5`, `claude-opus-4-7`, `claude-haiku-4-5`, `qwen3.8-flash`
-- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`): `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `space-bunny-free`, and the free-tier `muse-spark-1.3-contributor-free`
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`): `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`, plus free-tier `nemotron-3-ultra-free`, `ling-3.0-flash-fin-free`, `mimo-v2.6-flash-free`
+- **OpenAI Responses** (`https://opencode.ai/inference/openai/v1/responses`): `gpt-5.4`, `gpt-5.2`, `gpt-5.1-codex-max`, `muse-spark-1.3`, `grok-4.7`, `muse-wonder-1.0`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/openai/v1/chat/completions`): `deepseek-v4.1-flash`, `kimi-k2.5`, `kimi-k3`, `minimax-m2.5`, `glm-5.2`, plus free-tier `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `deepseek-v4.1-flash-free`
 - **Google Generative AI** (`https://opencode.ai/inference/google/v1beta/models/*:streamGenerateContent`): `gemini-3.8-flash`, `gemini-3.1-pro`, `gemini-3.5-flash-lite`
 
 ### 2. OpenCode Go (`provider: opencode-go`) — subscription quota
 
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.6`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `qwen3.6-plus`, `qwen3.7-max`, `space-bunny`, `space-bunny-free`, `step-5-preview-free`
-- **OpenAI Responses** (`https://opencode.ai/inference/go/openai/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.5`, `grok-4.6`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
-- **Anthropic Messages** (`https://opencode.ai/inference/go/anthropic/v1/messages`): `claude-haiku-5-5`, `minimax-m2.7`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Responses** (`https://opencode.ai/inference/go/openai/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
+- **Anthropic Messages** (`https://opencode.ai/inference/go/anthropic/v1/messages`): `claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - **Google Generative AI** (`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`): `gemini-4-argon`, with image attachments and signed tool-call replay. Go has no legacy Google endpoint, so this one base serves both families.
 - Monitored by the live 3-window quota meter (5-hour rolling, weekly, monthly). The full set ships in the bundled catalog — see [Authoritative Model Catalogs](#7-authoritative-model-catalogs-dual-local-shims--real-time-swr-updates).
 
@@ -160,18 +162,18 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol |
 | :-- | --: | :-- |
-| _(absent)_ | 25 | OpenAI Chat Completions |
+| _(absent)_ | 24 | OpenAI Chat Completions |
 | `@ai-sdk/openai` | 31 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 17 | Anthropic Messages |
 | `@ai-sdk/google` | 8 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, as pi's own data files it |
 
-Counts are the **82** active `opencode` models in `models.opencode.ai` as of 2026-10-23 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 82 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim`.
+Counts are the **81** active `opencode` models in `models.opencode.ai` as of 2026-11-03 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 81 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 
 Four properties follow:
 
-- **You keep choosing.** Each plane serves exactly the models its `llm-pi-ai` entry lists — and the whole catalog when the entry lists none. With **Enrich listings from the OpenCode catalog** on (the default), Settings → Models → Fetch offers the whole catalog: pi's own list, plus every servable, non-retired model the catalog has that pi does not list. A row it offers carries the catalog's name, context window, output limit and modalities — what the composer serves — and pi's only where the catalog has none; one adopted from it saves like any other id and is served by the plugin. Any id you save is accepted and served: one neither the catalog nor pi describes is sent as Chat Completions, unless the plane's entry names a route-level `api`, which applies to exactly those ids.
-- **Your row wins.** A model's name, context window, output limit and input modalities come from your own model row first, then the catalog, then pi's installed data. Its reasoning efforts come from your row's `reasoningEfforts`, then the catalog. Its cost and its protocol are not row fields: the cost comes from the catalog, then pi, and the protocol from the catalog's SDK, then pi's entry.
+- **You keep choosing.** Each plane serves exactly the models its `llm-pi-ai` entry lists — and the whole catalog when the entry lists none. With **Enrich listings from the OpenCode catalog** on (the default), Settings → Models → Fetch offers the whole catalog: pi's own list, plus every servable, non-retired model the catalog has that pi does not list. A row it offers carries the catalog's name, context window, output limit and modalities — what the composer serves — and pi's only where the catalog has none; one adopted from it saves like any other id and is served by the plugin. Any id you save is accepted and served: one the catalog does not classify is sent as Chat Completions, unless the plane's entry names a route-level `api`, which applies to exactly those ids. pi's own catalog never decides a protocol or a base, so a pi upgrade that reshapes it moves no turn.
+- **Your row wins.** A model's name, context window, output limit and input modalities come from your own model row first, then the catalog, then pi's installed data. Its reasoning efforts come from your row's `reasoningEfforts`, then the catalog. Its cost and its protocol are not row fields: the cost comes from the catalog, then pi; the protocol from the catalog's SDK, then the plane entry's route-level `api` (only for ids the catalog does not classify), then Chat Completions.
 - **A model whose reasoning is only on or off is offered as Off / On.** Off appears only where the model's protocol can actually turn reasoning off; a model with a real effort list offers exactly its levels, and a Chat Completions model whose list names `none` also offers Off, sent as `reasoning_effort: "none"` the way pi's own entries carry it.
 - **One credential, by the host's own rule.** A plane authenticates the way `llm-pi-ai` would: the entry's `apiKeyEnv` through the credentials service (or the launch environment when no credentials service is mounted), a Sign-in record stored under `llm-pi-ai/opencode`, and otherwise pi's own `OPENCODE_API_KEY` lookup, which is the same variable on both planes: name `apiKeyEnv: OPENCODE_GO_API_KEY` on the Go entry. The installation's own OpenCode store is consulted only when no reference is named and the deployment opted in. A plane whose key does not resolve still lists its models, and the turn fails with `MISSING_CREDENTIAL` before any request is sent.
 
@@ -203,7 +205,7 @@ Merging is **additive**: adapter rows are kept, canonical rows are appended when
 
 Two things follow that you will notice in use. **Cold start is never empty** — the bundled shim answers before the first refresh, so the picker has models immediately. And **a model the catalog has no row for still appears**, with `—` where its rate would be: never a guess, and never the previous model's name.
 
-Both generated files are checked in CI (`catalog:shim`, `limits:shim`); they exit non-zero when the vendor's data moved, which is the only way to notice the vendor's registry changing under you.
+Both generated files are checked in CI (`catalog:shim`, `limits:shim`); they exit non-zero when the vendor's data moved, which is the only way to notice the vendor's registry changing under you. A pull request fails on that only when it changes the code that generates the file; otherwise CI warns, and a nightly run proposes the refresh as a pull request of its own.
 
 → Protocol routing, the merge and the UI in technical detail: [`docs/protocol-routing-and-merge.md`](./docs/protocol-routing-and-merge.md) · [中文](./docs/protocol-routing-and-merge.md)
 
@@ -254,7 +256,7 @@ Go usage                                           Healthy
 ● 5 hours    0% used · resets in 4h 58m           100% left
 ● Weekly    28% used · resets in 3d 2h             72% left
 ● Monthly   14% used · resets Nov 7, 8:55 AM       86% left
-Monthly allowance  mimo-v2.6-pro · Go $60 · Plus $120         ⓘ
+Monthly allowance  mimo-v2.6-flash · Go $60 · Plus $120       ⓘ
 ```
 
 **This build carries the API key path only.** There is no sign-in row and no device flow: a credential comes from the deployment's configuration, from a key captured on a live request, or — when `readOpencodeStore` is on — from the OpenCode installation's own store. The Console login (device flow, session store, credential pool) lives on the `v2` line and is deliberately not in `main`, so nothing here depends on a service the host may not mount.
@@ -347,14 +349,14 @@ These exist in the schema but render no control — each is a literal, a marker,
 | Knob | Default | Why it stays in config |
 | :-- | :-- | :-- |
 | `providers` | `opencode`, `opencode-go` | Route ids whose turns the plugin decorates; both planes are always included, so only a relay route needs adding |
-| `gatewayUrls` | `opencode.ai/zen` | URL substrings marking gateway traffic; only a mirror or relay changes them |
+| `gatewayUrls` | `opencode.ai/zen`, `opencode.ai/inference` | URL substrings marking gateway traffic; only a mirror or relay changes them |
 | `userAgent` | empty (= canonical CLI UA) | Literal override; the default is what the gateway expects |
 | `originClient` | `cli` | Literal `x-opencode-client` value |
 | `sessionIdEnv` | `OPENCODE_SESSION_ID` | Names an env var only a caller-supplied session id uses |
 | `freeModelMarker` | `free` | Model-id substring; `*` forces the fallback; a blank value inherits the default; catalog-free models always qualify |
 | `usageBaseURL` | `https://opencode.ai/zen/go/v1` | Endpoint override; auto-discovered from the composition |
 | `credentialOrg` | — | The org id an account credential belongs to, when the deployment supplies one out of band |
-| `debug` / `debugFile` | `false` / — | Diagnostic JSONL logging, not a behaviour anyone tunes in the UI; the file is written only while `debug` is on |
+| `debug` / `debugFile` | `false` / — | Diagnostic JSONL logging, not a behaviour anyone tunes in the UI |
 
 ```yaml
 # cordis.patch.yml — the plugin's row; every key is optional.
@@ -367,6 +369,7 @@ These exist in the schema but render no control — each is a literal, a marker,
           - opencode-go
         gatewayUrls:
           - opencode.ai/zen
+          - opencode.ai/inference
         sessionIdEnv: "OPENCODE_SESSION_ID"
         freeModelMarker: "free"
         usageBaseURL: "https://opencode.ai/zen/go/v1"
@@ -380,7 +383,7 @@ These exist in the schema but render no control — each is a literal, a marker,
         enrichModels: true # catalog into the gateway /models listing + Settings model discovery
         usageEnabled: true # off = no meter and no price row
         # File-level only debug options:
-        debug: false # debugFile is written only while this is true
+        debug: false
         debugFile: "/tmp/dsh-opencode-debug.jsonl"
 ```
 
@@ -403,7 +406,7 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 | `403 FreeTierError` on free models | The gateway's gate is not in the request: measured with a real account, its session token, its active org and every header the official client sends, a free-tier model still answers `403` | The three injection switches above are still worth keeping on — they are what makes the traffic identifiable and they restore the tool schemas — but they do not open the free tier on their own. The paid models work with a key; see [docs/opencode-1.19-api.md](./docs/opencode-1.19-api.md) for what was excluded and how |
 | `400 MissingSessionID` | No session header attached | Ensure `dsh-opencode-patch` is listed in the profile's `dsh.profile.bundles` |
 | Auto Review fails with `TRANSPORT: Connection error` | Host process not restarted since the update | Stop and restart `dsh web` so the new `lib/index.mjs` loads |
-| Quota ring never appears for a Go model | **Restart `dsh web`, then read the browser console** — the plugin is loaded through a `link:`, so `lib/index.mjs` is read once at process start and a page reload alone keeps the old host code; the meter reports which of its paths returned nothing | The console names the cause: `no remote to mount on`, `did not mount` with the exception, `still waiting for remote.opencodeGoUsage`, `no opencodeGoUsage service on the remote` with the keys it does expose, or `the answer is not a usage shape` with what came back. A missing or unroutable credential is one cause of several, not the only one |
+| Quota ring never appears for a Go model | **Restart `dsh web`, then read the browser console** — the plugin is loaded through a `link:`, so `lib/index.mjs` is read once at process start and a page reload alone keeps the old host code; the meter reports which of its paths returned nothing | The console names the cause: `no remote to mount on`, `did not mount` with the exception, `still waiting for remote.opencodeGoUsage`, `no opencodeGoUsage service on the remote` with the keys it does expose, or `the answer is not a usage shape` with what came back. A missing or unroutable credential is one cause of several, not the only one: name `apiKeyEnv: OPENCODE_GO_API_KEY` on the `opencode-go` entry and store that key in DSH Credentials |
 | A catalog model is missing from Settings → Fetch, or a retired one persists | Stale host module, enrichment off, the route is not a plane the plugin serves (only `opencode`/`opencode-go` on the served `llm-pi-ai` row are complemented), or the catalog has not been read yet (offline, or `models.opencode.ai` blocked), so pi's own list, retired ids included, passes through and models newer than the bundled catalog are absent | `pnpm run build`, restart `dsh web`, keep **Enrich listings from the OpenCode catalog** on, fetch from the matching route, search the exact id (e.g. `space-bunny-free`); if the catalog is unread, then once `models.opencode.ai` is reachable fetch once to start the catalog refresh (that answer is still the old list — the refresh runs behind the read, and nothing runs it on a timer), then fetch again a moment later |
 | Popover shows “Limit reached” in red | 100% of a rolling/monthly window reached | Open the [OpenCode Console](https://opencode.ai/console) and enable _Use balance_ to overflow into Zen credits |
 | Non-OpenCode models misbehaving | Unrelated to this patch | Traffic to other providers passes through untouched |
@@ -418,36 +421,45 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 - **A model whose reasoning is only on or off offers Off / On.** It used to offer the whole level ladder, every rung sending the same "on". A saved selection of Minimal, Xhigh or Max on such a model no longer resolves: pick On (or Off) again. Off is offered only where the model's protocol can turn reasoning off.
 - **Chat Completions moved to the inference family by default.** Completions turns go to `https://opencode.ai/inference/openai/v1` on Zen and `https://opencode.ai/inference/go/openai/v1` on Go, where Responses, Messages and Google already went. `endpoint: legacy` keeps every protocol on `/zen/v1` (`/zen/go/v1` on Go), except Go's Google, which stays on `/inference/go/google/v1beta`.
 - **A Go plane without `apiKeyEnv` authenticates with `OPENCODE_API_KEY`.** A plane's key now resolves by `llm-pi-ai`'s own rule (D20), and pi's own OpenCode lookup reads `OPENCODE_API_KEY` on both planes. Go's Responses, Messages and Google models used to default to `OPENCODE_GO_API_KEY` when the entry named nothing (its Chat Completions models already took pi's rule), so an `opencode-go` entry without `apiKeyEnv` now sends the Zen key on every protocol. The meter follows: it captures the key a Go turn carries and prefers it, so after the first Go turn it sends the Zen key to the Go usage endpoint, is refused, and falls back to the Zen pill or "subscription required". Add `apiKeyEnv: OPENCODE_GO_API_KEY` to the Go entry; a Go key stored only in DSH Credentials authenticates a Go turn only through that reference.
+- **The catalog's one `@ai-sdk/mistral` model is offered and served.** It used to be withheld, since its dialect was unmeasured; it is now sent as Chat Completions on the vendor's OpenAI root, the plugin's own rule for that SDK (the catalog's family table places it there). Which dialect the gateway serves for it is still not measured.
 - **Any saved id is served.** A model the catalog does not describe is accepted when you save it, and sent as Chat Completions; it used to be refused at save time.
 - **The keyless listing filter is gone.** A plane whose key does not resolve lists its declared models, and the turn names the missing credential, rather than hiding the priced models.
 - **`modelOverrides`, `maxContextWindow` and `modelRoutes` were removed** (and the documented `hiddenModels`, which nothing ever read). A model's own row in the plane's entry carries its name, context window, output limit, input modalities and reasoning efforts, and the catalog fills the rest; a row's `contextWindow` is the stand-in for `maxContextWindow`. A row that still carries the removed keys validates, and the keys are ignored.
-- **No per-model protocol pin.** `modelRoutes` could send one model on a protocol of your choosing; nothing replaces that. A model the catalog or pi describes always speaks the protocol they name; the plane entry's route-level `api` applies only to ids neither describes, and `baseURL` is route-level only. Cost is not a row field either: it comes from the catalog, then pi.
+- **No per-model protocol pin.** `modelRoutes` could send one model on a protocol of your choosing; nothing replaces that. A model the catalog describes always speaks the protocol its SDK names; the plane entry's route-level `api` applies only to ids the catalog does not classify, and `baseURL` is route-level only. Cost is not a row field either: it comes from the catalog, then pi.
 - **Disabling or reloading the plugin restores the host methods it wrapped.** Model discovery and the Settings graft come off on a disable, and a live reload replaces them instead of stacking another layer. The planes go back to `llm-pi-ai` — see [Removing or disabling the plugin](#removing-or-disabling-the-plugin).
 - **Settings → Models → Fetch offers the catalog's models pi does not list.** With **Enrich listings from the OpenCode catalog** on (the default), on both planes it answers pi's list first, then every servable, non-retired catalog model pi lacks (e.g. Zen `gpt-5.3-codex-spark`, Go `minimax-m3.1-flash`), and while `llm-pi-ai` restarts it answers the catalog alone instead of an error. It used to answer pi's list only. A row it offers on a plane now carries the catalog's name, context window, output limit and modalities, and pi's only where the catalog has none, so a model adopted from it saves what the composer serves: adopting Zen `claude-sonnet-4-5` saves a 1,000,000-token context window where it used to save pi's 200,000. With the switch off, Fetch answers pi's list alone, and a restart shows `llm-pi-ai`'s error.
+- **The Google thinking control is the host pi's own.** Whether a Gemini request carries a thinking _level_ or a token _budget_ is decided by the host's pi, and the plugin re-derives nothing. The rewrite that sent `gemini-4-argon` a level on hosts whose pi does not name it, released in 1.4.3 (#130), is removed: on a host whose pi is `1.1.0` (the `rc` desktop app), every `gemini-4-argon` turn, on either plane, carries a thinking budget (`thinkingBudget: 0` when no effort is chosen) rather than the level that model takes, until the host bumps pi; where the gateway's refusal is measured is under **Host limitations**. npm installs of either channel and the `alpha` desktop app run pi `1.3.0` or later and are unaffected. See **Host limitations** under [Compatibility & Verification](#-compatibility--verification).
 - **`@viztor/dsh-opencode` is no longer published.** Its last version's "Renamed to @viztor/dsh-opencode-patch" deprecation stands as the final message; install `dsh-opencode-patch` or `@viztor/dsh-opencode-patch` instead.
 
 ## 📜 Compatibility & Verification
 
-**Verified on DeepSeek Harness `0.2.1` — both the `alpha` and `rc` channels (Node 24+)**
+**Supported: the latest release of both DeepSeek Harness channels, `rc` and `alpha`, installed with npm or shipped in the desktop app (Node 24+)**
 
-The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. Both channels' latest is **`0.2.1`**, and that line is this plugin's target — it is tested against every published `0.2.1` build in both channels, and the `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
+**Support policy.** The plugin supports the **latest** release of **both** channels, as each one actually ships: `rc` is `dsh@latest` (today `0.2.1-rc.5`, whose bridge declares pi `^1.1.0`) and `alpha` is `dsh@alpha` (today `0.2.2-alpha.2`, pi `^1.3.0`). `dsh@alpha` has since moved to `0.2.2-alpha.3`, which requires cordis `4.0.6-alpha.2`: installed with npm, it runs both planes on pi-ai's own routing until this plugin adopts that cordis's configuration-hook contract (see **Host limitations** below). An npm install runs pi **unpatched**, at the newest `1.x` the bridge's range admits; the desktop app ships the pi the harness's own workspace pins (`1.1.0` on `rc`, `1.3.0` on `alpha`). CI runs the unit and offline mock suites on each channel's cluster with pi as npm resolves it (the cordis family at the versions the harness vendors) on every pull request, and on each channel's floor pi nightly; the published binary as npm installs it, cordis floating, runs in the `e2e-host` job. The plugin neither patches nor re-implements what the host's pi does: where a host's pi lacks something the gateway needs, that is a host limitation, recorded and reported upstream rather than worked around here.
+
+The harness publishes two **channels**, `alpha` and `rc`, and they are parallel tracks rather than a version ordering: semver sorts `0.2.1-rc.2` _above_ `0.2.1-alpha.5`. The plugin targets two lines on both channels: **`0.2.1`**, the `rc` channel's latest, and the **`0.2.2`** prereleases the `alpha` channel now carries (the test suite's default install runs `0.2.2-alpha.2`; its `rc` install runs `0.2.1-rc.5`). The `@deepseek-ai/dsh-typert-protocol` peer range says so exactly:
 
 ```
->=0.2.1-alpha.1 <0.2.2
+>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0
 ```
 
-One range covers the whole line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. A plain `<0.2.2` would **not** work — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, which is how a range written against one channel silently excludes the other.
+The first clause covers the `0.2.1` line on both channels: its lower bound (`alpha.1`) sorts below every `rc` of the same line, so rc needs no separate entry. The second is **not** redundant — semver excludes prereleases unless a comparator in the same `major.minor.patch` tuple carries one, so `<0.3.0` alone would silently drop every `0.2.2-*` build, alpha and rc alike. Both clauses stop at `0.3.0`, which leaves the next line a separate decision rather than a silent widening.
+
+**Host limitations.** What a supported host lacks today, recorded by the test suite as `[HOST_LIMITATION]` rows (detected from the host's own answer, never from a version) and reported upstream:
+
+- **Gemini 4 thinking levels on the `rc` desktop app.** Its pi (`1.1.0`) does not name `gemini-4-argon` among the models it sends Google's thinking _level_, so every `gemini-4-argon` turn, on either plane, carries a thinking _budget_ (a token budget for a chosen effort, and `thinkingBudget: 0` when none is chosen, since the model cannot turn thinking off), which the gateway refuses (400 "Thinking budget is not supported for this model"; measured live on Go, and expected on Zen under the same pi rule, not yet measured there). pi `1.3.0` and later send the level, so every npm install of either channel, and the `alpha` desktop app, are unaffected. Bumping pi is the host's fix; the plugin sends what the host's pi builds.
+- **Saving settings on `alpha` `0.2.2-alpha.2` as npm installs it.** npm resolves cordis `4.0.6-alpha.2`, which calls the host's own `internal/update` listener in a new shape, so every config-editor save throws inside `dsh-app-boot` (`next is not a function`), whoever makes it. The `alpha` desktop app, on the cordis the harness vendors, saves. The same cordis also hands configuration hooks a new shape, which this plugin's plane routing does not speak yet (a known defect, recorded by the suite and fixed when this plugin adopts that contract, which its move to `0.2.2-alpha.3` requires), so on that install both planes run on pi-ai's own routing. The current `dsh@alpha`, `0.2.2-alpha.3`, requires this cordis, so installed with npm it runs both planes on pi-ai's own routing too until then; its desktop app is not yet measured.
 
 | Surface | Target |
 | :-- | :-- |
-| **Harness line** | **`0.2.1`**, `alpha` and `rc` channels alike (peer: `>=0.2.1-alpha.1 <0.2.2`) |
+| **Harness line** | **`0.2.1`** and the **`0.2.2`** prereleases, `alpha` and `rc` channels alike (peer: the range above) |
 | **Plugin package** | [`dsh-opencode-patch`](https://www.npmjs.com/package/dsh-opencode-patch) |
 | **Host profile** | DSH Web profile (`patchReload: live`) |
 | **Routes claimed** | `opencode`, `opencode-go` — served by the plugin's own adapter; `llm-pi-ai` keeps every other route |
 | **Gateways** | `opencode.ai/inference/{openai,anthropic,google}/…` and `inference/go/{openai,anthropic,google}/…` by default; `opencode.ai/zen/v1` and `zen/go/v1` with `endpoint: legacy` (Go's Google stays on `inference/go/google/v1beta`) |
 | **Catalog** | Generated from `models.opencode.ai/api.json`; retirement follows the registry's own `status: "deprecated"` flag, with no hand-maintained id list |
-| **Upstream pi** | **Not bundled.** The plane adapter loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy |
-| **Verification gate** | `vp check` clean, every deterministic test green (unit + offline gateway mock, in order and shuffled), full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
+| **Upstream pi** | **Not bundled, not patched.** The plane adapter loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy; the suite runs each channel's pi as npm resolves it, and its floor |
+| **Verification gate** | `vp check` clean, the deterministic unit and offline gateway-mock suites green, full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
 
 ---
 

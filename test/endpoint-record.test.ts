@@ -24,8 +24,15 @@ import {
   type RecordedProbe,
   recordCell,
   recordTable,
+  retryAfterLine,
   runReference,
+  systemOneLine,
+  VARIANT_HEADER,
+  VARIANT_ROWS,
+  VARIANT_RULE,
+  variantTable,
 } from "./support/endpoint-record.ts";
+import { KEYED_VARIANTS } from "./support/keyed-probes.ts";
 import { MATRIX_FAMILIES, MATRIX_PROTOCOLS } from "./support/keyless-matrix.ts";
 
 /** One probe per cell but one: root answers 404, the rest 401, Go's Google has no model. */
@@ -208,6 +215,99 @@ describe("endpoint record · the table", () => {
   });
 });
 
+describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13)", () => {
+  it("prints the System One family on one line, a shape it did not reach as not sent", () => {
+    expect(
+      systemOneLine([
+        { family: "legacy", status: 401, verdict: "path-exists" },
+        { family: "modern", status: 404, verdict: "path-gone" },
+      ])
+    ).toBe(
+      "System One on the Zen plane, keyless (nothing dispatches there): `/zen/v1/systemone` (legacy) → path-exists (401); `/inference/v1/systemone` (root) → not sent; `/inference/systemone/v1/systemone` (modern) → path-gone (404)."
+    );
+    expect(
+      systemOneLine([
+        { family: "root", status: undefined, verdict: "transport-error" },
+      ])
+    ).toContain("`/inference/v1/systemone` (root) → transport-error;");
+  });
+
+  it("prints one dated variants row per plane and variant, in order, a variant not sent as such", () => {
+    const lines = variantTable({
+      date: "2026-11-04",
+      probes: [
+        {
+          model: "m-chat",
+          plane: "opencode",
+          status: 200,
+          variant: "baseline",
+          verdict: "served",
+        },
+        {
+          model: "m-chat",
+          plane: "opencode",
+          status: 400,
+          variant: "request-id",
+          verdict: "path-exists",
+        },
+        {
+          model: undefined,
+          plane: "opencode-go",
+          status: undefined,
+          variant: "reasoning-none",
+          verdict: "no-model",
+        },
+      ],
+      run: "a local run",
+    }).split("\n");
+    expect(lines.slice(0, 4)).toEqual([
+      "### Keyed variants · measured 2026-11-04 (UTC) · a local run",
+      "",
+      VARIANT_HEADER,
+      VARIANT_RULE,
+    ]);
+    expect(lines).toHaveLength(4 + 2 * KEYED_VARIANTS.length);
+    expect(lines[4]).toBe(
+      "| `opencode` | the probe identity: no `x-opencode-request`, `x-opencode-project: global` | L4, L5 | `m-chat` | served (200) |"
+    );
+    expect(lines[5]).toBe(
+      "| `opencode` | `x-opencode-request: msg_…` | L4 | `m-chat` | path-exists (400) |"
+    );
+    expect(lines[6]).toBe(
+      "| `opencode` | `x-opencode-project: <folder name>` | L5 | — | not sent |"
+    );
+    expect(lines.at(-1)).toBe(
+      '| `opencode-go` | `reasoning_effort: "none"` | L10 | — | no-model |'
+    );
+    expect(
+      VARIANT_ROWS.map(([plane, variant]) => `${plane} ${variant.id}`)
+    ).toEqual(
+      (["opencode", "opencode-go"] as const).flatMap((plane) =>
+        KEYED_VARIANTS.map((variant) => `${plane} ${variant.id}`)
+      )
+    );
+  });
+
+  it("prints every keyed 429's Retry-After, absent included, with nothing that could break the line", () => {
+    expect(retryAfterLine([])).toBe(
+      "`Retry-After` on a keyed 429: no 429 was answered."
+    );
+    expect(
+      retryAfterLine([
+        { cell: "opencode-go openai-completions modern", value: "30" },
+        { cell: "opencode baseline", value: null },
+        {
+          cell: "opencode-go request-id",
+          value: "Wed, 21 Oct 2026 07:28:00 GMT",
+        },
+        { cell: "opencode root", value: "1`|<b>\n2" },
+      ])
+    ).toBe(
+      "`Retry-After` on a keyed 429: opencode-go openai-completions modern → `30`; opencode baseline → absent; opencode-go request-id → `Wed, 21 Oct 2026 07:28:00 GMT`; opencode root → `1b2`."
+    );
+  });
+});
+
 describe("endpoint record · docs/redirect-planes.md §13", () => {
   it("docs/redirect-planes.md §13 holds the keyless and keyed tables in the formatter's columns and row order, and the free-probe line", () => {
     const doc = readFileSync(
@@ -240,7 +340,7 @@ describe("endpoint record · docs/redirect-planes.md §13", () => {
       }
     }
     const headings = lines.filter((line) => line.startsWith("### "));
-    expect(headings).toHaveLength(2);
+    expect(headings).toHaveLength(3);
     expect(headings[0]).toMatch(
       /^### Keyless · (pending the first CI run|measured \d{4}-\d{2}-\d{2} \(UTC\) · .+)$/u
     );
@@ -250,5 +350,36 @@ describe("endpoint record · docs/redirect-planes.md §13", () => {
     expect(section).toMatch(
       /^Free model on `\/inference\/openai\/v1\/chat\/completions`: .+$/mu
     );
+    expect(section).toMatch(
+      /^System One on the Zen plane, keyless \(nothing dispatches there\): .+$/mu
+    );
+    expect(section).toMatch(/^`Retry-After` on a keyed 429: .+$/mu);
+  });
+
+  it("holds the keyed variants table in the formatter's columns, labels and row order", () => {
+    const doc = readFileSync(
+      new URL("../docs/redirect-planes.md", import.meta.url),
+      "utf8"
+    );
+    const lines = doc.slice(doc.indexOf("\n## 13. ")).split("\n");
+    const heading = lines.findIndex((line) =>
+      line.startsWith("### Keyed variants · ")
+    );
+    expect(lines[heading]).toMatch(
+      /^### Keyed variants · (pending the first CI run|measured \d{4}-\d{2}-\d{2} \(UTC\) · .+)$/u
+    );
+    expect(cellsOf(lines[heading + 2] ?? "")).toEqual(cellsOf(VARIANT_HEADER));
+    expect(lines[heading + 3]).toMatch(/^\|(\s*:?-+:?\s*\|){5}$/u);
+    const rows = lines.slice(heading + 4, heading + 4 + VARIANT_ROWS.length);
+    expect(rows.map((row) => cellsOf(row).slice(0, 3))).toEqual(
+      VARIANT_ROWS.map(([plane, variant]) => [
+        `\`${plane}\``,
+        variant.label,
+        variant.lesson,
+      ])
+    );
+    for (const row of rows) {
+      expect(cellsOf(row), row).toHaveLength(5);
+    }
   });
 });

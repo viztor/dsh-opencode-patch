@@ -16,6 +16,8 @@
  *
  * @module test/mock/plane-dispatch.mock
  */
+
+import { usesGoogleThinkingLevel } from "@earendil-works/pi-ai/api/google-shared";
 import {
   afterAll,
   afterEach,
@@ -38,7 +40,12 @@ import {
   type TierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
-import { clearCapturedApiKeys, headerValueFor } from "../support/src.ts";
+import {
+  clearCapturedApiKeys,
+  headerValueFor,
+  OPENCODE_ZEN_CATALOG,
+} from "../support/src.ts";
+import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { GO_KEY, ZEN_KEY } from "./helpers.ts";
 
@@ -161,6 +168,16 @@ const finishOf = (
     | undefined;
 
 /**
+ * Whether the installed pi sends `model` a thinking budget the mock gateway
+ * refuses: the level-only Gemini 4 model, on either plane, on a pi whose own
+ * `usesGoogleThinkingLevel` does not name it (pi 1.1.0, the rc floor). That is
+ * a HOST_LIMITATION (D26), detected from pi's own predicate, never a version.
+ */
+const hostSendsBudgetTo = (model: string): boolean =>
+  model === "gemini-4-argon" &&
+  !usesGoogleThinkingLevel({ id: model } as never);
+
+/**
  * Assert the gateway accepted one request (or, for the id no catalog names,
  * refused it the vendor's way) and that the turn finished accordingly. The
  * gateway records a request before it judges it, so the path alone cannot
@@ -173,6 +190,15 @@ const expectAnswered = (
   chunks: readonly Record<string, unknown>[]
 ): void => {
   const kind = finishOf(chunks)?.reason?.kind;
+  if (hostSendsBudgetTo(model)) {
+    // HOST_LIMITATION: the turn still reached its path with its model and
+    // key (the caller asserts those); the gateway refused the budget pi built.
+    expect({ reject: request?.reject, status: request?.status }, label).toEqual(
+      { reject: "thinking_budget", status: 400 }
+    );
+    expect(kind, label).toBe("error");
+    return;
+  }
   if (model === UNKNOWN_ID) {
     expect({ reject: request?.reject, status: request?.status }, label).toEqual(
       { reject: "model_unknown", status: 404 }
@@ -432,8 +458,8 @@ describe("plane dispatch · a completions model whose effort list names none (D1
   // pi 1.1.0 files these with `off: "none"`: Off is offered, and the disable
   // is `reasoning_effort: "none"`, sent both for Off and for a turn that
   // selects no effort (`openai-completions.js:717-721`). The mock gateway
-  // has no endpoint for `@ai-sdk/mistral` (which endpoint the vendor serves it
-  // on is unmeasured, docs/redirect-planes.md §2), so it answers Zen
+  // has no endpoint for `@ai-sdk/mistral` (which dialect the vendor serves it
+  // on is unmeasured; the plan's P7 row, docs/improvement-plan.md), so it answers Zen
   // mistral-large-4 with its protocol refusal. The mock carries no body shape
   // check for the completions kind, so that row pins the path, the credential
   // header and the `reasoning_effort` read off the parsed body, not a body the
@@ -647,5 +673,230 @@ describe("plane dispatch · Go Gemini replay stays on one provider label", () =>
       lines.filter((line) => line.includes("unusable replay state"))
     ).toEqual([]);
     log?.dispose();
+  });
+});
+
+describe("plane dispatch · Google thinking by level, never by budget (D16, D26)", () => {
+  // Google's discrete `thinkingLevel` and its token `thinkingBudget` are not
+  // interchangeable: a model that thinks in levels refuses a budget with 400
+  // INVALID_ARGUMENT ("Thinking budget is not supported for this model. Use
+  // thinking level instead."), measured live on Go gemini-4-argon. Which
+  // control a request carries is pi's own rule (`usesGoogleThinkingLevel`),
+  // never the plugin's (D26): pi 1.3 and later name that model, pi 1.1.0 (the
+  // rc channel's floor, the desktop app's pi) does not, and sends it a
+  // budget. That is a HOST_LIMITATION, recorded in
+  // test/host-characterization.test.ts; the cases that need pi to name the id
+  // ask the installed pi's own predicate and skip, naming the limitation,
+  // where it does not.
+
+  /**
+   * Whether the installed pi sends the level-only Gemini 4 model a level, by
+   * its own rule (the id decides, not the plane).
+   */
+  const piSendsArgonLevels = usesGoogleThinkingLevel({
+    id: "gemini-4-argon",
+  } as never);
+  const HOST_LIMITATION =
+    "HOST_LIMITATION: the installed pi's own usesGoogleThinkingLevel does not name gemini-4-argon, so pi sends it a thinking budget (pi 1.1.0, the rc floor; D26)";
+
+  /** The thinking config one Google request carried. */
+  const thinkingConfigOf = (body: unknown): unknown =>
+    (body as { generationConfig?: { thinkingConfig?: unknown } } | undefined)
+      ?.generationConfig?.thinkingConfig;
+
+  /** One turn's request, as the gateway judged it, and how the turn ended. */
+  interface ThinkingTurn {
+    path: string;
+    status: number;
+    thinking: unknown;
+    reject: string | null;
+    finish: string | undefined;
+  }
+
+  /**
+   * One turn per effort; answers each request's thinking config, the
+   * gateway's verdict and the turn's finish. `entry` is merged into the
+   * declared model (a profile's own `reasoningEfforts`).
+   */
+  const thinkingTurns = async (
+    plane: Plane,
+    model: string,
+    efforts: readonly (string | undefined)[],
+    entry: Record<string, unknown> = {}
+  ): Promise<{ sent: ThinkingTurn; chunks: Record<string, unknown>[] }[]> => {
+    const llm = await mount({
+      [plane]: {
+        apiKeyEnv:
+          plane === "opencode" ? "OPENCODE_API_KEY" : "OPENCODE_GO_API_KEY",
+        models: [{ id: model, ...entry }],
+      },
+    });
+    const turns: { sent: ThinkingTurn; chunks: Record<string, unknown>[] }[] =
+      [];
+    for (const reasoningEffort of efforts) {
+      const label = `${plane}/${model} ${String(reasoningEffort)}`;
+      const before = gateway.requests.length;
+      const chunks = await turn(
+        llm,
+        plane,
+        model,
+        reasoningEffort === undefined ? {} : { reasoningEffort }
+      );
+      const requests = gateway.requests.slice(before);
+      expect(requests, label).toHaveLength(1);
+      const [request] = requests;
+      turns.push({
+        chunks,
+        sent: {
+          finish: finishOf(chunks)?.reason?.kind,
+          path: request?.path ?? "",
+          reject: request?.reject ?? null,
+          status: request?.status ?? 0,
+          thinking: thinkingConfigOf(request?.body),
+        },
+      });
+    }
+    return turns;
+  };
+
+  /**
+   * One turn per effort that the gateway must accept and the turn must
+   * finish (the live failure was "completes a turn"); answers what each
+   * request carried.
+   */
+  const thinkingSent = async (
+    plane: Plane,
+    model: string,
+    efforts: readonly (string | undefined)[]
+  ): Promise<{ path: string; status: number; thinking: unknown }[]> => {
+    const turns = await thinkingTurns(plane, model, efforts);
+    return turns.map(({ chunks, sent }, index) => {
+      expectAnswered(
+        `${plane}/${model} ${String(efforts[index])}`,
+        model,
+        sent,
+        chunks
+      );
+      return { path: sent.path, status: sent.status, thinking: sent.thinking };
+    });
+  };
+
+  it.for(PLANES)(
+    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for each chosen level and for none, and never a thinkingBudget, where the installed pi names it",
+    async (plane, context) => {
+      context.skip(!piSendsArgonLevels, HOST_LIMITATION);
+      const model = "gemini-4-argon";
+      const sent = await thinkingSent(plane, model, [
+        "high",
+        "medium",
+        "low",
+        undefined,
+      ]);
+      const path = MODERN_PATH(plane, "google-generative-ai", model);
+      expect(sent).toEqual([
+        {
+          path,
+          status: 200,
+          thinking: { includeThoughts: true, thinkingLevel: "HIGH" },
+        },
+        {
+          path,
+          status: 200,
+          thinking: { includeThoughts: true, thinkingLevel: "MEDIUM" },
+        },
+        {
+          path,
+          status: 200,
+          thinking: { includeThoughts: true, thinkingLevel: "LOW" },
+        },
+        // No effort selected: the level pi itself falls back to for a level
+        // model (its lowest offered), not `thinkingBudget: 0`.
+        { path, status: 200, thinking: { thinkingLevel: "LOW" } },
+      ]);
+      for (const { thinking } of sent) {
+        expect(JSON.stringify(thinking)).not.toContain("thinkingBudget");
+      }
+    }
+  );
+
+  it("a Gemini 3 id every supported pi serves by level gets pi's own level request, for a chosen level and for none", async () => {
+    // Picked from the shipped Zen catalog by shape: a Google model the catalog
+    // describes by level whose id pi's own pattern (`usesGoogleThinkingLevel`,
+    // asked of the installed pi) also serves by level, on every supported pi.
+    // The case runs it over the real adapter and pi's real Google protocol,
+    // and pins that the plugin hands pi's request to the wire unchanged.
+    const control = OPENCODE_ZEN_CATALOG.find(
+      (spec) =>
+        spec.provider_npm === "@ai-sdk/google" &&
+        spec.reasoning === true &&
+        usesCatalogThinkingLevels(spec) &&
+        usesGoogleThinkingLevel({ id: spec.id } as never)
+    );
+    expect(
+      control,
+      "the Zen catalog has a Gemini model the catalog marks level-only and pi serves by level"
+    ).toBeDefined();
+    const values =
+      control?.reasoning_options?.find((option) => option.type === "effort")
+        ?.values ?? [];
+    const lowest = ["minimal", "low", "medium", "high"].find((level) =>
+      values.includes(level)
+    );
+    expect(lowest, `${control?.id} offers a level`).toBeDefined();
+    const sent = await thinkingSent("opencode", control?.id ?? "", [
+      "high",
+      undefined,
+    ]);
+    const path = MODERN_PATH(
+      "opencode",
+      "google-generative-ai",
+      control?.id ?? ""
+    );
+    expect(sent).toEqual([
+      {
+        path,
+        status: 200,
+        thinking: { includeThoughts: true, thinkingLevel: "HIGH" },
+      },
+      {
+        path,
+        status: 200,
+        thinking: { thinkingLevel: lowest?.toUpperCase() },
+      },
+    ]);
+  });
+
+  it("a profile that declares Off for gemini-4-argon gets pi's own disable, thinkingBudget: 0, which the model refuses (a profile error), where the installed pi names it", async (context) => {
+    context.skip(!piSendsArgonLevels, HOST_LIMITATION);
+    // The catalog never offers Off on Google; a profile that declares one
+    // makes Off supported, and pi disables a level model with a budget of 0
+    // for an id its pattern misses, as it does for its own level ids. Pinned
+    // so a later decision to serve a declared Off differently flips this row.
+    const model = "gemini-4-argon";
+    const walked = await thinkingTurns(
+      "opencode-go",
+      model,
+      [undefined, "high"],
+      { reasoningEfforts: { high: "high", low: "low", off: null } }
+    );
+    const turns = walked.map(({ sent }) => sent);
+    const path = MODERN_PATH("opencode-go", "google-generative-ai", model);
+    expect(turns).toEqual([
+      {
+        finish: "error",
+        path,
+        reject: "thinking_budget",
+        status: 400,
+        thinking: { thinkingBudget: 0 },
+      },
+      {
+        finish: expect.any(String),
+        path,
+        reject: null,
+        status: 200,
+        thinking: { includeThoughts: true, thinkingLevel: "HIGH" },
+      },
+    ]);
+    expect(turns[1]?.finish).not.toBe("error");
   });
 });

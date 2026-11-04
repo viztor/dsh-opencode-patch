@@ -543,8 +543,10 @@ export const planeApiKeyResolver =
 /**
  * pi's provider for one plane: `createProvider` over all four protocols, each
  * wrapped with pi's own OpenCode session header, and pi's own OpenCode auth so
- * a profile naming no key keeps pi's ambient discovery. Google is wired on Go
- * too, which pi 1.1.0's own Go provider is not (F10).
+ * a profile naming no key keeps pi's ambient discovery. Every protocol is
+ * wired on both planes: the plugin routes each catalog model to the protocol
+ * its SDK names (D16), Google on Go included, whatever pi's own Go provider
+ * lists. What a protocol sends is pi's, thinking controls included (D26).
  *
  * @param libraries - the host's pi.
  */
@@ -553,10 +555,10 @@ export const buildPlaneProvider =
   ({ id, models, name }) =>
     libraries.createProvider({
       api: Object.fromEntries(
-        PROTOCOLS.map((protocol) => [
-          protocol,
-          libraries.withOpenCodeSessionHeader(libraries.apis[protocol]()),
-        ])
+        PROTOCOLS.map((protocol) => {
+          const api = libraries.apis[protocol]();
+          return [protocol, libraries.withOpenCodeSessionHeader(api)];
+        })
       ),
       auth:
         id === "opencode-go"
