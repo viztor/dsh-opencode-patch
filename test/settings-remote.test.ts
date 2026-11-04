@@ -18,7 +18,7 @@ import {
   callUsageRead,
   remoteNamespace,
   remoteNamespaceOf,
-} from "../src/settings-remote.ts";
+} from "./support/src.ts";
 
 describe("settings-remote · remoteNamespaceOf", () => {
   it("answers the namespace's calls when the remote serves them", () => {

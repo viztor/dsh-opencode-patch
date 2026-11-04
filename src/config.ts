@@ -138,7 +138,6 @@ export const CONFIG_DEFAULTS = {
   maxContextWindow: undefined as number | undefined,
   modelOverrides: {} as Readonly<Record<string, ModelOverrideConfig>>,
   modelRoutes: {} as Readonly<Record<string, ModelRouteConfig>>,
-  internalRoutes: true,
   originClient: DEFAULT_ORIGIN_CLIENT,
   providers: DEFAULT_PROVIDERS,
   readOpencodeStore: false,
@@ -169,22 +168,9 @@ export interface PluginConfig {
    *
    * This is the OVERRIDE layer over what the shim and its live refresh computed.
    * A model whose protocol the catalog puts on an internal route can be pinned
-   * here instead, and a curated deployment that declares its own providers for
-   * the other protocols can switch {@link internalRoutes} off entirely.
+   * here instead.
    */
   modelRoutes?: Record<string, ModelRouteConfig>;
-  /**
-   * Whether to mount the internal per-protocol routes.
-   *
-   * On (default) the plugin registers a route for every protocol a plane serves,
-   * so a declared model that speaks Anthropic or Google is reachable with no
-   * configuration. Each mounted route is a provider whose model list is the
-   * WHOLE protocol catalog — the price of not being able to see the deployment's
-   * own selection from inside a plugin. A deployment that writes its own provider
-   * entries for those protocols turns this off and declares `modelRoutes` for the
-   * models that need it.
-   */
-  internalRoutes?: boolean;
   originClient?: string;
   providers?: string[];
   readOpencodeStore?: boolean;
@@ -235,8 +221,6 @@ export interface ResolvedPluginConfig {
   readonly modelOverrides: Readonly<Record<string, ModelOverrideConfig>>;
   /** The per-model protocol/base overrides, keyed by model id. */
   readonly modelRoutes: Readonly<Record<string, ModelRouteConfig>>;
-  /** Whether the internal per-protocol routes are mounted. */
-  readonly internalRoutes: boolean;
   originClient: string;
   providers: Set<string>;
   /**
@@ -429,10 +413,6 @@ export const resolveConfig = (
     maxContextWindow: readPositiveInteger(config.maxContextWindow),
     modelOverrides: resolveModelOverrides(config.modelOverrides),
     modelRoutes: resolveModelRoutes(config.modelRoutes),
-    internalRoutes: readBoolean(
-      config.internalRoutes,
-      CONFIG_DEFAULTS.internalRoutes
-    ),
     originClient:
       readString(config.originClient) ?? CONFIG_DEFAULTS.originClient,
     providers: new Set(
@@ -594,14 +574,6 @@ export const Config = z.object({
     .description(
       "Per-model wire routing overrides: { <id>: { api, baseURL } }. The api " +
         "names a pi protocol; baseURL replaces the catalog's endpoint."
-    ),
-  internalRoutes: z
-    .boolean()
-    .default(CONFIG_DEFAULTS.internalRoutes)
-    .volatile()
-    .description(
-      "Mount the internal per-protocol routes. Off for a deployment that " +
-        "declares its own providers for the other protocols."
     ),
   usageBaseURL: z
     .string()

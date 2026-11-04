@@ -19,15 +19,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   type ActiveTurnState,
-  openCodeSessionIdFor,
   OPENCODE_UA,
   PARENT_SESSION_ALT_HEADER,
   PARENT_SESSION_HEADER,
-  patchFetch,
-  resolveConfig,
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
-} from "../../src/index.ts";
+  openCodeSessionIdFor,
+  patchFetch,
+  resolveConfig,
+} from "../support/src.ts";
 
 const ENABLED = process.env.OPENCODE_E2E === "1";
 

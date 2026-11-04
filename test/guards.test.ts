@@ -17,7 +17,7 @@ import {
   isFunctionLike,
   isRecord,
   isUnknownArray,
-} from "../src/utils/guards.ts";
+} from "./support/src.ts";
 
 /** A value that is genuinely absent, without writing the `undefined` literal. */
 const ABSENT: unknown = undefined;

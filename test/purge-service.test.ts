@@ -8,11 +8,11 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseModelsDevCatalog } from "../src/models-catalog.ts";
 import {
   ModelPurgeService,
+  parseModelsDevCatalog,
   stripRetiredReferences,
-} from "../src/purge-service.ts";
+} from "./support/src.ts";
 import { createMockContext } from "./test-helpers.ts";
 
 /** A registry reply with one retired id per plane and one live id beside it. */

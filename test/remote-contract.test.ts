@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { patchRemote } from "../src/settings-page.tsx";
+import { patchRemote } from "./support/src.ts";
 
 const SRC = join(import.meta.dirname, "..", "src");
 

@@ -3,10 +3,12 @@ import { createRequire } from "node:module";
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { expect, it, vi } from "vitest";
 
-import { attachmentResolvers } from "../src/attachment-services.ts";
-import { OPENCODE_GO_CATALOG } from "../src/catalog-data.ts";
-import { registerGoogleBridge } from "../src/google-bridge.ts";
 import { testPi } from "./google-runtime-fixture.ts";
+import {
+  OPENCODE_GO_CATALOG,
+  attachmentResolvers,
+  registerGoogleBridge,
+} from "./support/src.ts";
 
 const scopedServices = (services: Record<string, unknown>) => {
   const cleanups: (() => void)[] = [];

@@ -23,31 +23,29 @@ import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { OPENCODE_PLANE_API } from "../src/catalog-data.ts";
-import { resolveConfig } from "../src/config.ts";
 import {
+  type CordisContext,
+  GOOGLE_INTERNAL_ROUTE,
+  OPENCODE_PLANE_API,
   RESPONSES_SDK,
   ROUTE_FOR_PLANE_PROTOCOL,
+  SELF_MOUNTED_ROUTES,
+  baseForProtocol,
+  declaredProviderModels,
   getLiveGoCatalog,
   getLiveZenCatalog,
   inheritedCredentialRef,
   internalRouteFor,
   loadPiAi,
+  loadPiAiAdapterHost,
+  loadPiAiModule,
   modelsForSdk,
   narrowToDeclared,
+  reasoningEffortsFor,
   registerResponsesProvider,
   undescribedDeclaredModels,
   unroutedDeclaredModels,
-  GOOGLE_INTERNAL_ROUTE,
-  SELF_MOUNTED_ROUTES,
-} from "../src/index.ts";
-import type { CordisContext } from "../src/index.ts";
-import { baseForProtocol } from "../src/pi-provider.ts";
-import {
-  loadPiAiAdapterHost,
-  loadPiAiModule,
-  reasoningEffortsFor,
-} from "../src/responses-provider.ts";
+} from "./support/src.ts";
 
 const MUSE = "muse-spark-1.2";
 
@@ -1546,9 +1544,9 @@ describe("responses-provider · declared models a missing route would strand", (
   );
 
   it("names the model and the protocol nothing serves", () => {
-    // The case: `internalRoutes: false`, no declared provider for this protocol,
-    // and a model the user selected that speaks it. Silence would leave the model
-    // in the picker with every call failing.
+    // The case: no declared provider for this protocol, and a model the user
+    // selected that speaks it. Silence would leave the model in the picker
+    // with every call failing.
     if (anthropic === undefined) {
       throw new Error("the zen catalog serves no anthropic model");
     }
@@ -1695,7 +1693,6 @@ describe("responses-provider · the declaration needs no credential", () => {
     //   opencode: no models could be read for the route - it declares none, or
     //   its credential is not resolvable in this process - so no internal route
     //   is mounted for it
-    const { declaredProviderModels } = await import("../src/go-discovery.ts");
     const ctx = {
       loader: {
         *entries() {
@@ -1809,27 +1806,43 @@ describe("Go Google bridge mounting", () => {
     expect(host.adapters.has("opencode-go-google")).toBe(false);
   });
 
-  it("hands back the bridges' disposer when the internal routes are off", async () => {
-    // The bridge mounts before the switch is read, so an exit that answered
-    // `undefined` here left both Google routes registered with nothing able to
-    // withdraw them — and the next reload's bridge then failed DUPLICATE_ADAPTER.
+  it("hands back the bridges' disposer when every internal route is already declared", async () => {
+    // The bridge mounts before the wrapper's routes are weighed, so an early
+    // exit that answered `undefined` left both Google routes registered with
+    // nothing able to withdraw them — and the next reload's bridge then failed
+    // DUPLICATE_ADAPTER. Every wrapper-mounted route is declared here, which is
+    // the exit that leaves nothing to mount.
     const host = createHost();
-    const stop = await registerResponsesProvider(
-      host.ctx,
-      resolveConfig({ internalRoutes: false })
-    );
-    expect(host.adapters.has("opencode-google")).toBe(true);
-    expect(stop).toBeTypeOf("function");
-    stop?.();
-    expect(host.adapters.has("opencode-google")).toBe(false);
-    expect(host.adapters.has("opencode-go-google")).toBe(false);
-    // And a second activation can mount them again, which is what a reload does.
-    const again = await registerResponsesProvider(
-      host.ctx,
-      resolveConfig({ internalRoutes: false })
-    );
-    expect(host.adapters.has("opencode-google")).toBe(true);
-    again?.();
+    const wrapperRoutes = Object.values(ROUTE_FOR_PLANE_PROTOCOL)
+      .flatMap((plane) => Object.values(plane.routes))
+      .filter((route) => !SELF_MOUNTED_ROUTES.has(route));
+    expect(wrapperRoutes.length).toBeGreaterThan(0);
+    for (const route of wrapperRoutes) {
+      host.adapters.set(route, { id: route });
+    }
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const stop = await registerResponsesProvider(host.ctx);
+      expect(info).toHaveBeenCalledWith(
+        expect.stringContaining("every internal route is already declared")
+      );
+      expect(host.adapters.has("opencode-google")).toBe(true);
+      expect(host.adapters.has("opencode-go-google")).toBe(true);
+      expect(stop).toBeTypeOf("function");
+      stop?.();
+      expect(host.adapters.has("opencode-google")).toBe(false);
+      expect(host.adapters.has("opencode-go-google")).toBe(false);
+      // The disposer withdraws only what it mounted: the declared routes stay.
+      for (const route of wrapperRoutes) {
+        expect(host.adapters.has(route)).toBe(true);
+      }
+      // And a second activation can mount them again, which is what a reload does.
+      const again = await registerResponsesProvider(host.ctx);
+      expect(host.adapters.has("opencode-google")).toBe(true);
+      again?.();
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("withdraws routes and disposes the fiber when the mount fails to start", async () => {

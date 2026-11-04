@@ -16,7 +16,7 @@ import {
   readString,
   readStringList,
   unwrapNode,
-} from "../src/config-values.ts";
+} from "./support/src.ts";
 
 /** A value that is genuinely absent, without writing the `undefined` literal. */
 const ABSENT: unknown = undefined;

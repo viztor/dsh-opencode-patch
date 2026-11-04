@@ -63,7 +63,7 @@ import {
   findModelSpecOn,
   internalRouteFor,
   isServableSdk,
-} from "../../src/index.ts";
+} from "../support/src.ts";
 import {
   accessDisabled,
   freeTierClosed,

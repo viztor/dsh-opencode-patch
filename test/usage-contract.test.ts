@@ -16,7 +16,7 @@ import {
   parseAccountRef,
   parseGoUsage,
   parseUsageQuery,
-} from "../src/index.ts";
+} from "./support/src.ts";
 
 /** One well-formed quota window, with a single field overridden. */
 const windowRow = (

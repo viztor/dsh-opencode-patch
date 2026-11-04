@@ -9,11 +9,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { catalogPlaneForRoute } from "../src/models-catalog.ts";
-import { INTERNAL_ROUTES } from "../src/responses-routes.ts";
 import {
   ANTHROPIC_VERSION,
+  INTERNAL_ROUTES,
   authHeaderFor,
+  catalogPlaneForRoute,
   gatewayPlaneFor,
   headerSourceOf,
   isGoPlaneUrl,
@@ -21,7 +21,7 @@ import {
   modelIdOf,
   requestUrlOf,
   toolNamesOf,
-} from "../src/utils/request-shape.ts";
+} from "./support/src.ts";
 
 describe("request-shape · isZenProvider", () => {
   it("request-shape · isZenProvider: the Zen Google route is Zen, the Go routes are Go", () => {
