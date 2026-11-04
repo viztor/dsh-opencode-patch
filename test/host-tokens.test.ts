@@ -16,6 +16,20 @@
  * they never use is either undefined or private to a subsystem the plugin is
  * not part of.
  *
+ * **And every token the settings card names is in that vocabulary**, whether or
+ * not it carries a fallback: the card and every file it renders that names a
+ * token are scanned. Which token the mounted card renders for a warning is
+ * asserted in settings-card-purge and settings-store-inspect. The meter
+ * (`usage-ui.ts`, `usage-panel.tsx`, `usage-pill.tsx`) is left out because the
+ * card does not render it. `usage-pill.tsx` would pass the scan; the other two
+ * would not, for measured reasons rather than broken tokens: each spells the
+ * `--dsw-alias-state-*` wildcard in a prose comment, which the scan reads as
+ * the name `--dsw-alias-state-`, and `usage-ui.ts` names `--dsw-radius-full`,
+ * which the primitives never use and which sits behind a literal `999px`
+ * fallback — the case the first test allows. Scanning the meter would mean
+ * re-spelling those two comments and letting a literal fallback through, not
+ * handling a template: no meter file builds a token name from one.
+ *
  * @module test/host-tokens.test
  */
 
@@ -59,6 +73,21 @@ const hostVocabulary = (): Set<string> => {
   return found;
 };
 
+/**
+ * The card files whose tokens are checked against the host's vocabulary. A file
+ * that names no token (`settings-boolean-field.tsx`) is not listed, since the
+ * scan treats an empty file as one it failed to read.
+ */
+const CARD_FILES = [
+  "src/settings-card.tsx",
+  "src/settings-store-inspect.tsx",
+  "src/settings-usage.tsx",
+  "src/settings-field-shell.tsx",
+  "src/settings-choice-field.tsx",
+];
+
+const TOKEN = /--dsw-[\w-]+/gu;
+
 describe("the host's design tokens", () => {
   it("never falls back from one token to another", () => {
     // A token the host does not define resolves to nothing. Where the
@@ -100,5 +129,25 @@ describe("the host's design tokens", () => {
     const vocabulary = hostVocabulary();
     expect(vocabulary.has("--dsw-alias-state-warn-label")).toBe(true);
     expect(vocabulary.has("--dsw-alias-label-warning")).toBe(false);
+  });
+
+  it("every token the settings card names is one the host's primitives use", () => {
+    const vocabulary = hostVocabulary();
+    // A read of a directory that moved finds nothing, and "nothing" must not
+    // read as "the token is absent".
+    expect(vocabulary.size).toBeGreaterThan(0);
+
+    for (const file of CARD_FILES) {
+      const named = new Set(
+        [
+          ...readFileSync(join(process.cwd(), file), "utf8").matchAll(TOKEN),
+        ].map((match) => match[0])
+      );
+      // A file that names no token at all is a scan that read nothing.
+      expect(named.size, file).toBeGreaterThan(0);
+      for (const token of named) {
+        expect(vocabulary.has(token), `${file} names ${token}`).toBe(true);
+      }
+    }
   });
 });

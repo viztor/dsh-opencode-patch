@@ -13,6 +13,7 @@ import {
   BASE_FOR_PROTOCOL,
   baseForProtocol,
   piModelFor,
+  planeBaseFor,
   protocolFor,
   thinkingLevelMapFor,
 } from "../src/pi-provider.ts";
@@ -275,9 +276,9 @@ describe("pi-provider · the tables themselves", () => {
     }
   });
 
-  it("resolves each endpoint family to its own base, and auto to the catalog", () => {
-    // `auto` is the catalog's own address and therefore cannot be wrong about
-    // which family is current; the other two pin one, which is the whole point
+  it("resolves each endpoint family to its own base, and auto as modern", () => {
+    // `auto` is an alias of `modern` (the copy says so, test/endpoint-copy);
+    // `legacy` pins the older single base per plane, which is the whole point
     // of the setting — the two families are separately entitled.
     expect(baseForProtocol("opencode", "openai-completions", "auto")).toBe(
       OPENCODE_PLANE_API.zen
@@ -299,6 +300,19 @@ describe("pi-provider · the tables themselves", () => {
     expect(baseForProtocol("opencode-go", "openai-completions", "modern")).toBe(
       OPENCODE_PLANE_API.go
     );
+  });
+
+  it("resolves auto exactly as modern on every protocol and plane", () => {
+    for (const plane of ["opencode", "opencode-go"] as const) {
+      expect(planeBaseFor(plane, "auto")).toBe(planeBaseFor(plane, "modern"));
+      const protocols = Object.keys(BASE_FOR_PROTOCOL[plane]);
+      expect(protocols.length).toBe(4);
+      for (const protocol of protocols) {
+        expect(baseForProtocol(plane, protocol, "auto"), protocol).toBe(
+          baseForProtocol(plane, protocol, "modern")
+        );
+      }
+    }
   });
 
   it("keeps the Anthropic base one level shorter on every family", () => {
@@ -333,7 +347,7 @@ describe("pi-provider · the tables themselves", () => {
     expect(
       piModelFor("opencode", model, "openai-completions", {}, "modern").baseUrl
     ).toBe(OPENCODE_PLANE_API.zen);
-    // No family named means the catalog's own address, as before.
+    // No family named means the default, auto, which resolves as modern.
     expect(
       piModelFor("opencode", model, "openai-completions", {}).baseUrl
     ).toBe(OPENCODE_PLANE_API.zen);

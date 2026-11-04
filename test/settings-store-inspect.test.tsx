@@ -269,4 +269,50 @@ describe("settings-store-inspect: the row", () => {
       host.remove();
     }
   });
+
+  it("renders a problem note in the host's warning text colour", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      act(() => {
+        root.render(
+          createElement(StoreInspectRow, {
+            onInspect: () =>
+              Promise.resolve<StoreInspectOutcome>({ kind: "unavailable" }),
+            t,
+          })
+        );
+      });
+      const button = [...host.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes(t("storeInspect"))
+      );
+      act(() => {
+        button?.click();
+      });
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      });
+
+      // The innermost div whose whole text is the note: with no rows, the
+      // report's wrapper carries the same text.
+      const note = [...host.querySelectorAll("div")].find(
+        (d) =>
+          d.textContent === t("storeInspectUnavailable") &&
+          d.querySelector("div") === null
+      );
+      expect(note, "the note must be rendered").toBeDefined();
+      expect(note?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+      host.remove();
+    }
+  });
 });

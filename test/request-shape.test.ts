@@ -9,16 +9,54 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { catalogPlaneForRoute } from "../src/models-catalog.ts";
+import { INTERNAL_ROUTES } from "../src/responses-routes.ts";
 import {
   ANTHROPIC_VERSION,
   authHeaderFor,
   gatewayPlaneFor,
   headerSourceOf,
   isGoPlaneUrl,
+  isZenProvider,
   modelIdOf,
   requestUrlOf,
   toolNamesOf,
 } from "../src/utils/request-shape.ts";
+
+describe("request-shape · isZenProvider", () => {
+  it("request-shape · isZenProvider: the Zen Google route is Zen, the Go routes are Go", () => {
+    // `opencode-google` is the Zen plane's Google route. It starts with
+    // `opencode-go`, so a predicate that looked for `go` anywhere read it as the
+    // subscription plan; the plane is `opencode-go` or one of its own
+    // `opencode-go-*` routes, and nothing else.
+    expect(isZenProvider("opencode-google")).toBe(true);
+    expect(isZenProvider("opencode-go-google")).toBe(false);
+    expect(isZenProvider("opencode-go-responses")).toBe(false);
+    expect(isZenProvider("opencode-go-anthropic")).toBe(false);
+    expect(isZenProvider("opencode-go")).toBe(false);
+    expect(isZenProvider("OpenCode-Go")).toBe(false);
+    expect(isZenProvider("opencode")).toBe(true);
+    expect(isZenProvider("OPENCODE")).toBe(true);
+    expect(isZenProvider("opencode-anthropic")).toBe(true);
+    expect(isZenProvider("opencode-responses")).toBe(true);
+    expect(isZenProvider("deepseek")).toBe(false);
+    expect(isZenProvider()).toBe(false);
+  });
+
+  it("agrees with catalogPlaneForRoute on every route the plugin serves", () => {
+    // The defect was these two predicates disagreeing; a route added to or
+    // renamed in responses-routes.ts must not let them drift apart again. The
+    // set is bounded on purpose: outside OpenCode routes the two differ by
+    // design (isZenProvider wants an `opencode` name; the plane defaults).
+    const routes = ["opencode", "opencode-go", ...INTERNAL_ROUTES];
+    expect(routes.length).toBeGreaterThan(2);
+    for (const route of routes) {
+      expect(isZenProvider(route), route).toBe(
+        catalogPlaneForRoute(route) === "zen"
+      );
+    }
+  });
+});
 
 describe("request-shape · the plane of a path", () => {
   it("reads the Go plane out of both endpoint families", () => {

@@ -15,7 +15,7 @@ A **plane** is one gateway base URL with its own catalog and its own credential.
 
 Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`); the document's 2026-10-09 stamp is for its measurements.
 
-**There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto` follows the catalog, which today names `…/inference/openai/v1` and `…/inference/go/openai/v1`, and `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`. Both are still served and they are entitled separately, which is why the choice is the user's rather than a migration. The dated measurement below was taken on the legacy family.
+**There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto`, the default, is an alias of `modern`, the per-protocol inference family (`…/inference/openai/v1` and `…/inference/go/openai/v1` for completions), and `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`. Both are still served and they are entitled separately, which is why the choice is the user's rather than a migration. The dated measurement below was taken on the legacy family.
 
 A plane is a property of the **account and the base URL**, never of a model. The same model id can exist on both planes and be served on a different shape in each.
 

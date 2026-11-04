@@ -50,6 +50,33 @@ describe("purgeDeprecatedModels", () => {
   });
 });
 
+describe("purgeDeprecatedModels: the remote protocol's refusal", () => {
+  it("carries the host's refusal envelope in its own words", async () => {
+    // The remote protocol answers a failure as `{ ok: false, error }`, with
+    // `error` a serialized RemoteError: the reason is its `message`.
+    await expect(
+      purgeDeprecatedModels(
+        scopeWith(async () => ({
+          error: new Error("no config editor on this host"),
+          ok: false,
+        }))
+      )
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "no config editor on this host",
+    });
+  });
+
+  it("names a refusal that carries no message", async () => {
+    await expect(
+      purgeDeprecatedModels(scopeWith(async () => ({ error: {}, ok: false })))
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host refused the purge",
+    });
+  });
+});
+
 describe("purgeDeprecatedModels: the paths a scope can take", () => {
   it("reads the namespace through ctx.get, the path that works at runtime", () => {
     // The `scope.remote.opencodeModelPurge` property read in the cases above is

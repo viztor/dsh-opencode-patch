@@ -398,15 +398,22 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // The one status the catalog answers for is 404, because the Go plane's
     // modern base serves no `/models` route at all.
     for (const status of [401, 403, 429, 500, 502]) {
+      // The rate limit carries the header a caller backs off by; the
+      // passthrough must hand it on with the status.
+      const headers: Record<string, string> =
+        status === 429 ? { "retry-after": "30" } : {};
       const upstream = Response.json(
         { error: { message: "refused" } },
-        { status }
+        { headers, status }
       );
       const enriched = await enrichModelsResponse(
         "https://opencode.ai/inference/openai/v1/models",
         upstream
       );
       expect(enriched.status, `status ${status}`).toBe(status);
+      expect(enriched.headers.get("retry-after"), `status ${status}`).toBe(
+        headers["retry-after"] ?? null
+      );
       const body = (await enriched.json()) as { data?: unknown[] };
       expect(body.data, `status ${status} must not carry a catalog`).toBe(
         undefined
@@ -421,6 +428,28 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(missing.status).toBe(200);
     const filled = (await missing.json()) as { data: Array<{ id: string }> };
     expect(filled.data.length).toBeGreaterThan(0);
+  });
+
+  it("fills a Zen-plane 404 with the Zen catalog, as it does the Go plane's", async () => {
+    // The 404 rule is not a Go special case: a Zen base that serves no
+    // listing is answered from the Zen catalog the same way.
+    const out = await enrichModelsResponse(
+      "https://opencode.ai/zen/v1/models",
+      new Response("Not Found", { status: 404 })
+    );
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(getLiveZenCatalog().length);
+  });
+
+  it("still answers a 200 whose body is not JSON with the full catalog", async () => {
+    const out = await enrichModelsResponse(
+      "https://opencode.ai/zen/v1/models",
+      new Response("not json", { status: 200 })
+    );
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(getLiveZenCatalog().length);
   });
 
   it("answers the modern Go listing with the Go catalog, not the Zen one", async () => {
