@@ -161,7 +161,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     id: "deepseek-v4-pro",
     input_modalities: ["text"],
     max_output_tokens: 384_000,
-    name: "DeepSeek V4 Pro (New)",
+    name: "DeepSeek V4 Pro",
     reasoning: true,
     reasoning_options: [{ type: "effort", values: ["high", "max"] }],
   },
@@ -867,6 +867,26 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     reasoning: true,
     reasoning_options: [
       { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+    ],
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "crouton-alpha-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 270_000,
+    name: "Crouton Alpha Free",
+    reasoning: true,
+    reasoning_options: [
+      {
+        type: "effort",
+        values: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      },
     ],
   },
   {
