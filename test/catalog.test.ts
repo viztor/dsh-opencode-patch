@@ -92,7 +92,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("ships only active, priced models in the bundled Go shim", () => {
-    expect(OPENCODE_GO_CATALOG.length).toBe(30);
+    expect(OPENCODE_GO_CATALOG.length).toBe(31);
     for (const model of OPENCODE_GO_CATALOG) {
       expect(model.id.length).toBeGreaterThan(0);
       expect(model.name.length).toBeGreaterThan(0);

@@ -310,6 +310,20 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     reasoning_options: [{ type: "effort", values: ["none", "low", "high"] }],
   },
   {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0.042,
+      input: 0.834,
+      output: 2.501,
+    },
+    id: "hy4",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 65_536,
+    name: "Hy4",
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: ["none", "high"] }],
+  },
+  {
     context_window: 1_024_000,
     cost: {
       cache_read: 0.042,
