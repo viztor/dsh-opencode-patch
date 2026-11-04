@@ -312,12 +312,13 @@ export type DiscoveryClaim = Pick<RouteClaim, "claiming" | "piAiNamespace">;
  * The catalog plane a discovery request is complemented from, or `undefined`.
  *
  * Only a plane route asked on the namespace of the pi-ai row the claim serves,
- * and only while the claim has not stood down (from install on, before the
- * mount settles, too — see {@link RouteClaim.claiming}): there, the plugin's
- * adapter validates and serves a saved id whatever pi lists (D15). Anywhere
- * else — after a stand-down, or on a second pi-ai row serving its own planes —
- * pi-ai refuses at save an id it does not list, so offering one would offer a
- * refusal.
+ * and only while the claim has engaged (from install on, before the mount
+ * settles, too — see {@link RouteClaim.claiming}): there, the plugin's adapter
+ * validates and serves a saved id whatever pi lists (D15). Anywhere else —
+ * after a stand-down, on a host where pi-ai still holds the planes once the
+ * claim's mount has settled, or on a second pi-ai row serving its own planes
+ * — pi-ai refuses at save an id it does not list, so offering one would offer
+ * a refusal.
  */
 const servedPlane = (
   settingsNs: unknown,

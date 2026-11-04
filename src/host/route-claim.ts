@@ -114,11 +114,18 @@ export interface RouteClaim {
   /** The settings namespace pi-ai's row is described under. */
   readonly piAiNamespace: () => string;
   /**
-   * Whether the claim has neither stood down (the host's modules could not be
-   * read) nor torn down. True from install, so before `mounted` settles the
-   * plane routes may still be pi-ai's: a plane save is already validated by
-   * the plugin, and a fetch complemented in that window assumes the claim goes
-   * live, which it does unless the modules are unavailable.
+   * Whether the claim has engaged, as the plugin observes it: false once it
+   * stood down (the host's modules could not be read) or tore down, and false
+   * once `mounted` has settled while the served pi-ai row still resolves
+   * holding a plane — the mount's restart did not move the planes, as on a
+   * host whose `internal/config` waterfall hands its listeners the fiber, a
+   * contract the claim does not speak. pi-ai serves the planes there and
+   * refuses at save an id it does not list. True from install until then, so
+   * before `mounted` settles the plane routes may still be pi-ai's: a plane
+   * save is already validated by the plugin, and a fetch complemented in that
+   * window assumes the claim engages. A later window in which the served row
+   * holds a plane again (a handover's restart) reads false until the restart
+   * moves it, which only narrows a fetch to pi's own list.
    */
   readonly claiming: () => boolean;
   /** Settles once the claim is mounted; never rejects. */
@@ -839,8 +846,17 @@ export const installRouteClaim = (
     }
   })();
 
+  /** The mount has settled and the served pi-ai row still holds a plane. */
+  const heldByPiAi = (): boolean => {
+    if (!state.ready) {
+      return false;
+    }
+    const pi = livePiAi();
+    return pi !== undefined && resolvedPlanes(pi).length > 0;
+  };
+
   return {
-    claiming: () => state.active,
+    claiming: () => state.active && !heldByPiAi(),
     committedEntries: () => (state.active ? state.normalized : {}),
     mounted,
     piAiNamespace: () => livePiAi()?.entry?.options?.id ?? PI_AI_RUNTIME,

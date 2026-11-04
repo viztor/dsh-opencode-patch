@@ -18,7 +18,8 @@
  * rows are the cell's `rows` in either order, and the listing and save rows no
  * longer depend on which ids pi describes. The Settings fetch rows (P3) are
  * checked against this checkout's servable shim catalog, and their order
- * against the list the prefix's own pi exports, in every cell.
+ * against the list the prefix's own pi exports, in every cell where the route
+ * claim engages.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
  * directory whose `node_modules/@deepseek-ai/dsh` is the installed host of the
@@ -67,10 +68,11 @@
  * way: on a host whose `internal/config` waterfall hands its listeners the
  * fiber (`claimCannotEngage`, read from the contract the probe saw the host
  * dispatch; alpha's `npm` cell today, cordis `4.0.6-alpha.2`), the route
- * claim does not engage, so that row asserts that pi-ai serves both planes,
- * and every row that needs the claim (the plane-provider, registry, listing,
- * per-model, Gemini-level, Settings-graft and save rows) skips with
- * `CLAIM_SKIP`. The save rows also skip where the host cannot save at all.
+ * claim does not engage, so that row asserts that pi-ai serves both planes
+ * and that Settings' fetch answers pi's own list with nothing appended, and
+ * every row that needs the claim (the plane-provider, registry, listing,
+ * per-model, Gemini-level, Settings-graft, save and Settings fetch rows) skips
+ * with `CLAIM_SKIP`. The save rows also skip where the host cannot save at all.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -757,7 +759,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     expect(out.planesSettled).toBe(true);
   });
 
-  it(`[KNOWN_DEFECT] ${CHANNEL} ${RECORD.dsh} (${CELL} cell), on a host whose internal/config waterfall hands listeners the fiber: the route claim does not engage, and pi-ai serves both planes`, (context) => {
+  it(`[KNOWN_DEFECT] ${CHANNEL} ${RECORD.dsh} (${CELL} cell), on a host whose internal/config waterfall hands listeners the fiber: the route claim does not engage, pi-ai serves both planes, and Settings' fetch answers pi's own list`, (context) => {
     context.skip(
       !claimCannotEngage(out),
       "this host's internal/config waterfall hands listeners the config"
@@ -770,6 +772,16 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     expect(out.planesSettled).toBe(false);
     expect(out.owners.opencode).toBe("PiAiAdapter");
     expect(out.owners["opencode-go"]).toBe("PiAiAdapter");
+    // The claim reads as not engaged once its mount settles, so the fetch is
+    // the enrich-only merge: pi's own ids and nothing appended, since pi-ai,
+    // which serves the planes here, refuses at save an id it does not list.
+    context.skip(
+      piIdsByPlane === undefined,
+      "the prefix's pi exports no getBuiltinModels under ./providers/all"
+    );
+    for (const plane of PLANES) {
+      expect(fetchedIds(plane), plane).toEqual(piIdsByPlane?.[plane] ?? []);
+    }
   });
 
   it("the plane provider is built from the host's own pi, not the linked checkout's (both cells)", (context) => {
@@ -960,7 +972,9 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
   });
 
   it("[BASELINE] Settings' fetch on each plane offers the whole servable catalog, each id once, in the Remote's row shape (D3)", (context) => {
-    // The wrapper appends the catalog only on a plane the route claim serves.
+    // The wrapper appends the catalog only while the route claim has
+    // engaged; where it cannot, the KNOWN_DEFECT row above asserts the
+    // enrich-only answer instead.
     context.skip(claimCannotEngage(out), CLAIM_SKIP);
     for (const plane of PLANES) {
       const ids = fetchedIds(plane);
@@ -985,7 +999,8 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
   });
 
   // The order is read against the list the PREFIX's own pi exports, so it
-  // holds in every cell, a newer pi than the record's included.
+  // holds in every cell where the route claim engages, a newer pi than the
+  // record's included.
   it("[BASELINE] Settings' fetch answers the host pi's own list first, then the catalog models that pi lacks", (context) => {
     context.skip(claimCannotEngage(out), CLAIM_SKIP);
     context.skip(

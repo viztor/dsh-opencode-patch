@@ -338,7 +338,8 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // returns its installed catalog for a provider pi ships and only fetches an
     // endpoint for one it does not, so this listing is what the endpoint offers —
     // the surface a user browses, not the list a picker shows. The picker lists
-    // the plane profile's declared models (`planeProfileFor`, never widened);
+    // the plane profile's declared models, or the plane's catalog when the
+    // entry declares none (`planeProfileFor`, D3, never widened by this answer);
     // Settings' fetch on a served plane is what offers the catalog
     // (`complementDiscoveredModels`).
     expect(json.data.length).toBe(OPENCODE_GO_CATALOG.length + 1);

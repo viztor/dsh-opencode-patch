@@ -808,7 +808,8 @@ export const enrichModelsResponse = async (
   // for one it does not — so a `/models` answer is "what this endpoint offers",
   // the list a user browses, not the list a picker shows. Widening is wrong
   // anywhere that decides what a deployment may pick: the composer lists the
-  // declared models alone.
+  // declared models, or the plane's catalog when the entry declares none (D3),
+  // never a list widened by a `/models` answer.
   //
   // The seed also covers the ordinary case of a gateway answering with a subset:
   // the vendor's own listing is narrower than its catalog.

@@ -401,7 +401,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 | `400 MissingSessionID` | 未附带会话请求头 | 确认 `dsh-opencode-patch` 已列入 profile 的 `dsh.profile.bundles` |
 | Auto Review 报 `TRANSPORT: Connection error` | 更新后宿主进程未重启 | 停止并重启 `dsh web`，让新的 `lib/index.mjs` 加载 |
 | Go 模型始终不显示额度环 | **重启 `dsh web`，然后查看浏览器控制台**——插件通过 `link:` 加载，`lib/index.mjs` 只在进程启动时读取一次，仅刷新页面仍运行旧的宿主代码；计量会报告它的哪条路径没有返回 | 控制台会指出原因：`no remote to mount on`、带异常的 `did not mount`、`still waiting for remote.opencodeGoUsage`、列出其实际暴露键的 `no opencodeGoUsage service on the remote`，或带返回内容的 `the answer is not a usage shape`。缺失或无法路由的凭据只是几个原因之一：在 `opencode-go` 条目上写明 `apiKeyEnv: OPENCODE_GO_API_KEY` 并在 DSH Credentials 中存储该密钥 |
-| 目录中的模型在 Settings → Fetch 里缺失，或已下线的模型仍然存在 | 宿主模块过期、补全关闭、该路由不是插件服务的平面（只有所服务的 `llm-pi-ai` 行上的 `opencode`/`opencode-go` 会被补全），或目录尚未读取（离线，或 `models.opencode.ai` 被拦截）——此时 pi 自己的列表（包括已下线的 id）原样通过，比随包目录更新的模型也不会出现 | `pnpm run build`、重启 `dsh web`、保持**用 OpenCode 官方目录补全列表**开启、从匹配的路由获取、搜索精确 id（如 `space-bunny-free`）；目录尚未读取时，待 `models.opencode.ai` 可访问后，先获取一次以触发目录刷新（这次仍是旧列表——刷新在读取之后于后台进行，且没有定时刷新），稍后再获取一次 |
+| 目录中的模型在 Settings → Fetch 里缺失，或已下线的模型仍然存在 | 宿主模块过期、补全关闭、该路由不是插件服务的平面（只有所服务的 `llm-pi-ai` 行上的 `opencode`/`opencode-go` 会被补全），或目录尚未读取（离线，或 `models.opencode.ai` 被拦截）——此时 pi 自己的列表（包括已下线的 id）原样通过，比随包目录更新的模型也不会出现 | `pnpm run build`、重启 `dsh web`、保持**用 OpenCode 官方目录补全列表**开启、从匹配的路由获取、搜索精确 id（如 `gpt-5.3-codex-spark`）；目录尚未读取时，待 `models.opencode.ai` 可访问后，先获取一次以触发目录刷新（这次仍是旧列表——刷新在读取之后于后台进行，且没有定时刷新），稍后再获取一次 |
 | 弹出面板以红色显示“已达限额” | 滚动 / 每月窗口已用到 100% | 打开 [OpenCode 控制台](https://opencode.ai/console)并启用 _使用余额（Use balance）_，以溢出到 Zen 额度 |
 | 非 OpenCode 模型行为异常 | 与本补丁无关 | 发往其他网关的流量原样通过 |
 
@@ -421,7 +421,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **`modelOverrides`、`maxContextWindow` 与 `modelRoutes` 已移除**（以及文档中写过、却从未被读取的 `hiddenModels`）。平面条目中模型自己的行可以写名称、上下文窗口、输出上限、输入模态与推理档位，其余由目录补齐；行里的 `contextWindow` 代替 `maxContextWindow`。仍带有这些已移除键的配置行可以通过校验，这些键会被忽略。
 - **不再能按模型固定协议。** `modelRoutes` 可以让某个模型走你指定的协议；这一点没有替代。目录描述过的模型总是使用其 SDK 指定的协议；平面条目的路由级 `api` 只作用于目录未归类的 id，`baseURL` 也只在路由级。价格同样不是模型行的字段：先取目录，再取 pi。
 - **停用或重载插件会恢复它包装过的宿主方法。** 停用时模型发现与设置嫁接会被撤下，热重载会替换它们而不是再叠一层。两个平面交还给 `llm-pi-ai`——见[移除或停用插件](#移除或停用插件)。
-- **Settings → Models → Fetch 会提供 pi 未列出的目录模型。** 在**用 OpenCode 官方目录补全列表**开启时（默认），它在两个平面上先回答 pi 的列表，再回答 pi 缺少的每个可服务、未下线的目录模型（例如 Zen 的 `gpt-5.3-codex-spark`、Go 的 `minimax-m3.1-flash`）；`llm-pi-ai` 重启期间，它只回答目录，而不是报错。以前它只回答 pi 的列表。它在平面上提供的每一行现在带的是目录的名称、上下文窗口、输出上限与模态，只有目录没有时才用 pi 的，因此从中采纳的模型保存的正是输入框所服务的值：采纳 Zen 的 `claude-sonnet-4-5` 会保存 1,000,000 的上下文窗口，以前保存的是 pi 的 200,000。此开关关闭时，Fetch 只回答 pi 的列表，重启期间显示 `llm-pi-ai` 的错误。
+- **Settings → Models → Fetch 会提供 pi 未列出的目录模型。** 在**用 OpenCode 官方目录补全列表**开启时（默认），它在两个平面上先回答 pi 的列表，再回答 pi 缺少的每个可服务、未下线的目录模型（例如 Zen 的 `gpt-5.3-codex-spark`）；`llm-pi-ai` 重启期间，它只回答目录，而不是报错。以前它只回答 pi 的列表。它在平面上提供的每一行现在带的是目录的名称、上下文窗口、输出上限与模态，只有目录没有时才用 pi 的，因此从中采纳的模型保存的正是输入框所服务的值：采纳 Zen 的 `claude-sonnet-4-5` 会保存 1,000,000 的上下文窗口，以前保存的是 pi 的 200,000。此开关关闭时，Fetch 只回答 pi 的列表，重启期间显示 `llm-pi-ai` 的错误。
 - **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除：在 pi 为 `1.1.0` 的宿主（`rc` 桌面应用）上，无论哪个平面，每个 `gemini-4-argon` 回合都携带思考预算（未选择档位时为 `thinkingBudget: 0`），而不是该模型所需的档位，直到宿主升级 pi；网关拒绝在哪里实测过，见**宿主限制**。两个通道的 npm 安装与 `alpha` 桌面应用运行 pi `1.3.0` 或更高版本，不受影响。见[兼容性与验证](#-兼容性与验证)中的**宿主限制**。
 - **`@viztor/dsh-opencode` 不再发布。** 其最后一个版本上的 "Renamed to @viztor/dsh-opencode-patch" 弃用提示即为最终信息；请改装 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 
@@ -442,7 +442,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 **宿主限制。** 受支持的宿主目前缺少的能力，由测试套件记录为 `[HOST_LIMITATION]` 行（依据宿主自身的应答检测，从不依据版本号），并报告给上游：
 
 - **`rc` 桌面应用上的 Gemini 4 思考档位。** 其 pi（`1.1.0`）不把 `gemini-4-argon` 列为以 Google 思考**档位**发送的模型，因此无论哪个平面，每个 `gemini-4-argon` 回合携带的都是思考**预算**（选择档位时为 token 预算，未选择时为 `thinkingBudget: 0`，因为该模型无法关闭思考），网关会拒绝（400 "Thinking budget is not supported for this model"；已在 Go 上实测，Zen 上按同一 pi 规则预期相同，尚未实测）。pi `1.3.0` 及以上发送的是档位，所以两个通道的所有 npm 安装以及 `alpha` 桌面应用都不受影响。升级 pi 是宿主的修复方式；插件发送的是宿主 pi 构造的请求。
-- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。同一个 cordis 还改变了配置钩子的调用形态，本插件的平面路由尚不支持这一形态（已知缺陷，由测试套件记录，在本插件采用该契约时修复，而迁移到 `0.2.2-alpha.3` 需要这一步），因此在该安装上两个平面都运行在 pi-ai 自己的路由上。当前的 `dsh@alpha`（`0.2.2-alpha.3`）要求这个 cordis，所以在此之前通过 npm 安装时两个平面同样运行在 pi-ai 自己的路由上；其桌面应用尚未实测。
+- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。同一个 cordis 还改变了配置钩子的调用形态，本插件的平面路由尚不支持这一形态（已知缺陷，由测试套件记录，在本插件采用该契约时修复，而迁移到 `0.2.2-alpha.3` 需要这一步），因此在该安装上两个平面都运行在 pi-ai 自己的路由上，Settings → Models → Fetch 也只回答 pi 自己的列表。当前的 `dsh@alpha`（`0.2.2-alpha.3`）要求这个 cordis，所以在此之前通过 npm 安装时两个平面同样运行在 pi-ai 自己的路由上；其桌面应用尚未实测。
 
 | 层面 | 目标 |
 | :-- | :-- |
