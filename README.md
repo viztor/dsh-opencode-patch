@@ -444,7 +444,7 @@ The first clause covers the `0.2.1` line on both channels: its lower bound (`alp
 **Host limitations.** What a supported host lacks today, recorded by the test suite as `[HOST_LIMITATION]` rows (detected from the host's own answer, never from a version) and reported upstream:
 
 - **Gemini 4 thinking levels on the `rc` desktop app.** Its pi (`1.1.0`) does not name `gemini-4-argon` among the models it sends Google's thinking _level_, so a Go Gemini 4 turn carries a thinking _budget_, which the gateway refuses (400 "Thinking budget is not supported for this model"). pi `1.3.0` and later send the level, so every npm install of either channel, and the `alpha` desktop app, are unaffected. Bumping pi is the host's fix; the plugin sends what the host's pi builds.
-- **Saving settings on `alpha` `0.2.2-alpha.2` as npm installs it.** npm resolves cordis `4.0.6-alpha.2`, which calls the host's own `internal/update` listener in a new shape, so every config-editor save throws inside `dsh-app-boot` (`next is not a function`), whoever makes it. The `alpha` desktop app, on the cordis the harness vendors, saves.
+- **Saving settings on `alpha` `0.2.2-alpha.2` as npm installs it.** npm resolves cordis `4.0.6-alpha.2`, which calls the host's own `internal/update` listener in a new shape, so every config-editor save throws inside `dsh-app-boot` (`next is not a function`), whoever makes it. The `alpha` desktop app, on the cordis the harness vendors, saves. The same cordis also hands configuration hooks a new shape, which this plugin's plane routing does not speak yet (a known defect, recorded by the suite and fixed with the `0.2.2-alpha.3` bump that requires this cordis), so on that install both planes run on pi-ai's own routing.
 
 | Surface | Target |
 | :-- | :-- |

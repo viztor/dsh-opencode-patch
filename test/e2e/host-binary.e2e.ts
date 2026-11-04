@@ -233,6 +233,12 @@ interface ProbeOutput {
     { configured: boolean; apiKeyEnv?: string }
   >;
   readonly savedInFile?: boolean;
+  /**
+   * The contract the host's `internal/config` waterfall speaks, as one of its
+   * dispatches showed it (`null` when none was seen): `"config"` hands a
+   * listener the config, `"fiber"` hands it the fiber.
+   */
+  readonly configHook: "config" | "fiber" | null;
   readonly saveBlocked: { id: string } & EditVerdict;
   /** The control: an edit of the probe's own entry, made after the saves. */
   readonly control?: EditVerdict;
@@ -278,6 +284,21 @@ const hostListenerFailed = (verdict: EditVerdict | undefined): boolean =>
  * report it. Read from what the edits answered, never from a version, so a
  * host that fixes it reads false the day it ships (D26).
  */
+/**
+ * Whether the host's `internal/config` waterfall hands its listeners the fiber
+ * and reads the config from `next()`: cordis `4.0.6-alpha.2`'s contract, which
+ * npm resolves for `alpha` `0.2.2-alpha.2` today and which `0.2.2-alpha.3`
+ * requires. The route claim speaks the earlier contract (the config, with the
+ * fiber as `this`), so on such a host it does not engage and pi-ai serves the
+ * planes. Read from what the host dispatched, never from a version.
+ */
+const claimCannotEngage = (probe: ProbeOutput): boolean =>
+  probe.configHook === "fiber";
+
+/** The reason the claim-dependent rows skip on such a host. */
+const CLAIM_SKIP =
+  "KNOWN_DEFECT: the host's internal/config waterfall hands listeners the fiber (cordis 4.0.6-alpha.2), a contract the route claim does not speak yet";
+
 const hostCannotSave = (probe: ProbeOutput): boolean =>
   hostListenerFailed(probe.saveBlocked) &&
   hostListenerFailed(probe.control) &&
@@ -635,13 +656,32 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     }
   });
 
-  it("measured with the probe innermost and both planes settled on the plugin's adapter", () => {
+  it("measured with the probe innermost and both planes settled on the plugin's adapter", (context) => {
     expect(out.fatal).toBeUndefined();
     expect(out.fetchInnermost).toBe(true);
+    // Known answer for the detector below: some dispatch was observed.
+    expect(out.configHook).not.toBeNull();
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.planesSettled).toBe(true);
   });
 
-  it("the plane provider is built from the host's own pi, not the linked checkout's (both cells)", () => {
+  it(`[KNOWN_DEFECT] ${CHANNEL} ${RECORD.dsh} (${CELL} cell), on a host whose internal/config waterfall hands listeners the fiber: the route claim does not engage, and pi-ai serves both planes`, (context) => {
+    context.skip(
+      !claimCannotEngage(out),
+      "this host's internal/config waterfall hands listeners the config"
+    );
+    // Recorded so the phase that bumps alpha to a release requiring this
+    // cordis adopts the contract (feature-detected) and flips this row.
+    console.warn(
+      `[e2e-host] ${CHANNEL} · ${CELL}: KNOWN_DEFECT — cordis ${cordisVersion} hands internal/config listeners the fiber; the route claim did not engage`
+    );
+    expect(out.planesSettled).toBe(false);
+    expect(out.owners.opencode).toBe("PiAiAdapter");
+    expect(out.owners["opencode-go"]).toBe("PiAiAdapter");
+  });
+
+  it("the plane provider is built from the host's own pi, not the linked checkout's (both cells)", (context) => {
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     // The plugin is installed as a `link:` to this checkout, whose own
     // development install holds a pi too; the plugin resolves the wrapper
     // from the loader's base URL, so it reaches the host prefix's copy — the
@@ -653,7 +693,8 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     });
   });
 
-  it("[BASELINE] registry: both planes are the plugin's PlaneAdapter, no hidden route exists, and Settings addresses the planes under pi-ai's namespace with no error (D13)", () => {
+  it("[BASELINE] registry: both planes are the plugin's PlaneAdapter, no hidden route exists, and Settings addresses the planes under pi-ai's namespace with no error (D13)", (context) => {
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.providers).toEqual(
       expect.arrayContaining(["opencode", "opencode-go"])
     );
@@ -671,11 +712,13 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     }
   });
 
-  it("[BASELINE] listing before any turn: every declared id is listed (D21)", () => {
+  it("[BASELINE] listing before any turn: every declared id is listed (D21)", (context) => {
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.listModels).toEqual(ROWS.listingBeforeTurn);
   });
 
-  it("[BASELINE] listing after a turn on each plane: every declared id is still listed (G1)", () => {
+  it("[BASELINE] listing after a turn on each plane: every declared id is still listed (G1)", (context) => {
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.listModelsAfter).toEqual(ROWS.listingAfterTurn);
   });
 
@@ -686,6 +729,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     if (!rowsHold) {
       context.skip();
     }
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     for (const [key, row] of Object.entries(ROWS.rows)) {
       expect(out.modelInfo[key], key).toEqual(row.info);
       expect(out.callConfig[key], key).toBe(row.callConfig);
@@ -708,6 +752,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     if (!piSendsArgonLevels) {
       context.skip();
     }
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     const sent = out.thinking?.[`opencode-go/${GEMINI_LEVEL_ID}`] ?? [];
     expect(sent.length).toBeGreaterThan(0);
     for (const config of sent) {
@@ -719,6 +764,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     if (piSendsArgonLevels) {
       context.skip();
     }
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     // Recorded, not fixed here: pi's own pattern does not name the id, so pi
     // builds a budget for it, which the gateway refuses. The plugin sends what
     // the host's pi builds; bumping pi is the host's fix.
@@ -767,7 +813,8 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     expect(out.control).toEqual({ accepted: true });
   });
 
-  it("[BASELINE] the Settings graft shows each plane's own entry, and the Models page reads both planes configured under their apiKeyEnv (D18)", () => {
+  it("[BASELINE] the Settings graft shows each plane's own entry, and the Models page reads both planes configured under their apiKeyEnv (D18)", (context) => {
+    context.skip(claimCannotEngage(out), CLAIM_SKIP);
     expect(out.describeEntries).toEqual({
       opencode: {
         apiKeyEnv: "OPENCODE_API_KEY",

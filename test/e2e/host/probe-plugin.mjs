@@ -464,6 +464,12 @@ const measure = async (ctx, state) => {
     ...registered,
     ...asked,
     ...saving,
+    // Which contract the host's `internal/config` waterfall speaks, as one of
+    // its own dispatches showed it: "config" when a listener is handed the
+    // config (with the fiber as `this`), "fiber" when it is handed the fiber
+    // and reads the config from `next()`. Observed, never inferred from a
+    // version.
+    configHook: state.configHook ?? null,
     control,
     describe,
     describeEntries,
@@ -486,7 +492,17 @@ export const apply = (ctx) => {
   if (started) return;
   started = true;
   let stopped = false;
-  const state = { controlling: false };
+  const state = { configHook: undefined, controlling: false };
+  ctx.on?.("internal/config", (first, next) => {
+    state.configHook ??=
+      typeof first === "object" &&
+      first !== null &&
+      "uid" in first &&
+      "runtime" in first
+        ? "fiber"
+        : "config";
+    return next();
+  });
   ctx.effect?.(() => () => {
     // The control edit's own restart is not a stop: its answer is still
     // written.

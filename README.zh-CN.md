@@ -438,7 +438,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 **宿主限制。** 受支持的宿主目前缺少的能力，由测试套件记录为 `[HOST_LIMITATION]` 行（依据宿主自身的应答检测，从不依据版本号），并报告给上游：
 
 - **`rc` 桌面应用上的 Gemini 4 思考档位。** 其 pi（`1.1.0`）不把 `gemini-4-argon` 列为以 Google 思考**档位**发送的模型，因此 Go 平面的 Gemini 4 回合携带的是思考**预算**，网关会拒绝（400 "Thinking budget is not supported for this model"）。pi `1.3.0` 及以上发送的是档位，所以两个通道的所有 npm 安装以及 `alpha` 桌面应用都不受影响。升级 pi 是宿主的修复方式；插件发送的是宿主 pi 构造的请求。
-- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。
+- **npm 安装的 `alpha` `0.2.2-alpha.2` 上保存设置。** npm 解析出的 cordis `4.0.6-alpha.2` 以新的调用形态调用宿主自身的 `internal/update` 监听器，因此无论谁发起，每次配置编辑器保存都会在 `dsh-app-boot` 内抛出（`next is not a function`）。`alpha` 桌面应用使用 harness 自带的 cordis，可以保存。同一个 cordis 还改变了配置钩子的调用形态，本插件的平面路由尚不支持这一形态（已知缺陷，由测试套件记录，随要求该 cordis 的 `0.2.2-alpha.3` 升级一并修复），因此在该安装上两个平面都运行在 pi-ai 自己的路由上。
 
 | 层面 | 目标 |
 | :-- | :-- |
