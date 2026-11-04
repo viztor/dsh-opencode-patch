@@ -3,9 +3,19 @@
  * harness channels, as each one actually ships (D14'', D22'').
  *
  * - `rc` is `@deepseek-ai/dsh@latest`; `alpha` is `@deepseek-ai/dsh@alpha`.
- *   Each record names the `@deepseek-ai` cluster's tag, cordis and its loader
- *   (each on its own line, at what the cluster's `~` range resolves), and the
- *   `@deepseek-ai/schemastery` the cluster's range resolves.
+ *   Each record names the `@deepseek-ai` cluster's tag and the cordis family
+ *   the published host installs (`cordisFamily`: cordis, its loader, include,
+ *   group and timer plugins, cosmokit and schemastery), each at the FLOOR of
+ *   the `~` range the published cluster declares for it. That floor is the
+ *   version the harness vendors at the channel's tag, the tree the desktop app
+ *   ships, and what the `e2e-host` job's floor cell forces. `package.json`
+ *   pins every member this repository's install resolves (all but the timer
+ *   plugin, which nothing here depends on; `pinFor` moves each with the
+ *   channel), so each committed lockfile holds them at that floor by
+ *   construction, a relock included. A newer patch inside the same range is
+ *   what an npm install resolves; only the e2e-host npm cell runs it, and it
+ *   never moves the record: the family moves only with `dsh`, to the new
+ *   tag's floors (`scripts/host-drift.ts` reads them off the registry).
  * - `piRange` is the range the bridge (`dsh-llm-pi-ai`) declares. Nothing in
  *   the published packages narrows it: no shrinkwrap, no bundled copy, no
  *   install script and no runtime version check, so an npm install runs pi
@@ -38,13 +48,19 @@ import { join } from "node:path";
 export type Channel = "alpha" | "rc";
 
 export interface ChannelRecord {
-  /** `@deepseek-ai/cordis`, what the cluster's `~` range resolves. */
+  /** `@deepseek-ai/cordis`, the floor of the bridge's `~` range. */
   readonly cordis: string;
+  /** `@deepseek-ai/cosmokit`, the floor of the range `cordis` declares. */
+  readonly cosmokit: string;
   /** The npm dist-tag the channel publishes `@deepseek-ai/dsh` under. */
   readonly distTag: "alpha" | "latest";
   /** The `@deepseek-ai/dsh-*` cluster's version. */
   readonly dsh: string;
-  /** `@deepseek-ai/cordis-plugin-loader`, what the cluster's range resolves. */
+  /** `@deepseek-ai/cordis-plugin-group`, the floor of dsh-app-boot's range. */
+  readonly group: string;
+  /** `@deepseek-ai/cordis-plugin-include`, the floor of dsh's range. */
+  readonly include: string;
+  /** `@deepseek-ai/cordis-plugin-loader`, the floor of the bridge's range. */
   readonly loader: string;
   /** The committed lockfile that pins this channel, from the repo root. */
   readonly lockfile: string;
@@ -54,34 +70,92 @@ export interface ChannelRecord {
   readonly piFloor: string;
   /** The pi range the bridge, `dsh-llm-pi-ai`, declares. */
   readonly piRange: string;
-  /** `@deepseek-ai/schemastery`, what the cluster's `~` range resolves. */
+  /** `@deepseek-ai/schemastery`, the floor of the bridge's `~` range. */
   readonly schemastery: string;
+  /**
+   * `@deepseek-ai/cordis-plugin-timer`, the floor of `@deepseek-ai/dsh`'s
+   * range. The only family member this repository's own install does not
+   * resolve, so no lockfile holds it: the nightly drift report holds it to the
+   * range the published dsh declares, and the binary e2e to the range the
+   * installed dsh declares.
+   */
+  readonly timer: string;
 }
 
 export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
   alpha: {
     cordis: "4.0.6-alpha.1",
+    cosmokit: "1.8.7-alpha.1",
     distTag: "alpha",
     dsh: "0.2.2-alpha.2",
+    group: "1.0.6-alpha.1",
+    include: "1.0.11-alpha.1",
     loader: "1.0.7-alpha.1",
     lockfile: "pnpm-lock.yaml",
     pi: "1.5.0",
     piFloor: "1.3.0",
     piRange: "^1.3.0",
     schemastery: "3.18.6-alpha.1",
+    timer: "1.1.8-alpha.1",
   },
   rc: {
     cordis: "4.0.5",
+    cosmokit: "1.8.6",
     distTag: "latest",
     dsh: "0.2.1-rc.5",
+    group: "1.0.5",
+    include: "1.0.10",
     loader: "1.0.6",
     lockfile: "channels/rc/pnpm-lock.yaml",
     pi: "1.5.0",
     piFloor: "1.1.0",
     piRange: "^1.1.0",
     schemastery: "3.18.5",
+    timer: "1.1.7",
   },
 };
+
+/**
+ * The cordis family the published host installs, by package name, at the
+ * record's versions (the declared ranges' floors): cordis, its loader,
+ * include, group and timer plugins, cosmokit and schemastery. They are
+ * released together and peer on one another by `~` ranges, so forcing one of
+ * them alone (cordis, say) leaves a tree nobody ships.
+ *
+ * @param record - a channel's record.
+ * @returns `{ "<package>": "<version>" }` for every family member.
+ */
+export const cordisFamily = (
+  record: ChannelRecord
+): Readonly<Record<string, string>> => ({
+  "@deepseek-ai/cordis": record.cordis,
+  "@deepseek-ai/cordis-plugin-group": record.group,
+  "@deepseek-ai/cordis-plugin-include": record.include,
+  "@deepseek-ai/cordis-plugin-loader": record.loader,
+  "@deepseek-ai/cordis-plugin-timer": record.timer,
+  "@deepseek-ai/cosmokit": record.cosmokit,
+  "@deepseek-ai/schemastery": record.schemastery,
+});
+
+/**
+ * The npm `overrides` the `e2e-host` job's floor cell installs the published
+ * host with: the channel's cordis family at the record's versions (the
+ * declared ranges' floors) and pi at the bridge range's floor, with the
+ * telemetry package pi ships beside it at the same version, which is the tree
+ * the desktop app ships (its pi patched there, not here). pi-ai `1.1.0`
+ * declares its telemetry `^1.1.0` and would float it; from `1.3.0` pi pins
+ * the pair exactly. The npm cell takes no override.
+ *
+ * @param record - a channel's record.
+ * @returns the overrides, keyed by package name.
+ */
+export const floorOverrides = (
+  record: ChannelRecord
+): Readonly<Record<string, string>> => ({
+  ...cordisFamily(record),
+  "@earendil-works/pi-ai": record.piFloor,
+  "@earendil-works/pi-telemetry": record.piFloor,
+});
 
 /** The channel the root `package.json` and `pnpm-lock.yaml` install. */
 export const DEFAULT_CHANNEL: Channel = "alpha";
