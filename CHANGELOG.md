@@ -6,6 +6,18 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.9.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.8.1...v1.9.0) (2026-11-04)
+
+
+### Features
+
+* a smaller public API ([#108](https://github.com/viztor/dsh-opencode-patch/issues/108)) ([5905caa](https://github.com/viztor/dsh-opencode-patch/commit/5905caab57b2b9abac2c32771c38565be563571a))
+
+
+### Fixes
+
+* show the host's purge refusal and say auto is modern ([#106](https://github.com/viztor/dsh-opencode-patch/issues/106)) ([07af3a1](https://github.com/viztor/dsh-opencode-patch/commit/07af3a16d1fde61d2734f96e271c09c9c2142699))
+
 ## [1.8.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.8.0...v1.8.1) (2026-11-04)
 
 
