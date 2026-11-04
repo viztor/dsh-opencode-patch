@@ -182,11 +182,10 @@ describe("utils/retry: backoffOver", () => {
     const { scheduled, timer } = recordingTimer();
     const sleep = backoffOver(timer);
     const settled: number[] = [];
-    const pending = [0, 1, 2].map((attempt) =>
-      sleep(attempt).then(() => {
-        settled.push(attempt);
-      })
-    );
+    const pending = [0, 1, 2].map(async (attempt) => {
+      await sleep(attempt);
+      settled.push(attempt);
+    });
 
     expect(scheduled.map((entry) => entry.delayMs)).toEqual([300, 600, 900]);
     await Promise.resolve();

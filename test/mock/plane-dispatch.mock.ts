@@ -44,8 +44,8 @@ import {
   clearCapturedApiKeys,
   headerValueFor,
   OPENCODE_ZEN_CATALOG,
-  usesCatalogThinkingLevels,
 } from "../support/src.ts";
+import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { GO_KEY, ZEN_KEY } from "./helpers.ts";
 
@@ -168,6 +168,16 @@ const finishOf = (
     | undefined;
 
 /**
+ * Whether the installed pi sends `model` a thinking budget the mock gateway
+ * refuses: the level-only Gemini 4 model, on either plane, on a pi whose own
+ * `usesGoogleThinkingLevel` does not name it (pi 1.1.0, the rc floor). That is
+ * a HOST_LIMITATION (D26), detected from pi's own predicate, never a version.
+ */
+const hostSendsBudgetTo = (model: string): boolean =>
+  model === "gemini-4-argon" &&
+  !usesGoogleThinkingLevel({ id: model } as never);
+
+/**
  * Assert the gateway accepted one request (or, for the id no catalog names,
  * refused it the vendor's way) and that the turn finished accordingly. The
  * gateway records a request before it judges it, so the path alone cannot
@@ -180,6 +190,15 @@ const expectAnswered = (
   chunks: readonly Record<string, unknown>[]
 ): void => {
   const kind = finishOf(chunks)?.reason?.kind;
+  if (hostSendsBudgetTo(model)) {
+    // HOST_LIMITATION: the turn still reached its path with its model and
+    // key (the caller asserts those); the gateway refused the budget pi built.
+    expect({ reject: request?.reject, status: request?.status }, label).toEqual(
+      { reject: "thinking_budget", status: 400 }
+    );
+    expect(kind, label).toBe("error");
+    return;
+  }
   if (model === UNKNOWN_ID) {
     expect({ reject: request?.reject, status: request?.status }, label).toEqual(
       { reject: "model_unknown", status: 404 }
@@ -439,8 +458,8 @@ describe("plane dispatch · a completions model whose effort list names none (D1
   // pi 1.1.0 files these with `off: "none"`: Off is offered, and the disable
   // is `reasoning_effort: "none"`, sent both for Off and for a turn that
   // selects no effort (`openai-completions.js:717-721`). The mock gateway
-  // has no endpoint for `@ai-sdk/mistral` (which endpoint the vendor serves it
-  // on is unmeasured, docs/redirect-planes.md §2), so it answers Zen
+  // has no endpoint for `@ai-sdk/mistral` (which dialect the vendor serves it
+  // on is unmeasured; the plan's P7 row, docs/improvement-plan.md), so it answers Zen
   // mistral-large-4 with its protocol refusal. The mock carries no body shape
   // check for the completions kind, so that row pins the path, the credential
   // header and the `reasoning_effort` read off the parsed body, not a body the
@@ -657,13 +676,28 @@ describe("plane dispatch · Go Gemini replay stays on one provider label", () =>
   });
 });
 
-describe("plane dispatch · Google thinking by level, never by budget (D16)", () => {
+describe("plane dispatch · Google thinking by level, never by budget (D16, D26)", () => {
   // Google's discrete `thinkingLevel` and its token `thinkingBudget` are not
   // interchangeable: a model that thinks in levels refuses a budget with 400
   // INVALID_ARGUMENT ("Thinking budget is not supported for this model. Use
-  // thinking level instead."), measured live on Go gemini-4-argon. pi 1.1.0
-  // picks the level control only by an id pattern, so the catalog's own
-  // effort levels are what decide it for an id the pattern misses.
+  // thinking level instead."), measured live on Go gemini-4-argon. Which
+  // control a request carries is pi's own rule (`usesGoogleThinkingLevel`),
+  // never the plugin's (D26): pi 1.3 and later name that model, pi 1.1.0 (the
+  // rc channel's floor, the desktop app's pi) does not, and sends it a
+  // budget. That is a HOST_LIMITATION, recorded in
+  // test/host-characterization.test.ts; the cases that need pi to name the id
+  // ask the installed pi's own predicate and skip, naming the limitation,
+  // where it does not.
+
+  /**
+   * Whether the installed pi sends the level-only Gemini 4 model a level, by
+   * its own rule (the id decides, not the plane).
+   */
+  const piSendsArgonLevels = usesGoogleThinkingLevel({
+    id: "gemini-4-argon",
+  } as never);
+  const HOST_LIMITATION =
+    "HOST_LIMITATION: the installed pi's own usesGoogleThinkingLevel does not name gemini-4-argon, so pi sends it a thinking budget (pi 1.1.0, the rc floor; D26)";
 
   /** The thinking config one Google request carried. */
   const thinkingConfigOf = (body: unknown): unknown =>
@@ -747,17 +781,28 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     });
   };
 
-  it.each(PLANES)(
-    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for a chosen level and for none, and never a thinkingBudget",
-    async (plane) => {
+  it.for(PLANES)(
+    "%s gemini-4-argon (catalog effort levels low/medium/high) sends thinkingLevel for each chosen level and for none, and never a thinkingBudget, where the installed pi names it",
+    async (plane, context) => {
+      context.skip(!piSendsArgonLevels, HOST_LIMITATION);
       const model = "gemini-4-argon";
-      const sent = await thinkingSent(plane, model, ["high", "low", undefined]);
+      const sent = await thinkingSent(plane, model, [
+        "high",
+        "medium",
+        "low",
+        undefined,
+      ]);
       const path = MODERN_PATH(plane, "google-generative-ai", model);
       expect(sent).toEqual([
         {
           path,
           status: 200,
           thinking: { includeThoughts: true, thinkingLevel: "HIGH" },
+        },
+        {
+          path,
+          status: 200,
+          thinking: { includeThoughts: true, thinkingLevel: "MEDIUM" },
         },
         {
           path,
@@ -774,14 +819,12 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     }
   );
 
-  it("a Gemini 3 id pi already serves by level keeps pi's own request, for a chosen level and for none", async () => {
+  it("a Gemini 3 id every supported pi serves by level gets pi's own level request, for a chosen level and for none", async () => {
     // Picked from the shipped Zen catalog by shape: a Google model the catalog
-    // describes by level (so the wrapper takes it) whose id pi's own pattern
-    // (`usesGoogleThinkingLevel`, asked of the installed pi) also serves by
-    // level (so the wrapper hands it back). The case runs that hand-back over
-    // the real adapter and pi's real `lazyStream`; which path answered is
-    // pinned by test/google-levels.test.ts, and this case pins that the wire
-    // is pi's.
+    // describes by level whose id pi's own pattern (`usesGoogleThinkingLevel`,
+    // asked of the installed pi) also serves by level, on every supported pi.
+    // The case runs it over the real adapter and pi's real Google protocol,
+    // and pins that the plugin hands pi's request to the wire unchanged.
     const control = OPENCODE_ZEN_CATALOG.find(
       (spec) =>
         spec.provider_npm === "@ai-sdk/google" &&
@@ -791,7 +834,7 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     );
     expect(
       control,
-      "the Zen catalog has a Gemini model the wrapper takes and pi serves by level"
+      "the Zen catalog has a Gemini model the catalog marks level-only and pi serves by level"
     ).toBeDefined();
     const values =
       control?.reasoning_options?.find((option) => option.type === "effort")
@@ -823,7 +866,8 @@ describe("plane dispatch · Google thinking by level, never by budget (D16)", ()
     ]);
   });
 
-  it("a profile that declares Off for gemini-4-argon gets pi's own disable, thinkingBudget: 0, which the model refuses (a profile error)", async () => {
+  it("a profile that declares Off for gemini-4-argon gets pi's own disable, thinkingBudget: 0, which the model refuses (a profile error), where the installed pi names it", async (context) => {
+    context.skip(!piSendsArgonLevels, HOST_LIMITATION);
     // The catalog never offers Off on Google; a profile that declares one
     // makes Off supported, and pi disables a level model with a budget of 0
     // for an id its pattern misses, as it does for its own level ids. Pinned

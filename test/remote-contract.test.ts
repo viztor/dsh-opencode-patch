@@ -153,4 +153,43 @@ describe("remote contract · host and client agree", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(patchRemote.package).toBe("dsh-opencode-patch");
   });
+
+  it("publishes the account-scoped read the sibling account page calls", () => {
+    // `dsh-opencode-go`'s account page reads usage through
+    // `opencodeGoUsage.readAccount`; this plugin answers that namespace on the
+    // root context, so the endpoint has to exist here or the page that owns the
+    // account reports the namespace as unusable.
+    const ids = patchRemote.descriptors.map((descriptor) => descriptor.id);
+    expect(ids).toContain("dsh-opencode-patch#opencodeGoUsage/readAccount");
+  });
+
+  it("gives every wire codec one parser, whichever door the runtime takes", () => {
+    // A codec answers its parser twice: as `schema.parse`, and from `create()`.
+    // A runtime that builds a fresh codec per call takes the second door, so a
+    // codec whose two doors parse differently decodes one way in a test that
+    // reads the schema and another on the host. Every parameter and result
+    // codec the descriptors carry is checked, and the walk must see some.
+    interface Codec {
+      readonly create: () => { readonly parse: unknown };
+      readonly schema: { readonly parse: unknown };
+      readonly typeSymbol: string;
+    }
+    const codecs = new Set<Codec>();
+    for (const descriptor of patchRemote.descriptors) {
+      const { parameters = [], result } = descriptor as unknown as {
+        parameters?: readonly { codec?: Codec }[];
+        result?: Codec;
+      };
+      for (const codec of [result, ...parameters.map((p) => p.codec)]) {
+        if (codec !== undefined) {
+          codecs.add(codec);
+        }
+      }
+    }
+    expect(codecs.size).toBeGreaterThanOrEqual(5);
+    for (const codec of codecs) {
+      expect(codec.create().parse, codec.typeSymbol).toBe(codec.schema.parse);
+      expect(codec.typeSymbol).toMatch(/^dsh-opencode-patch#/u);
+    }
+  });
 });

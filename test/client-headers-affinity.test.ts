@@ -2,7 +2,7 @@
  * Test: Client Headers, Session Affinity, and Lineage Contracts.
  *
  * Validates:
- * - 1.19.4 generation contracts: x-opencode-session-id and x-opencode-session, no affinity on OpenCode planes
+ * - 1.19.5 generation contracts: x-opencode-session-id and x-opencode-session, no affinity on OpenCode planes
  * - Relay providers: sends x-session-affinity and x-session-id pair
  * - Subagent parent session lineage: x-opencode-parent-session-id and x-parent-session-id
  * - Session header recovery: patchFetch automatically derives a valid ses_<...> ID when missing
@@ -61,9 +61,9 @@ afterEach(() => {
 });
 
 describe("Client Headers, Session Affinity & Lineage", () => {
-  it("injects 1.19.4 generation headers on OpenCode planes without affinity headers", async () => {
+  it("injects 1.19.5 generation headers on OpenCode planes without affinity headers", async () => {
     const client = new ClientSimulator({
-      generation: "1.19.4",
+      generation: "1.19.5",
       project: "dsh-affinity-test",
       sessionId: "ses_eb1e9e706ffeCDEFGHIJKLMNOP",
     });
@@ -83,7 +83,7 @@ describe("Client Headers, Session Affinity & Lineage", () => {
 
   it("injects affinity pair for relay / non-OpenCode providers", async () => {
     const client = new ClientSimulator({
-      generation: "1.19.4",
+      generation: "1.19.5",
       sessionId: "ses_eb1e9e706fferalay0000000000",
     });
 
@@ -170,7 +170,7 @@ describe("Client Headers, Session Affinity & Lineage", () => {
     const req = result.request!;
     expect(req.headers["x-opencode-client"]).toBe("web");
     expect(req.headers["x-opencode-project"]).toBe("my-project-repo");
-    // The turn's message id travels with the origin headers, as in 1.19.4's
+    // The turn's message id travels with the origin headers, as in 1.19.5's
     // `request.ts`, where `x-opencode-request` sits in the same branch as the
     // client and project headers.
     expect(req.headers["x-opencode-request"]).toBe(

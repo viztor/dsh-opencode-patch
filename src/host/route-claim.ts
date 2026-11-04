@@ -23,12 +23,13 @@
  *   **A constraint this places on the host (F12).** cordis's
  *   `Fiber.update(config, noSave)` hands the RESOLVED value to
  *   `internal/update`, where the loader writes it to the row's options and
- *   the profile unless `noSave` is set (`cordis/src/fiber.ts:736-753`,
- *   `loader/src/index.ts:115-121`). So a `piFiber.update(raw)` with `noSave`
+ *   the profile unless `noSave` is set (`cordis/src/fiber.ts:736-753` at
+ *   `dsh-v0.2.1-rc.5`, `:764-782` at `dsh-v0.2.2-alpha.2`;
+ *   `loader/src/index.ts:115-121` at both). So a `piFiber.update(raw)` with `noSave`
  *   false would persist this copy and delete both planes from the user's
  *   file. No caller does that today — the editor writes the raw value, and
  *   the loader's own update passes `noSave = true`
- *   (`loader/src/config/entry.ts:106`) — and the same path would already
+ *   (`loader/src/config/entry.ts:106` at both tags) — and the same path would already
  *   write interpolated `!!js` values for any plugin. Guarding it waits for a
  *   real caller.
  * - **Reconcile.** Reads the committed plane entries from pi-ai's

@@ -17,7 +17,7 @@ export const en = {
   endpointHint:
     "Which endpoint family requests are sent to. Modern sends each protocol to its own inference path (inference/openai, inference/anthropic, inference/google; inference/go/… on Go); Automatic is the same as Modern; Legacy pins the older zen/v1 base (zen/go/v1 on Go). The two families are separately entitled and both still answer, so pick whichever your account works on.",
   endpointLegacy: "Legacy (zen/v1)",
-  endpointModern: "Modern (inference, per protocol)",
+  endpointModern: "Modern (inference/…)",
   injectCoreTools: "Inject Core Tools (default on)",
   injectCoreToolsHint:
     "Auto-injects read and bash tool schemas on free-tier requests to satisfy gateway validation. Empty inherits the default.",
@@ -204,7 +204,7 @@ export const zh: Record<keyof typeof en, string> = {
   endpointHint:
     "请求发往哪个端点家族。新端点按协议各自发往 inference 路径（inference/openai、inference/anthropic、inference/google；Go 为 inference/go/…）；自动与新端点相同；旧端点固定使用较早的 zen/v1（Go 为 zen/go/v1）。两套端点的授权彼此独立且目前均可访问，因此请选择账户可用的那个。",
   endpointLegacy: "旧端点（zen/v1）",
-  endpointModern: "新端点（inference，按协议）",
+  endpointModern: "新端点（inference/…）",
   freeModel: "免费",
   invalidText: "该值未被接受，留空使用默认值。",
   keySource: "凭据来源",

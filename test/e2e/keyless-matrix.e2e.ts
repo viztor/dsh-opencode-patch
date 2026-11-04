@@ -280,7 +280,7 @@ describe.skipIf(!LIVE || MIRRORED)(
         const goneToday = goneDefaultRows(rows);
         expect(
           goneToday,
-          `a path today's plugin dispatches to is gone: ${JSON.stringify(goneToday)}`
+          `a path the plugin dispatches to with the default endpoint, on every host, is gone: ${JSON.stringify(goneToday)}`
         ).toEqual([]);
       },
       24 * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) + PROBE_TIMEOUT_MS

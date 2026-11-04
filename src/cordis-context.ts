@@ -12,7 +12,6 @@
  */
 
 import { readString } from "./config-values.ts";
-import type { GoogleLevelSource } from "./host/google-levels.ts";
 import { defaultHostModuleSource } from "./host/host-modules.ts";
 import { isFunctionLike, isRecord } from "./utils/guards.ts";
 import type { PlanePiModel } from "./utils/plane-model.ts";
@@ -416,12 +415,6 @@ export interface HostLibraries {
   readonly withOpenCodeSessionHeader: (api: unknown) => unknown;
   /** pi's four protocol factories (`api/*.lazy.js`). */
   readonly apis: Readonly<Record<Protocol, () => unknown>>;
-  /**
-   * pi's pieces for a Google model the catalog describes by thinking level
-   * (`host/google-levels.ts`); absent when the host's pi lacks them, which
-   * leaves the Google protocol entirely pi's.
-   */
-  readonly googleLevels?: GoogleLevelSource;
   /** `opencodeProvider().auth`: pi's ambient OpenCode key discovery. */
   readonly opencodeAuth: unknown;
   /** `opencodeGoProvider().auth`. */

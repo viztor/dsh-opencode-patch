@@ -138,14 +138,9 @@ interface Site {
    * An activation A whose decoration differs from the default's, and a call
    * that tells them apart: a stacked install would leak the first activation's
    * answer through the second's wherever the decoration reads per-activation
-   * state, which every site does. Most sites read it from config; the listing's
-   * `listModels` reads its `hasCredential` option (the keyless filter), so its
-   * A is an install with that option rather than a config. The listing's
-   * `listProviders` capture is pinned separately, by the `isRouteRegistered`
-   * reinstall case in `models-discovery.test.ts` (a stacked listing would
-   * capture the previous install's filtered `listProviders`). The main
-   * sequence also checks, for every key of every site, that the second
-   * install REPLACED the first (two live entries of one site id).
+   * state, which every site does. The main sequence also checks, for every
+   * key of every site, that the second install REPLACED the first (two live
+   * entries of one site id).
    */
   readonly reconfigured?: {
     /** A's config, installed through the site's own `install`. */

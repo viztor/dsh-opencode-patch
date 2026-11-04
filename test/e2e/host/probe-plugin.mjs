@@ -25,8 +25,13 @@
  *   editor, the way the Settings page saves one. It is tried onto the plane as
  *   booted (`saveBlocked`); only if that is refused are the ids in
  *   `PROBE_SAVE_DROP` removed (`saveCleared`) and the id tried once more
- *   (`save`), so the last answer is about the id itself;
+ *   (`save`), so the last answer is about the id itself. A rejection also
+ *   names the error's class and the PACKAGE whose code threw it (never a
+ *   path);
  * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove on a refusal;
+ *   after the saves, one CONTROL edit (`control`) of the probe's OWN entry,
+ *   which no plugin's listener reads, so a failure there is the host's save
+ *   path failing whoever edits, not a verdict about the plane;
  * - `PROBE_PLANES`: `["<route>", …]`, the plane routes to wait for until an
  *   adapter other than pi-ai's serves each (the plugin's own);
  * - `PROBE_PI_PACKAGE`: the package name pi-ai's loader entry carries;
@@ -80,6 +85,23 @@ const piLoadedFrom = (adapter) => {
 /** An error's message, cut to {@link MESSAGE_LIMIT}. */
 const messageOf = (error) =>
   String(error?.message ?? error).slice(0, MESSAGE_LIMIT);
+
+/**
+ * The package whose code threw `error`: the package of the top stack frame,
+ * read after its LAST `node_modules/`, or `"(not a package)"` when that frame
+ * is outside one, or `"(no stack)"` without a stack. Only the name is written,
+ * never the path, which would name the runner's directories.
+ */
+const thrownByOf = (error) => {
+  const frame = String(error?.stack ?? "")
+    .split("\n")
+    .find((line) => /^\s+at /u.test(line));
+  if (frame === undefined) return "(no stack)";
+  const parts = frame.replaceAll("\\", "/").split("node_modules/");
+  if (parts.length < 2) return "(not a package)";
+  const [first, second] = (parts.at(-1) ?? "").split("/");
+  return first?.startsWith("@") ? `${first}/${second}` : first;
+};
 
 /** A service the measurement needs, or a named failure where it is missing. */
 const required = (ctx, service) => {
@@ -158,6 +180,8 @@ const settle = async (run) => {
       error: {
         code: typeof error?.code === "string" ? error.code : undefined,
         message: messageOf(error),
+        name: typeof error?.name === "string" ? error.name : undefined,
+        thrownBy: thrownByOf(error),
       },
     };
   }
@@ -220,18 +244,47 @@ const askAbout = async (llm, ids) => {
   return { callConfig, listModels, modelInfo };
 };
 
-/** One config-editor edit of `opencode`, as the Settings page makes it. */
-const editZen = async (editor, entry, mutate) => {
-  const saved = await settle(() =>
-    editor.edit(entry, (current) => {
-      const providers = { ...current.providers };
-      providers.opencode = mutate(providers.opencode ?? {});
-      return { ...current, providers };
-    })
-  );
+/** One config-editor edit of `entry`, as the Settings page makes it. */
+const editEntry = async (editor, entry, change) => {
+  const saved = await settle(() => editor.edit(entry, change));
+  // `errorName` and `thrownBy` let the e2e tell the host's own failure (a
+  // TypeError inside the host's own code) from a verdict pi-ai's checks
+  // reached.
   return saved.error === undefined
     ? { accepted: true }
-    : { rejected: saved.error.message };
+    : {
+        errorName: saved.error.name,
+        rejected: saved.error.message,
+        thrownBy: saved.error.thrownBy,
+      };
+};
+
+/** One config-editor edit of `opencode` in pi-ai's entry. */
+const editZen = (editor, entry, mutate) =>
+  editEntry(editor, entry, (current) => {
+    const providers = { ...current.providers };
+    providers.opencode = mutate(providers.opencode ?? {});
+    return { ...current, providers };
+  });
+
+/**
+ * The control: one edit of the probe's own entry, which no plugin's listener
+ * reads. The host restarts the probe's fiber when it applies, which
+ * `apply` tells apart from a real stop (`state.controlling`).
+ */
+const controlEdit = async (editor, state) => {
+  const entry = editor
+    .entries()
+    .find((candidate) => candidate.options?.name === name);
+  if (entry === undefined) {
+    return {
+      errorName: "Error",
+      rejected: "probe: the config editor lists no entry of the probe's own",
+      thrownBy: "(probe)",
+    };
+  }
+  state.controlling = true;
+  return editEntry(editor, entry, (current) => ({ ...current, control: 1 }));
 };
 
 /**
@@ -283,7 +336,7 @@ const saveSequence = async (llm, editor, saveId, drop) => {
   };
 };
 
-const measure = async (ctx) => {
+const measure = async (ctx, state) => {
   if (PLANES.length === 0 || PI_AI_PACKAGE.length === 0) {
     throw new Error("probe: PROBE_PLANES and PROBE_PI_PACKAGE must be set");
   }
@@ -397,17 +450,28 @@ const measure = async (ctx) => {
   const drop = JSON.parse(process.env.PROBE_SAVE_DROP ?? "[]");
   const saving =
     saveId.length === 0 ? {} : await saveSequence(llm, editor, saveId, drop);
+  const describe =
+    piDescriptor === undefined
+      ? undefined
+      : {
+          user: Object.keys(piDescriptor.user?.providers ?? {}),
+          value: Object.keys(piDescriptor.value?.providers ?? {}),
+        };
+  // Last: a control that saves restarts this fiber.
+  const control =
+    saveId.length === 0 ? undefined : await controlEdit(editor, state);
   return {
     ...registered,
     ...asked,
     ...saving,
-    describe:
-      piDescriptor === undefined
-        ? undefined
-        : {
-            user: Object.keys(piDescriptor.user?.providers ?? {}),
-            value: Object.keys(piDescriptor.value?.providers ?? {}),
-          },
+    // Which contract the host's `internal/config` waterfall speaks, as one of
+    // its own dispatches showed it: "config" when a listener is handed the
+    // config (with the fiber as `this`), "fiber" when it is handed the fiber
+    // and reads the config from `next()`. Observed, never inferred from a
+    // version.
+    configHook: state.configHook ?? null,
+    control,
+    describe,
     describeEntries,
     discovery: discovered.ok ? { count: discovered.ok.length } : discovered,
     dispatch,
@@ -417,16 +481,38 @@ const measure = async (ctx) => {
   };
 };
 
+/**
+ * Whether a measurement has started in this process: the control edit
+ * restarts the probe's fiber, and the restarted `apply` must not measure
+ * again (the module, and so this flag, outlives the fiber).
+ */
+let started = false;
+
 export const apply = (ctx) => {
+  if (started) return;
+  started = true;
   let stopped = false;
+  const state = { configHook: undefined, controlling: false };
+  ctx.on?.("internal/config", (first, next) => {
+    state.configHook ??=
+      typeof first === "object" &&
+      first !== null &&
+      "uid" in first &&
+      "runtime" in first
+        ? "fiber"
+        : "config";
+    return next();
+  });
   ctx.effect?.(() => () => {
-    stopped = true;
+    // The control edit's own restart is not a stop: its answer is still
+    // written.
+    if (!state.controlling) stopped = true;
   });
   // Not awaited: `apply` returns at once, and the measurement runs once the
   // loader has settled every row.
   void (async () => {
     try {
-      const out = await measure(ctx);
+      const out = await measure(ctx, state);
       if (stopped) return;
       writeFileSync(OUT, `${JSON.stringify(out, null, 2)}\n`);
       setTimeout(() => process.exit(0), 200);

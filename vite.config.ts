@@ -295,14 +295,6 @@ export default defineConfig({
           functions: 95,
           lines: 97,
         },
-        // The Google level wrapper (D16): every branch is either pi's own path
-        // or one step of pi's level path, so all of them are covered.
-        "src/host/google-levels.ts": {
-          statements: 100,
-          branches: 100,
-          functions: 100,
-          lines: 100,
-        },
         "src/host/plane-provider.ts": {
           statements: 99,
           branches: 97,

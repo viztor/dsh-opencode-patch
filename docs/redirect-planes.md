@@ -10,8 +10,10 @@ A **plane** is one gateway base URL with its own catalog and its own credential.
 
 | Plane | Route id | Base URL | Credential | Models |
 | :-- | :-- | :-- | :-- | --: |
-| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | the entry's `apiKeyEnv`; without one, pi's `OPENCODE_API_KEY` | 81 served / 127 listed |
-| Go (subscription) | `opencode-go` | the `endpoint` family's | the entry's `apiKeyEnv` (name `OPENCODE_GO_API_KEY`); without one, pi's `OPENCODE_API_KEY` | 30 served / 34 listed |
+| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | the entry's `apiKeyEnv`; without one, pi's `OPENCODE_API_KEY` | 81 served / 131 listed |
+| Go (subscription) | `opencode-go` | the `endpoint` family's | the entry's `apiKeyEnv` (name `OPENCODE_GO_API_KEY`); without one, pi's `OPENCODE_API_KEY` | 30 served / 37 listed |
+
+Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`); the document's 2026-10-09 stamp is for its measurements.
 
 **There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto`, the default, is an alias of `modern` (`AUTO_ENDPOINT_FAMILY` in `src/utils/plane-model.ts`), the per-protocol `…/inference/{openai,anthropic,google}/…` and `…/inference/go/…`; `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`, except Go's Google, which has no legacy base and stays on `…/inference/go/google/v1beta`. Which families answer, keyless and with each plane's own key, is measured in CI (§13), not assumed. The dated measurement below was taken on the legacy family.
 
@@ -21,7 +23,7 @@ A plane is a property of the **account and the base URL**, never of a model. The
 
 ## 2. Shapes
 
-A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions.
+A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions. Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`).
 
 | SDK in the catalog  | Protocol               | Zen |    Go |
 | :------------------ | :--------------------- | --: | ----: |
@@ -142,9 +144,9 @@ Measured 2026-10-10 by building one with pi's own protocol implementations and i
 
 **The Google path is the one a hand-declared route cannot reach.** Its protocol name is not in the wrapper's three-entry table, so no route may name it; a self-built provider dispatches to it without any special case — which is what the plane adapter is (`buildPlaneProvider`, P-R1).
 
-**The session header reaches every protocol.** Wrapping each `api` before `createProvider` puts our `x-opencode-session`, `x-opencode-client` and `x-opencode-project` on all four, and pi's own session header defers when ours is already present.
+**The session header reaches every protocol, and the rest of the gateway headers do not come from the provider.** `buildPlaneProvider` wraps each `api` with pi's own `withOpenCodeSessionHeader` before `createProvider`, and that is all it adds per call: pi's wrapper sets `x-opencode-session` from the turn's session id on all four protocols, and steps aside when the request already carries one. `x-opencode-client`, `x-opencode-project`, the derived `ses_` id and the User-Agent are set by the global fetch patch on the request the protocol sends, not on the call's options; moving them into each call (`options.headers`) is P10a's first move.
 
-**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.4 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
+**One detail left open:** the Google implementation sets its own `User-Agent` inside the protocol, so ours arrives appended rather than replacing it (`pi (darwin …), opencode/1.19.5 …`). Whether the gateway accepts the combined value or wants a single agent string is unverified.
 
 ## 10. A catalog route serves every protocol already
 
@@ -190,9 +192,9 @@ What carried over from the bridge, and why:
 - **The credential is the deployment's own**, resolved by pi-ai's exact rule (D20): a named reference through the credentials service when one is mounted, the launch environment only when none is, and a miss that fails loud with `MISSING_CREDENTIAL` before any request.
 - **The route names stay the vendor's.** No `google` route is taken; there are no hidden routes at all.
 - **A Go Gemini turn's replay state carries `provider: "opencode-go"`**, the label it is replayed under, so a signed tool call replays natively and the translators that bridged two labels (`utils/google-replay.ts`) are gone — decided by a mock-gateway replay test (`test/mock/plane-dispatch.mock.ts`).
-- **A Gemini model's thinking control comes from the catalog, not its id (D16).** pi 1.1.0 sends Google's discrete `thinkingLevel` only to ids its own pattern names (`usesGoogleThinkingLevel`: `gemini-3[.N]-pro|flash`, `gemini-flash[-lite]-latest`, `gemma-4`) and a token `thinkingBudget` to every other id, which a level model refuses with 400 INVALID_ARGUMENT ("Thinking budget is not supported for this model. Use thinking level instead.", measured live on Go `gemini-4-argon`); so a Google model whose catalog effort list is all `minimal`/`low`/`medium`/`high` (`usesCatalogThinkingLevels`) is served by level, from pi's own public exports, with the level pi itself falls back to when no effort is chosen, and every other id stays on pi's path (`src/host/google-levels.ts`). A profile that declares Off for such a model gets pi's own disable, `thinkingBudget: 0`, as pi's own level ids do; a model that cannot turn thinking off (`gemini-4-argon`) refuses it, so declaring Off there is a profile error.
+- **A Gemini model's thinking control is pi's own (D26).** Google has two thinking controls and a model accepts only its own: a level model refuses a token `thinkingBudget` with 400 INVALID_ARGUMENT ("Thinking budget is not supported for this model. Use thinking level instead.", measured live on Go `gemini-4-argon`). pi decides which control a request carries by its own rule (`usesGoogleThinkingLevel`), which names Gemini 4 from pi `1.3.0` on; the plugin sends what the host's pi builds and re-derives nothing. pi `1.1.0`, the `rc` channel's floor and its desktop app's pi, does not name it, so every `gemini-4-argon` turn there carries a thinking budget on either plane, a token budget for a chosen effort and `thinkingBudget: 0` (pi's disable) when none is chosen, which that model cannot honour since it cannot turn thinking off (the rule reads the model id, not the plane; the refusal is measured live on Go, and Zen's, expected under the same rule, is not yet measured): a `[HOST_LIMITATION]` row (`test/host-characterization.test.ts`, and the binary e2e's floor cell), reported upstream, with the mock and live cases that need the level skipping by pi's own predicate. A profile that declares Off for a level model gets pi's own disable, `thinkingBudget: 0`; a model that cannot turn thinking off (`gemini-4-argon`) refuses it, so declaring Off there is a profile error.
 
-What is verified, and in what composition: the in-process characterization (`test/host-characterization.test.ts`) and the real-host suite (`test/host-planes.test.ts`) run the plugin on the real `llm` service and `llm-pi-ai` in both apply orders, and the binary e2e (`test/e2e/host-binary.e2e.ts`) runs the built bundle on a published host, asserting that both planes are the plugin's `PlaneAdapter` and that a Go Gemini turn is sent to `https://opencode.ai/inference/go/google/v1beta` with a `thinkingLevel` and no `thinkingBudget`.
+What is verified, and in what composition: the in-process characterization (`test/host-characterization.test.ts`) and the real-host suite (`test/host-planes.test.ts`) run the plugin on the real `llm` service and `llm-pi-ai` in both apply orders, and the binary e2e (`test/e2e/host-binary.e2e.ts`) runs the built bundle on a published host, asserting, in every cell where the route claim engages, that both planes are the plugin's `PlaneAdapter` and that a Go Gemini turn is sent to `https://opencode.ai/inference/go/google/v1beta`, with a `thinkingLevel` and no `thinkingBudget` wherever the host's pi names the model (the `[HOST_LIMITATION]` row above elsewhere). On a host whose `internal/config` waterfall hands listeners the fiber (alpha's npm cell today, cordis `4.0.6-alpha.2`), the claim does not engage yet: a `[KNOWN_DEFECT]` row asserts that pi-ai serves both planes and the claim rows skip by name; the `0.2.2-alpha.3` bump adopts that contract and flips the row.
 
 ## 13. Measured: which endpoint families the gateway serves
 

@@ -203,7 +203,7 @@ describe("plane-provider · the adapter", () => {
   });
 
   it("relabels a toggle model's efforts as Off/On in model info and in a prepared call, ids untouched", async () => {
-    const { libraries } = await modules();
+    const { libraries, piAi } = await modules();
     const goProfile = planeProfileFor({
       buildProvider: buildPlaneProvider(libraries),
       catalog: [],
@@ -214,6 +214,14 @@ describe("plane-provider · the adapter", () => {
         ],
       },
       familyApi: OPENCODE_FAMILY_API.go,
+      // pi-ai's own Config fills the route's default window and output
+      // tokens for a model no source sizes; the plugin restates neither.
+      normalize: (raw) =>
+        (
+          piAi.Config({ providers: { "opencode-go": raw } }) as {
+            providers: { get: () => Record<string, unknown> };
+          }
+        ).providers.get()["opencode-go"],
       piModels: [],
       resolveRetryPolicy: libraries.resolveRetryPolicy,
       route: "opencode-go",
@@ -634,75 +642,5 @@ describe("plane-provider · buildPlaneProvider", () => {
         expect(wrapped.has(factory)).toBe(true);
       }
     }
-  });
-
-  it("wraps Google, and only Google, for the catalog's level ids, inside pi's session header (D16)", async () => {
-    const { libraries } = await modules();
-    const made = new Map<string, Record<string, unknown>>();
-    const handed: unknown[] = [];
-    const spied: HostLibraries = {
-      ...libraries,
-      apis: Object.fromEntries(
-        Object.entries(libraries.apis).map(([protocol, factory]) => [
-          protocol,
-          () => {
-            const api = factory() as Record<string, unknown>;
-            made.set(protocol, api);
-            return api;
-          },
-        ])
-      ) as HostLibraries["apis"],
-      withOpenCodeSessionHeader: (api: unknown) => {
-        handed.push(api);
-        return libraries.withOpenCodeSessionHeader(api);
-      },
-    };
-    const build = (levelThinkingModels?: ReadonlySet<string>) => {
-      made.clear();
-      handed.length = 0;
-      buildPlaneProvider(spied)({
-        id: "opencode-go",
-        models: [],
-        name: "Go",
-        ...(levelThinkingModels === undefined ? {} : { levelThinkingModels }),
-      });
-      // Each factory is made and then handed to the header, one protocol at
-      // a time, so the two lists line up.
-      expect(handed).toHaveLength(made.size);
-      return Object.fromEntries(
-        [...made.keys()].map((protocol, index) => [protocol, handed[index]])
-      );
-    };
-    // No level ids: every factory's api reaches the session header as pi made it.
-    for (const level of [undefined, new Set<string>()]) {
-      const reached = build(level);
-      for (const [protocol, api] of made) {
-        expect(reached[protocol], protocol).toBe(api);
-      }
-    }
-    // A level id: Google reaches it wrapped, its other entry points pi's own;
-    // the other three as pi made them.
-    const reached = build(new Set(["gemini-4-argon"]));
-    for (const [protocol, api] of made) {
-      if (protocol === "google-generative-ai") {
-        expect(reached[protocol]).not.toBe(api);
-        const google = reached[protocol] as Record<string, unknown>;
-        expect(google.stream).toBe(api.stream);
-        expect(google.streamSimple).not.toBe(api.streamSimple);
-      } else {
-        expect(reached[protocol], protocol).toBe(api);
-      }
-    }
-    // Without the host's level pieces the Google api stays pi's.
-    const { googleLevels: _pieces, ...withoutPieces } = spied;
-    made.clear();
-    handed.length = 0;
-    buildPlaneProvider(withoutPieces)({
-      id: "opencode-go",
-      levelThinkingModels: new Set(["gemini-4-argon"]),
-      models: [],
-      name: "Go",
-    });
-    expect(handed).toContain(made.get("google-generative-ai"));
   });
 });

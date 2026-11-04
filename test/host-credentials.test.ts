@@ -20,6 +20,7 @@ import {
   drainStream,
   fakeCredentials,
   fakeLaunchEnvironment,
+  forHost,
   mountTierA,
   recordingFetch,
   type TierA,
@@ -42,7 +43,7 @@ interface PiAuthResult {
 /**
  * pi's own auth answer for a route, through the collection pi-ai's adapter
  * built for its current snapshot (adapter.ts:251-259, private) and pi's public
- * `Models.getAuth` (pi 1.1.0 `dist/models.d.ts`). It is the one place a stored
+ * `Models.getAuth` (pi's `dist/models.d.ts`). It is the one place a stored
  * record's `env` is observable on a plane: pi forwards it as the result's
  * `env` (`dist/auth/helpers.js`), and no plane request reads it back.
  *
@@ -65,9 +66,20 @@ const piAuthOf = async (
     : { env: result.env, source: result.source };
 };
 
-/** One completions model on Zen, which pi 1.1.0 serves at its legacy base. */
+/** One completions model on Zen. */
 const ZEN_COMPLETIONS = { models: [{ id: "deepseek-v4-pro" }] };
-const LEGACY_COMPLETIONS = "https://opencode.ai/zen/v1/chat/completions";
+
+/**
+ * Where pi sends it, on each host cell: pi's own catalog base, which moved
+ * from the legacy family (1.1.0) to the root one (1.3.0) and to the
+ * per-protocol one (1.5.0). The credential paths these cases pin do not
+ * depend on the base; the URL only shows the turn reached the wire.
+ */
+const ZEN_COMPLETIONS_URL = forHost({
+  "alpha-floor": "https://opencode.ai/inference/v1/chat/completions",
+  newest: "https://opencode.ai/inference/openai/v1/chat/completions",
+  "rc-floor": "https://opencode.ai/zen/v1/chat/completions",
+});
 
 describe("host · pi-ai's credential paths (tier A)", () => {
   it("maps an api-key record under llm-pi-ai/opencode onto the wire with no apiKeyEnv (auth.ts:74-84,141-148)", async () => {
@@ -82,7 +94,7 @@ describe("host · pi-ai's credential paths (tier A)", () => {
     });
     const drained = await drainStream(tier.llm, "opencode", "deepseek-v4-pro");
     expect(wire.requests.map((request) => request.url)).toEqual([
-      LEGACY_COMPLETIONS,
+      ZEN_COMPLETIONS_URL,
     ]);
     expect(wire.requests[0]?.headers.authorization).toBe(
       "Bearer stored-k".length
@@ -121,7 +133,7 @@ describe("host · pi-ai's credential paths (tier A)", () => {
     });
     const drained = await drainStream(tier.llm, "opencode", "deepseek-v4-pro");
     expect(wire.requests.map((request) => request.url)).toEqual([
-      LEGACY_COMPLETIONS,
+      ZEN_COMPLETIONS_URL,
     ]);
     // The stored key's length, not the environment's (a different length).
     expect(wire.requests[0]?.headers.authorization).toBe(
@@ -138,8 +150,8 @@ describe("host · pi-ai's credential paths (tier A)", () => {
   });
 
   it("hands a non-api-key record's payload to pi verbatim: on a plane, whose pi auth has no OAuth, the turn fails PI_AI_ERROR with no request and no fallback to the launch environment (auth.ts:74-84)", async () => {
-    // Not a record a plane's Sign-in writes (pi 1.1.0's planes offer an API
-    // key only); pinned so P-R1's store, which copies this mapping, answers
+    // Not a record a plane's Sign-in writes (pi's planes offer an API key
+    // only); pinned so P-R1's store, which copies this mapping, answers
     // the same for one a user or another plane left behind.
     const wire = recordingFetch();
     vi.stubGlobal("fetch", wire.fetch);
@@ -214,7 +226,7 @@ describe("host · pi-ai's credential paths (tier A)", () => {
     expect(listed.map((model) => model.id)).toEqual(["deepseek-v4-pro"]);
     await drainStream(tier.llm, "opencode", "deepseek-v4-pro");
     expect(wire.requests.map((request) => request.url)).toEqual([
-      LEGACY_COMPLETIONS,
+      ZEN_COMPLETIONS_URL,
     ]);
     expect(wire.requests[0]?.headers.authorization).toBe("Bearer ref-k".length);
   });
@@ -237,7 +249,7 @@ describe("host · pi-ai's credential paths (tier A)", () => {
     });
     await drainStream(tier.llm, "opencode", "deepseek-v4-pro");
     expect(wire.requests.map((request) => request.url)).toEqual([
-      LEGACY_COMPLETIONS,
+      ZEN_COMPLETIONS_URL,
     ]);
     expect(wire.requests[0]?.headers.authorization).toBe("Bearer env-k".length);
     // The stored record is read first, then the reference, then the

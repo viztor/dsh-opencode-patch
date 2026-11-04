@@ -23,6 +23,7 @@ import { pathToFileURL } from "node:url";
 import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { HOST_VERSIONS } from "./support/host-versions.ts";
 import { hostModulesForTests } from "./support/host.ts";
 import {
   asPiAiModule,
@@ -177,7 +178,7 @@ describe("host-modules · the host's tree, found from the context's base URL", (
       await defaultHostModuleSource.libraries({ baseUrl: baseOf(root) })
     ).toBe(viaSource);
     const own = await defaultHostModuleSource.libraries({});
-    expect(own?.version).toBe("1.1.0");
+    expect(own?.version).toBe(HOST_VERSIONS.pi);
     const pi = await loadHostPi({ baseUrl: baseOf(root) });
     expect(pi?.version).toBe("9.9.9");
     expect(pi?.root).toBe(libraries?.root);
@@ -242,130 +243,11 @@ describe("host-modules · the host's tree, found from the context's base URL", (
   });
 });
 
-describe("host-modules · the Google level pieces (D16)", () => {
-  const pi = "node_modules/@earendil-works/pi-ai";
-  /**
-   * Counts each import of a piece module. In pi, two of the three pull in the
-   * Google SDK, so they must load on a level model's first call, never with
-   * the libraries; `lazy.js` and `models.js` load eagerly by design and carry
-   * no counter. Each stand-in install is a fresh root, so a fresh module.
-   */
-  const LOADS = "__dshLevelLoads";
-  const counted = (body: string): string =>
-    esm(`globalThis.${LOADS} = (globalThis.${LOADS} ?? 0) + 1;\n${body}`);
-  const loads = (): unknown => Reflect.get(globalThis, LOADS);
-  /** pi's level pieces, each a stand-in export. */
-  const levelFiles: Record<string, string> = {
-    [`${pi}/dist/api/lazy.js`]: esm(
-      "export const lazyStream = (model, setup) => setup();"
-    ),
-    [`${pi}/dist/models.js`]: esm(
-      "export const createProvider = (input) => input;\nexport const clampThinkingLevel = () => 'low';"
-    ),
-    [`${pi}/dist/api/google-generative-ai.js`]: counted(
-      "export const stream = () => 'stand-in stream';"
-    ),
-    [`${pi}/dist/api/google-shared.js`]: counted(
-      [
-        "export const usesGoogleThinkingLevel = () => false;",
-        "export const resolveGoogleThinkingLevel = (model, level) => level;",
-        "export const toGoogleThinkingLevel = (level) => level.toUpperCase();",
-        "export const toGoogleSdkThinkingLevel = (level) => level;",
-      ].join("\n")
-    ),
-    [`${pi}/dist/api/simple-options.js`]: counted(
-      "export const buildBaseOptions = () => ({});"
-    ),
-  };
-
-  afterEach(() => {
-    Reflect.deleteProperty(globalThis, LOADS);
-  });
-
-  it("loads pi's level pieces on first use, once, and none without lazyStream or clampThinkingLevel", async () => {
-    Reflect.set(globalThis, LOADS, 0);
-    const root = standInInstall({ files: levelFiles });
-    const libraries = await loadLibrariesFrom(entryIn(root));
-    const source = libraries?.googleLevels;
-    expect(source).toBeDefined();
-    // The stand-in install without the pieces: the Google protocol stays pi's.
-    const bare = await loadLibrariesFrom(entryIn(standInInstall()));
-    expect(bare).toBeDefined();
-    expect(bare?.googleLevels).toBeUndefined();
-    const noClamp = await loadLibrariesFrom(
-      entryIn(
-        standInInstall({
-          files: {
-            ...levelFiles,
-            [`${pi}/dist/models.js`]: esm(
-              "export const createProvider = (input) => input;"
-            ),
-          },
-        })
-      )
-    );
-    expect(noClamp?.googleLevels).toBeUndefined();
-    // Three libraries loaded — the first's imports long since settled had any
-    // started — and not one of the three piece modules imported: they load
-    // on the first call, never with the libraries.
-    expect(loads()).toBe(0);
-    const first = source?.load();
-    expect(source?.load()).toBe(first);
-    const pieces = await first;
-    expect(loads()).toBe(3);
-    // Once: a later call imports nothing again.
-    await source?.load();
-    expect(loads()).toBe(3);
-    expect(Object.keys(pieces ?? {}).toSorted()).toEqual([
-      "buildBaseOptions",
-      "clampThinkingLevel",
-      "resolveGoogleThinkingLevel",
-      "stream",
-      "toGoogleSdkThinkingLevel",
-      "toGoogleThinkingLevel",
-      "usesGoogleThinkingLevel",
-    ]);
-    expect(pieces?.stream({}, {}, {})).toBe("stand-in stream");
-    expect(await source?.lazyStream({}, () => Promise.resolve(7))).toBe(7);
-  });
-
-  it("answers no pieces when pi lacks one of them", async () => {
-    const { [`${pi}/dist/api/simple-options.js`]: _gone, ...rest } = levelFiles;
-    const libraries = await loadLibrariesFrom(
-      entryIn(standInInstall({ files: rest }))
-    );
-    expect(libraries?.googleLevels).toBeDefined();
-    expect(await libraries?.googleLevels?.load()).toBeUndefined();
-  });
-
-  it("from this repository's install, the pieces are pi's own exports", async () => {
-    const own = await defaultHostModuleSource.libraries({});
-    const pieces = await own?.googleLevels?.load();
-    const [google, shared, simple, models, lazy] = await Promise.all([
-      import("@earendil-works/pi-ai/api/google-generative-ai"),
-      import("@earendil-works/pi-ai/api/google-shared"),
-      import("@earendil-works/pi-ai/api/simple-options"),
-      import("@earendil-works/pi-ai/models"),
-      import("@earendil-works/pi-ai/api/lazy"),
-    ]);
-    expect(own?.googleLevels?.lazyStream).toBe(lazy.lazyStream);
-    expect(pieces).toEqual({
-      buildBaseOptions: simple.buildBaseOptions,
-      clampThinkingLevel: models.clampThinkingLevel,
-      resolveGoogleThinkingLevel: shared.resolveGoogleThinkingLevel,
-      stream: google.stream,
-      toGoogleSdkThinkingLevel: shared.toGoogleSdkThinkingLevel,
-      toGoogleThinkingLevel: shared.toGoogleThinkingLevel,
-      usesGoogleThinkingLevel: shared.usesGoogleThinkingLevel,
-    });
-  });
-});
-
 describe("host-modules · the default source", () => {
   it("loads pi, dsh-llm and the loader from the wrapper's own tree, once", async () => {
     const libraries = await defaultHostModuleSource.libraries();
     expect(libraries).toBeDefined();
-    expect(libraries?.version).toBe("1.1.0");
+    expect(libraries?.version).toBe(HOST_VERSIONS.pi);
     expect(Object.keys(libraries?.apis ?? {}).toSorted()).toEqual([
       "anthropic-messages",
       "google-generative-ai",

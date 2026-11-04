@@ -128,6 +128,42 @@ describe("plane-profile · the field mapping and pi-ai's defaults", () => {
     expect(result.normalized).toMatchObject({ apiKeyEnv: "OPENCODE_API_KEY" });
   });
 
+  it("sizes a model no source describes with the window and output tokens pi-ai's own Config filled, and restates none of them (D17)", () => {
+    // What the installed channel's pi-ai fills, read back from its own Config,
+    // never from a copy here: the two channels' bridges differ.
+    const filled = normalize({}) as {
+      defaultContextWindow: number;
+      defaultMaxTokens: number;
+    };
+    expect(filled.defaultContextWindow).toBeGreaterThan(0);
+    expect(filled.defaultMaxTokens).toBeGreaterThan(0);
+    const result = planeProfileFor(
+      input({ models: [{ id: "not-a-real-model" }] })
+    );
+    const [model] = (
+      result.profile.piProvider as {
+        getModels: () => Record<string, unknown>[];
+      }
+    ).getModels();
+    expect(model).toMatchObject({
+      contextWindow: filled.defaultContextWindow,
+      id: "not-a-real-model",
+      maxTokens: filled.defaultMaxTokens,
+    });
+    // Without pi-ai's Config nothing fills them, and the plugin invents none:
+    // the model is an error, in pi-ai's words, and the rest of the plane serves.
+    const bare = planeProfileFor(
+      input(
+        { models: [{ id: "not-a-real-model" }, { id: "gpt-5.4" }] },
+        { normalize: undefined }
+      )
+    );
+    expect(bare.profile.modelErrors.get("not-a-real-model")).toBe(
+      'llm-pi-ai: provider "opencode" model "not-a-real-model" contextWindow must be a positive integer'
+    );
+    expect(served(bare)).toEqual(["gpt-5.4"]);
+  });
+
   it("D3: no models list, or an empty one, serves the plugin's servable catalog in catalog order", () => {
     const catalogIds = OPENCODE_ZEN_CATALOG.map((spec) => spec.id);
     expect(served(planeProfileFor(input({})))).toEqual(catalogIds);
@@ -221,113 +257,6 @@ describe("plane-profile · the field mapping and pi-ai's defaults", () => {
       reasoning: "high",
       thinkingBudgets: { high: 9 },
     });
-  });
-});
-
-describe("plane-profile · the Google level ids the builder is handed (D16)", () => {
-  it("names exactly the served Google ids the catalog describes by level, from the catalog, never the id", () => {
-    const handed: (ReadonlySet<string> | undefined)[] = [];
-    const recording: PlaneProfileInput["buildProvider"] = (build) => {
-      handed.push(build.levelThinkingModels);
-      return buildProvider(build);
-    };
-    // The catalog's Gemini models beside a non-Google one, an id no catalog
-    // describes (named like a Gemini model), and one that fails. The filter is
-    // "Google with any effort option", not the rule itself: a deliberate shape
-    // tripwire beside the model-metadata oracle, so a Google effort list that
-    // is not all levels fails here rather than being re-derived.
-    const levelIds = OPENCODE_ZEN_CATALOG.filter(
-      (spec) =>
-        spec.provider_npm === "@ai-sdk/google" &&
-        spec.reasoning_options?.some((option) => option.type === "effort")
-    ).map((spec) => spec.id);
-    expect(levelIds).toContain("gemini-4-argon");
-    // Any other level id, picked by shape, serves as the one listed twice.
-    const duplicate = levelIds.find((id) => id !== "gemini-4-argon");
-    expect(duplicate, "the Zen catalog has a second level model").toBeDefined();
-    const result = planeProfileFor(
-      input(
-        {
-          models: [
-            ...levelIds.map((id) => ({ id })),
-            { id: "deepseek-v4-pro" },
-            { id: "gemini-9-unlisted" },
-            // Listed twice: a model error, so not served.
-            { id: duplicate ?? "" },
-          ],
-        },
-        { buildProvider: recording }
-      )
-    );
-    expect(result.profile.modelErrors.get(duplicate ?? "")).toMatch(
-      /more than once/u
-    );
-    expect(handed).toHaveLength(1);
-    expect([...(handed[0] ?? [])].toSorted()).toEqual(
-      levelIds.filter((id) => id !== duplicate).toSorted()
-    );
-    // A catalog that describes the same id by another shape names none.
-    handed.length = 0;
-    planeProfileFor(
-      input(
-        { models: [{ id: "gemini-4-argon" }] },
-        {
-          buildProvider: recording,
-          catalog: [
-            {
-              id: "gemini-4-argon",
-              provider_npm: "@ai-sdk/google",
-              reasoning: true,
-              reasoning_options: [{ type: "effort", values: ["low", "max"] }],
-            },
-          ],
-        }
-      )
-    );
-    expect([...(handed[0] ?? [])]).toEqual([]);
-  });
-
-  it("a Google-served id the catalog does not describe stays off the level set, whatever its name", () => {
-    // A route-level `api` cannot put an uncatalogued id on Google (pi-ai's own
-    // check refuses `google-generative-ai` there), so the reachable case is an
-    // id pi's own model table serves on Google that the catalog lacks: with no
-    // catalog spec there is nothing to read its thinking control from, so it
-    // stays on pi's path, Gemini-named or not.
-    expect(
-      planeProfileFor(
-        input({
-          api: "google-generative-ai",
-          models: [{ id: "gemini-9-unlisted" }],
-        })
-      ).profile.catalogError
-    ).toMatch(/google-generative-ai/u);
-    const handed: (ReadonlySet<string> | undefined)[] = [];
-    const recording: PlaneProfileInput["buildProvider"] = (build) => {
-      handed.push(build.levelThinkingModels);
-      return buildProvider(build);
-    };
-    const flash = "gemini-3-flash";
-    const result = planeProfileFor(
-      input(
-        { models: [{ id: flash }, { id: "gemini-4-argon" }] },
-        {
-          buildProvider: recording,
-          catalog: OPENCODE_ZEN_CATALOG.filter((spec) => spec.id !== flash),
-        }
-      )
-    );
-    expect(result.profile.catalogError).toBeUndefined();
-    const models = (
-      result.profile.piProvider as {
-        getModels: () => { id: string; api: string }[];
-      }
-    ).getModels();
-    expect(models.map(({ api, id }) => ({ api, id }))).toEqual([
-      { api: "google-generative-ai", id: flash },
-      { api: "google-generative-ai", id: "gemini-4-argon" },
-    ]);
-    expect(handed).toHaveLength(1);
-    expect([...(handed[0] ?? [])]).toEqual(["gemini-4-argon"]);
   });
 });
 

@@ -6,6 +6,60 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.8.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.7.0...v1.8.0) (2026-11-02)
+
+
+### Features
+
+* **plugin-page:** the page is a picture, like the upstream plugins' ([#150](https://github.com/viztor/dsh-opencode-patch/issues/150)) ([29a0d96](https://github.com/viztor/dsh-opencode-patch/commit/29a0d96ca5cda9c93b9a73017978d661c4293d92))
+
+
+### Documentation
+
+* record where the plugin page's content comes from ([#148](https://github.com/viztor/dsh-opencode-patch/issues/148)) ([5903131](https://github.com/viztor/dsh-opencode-patch/commit/59031311cc4f761dade119c8098d0e750d8d261e))
+
+## [1.7.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.6.0...v1.7.0) (2026-11-02)
+
+
+### Features
+
+* **plugin-page:** a curated page and a featured image, instead of the whole README ([#146](https://github.com/viztor/dsh-opencode-patch/issues/146)) ([624cd9f](https://github.com/viztor/dsh-opencode-patch/commit/624cd9f6e51313c8f15cac8d442f5d4bf1450e5d))
+
+## [1.6.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.5.0...v1.6.0) (2026-10-31)
+
+
+### Features
+
+* **test:** gate the language pairs, and lift the live-run rules out of the e2e ([#140](https://github.com/viztor/dsh-opencode-patch/issues/140)) ([21d4d68](https://github.com/viztor/dsh-opencode-patch/commit/21d4d683d3c6c798c1157cd7375fb2d4b78257bf))
+
+
+### Documentation
+
+* **testing:** the scripts' pure halves, and why they moved out ([#145](https://github.com/viztor/dsh-opencode-patch/issues/145)) ([af4e1ff](https://github.com/viztor/dsh-opencode-patch/commit/af4e1ff8bf020a688dd7f0a6b0807b310b4d3053))
+
+## [1.5.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.3...v1.5.0) (2026-10-31)
+
+
+### Features
+
+* **test:** a fixture harness for the worlds the vendor has not produced ([#138](https://github.com/viztor/dsh-opencode-patch/issues/138)) ([60f61aa](https://github.com/viztor/dsh-opencode-patch/commit/60f61aa47419180021730b9d79d7db0d5d50d0dc))
+
+## [1.4.3](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.2...v1.4.3) (2026-10-31)
+
+
+### Fixes
+
+* send Gemini 4 thinking levels on older host runtimes ([#130](https://github.com/viztor/dsh-opencode-patch/issues/130)) ([16482fb](https://github.com/viztor/dsh-opencode-patch/commit/16482fbb741693054069518bab79df5586470950))
+* **usage:** answer the whole opencodeGoUsage contract, for the sibling page and the client ([#137](https://github.com/viztor/dsh-opencode-patch/issues/137)) ([5052b31](https://github.com/viztor/dsh-opencode-patch/commit/5052b31324694b52faa4d99d8c662a15ba929e6c))
+
+## [1.4.2](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.1...v1.4.2) (2026-10-31)
+
+
+### Fixes
+
+* **publish:** the retired alias must LINK, not fail on every load ([#135](https://github.com/viztor/dsh-opencode-patch/issues/135)) ([44dc18a](https://github.com/viztor/dsh-opencode-patch/commit/44dc18a6389b452928d8cb27507f910cae563472))
+* the plane decides the price, the flag and the refusal ([#133](https://github.com/viztor/dsh-opencode-patch/issues/133)) ([1133ad0](https://github.com/viztor/dsh-opencode-patch/commit/1133ad0311aec76f56244702e02866c64e23e23c))
+
 ## [1.4.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.4.0...v1.4.1) (2026-10-22)
 
 

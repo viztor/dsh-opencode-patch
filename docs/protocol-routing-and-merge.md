@@ -4,7 +4,7 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Measured 2026-10-17, shown on the default (modern) family:
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17, shown on the default (modern) family; counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`):
 
 | API shape | Wire endpoint (Zen) | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
@@ -36,7 +36,7 @@ Since P-R1 the plugin serves `opencode` and `opencode-go` itself, with **one ada
    };
    ```
 
-3. **The plane builds the model.** `planeModelFor` (`src/utils/plane-model.ts`) folds one declared model into the pi model object the adapter serves: its protocol from the catalog, then pi's installed entry, then the plane entry's `api`, then completions (D16); its base per protocol on the chosen endpoint family; its name, window, limits, modalities and cost from the user's row first, then the catalog, then pi (D17); and its reasoning from the user's `reasoningEfforts`, then the catalog (D1). `planeProfileFor` (`src/utils/plane-profile.ts`) does the same for the whole plane entry, with `llm-pi-ai`'s own defaults and its own validation messages, and never throws.
+3. **The plane builds the model.** `planeModelFor` (`src/utils/plane-model.ts`) folds one declared model into the pi model object the adapter serves: its protocol from the catalog, then the plane entry's `api`, then completions (D16), never from pi's installed entry (D26); its base per protocol on the chosen endpoint family, from the plugin's own endpoint table and never from pi's catalog base, so a pi release that reshapes its catalog moves no turn; its name, window, limits, modalities and cost from the user's row first, then the catalog, then pi (D17); and its reasoning from the user's `reasoningEfforts`, then the catalog (D1). `planeProfileFor` (`src/utils/plane-profile.ts`) does the same for the whole plane entry, with `llm-pi-ai`'s own defaults and its own validation messages, and never throws.
 4. **The plane adapter serves it.** `src/host/plane-provider.ts` builds `PlaneAdapter`, a subclass of the host's own `PiAiAdapter`, over a provider made with pi's own `createProvider` and all four of pi's protocol implementations, each wrapped with pi's session header. pi's provider dispatches per model (`model.api`), so one route speaks every protocol.
 5. **The route claim keeps `llm-pi-ai` off the planes.** `src/host/route-claim.ts` prepends an `internal/config` listener that hands pi-ai's fiber a copy of its configuration without the two plane entries, so pi-ai never registers them; it then registers `PlaneAdapter` for exactly the planes the profile declares, and `handle.replace`s the set when it changes. An edit of a plane in Settings is validated with `llm-pi-ai`'s own checks before it is written, and `src/host/describe-graft.ts` grafts the committed plane entries back into `settings.describe()`, so _Settings → Models_ still reads and writes them where they always were (D18).
 
@@ -136,7 +136,7 @@ What belongs here is only the part that is a routing consequence: the meter is a
 | Concern | Module |
 | :-- | :-- |
 | Which protocol and endpoint a model is served on | `utils/protocols.ts`, `utils/plane-model.ts`, `utils/plane-profile.ts` |
-| Serving the planes | `host/route-claim.ts`, `host/plane-provider.ts`, `host/google-levels.ts`, `host/describe-graft.ts` |
+| Serving the planes | `host/route-claim.ts`, `host/plane-provider.ts`, `host/describe-graft.ts` |
 | Catalog merge | `models-catalog.ts`, `models-discovery.ts`, `catalog-data.ts` |
 | Allowance table | `go-limits-data.ts` (generated) |
 | Credentials and the `/usage` endpoint | `go-discovery.ts`, `key-capture.ts` |

@@ -31,7 +31,6 @@ import type {
 } from "../cordis-context.ts";
 import { isFunctionLike, isRecord } from "../utils/guards.ts";
 import type { PlaneRoute, Protocol } from "../utils/protocols.ts";
-import type { GoogleLevelPieces, GoogleLevelSource } from "./google-levels.ts";
 
 /** The host plugin this module reads. */
 const PI_AI_PACKAGE = "@deepseek-ai/dsh-llm-pi-ai";
@@ -285,13 +284,9 @@ const PI_MODULES = {
   completions: "dist/api/openai-completions.lazy.js",
   go: "dist/providers/opencode-go.js",
   google: "dist/api/google-generative-ai.lazy.js",
-  googleShared: "dist/api/google-shared.js",
-  googleStream: "dist/api/google-generative-ai.js",
   headers: "dist/providers/opencode-headers.js",
-  lazy: "dist/api/lazy.js",
   models: "dist/models.js",
   responses: "dist/api/openai-responses.lazy.js",
-  simpleOptions: "dist/api/simple-options.js",
   zen: "dist/providers/opencode.js",
 } as const;
 
@@ -351,59 +346,6 @@ const authOf = (
 };
 
 /**
- * pi's pieces for a Google model the catalog describes by thinking level
- * (`host/google-levels.ts`), each a public export (`./api/*`, `./models`). The
- * Google ones pull in the Google SDK, so they load on the first call that
- * needs them, once, as pi's own lazy Google API loads its module.
- *
- * @param piFile - a pi module's file, by key.
- * @param lazy - `api/lazy`, loaded with the rest.
- * @param models - `models`, loaded with the rest.
- * @returns the source, or `undefined` when pi lacks `lazyStream` or
- *   `clampThinkingLevel`; its `load` answers `undefined` when pi lacks a piece.
- */
-const googleLevelsFrom = (
-  piFile: (key: keyof typeof PI_MODULES) => string,
-  lazy: Record<string, unknown> | undefined,
-  models: Record<string, unknown> | undefined
-): GoogleLevelSource | undefined => {
-  const lazyStream = fn(lazy, "lazyStream");
-  const clampThinkingLevel = fn(models, "clampThinkingLevel");
-  if (lazyStream === undefined || clampThinkingLevel === undefined) {
-    return undefined;
-  }
-  let loaded: Promise<GoogleLevelPieces | undefined> | undefined;
-  const load = async (): Promise<GoogleLevelPieces | undefined> => {
-    const [google, shared, simple] = await Promise.all([
-      importRecord(piFile("googleStream")),
-      importRecord(piFile("googleShared")),
-      importRecord(piFile("simpleOptions")),
-    ]);
-    const pieces = {
-      buildBaseOptions: fn(simple, "buildBaseOptions"),
-      clampThinkingLevel,
-      resolveGoogleThinkingLevel: fn(shared, "resolveGoogleThinkingLevel"),
-      stream: fn(google, "stream"),
-      toGoogleSdkThinkingLevel: fn(shared, "toGoogleSdkThinkingLevel"),
-      toGoogleThinkingLevel: fn(shared, "toGoogleThinkingLevel"),
-      usesGoogleThinkingLevel: fn(shared, "usesGoogleThinkingLevel"),
-    };
-    return Object.values(pieces).some((piece) => piece === undefined)
-      ? undefined
-      : // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- pi's own signatures; every export was checked to be a function above.
-        (pieces as unknown as GoogleLevelPieces);
-  };
-  return {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- pi's own signature; the export check above is the runtime guard.
-    lazyStream: lazyStream as GoogleLevelSource["lazyStream"],
-    load: () => {
-      loaded ??= load();
-      return loaded;
-    },
-  };
-};
-
-/**
  * Load the libraries: pi's provider pieces, dsh-llm's error and retry helpers,
  * and the loader's `interpolate`, each from the given wrapper's own tree.
  *
@@ -436,7 +378,6 @@ export const loadLibrariesFrom = async (
     go,
     google,
     headers,
-    lazy,
     models,
     responses,
     zen,
@@ -449,7 +390,6 @@ export const loadLibrariesFrom = async (
     importRecord(piFile("go")),
     importRecord(piFile("google")),
     importRecord(piFile("headers")),
-    importRecord(piFile("lazy")),
     importRecord(piFile("models")),
     importRecord(piFile("responses")),
     importRecord(piFile("zen")),
@@ -484,7 +424,6 @@ export const loadLibrariesFrom = async (
   const LlmError = llm?.LlmError;
   const assertUsableApiKey = fn(llm, "assertUsableApiKey");
   const interpolate = fn(loader, "interpolate");
-  const googleLevels = googleLevelsFrom(piFile, lazy, models);
   let version = "";
   try {
     const manifest: unknown = JSON.parse(
@@ -527,7 +466,6 @@ export const loadLibrariesFrom = async (
     ...(interpolate === undefined
       ? {}
       : { interpolate: interpolate as HostLibraries["interpolate"] }),
-    ...(googleLevels === undefined ? {} : { googleLevels }),
   };
   /* oxlint-enable typescript/no-unsafe-type-assertion */
 };

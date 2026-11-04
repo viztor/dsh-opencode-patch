@@ -96,7 +96,9 @@ const servedModel = (
   spec: CatalogModelSpec
 ): Readonly<Record<string, unknown>> & { api: Protocol; baseUrl: string } => {
   const { model, error } = planeModelFor({
-    defaults: { contextWindow: 262_144, input: ["text"], maxTokens: 32_768 },
+    // Stand-ins for what pi-ai's `Config` fills; the routing read here
+    // ignores them, and the plugin restates none of them (D17).
+    defaults: { contextWindow: 123_456, input: ["text"], maxTokens: 6_543 },
     endpoint: "modern",
     entry: { id: spec.id },
     familyApi: plane.family,

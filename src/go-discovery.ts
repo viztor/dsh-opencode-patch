@@ -191,7 +191,7 @@ export const discoverGoConfig = (
  * measured rather than assumed.** The public quota route is
  * `GET /zen/go/v1/usage` and there is no second one: the only route file in
  * either major version is
- * `packages/console/app/src/routes/zen/go/v1/usage.ts` (checked in 1.19.4 and
+ * `packages/console/app/src/routes/zen/go/v1/usage.ts` (checked in 1.19.5 and
  * 2.0.32), and the inference proxy's path table
  * (`packages/console/app/src/lib/inference-proxy.ts`) lists
  * `"GET /zen/go/v1/usage": "/go/v1/usage"` with no `/inference/.../usage`
@@ -283,9 +283,12 @@ type KeySourceStep =
  * then credentials/env, then any captured key. `request` promotes both captured
  * steps above the declared sources; `configured` does the reverse.
  *
- * Tier safety is orthogonal and applies to all three: a step that returns a key
- * for the wrong tier is never consulted, because the Go endpoint rejects a Zen
- * key outright.
+ * The captured steps read only keys filed under the Go plane, in all three
+ * policies — but a key is filed by the plane its request went to, not by what
+ * it is entitled to. Nothing here can tell a Zen key from a Go key: a Go entry
+ * without `apiKeyEnv` sends pi's `OPENCODE_API_KEY` on its turns (D20), that
+ * bearer is filed as a Go key, and `auto` then sends it to the Go usage
+ * endpoint, which refuses it. Naming the reference on the Go entry is the fix.
  *
  * The store is appended to all three, and to none of them in the middle: the
  * policy orders the sources the user declared, and the installation's store is
