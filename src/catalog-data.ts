@@ -152,6 +152,27 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     ],
   },
   {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "crouton-alpha-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 270_000,
+    name: "Crouton Alpha Free",
+    provider_npm: "@ai-sdk/openai",
+    reasoning: true,
+    reasoning_options: [
+      {
+        type: "effort",
+        values: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      },
+    ],
+  },
+  {
     context_window: 1_000_000,
     cost: {
       cache_read: 0.022,
@@ -895,6 +916,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     is_free: true,
     max_output_tokens: 270_000,
     name: "Crouton Alpha Free",
+    provider_npm: "@ai-sdk/openai",
     reasoning: true,
     reasoning_options: [
       {
