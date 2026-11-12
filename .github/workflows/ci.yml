@@ -467,11 +467,11 @@ jobs:
   #   included. The record's newest pi asserts the rows wherever the route
   #   claim engages; a pi published since the record skips the rows that
   #   depend on which ids pi describes, with a warning (the nightly
-  #   `host-drift` job names it). On a host whose `internal/config` waterfall
-  #   hands listeners the fiber (every cell of both channels' newest builds
-  #   today), a `[KNOWN_DEFECT]` row asserts that pi-ai serves both planes and
-  #   the rows that need the claim skip by name; where the host itself cannot
-  #   save, the save rows skip. Never cached: re-resolving is the point.
+  #   `host-drift` job names it). The route claim engages whichever
+  #   `internal/config` call shape the host dispatches (the probe counts every
+  #   call's shape), and a `[BASELINE]` row asserts that both planes are the
+  #   plugin's PlaneAdapter; where the host itself cannot save, the save rows
+  #   skip. Never cached: re-resolving is the point.
   # - `floor`: the tree the desktop app ships, forced with npm `overrides`
   #   (`floorOverrides` in host-versions.ts): the channel's whole cordis family
   #   at the record's versions (the floors of the ranges the cluster declares,

@@ -464,12 +464,20 @@ const measure = async (ctx, state) => {
     ...registered,
     ...asked,
     ...saving,
-    // Which contract the host's `internal/config` waterfall speaks, as one of
-    // its own dispatches showed it: "config" when a listener is handed the
-    // config (with the fiber as `this`), "fiber" when it is handed the fiber
-    // and reads the config from `next()`. Observed, never inferred from a
-    // version.
-    configHook: state.configHook ?? null,
+    // Which contract the host's `internal/config` waterfall speaks, as its
+    // own dispatches showed it: "config" when a listener is handed the config
+    // with the fiber as `this` (the OLD core), "fiber" when `this` is null and
+    // the fiber is the first argument, the config read from `next()` (the
+    // NEW core), "neither" for a call in no known shape. `configHook` is the
+    // first call's, `configHooks` counts every call's. Observed with the same
+    // fiber predicate the route claim uses, never inferred from a version.
+    configHook: state.configHooks[0] ?? null,
+    configHooks: Object.fromEntries(
+      ["config", "fiber", "neither"].map((shape) => [
+        shape,
+        state.configHooks.filter((seen) => seen === shape).length,
+      ])
+    ),
     control,
     describe,
     describeEntries,
@@ -482,6 +490,17 @@ const measure = async (ctx, state) => {
 };
 
 /**
+ * A cordis fiber: an object its own context names (`fiber.ctx.fiber ===
+ * fiber`), the predicate `src/utils/config-run.ts` reads a call's shape with.
+ */
+const isFiber = (value) =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof value.ctx === "object" &&
+  value.ctx !== null &&
+  value.ctx.fiber === value;
+
+/**
  * Whether a measurement has started in this process: the control edit
  * restarts the probe's fiber, and the restarted `apply` must not measure
  * again (the module, and so this flag, outlives the fiber).
@@ -492,16 +511,16 @@ export const apply = (ctx) => {
   if (started) return;
   started = true;
   let stopped = false;
-  const state = { configHook: undefined, controlling: false };
-  ctx.on?.("internal/config", (first, next) => {
-    state.configHook ??=
-      typeof first === "object" &&
-      first !== null &&
-      "uid" in first &&
-      "runtime" in first
-        ? "fiber"
-        : "config";
-    return next();
+  const state = { configHooks: [], controlling: false };
+  ctx.on?.("internal/config", function recordShape(...args) {
+    let shape = "neither";
+    if (isFiber(this)) {
+      shape = "config";
+    } else if (isFiber(args[0])) {
+      shape = "fiber";
+    }
+    state.configHooks.push(shape);
+    return args.at(-1)();
   });
   ctx.effect?.(() => () => {
     // The control edit's own restart is not a stop: its answer is still
