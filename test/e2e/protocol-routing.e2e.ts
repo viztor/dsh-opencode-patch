@@ -51,7 +51,12 @@
  * for a negative control — the modern `/inference/…` family since P-R1, Go's
  * Google included. So a model that the gateway serves on the legacy `/zen`
  * family but refuses on the one the plugin dispatches to turns a case red.
- * Probing the legacy family per protocol is P-R2's record.
+ * The keyed probe of every URL shape per plane and protocol, the legacy family
+ * included, is `keyed-probes.e2e.ts`.
+ *
+ * The keyed cases spend a key only on the `full` tier of `OPENCODE_E2E_KEYED`
+ * (the default when it is unset; CI runs it nightly and on dispatch), and skip
+ * otherwise. The keyless cases run on every tier.
  *
  * **The last block sends through the plugin's own provider.** The probes above
  * write their bodies and headers by hand, which is what makes them an exact
@@ -85,6 +90,7 @@ import {
   mountTierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
+import { armedKey, keyedTierOf } from "../support/keyed-probes.ts";
 import { isModelGoneMessage } from "../support/keyless-matrix.ts";
 import {
   accessDisabled,
@@ -114,16 +120,23 @@ import {
   planeModelFor,
 } from "../support/src.ts";
 import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
-import { freeTierClosed, gatewayBusy } from "./verdict.ts";
+import {
+  freeTierClosed,
+  freeWalkCappedReason,
+  freeWalkGap,
+  gatewayBusy,
+} from "./verdict.ts";
 
 const LIVE = process.env.OPENCODE_E2E === "1";
-const ZEN_KEY = process.env.OPENCODE_API_KEY;
+/** What may spend a key: the keyed cases here run on the `full` tier only. */
+const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
+const ZEN_KEY = armedKey(TIER, "full", process.env.OPENCODE_API_KEY);
 
 /**
  * The Go plane. A different base URL AND a different credential — which is why
  * probing its models against the Zen base proves nothing about them.
  */
-const GO_KEY = process.env.OPENCODE_GO_API_KEY;
+const GO_KEY = armedKey(TIER, "full", process.env.OPENCODE_GO_API_KEY);
 
 /** A base to probe instead of the plugin's own, per plane (a mirror or a stub). */
 const BASE_OVERRIDE: Readonly<Record<"go" | "zen", string | undefined>> = {
@@ -824,17 +837,17 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         (m) => m.id
       );
       let answered: { model: string; status: number } | undefined;
-      let busy = false;
+      const answers: Probe[] = [];
       for (const model of candidates) {
         const response = await probe(
           servedProtocolFor(model) ?? "openai-completions",
           model
         );
+        answers.push(response);
         if (gatewayBusy(response)) {
           // The gateway answered, but about its own load. That is neither a
           // completion nor a dead tier, and it must not be reported as one.
           // Asked before the refusals below, which count a 429 among them.
-          busy = true;
           continue;
         }
         // A gated, withdrawn or refused candidate says nothing about whether
@@ -850,10 +863,20 @@ describe.skipIf(!LIVE)("live protocol routing", () => {
         break;
       }
       if (answered === undefined) {
-        if (busy) {
+        const gap = freeWalkGap(answers);
+        if (gap === "busy") {
           // No candidate answered and at least one was busy, which says
           // nothing about the tier.
           context.skip();
+          return;
+        }
+        if (gap === "capped") {
+          // The free tier's usage cap answered for at least one candidate: it
+          // measures the account this run spends from, not whether the tier
+          // serves the plugin — the keyless free probe's `free-usage-limited`
+          // skip, for the same reason. A session gate another candidate met
+          // is named in the reason, not dropped.
+          context.skip(true, freeWalkCappedReason(answers));
           return;
         }
         // Reported rather than skipped: the account (or the vendor) closed the

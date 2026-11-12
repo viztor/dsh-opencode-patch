@@ -17,6 +17,9 @@ import { describe, expect, it } from "vitest";
 import {
   accessDisabled,
   freeTierClosed,
+  freeUsageCapped,
+  freeWalkCappedReason,
+  freeWalkGap,
   gatewayBusy,
   retiredAtTheGateway,
   usableAsSubject,
@@ -39,6 +42,15 @@ describe("the free tier's refusal", () => {
     expect(
       freeTierClosed({ status: 403, summary: '{"type":"AuthError"}' })
     ).toBe(false);
+  });
+
+  it("includes the tier's usage cap, which is the same gate and not a busy gateway (L3)", () => {
+    const capped = {
+      status: 429,
+      summary: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+    };
+    expect(freeTierClosed(capped)).toBe(true);
+    expect(gatewayBusy(capped)).toBe(false);
   });
 });
 
@@ -107,6 +119,54 @@ describe("the busy gateway", () => {
     // the account, so it must not be reported as either.
     expect(gatewayBusy({ status: 429, summary: "" })).toBe(true);
     expect(gatewayBusy({ status: 403, summary: "FreeTierError" })).toBe(false);
+  });
+});
+
+describe("why a walk of free candidates found no completion", () => {
+  const capped = {
+    status: 429,
+    summary: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+  };
+  const gated = { status: 403, summary: '{"type":"FreeTierError"}' };
+  const busy = { status: 429, summary: "" };
+  const retired = { status: 410, summary: "" };
+
+  it("is the usage cap when any candidate met it and none was busy", () => {
+    // A walk that met the cap measured the account it spends from: reporting
+    // that as "the tier needs a session token" names a cause it cannot tell
+    // apart from the cap. The rule is ANY, not every: one capped candidate in
+    // a mixed walk (beside a gated and a withdrawn one) still reads as capped.
+    expect(freeUsageCapped(capped)).toBe(true);
+    expect(freeUsageCapped(gated)).toBe(false);
+    expect(freeWalkGap([capped, capped])).toBe("capped");
+    expect(freeWalkGap([gated, capped, retired])).toBe("capped");
+  });
+
+  it("still names a session gate the capped walk observed", () => {
+    // The skip reports the cap, but a mixed walk's FreeTierError is the signal
+    // this case exists to surface, so the reason carries it rather than
+    // dropping it.
+    expect(freeWalkCappedReason([capped, capped])).toBe(
+      "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier"
+    );
+    expect(freeWalkCappedReason([gated, capped, retired])).toBe(
+      "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier; 1 candidate also answered 403 FreeTierError (the session gate)"
+    );
+    expect(freeWalkCappedReason([gated, capped, gated])).toContain(
+      "; 2 candidates also answered 403 FreeTierError"
+    );
+  });
+
+  it("is a busy gateway first, whatever else answered", () => {
+    expect(freeWalkGap([capped, busy])).toBe("busy");
+    expect(freeWalkGap([gated, busy, retired])).toBe("busy");
+  });
+
+  it("is a closed tier when each was gated, withdrawn or never answered", () => {
+    expect(freeWalkGap([gated, retired, { status: 0, summary: "" }])).toBe(
+      "closed"
+    );
+    expect(freeWalkGap([])).toBe("closed");
   });
 });
 
