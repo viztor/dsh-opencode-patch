@@ -81,6 +81,78 @@ const served = (result: ReturnType<typeof planeProfileFor>): string[] =>
     .getModels()
     .map((model) => model.id);
 
+describe("plane-profile · pi-ai's image-count bounds", () => {
+  /** A profile whose normalization answers `fields` beside the entry. */
+  const withNormal = (
+    fields: Record<string, unknown>,
+    entry: Record<string, unknown> = {}
+  ) =>
+    planeProfileFor(
+      input(
+        { models: [{ id: "deepseek-v4-pro" }], ...entry },
+        {
+          normalize: (raw) => ({
+            ...(normalize(raw) as Record<string, unknown>),
+            ...fields,
+          }),
+        }
+      )
+    ).profile;
+
+  it("carries pi-ai's maxRequestImages and derives the offload quantum as pi-ai does, where pi-ai's Config defines the bound", () => {
+    // pi-ai's default count bound (dsh-llm-pi-ai 0.2.2: `maxRequestImages`
+    // defaults to 50, the quantum to min(10, that)).
+    expect(withNormal({ maxRequestImages: 50 })).toMatchObject({
+      imageOffloadCountQuantum: 10,
+      maxRequestImages: 50,
+    });
+    expect(withNormal({ maxRequestImages: 4 })).toMatchObject({
+      imageOffloadCountQuantum: 4,
+      maxRequestImages: 4,
+    });
+    // A quantum the entry sets is kept.
+    expect(
+      withNormal({ imageOffloadCountQuantum: 3, maxRequestImages: 50 })
+    ).toMatchObject({ imageOffloadCountQuantum: 3, maxRequestImages: 50 });
+  });
+
+  it("refuses an out-of-range bound in pi-ai's words", () => {
+    expect(withNormal({ maxRequestImages: 0 }).catalogError).toMatch(
+      /maxRequestImages must be a positive safe integer/u
+    );
+    expect(withNormal({ maxRequestImages: "50" }).catalogError).toMatch(
+      /maxRequestImages must be a positive safe integer/u
+    );
+    expect(
+      withNormal({ imageOffloadCountQuantum: 51, maxRequestImages: 50 })
+        .catalogError
+    ).toMatch(
+      /imageOffloadCountQuantum must be a positive safe integer no greater than maxRequestImages/u
+    );
+  });
+
+  it("sets neither where pi-ai's Config defines no count bound (the 0.2.1 bridges)", () => {
+    const { profile } = planeProfileFor(
+      input(
+        { models: [{ id: "deepseek-v4-pro" }] },
+        {
+          normalize: (raw) => {
+            const {
+              imageOffloadCountQuantum: _quantum,
+              maxRequestImages: _max,
+              ...rest
+            } = normalize(raw) as Record<string, unknown>;
+            return rest;
+          },
+        }
+      )
+    );
+    expect(profile).not.toHaveProperty("maxRequestImages");
+    expect(profile).not.toHaveProperty("imageOffloadCountQuantum");
+    expect(profile.catalogError).toBeUndefined();
+  });
+});
+
 describe("plane-profile · the field mapping and pi-ai's defaults", () => {
   it("maps a minimal entry onto every field pi-ai resolves, with its defaults", () => {
     const result = planeProfileFor(
@@ -90,27 +162,36 @@ describe("plane-profile · the field mapping and pi-ai's defaults", () => {
       })
     );
     const { profile } = result;
+    // The image-count bounds are the installed pi-ai's: present where its
+    // own Config defines `maxRequestImages`, absent where it does not.
+    const counted =
+      isRecord(normalize({})) &&
+      "maxRequestImages" in (normalize({}) as Record<string, unknown>);
     // host-shapes' runtime key list, minus catalogError (nothing failed).
-    expect(Object.keys(profile).toSorted()).toEqual([
-      "apiKeyEnv",
-      "compat",
-      "configuredMaxTokens",
-      "defaultContextWindow",
-      "defaultInput",
-      "defaultMaxTokens",
-      "displayName",
-      "headers",
-      "maxRequestImageBytes",
-      "modelErrors",
-      "modelOverrides",
-      "piProvider",
-      "provider",
-      "requestImageMaxBytes",
-      "requestImagePixelBudget",
-      "retryPolicy",
-      "streamIdleTimeoutMs",
-      "thinkingBudgets",
-    ]);
+    expect(Object.keys(profile).toSorted()).toEqual(
+      [
+        "apiKeyEnv",
+        "compat",
+        "configuredMaxTokens",
+        "defaultContextWindow",
+        "defaultInput",
+        "defaultMaxTokens",
+        "displayName",
+        "headers",
+        ...(counted ? ["imageOffloadCountQuantum"] : []),
+        "maxRequestImageBytes",
+        ...(counted ? ["maxRequestImages"] : []),
+        "modelErrors",
+        "modelOverrides",
+        "piProvider",
+        "provider",
+        "requestImageMaxBytes",
+        "requestImagePixelBudget",
+        "retryPolicy",
+        "streamIdleTimeoutMs",
+        "thinkingBudgets",
+      ].toSorted()
+    );
     expect(profile.displayName).toBe("opencode");
     expect(profile.streamIdleTimeoutMs).toBe(300_000);
     expect(profile.retryPolicy).toEqual(resolveRetryPolicy(undefined, "t"));

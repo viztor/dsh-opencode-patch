@@ -58,6 +58,40 @@ const DEFAULTS = {
   streamIdleTimeoutMs: 300_000,
 } as const;
 
+/**
+ * pi-ai's image-count bounds, where the installed pi-ai defines them: its own
+ * `Config` fills `maxRequestImages` (the `0.2.2` bridges, `config.ts`), and
+ * its profile resolution derives the offload quantum from it, unless the
+ * entry sets one, as `min(10, maxRequestImages)`. A bridge whose `Config`
+ * fills no count bound (the `0.2.1` builds) gets neither, so the plane
+ * profile never carries a field its own pi-ai would not: detected from what
+ * pi-ai's `Config` answered, never from a version.
+ *
+ * @param source - the entry as pi-ai's `Config` normalized it.
+ * @returns both bounds, or `undefined` where pi-ai defines none.
+ */
+const imageCountBounds = (
+  source: Readonly<Record<string, unknown>>
+):
+  | {
+      readonly maxRequestImages: unknown;
+      readonly imageOffloadCountQuantum: unknown;
+    }
+  | undefined => {
+  const { maxRequestImages } = source;
+  if (maxRequestImages === undefined) {
+    return undefined;
+  }
+  return {
+    imageOffloadCountQuantum:
+      source.imageOffloadCountQuantum ??
+      (typeof maxRequestImages === "number"
+        ? Math.min(10, maxRequestImages)
+        : undefined),
+    maxRequestImages,
+  };
+};
+
 /** A plane-copy of a raw config: never the input, never mutated. */
 export const withoutPlaneProviders = (raw: unknown): unknown => {
   if (!isRecord(raw) || !isRecord(raw.providers)) {
@@ -205,6 +239,22 @@ const checkRoute = (
   const image = source.maxRequestImageBytes ?? DEFAULTS.maxRequestImageBytes;
   if (typeof image !== "number" || !Number.isInteger(image) || image <= 0) {
     fail("maxRequestImageBytes must be a positive integer");
+  }
+  const counts = imageCountBounds(source);
+  if (counts !== undefined) {
+    const { imageOffloadCountQuantum: quantum, maxRequestImages: max } = counts;
+    if (typeof max !== "number" || !Number.isSafeInteger(max) || max <= 0) {
+      fail("maxRequestImages must be a positive safe integer");
+    } else if (
+      typeof quantum !== "number" ||
+      !Number.isSafeInteger(quantum) ||
+      quantum <= 0 ||
+      quantum > max
+    ) {
+      fail(
+        "imageOffloadCountQuantum must be a positive safe integer no greater than maxRequestImages"
+      );
+    }
   }
   for (const [key, fallback] of [
     ["requestImagePixelBudget", DEFAULTS.requestImagePixelBudget],
@@ -413,6 +463,7 @@ export const planeProfileFor = (
         source.maxRequestImageBytes,
         DEFAULTS.maxRequestImageBytes
       ),
+      ...imageCountBounds(source),
       requestImagePixelBudget: numberOr(
         source.requestImagePixelBudget,
         DEFAULTS.requestImagePixelBudget
