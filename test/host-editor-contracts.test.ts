@@ -23,33 +23,31 @@ import { readProfilePatches } from "@deepseek-ai/dsh-app-boot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  configCall,
+  coreShapeOf,
+  effectiveConfigOf,
+  rawConfigOf,
+} from "./support/config-shape.ts";
+import {
   bootTierB,
   fakeCredentials,
   planeKeysOnly,
   providerWithApiKey,
   recordingFetch,
   s0Providers,
+  stripPlanesListener,
   type TierB,
   waterfallSpy,
-  withoutPlanes,
 } from "./support/host.ts";
 
-/** The listener the claim design installs, prepended on the root. */
-function stripPlanesForPiAi(
-  this: Fiber,
-  raw: unknown,
-  next: () => unknown
-): unknown {
-  if (this.runtime?.name !== "llm-pi-ai") {
-    return next();
-  }
-  const copy = withoutPlanes(raw);
-  next();
-  return copy;
-}
-
-const prependStrip = (root: Context): void => {
-  root.on("internal/config", stripPlanesForPiAi, { prepend: true });
+/**
+ * The strip a route claim performs, appended on the root in `prepare`: inner
+ * to the loader's interpolate (and, on the NEW core, to the built-in schema
+ * listener), and outer to pi-ai's own listener, which registers when pi-ai
+ * activates.
+ */
+const appendStrip = (root: Context): void => {
+  root.on("internal/config", stripPlanesListener);
 };
 
 /**
@@ -92,7 +90,7 @@ const savedPiRow = (tier: TierB): { providers: ProviderDict } => {
 };
 
 const resolvedKeys = (fiber: Fiber | undefined): string[] => {
-  const config = fiber?.config as
+  const config = effectiveConfigOf(fiber) as
     | { providers: { get: () => Record<string, unknown> } }
     | undefined;
   return Object.keys(config?.providers.get() ?? {});
@@ -129,7 +127,7 @@ describe(
     it("writes the raw next to the profile YAML, not the resolved value (config-editor/src/index.ts:100-128,142)", async () => {
       tier = await bootTierB({
         plugin: false,
-        prepare: prependStrip,
+        prepare: appendStrip,
         providers: knownProviders(),
       });
       expect(routeIds(tier)).toEqual(["deepseek"]);
@@ -153,16 +151,14 @@ describe(
       expect(override.providers.opencode?.displayName).toBe("Zen (edited)");
       // The fiber keeps the raw it was handed, and resolves the stripped copy.
       expect(resolvedKeys(tier.piFiber)).toEqual(["deepseek"]);
-      const raw = (
-        tier.piFiber as unknown as { _config: { providers: ProviderDict } }
-      )._config;
+      const raw = rawConfigOf(tier.piFiber) as { providers: ProviderDict };
       expect(raw.providers.opencode?.displayName).toBe("Zen (edited)");
     });
 
-    it("F14 — the editor's candidate is never fiber._config; _commitVolatile's run is (config-editor:103; loader entry.ts:149,171)", async () => {
+    it("F14 — the editor's candidate is never the fiber's raw config; _commitVolatile's run is, on either core (config-editor:103; loader entry.ts:149,171)", async () => {
       tier = await bootTierB({
         plugin: false,
-        prepare: prependStrip,
+        prepare: appendStrip,
         providers: knownProviders(),
       });
       const booted = tier;
@@ -177,16 +173,17 @@ describe(
       ]);
       const [, commit] = spy.records;
       expect(commit?.raw).toBe(booted.piEntry.options.config);
-      expect(commit?.raw).toBe(
-        (booted.piFiber as unknown as { _config: unknown })._config
-      );
+      expect(commit?.raw).toBe(rawConfigOf(booted.piFiber));
+      for (const record of spy.records) {
+        expect(record.shape).toBe(coreShapeOf(booted.piFiber));
+      }
       expect(spy.records[0]?.raw).not.toBe(commit?.raw);
     });
 
     it("F15 — a plane-only edit emits no loader/volatile-update and restarts nothing; a sibling's edit emits one (loader entry.ts:177-191)", async () => {
       tier = await bootTierB({
         plugin: false,
-        prepare: prependStrip,
+        prepare: appendStrip,
         providers: knownProviders(),
       });
       const volatile: unknown[] = [];
@@ -238,7 +235,7 @@ describe(
       // entry reads as changed, so the strict check runs on it.
       tier = await bootTierB({
         plugin: false,
-        prepare: prependStrip,
+        prepare: appendStrip,
         providers: s0Providers(),
       });
       const booted = tier;
@@ -255,6 +252,40 @@ describe(
       expect(spy.records.map((record) => record.isCommit)).toEqual([false]);
       expect(readFileSync(booted.profile.patchPath)).toEqual(before);
     });
+
+    it("F4' — a strip appended AFTER boot sits inner to pi-ai's listener and does shield its save check, until pi-ai restarts and registers its listener after the strip (llm-pi-ai/src/index.ts:177-186; cordis events.ts register)", async () => {
+      // Why the claim re-appends itself on each pi-ai activation: which of
+      // two appended listeners is inner is decided by registration order, and
+      // pi-ai registers its own again every time it activates.
+      tier = await bootTierB({ plugin: false, providers: s0Providers() });
+      const booted = tier;
+      booted.ctx.on("internal/config", stripPlanesListener);
+      await booted.ctx.configEditor.edit(
+        booted.piEntry,
+        editProvider("opencode", { displayName: "Zen (edited)" })
+      );
+      const saved = savedPiRow(booted).providers.opencode as {
+        displayName?: string;
+        models?: { id: string }[];
+      };
+      expect(saved.displayName).toBe("Zen (edited)");
+      expect(saved.models?.map((model) => model.id)).toContain(
+        "gpt-5.3-codex-spark"
+      );
+
+      await booted.piFiber.restart();
+      expect(booted.piFiber.state).toBe(2);
+      const before = readFileSync(booted.profile.patchPath);
+      await expect(
+        booted.ctx.configEditor.edit(
+          booted.piEntry,
+          editProvider("opencode", { displayName: "Zen (again)" })
+        )
+      ).rejects.toThrow(
+        /provider "opencode" model "gpt-5\.3-codex-spark" needs an api/u
+      );
+      expect(readFileSync(booted.profile.patchPath)).toEqual(before);
+    });
   }
 );
 
@@ -262,7 +293,7 @@ describe("host · settings.describe (tier B)", { timeout: 30_000 }, () => {
   it("host contract, F20 — builds value from the resolved fiber config while user keeps the YAML's entries (settings/src/index.ts:319-322)", async () => {
     tier = await bootTierB({
       plugin: false,
-      prepare: prependStrip,
+      prepare: appendStrip,
       providers: s0Providers(),
     });
     const stripped = tier.ctx.settings
@@ -368,7 +399,7 @@ describe(
       tier = await bootTierB({
         credentials: planeKeysOnly(),
         plugin: false,
-        prepare: prependStrip,
+        prepare: appendStrip,
         providers: s0Providers(),
       });
       for (const plane of ["opencode", "opencode-go"]) {
@@ -388,31 +419,34 @@ describe(
 );
 
 describe(
-  "host · !!js and the outermost listener (tier B)",
+  "host · !!js and the loader's interpolate (tier B)",
   { timeout: 30_000 },
   () => {
-    it("F16 — the outermost listener sees an un-interpolated {__jsExpr} node; the fiber's config holds the evaluated value (loader/src/index.ts:104-113)", async () => {
+    it("F16 — a listener inner to the loader sees an un-interpolated {__jsExpr} node through next(); one outer to it, and the fiber's effective config, see the evaluated value (loader/src/index.ts:104-113)", async () => {
       // The expression evaluates to the NON-default value (`debug` defaults
       // to false), so a value that fell back to the default cannot pass.
       const wire = recordingFetch();
       vi.stubGlobal("fetch", wire.fetch);
-      const seen: unknown[] = [];
+      const inner: { shape: string; raw: unknown; next: unknown }[] = [];
+      const outer: { shape: string; raw: unknown; next: unknown }[] = [];
+      /** A recorder for the plugin's row, into `into`. */
+      const recorder = (into: typeof inner) =>
+        function recordPluginRun(this: unknown, ...args: unknown[]): unknown {
+          const call = configCall<Fiber>(this, args);
+          const value = call.next();
+          if (call.fiber.runtime?.name === "dsh-opencode-patch") {
+            into.push({
+              next: value,
+              raw: call.shape === "old" ? args[0] : undefined,
+              shape: call.shape,
+            });
+          }
+          return value;
+        };
       tier = await bootTierB({
         prepare: (root) => {
-          root.on(
-            "internal/config",
-            function recordPluginRaw(
-              this: Fiber,
-              raw: unknown,
-              next: () => unknown
-            ) {
-              if (this.runtime?.name === "dsh-opencode-patch") {
-                seen.push(raw);
-              }
-              return next();
-            },
-            { prepend: true }
-          );
+          root.on("internal/config", recorder(inner));
+          root.on("internal/config", recorder(outer), { prepend: true });
         },
         profilePatchYaml: [
           "- id: dsh-opencode-patch",
@@ -421,11 +455,33 @@ describe(
           "",
         ].join("\n"),
       });
-      expect(seen.length).toBeGreaterThan(0);
-      expect((seen[0] as { debug: unknown }).debug).toEqual({
+      const fiber = tier.pluginEntry?.fiber;
+      expect(inner.length).toBeGreaterThan(0);
+      expect(outer.length).toBeGreaterThan(0);
+      const core = coreShapeOf(fiber);
+      for (const record of [...inner, ...outer]) {
+        expect(record.shape).toBe(core);
+      }
+      // Inner to the loader: the raw node, on both cores.
+      /** The `debug` field of a recorded value. */
+      const debugOf = (value: unknown): unknown =>
+        (value as { debug?: unknown } | undefined)?.debug;
+      expect(debugOf(inner[0]?.next)).toEqual({
         __jsExpr: "1 < 2",
       });
-      const pluginConfig = tier.pluginEntry?.fiber?.config as
+      // Outer to the loader (and, on NEW, to the schema): evaluated.
+      expect(debugOf(outer[0]?.next)).toBe(true);
+      if (core === "old") {
+        // OLD also hands every listener the raw candidate as an argument, the
+        // outermost one included.
+        expect(debugOf(outer[0]?.raw)).toEqual({
+          __jsExpr: "1 < 2",
+        });
+        expect(debugOf(inner[0]?.raw)).toEqual({
+          __jsExpr: "1 < 2",
+        });
+      }
+      const pluginConfig = effectiveConfigOf(fiber) as
         | { debug: unknown }
         | undefined;
       expect(pluginConfig?.debug).toBe(true);

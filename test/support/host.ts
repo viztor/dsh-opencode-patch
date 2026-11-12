@@ -92,6 +92,12 @@ import { LlmRuntime } from "@deepseek-ai/dsh-llm";
 import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import Settings from "@deepseek-ai/dsh-settings";
 
+import {
+  configCall,
+  type ConfigShape,
+  rawConfigOf,
+  sameFiber,
+} from "./config-shape.ts";
 import { type Channel, CHANNELS, HOST_VERSIONS } from "./host-versions.ts";
 import { apply, Config, inject, name } from "./src.ts";
 
@@ -1047,18 +1053,54 @@ export const deepFreeze = <T>(value: T): T => {
   return value;
 };
 
+/** Whether a fiber is pi-ai's, by its runtime's name. */
+const isPiAiFiber = (fiber: Fiber): boolean =>
+  fiber.runtime?.name === "llm-pi-ai";
+
+/**
+ * The strip a route claim performs, as one listener that reads either call
+ * shape (`configCall`): for pi-ai's fiber the inner chain runs once and the
+ * run answers a fresh copy without the planes; for any other fiber it passes
+ * the inner chain's value through.
+ *
+ * Register it WITHOUT `prepend`. On the NEW core a prepended listener sits
+ * outer to the built-in schema listener, so its `next()` is already the
+ * resolved, volatile-wrapped value rather than a plain object; appended, it
+ * is inner to the schema and the loader's interpolate on both cores.
+ *
+ * @returns the inner chain's value, or its plane-less copy for pi-ai.
+ */
+function stripPlanes(this: unknown, ...args: unknown[]): unknown {
+  const call = configCall<Fiber>(this, args);
+  const raw = call.next();
+  return isPiAiFiber(call.fiber) ? withoutPlanes(raw) : raw;
+}
+export const stripPlanesListener = stripPlanes;
+
 /** One `internal/config` run the spy saw. */
 export interface WaterfallRecord {
-  readonly self: Fiber;
+  readonly shape: ConfigShape;
+  /** The listener's `this`: the fiber on the OLD core, null on the NEW one. */
+  readonly self: unknown;
+  readonly fiber: Fiber;
+  /** What `next()` answered: the innermost value, the run's raw candidate. */
   readonly raw: unknown;
-  /** `raw === this._config` at the moment the listener ran (F14). */
+  /** The fiber's state while the run was in progress. */
+  readonly state: number;
+  /**
+   * A commit, by identity (F14): the raw is the fiber's stored raw config, or
+   * the loader's stored row config (which the loader assigns before it calls
+   * `update()`, where the NEW core resolves before it assigns).
+   */
   readonly isCommit: boolean;
   readonly order: number;
 }
 
 /**
- * Record every `internal/config` run for one fiber, from a listener prepended
- * on `ctx` (so it is outermost among those registered before it).
+ * Record every `internal/config` run for one fiber, from a listener APPENDED
+ * on `ctx`: it is inner to every listener registered before it, which on the
+ * NEW core includes the built-in schema listener and the loader's
+ * interpolate, so `next()` is the run's raw candidate on either core.
  *
  * @param ctx - the context to register on (the root, or another plugin's).
  * @param fiber - the fiber whose runs are kept; omit to keep every run.
@@ -1071,19 +1113,30 @@ export const waterfallSpy = (
   const records: WaterfallRecord[] = [];
   const dispose = ctx.on(
     "internal/config",
-    function recordRun(this: Fiber, raw: unknown, next: () => unknown) {
+    function recordRun(this: unknown, ...args: unknown[]) {
+      const call = configCall<Fiber>(this, args);
+      const raw = call.next();
       const target = fiber?.();
-      if (target === undefined || this === target) {
+      if (target === undefined || sameFiber(call.fiber, target)) {
+        const entryConfig = (
+          call.fiber as unknown as {
+            entry?: { options?: { config?: unknown } };
+          }
+        ).entry?.options?.config;
         records.push({
-          isCommit: raw === (this as unknown as { _config: unknown })._config,
+          fiber: call.fiber,
+          isCommit:
+            raw === rawConfigOf(call.fiber) ||
+            (entryConfig !== undefined && raw === entryConfig),
           order: records.length,
           raw,
           self: this,
+          shape: call.shape,
+          state: call.fiber.state,
         });
       }
-      return next();
-    },
-    { prepend: true }
+      return raw;
+    }
   );
   return { dispose, records };
 };

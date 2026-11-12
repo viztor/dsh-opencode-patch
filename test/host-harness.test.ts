@@ -13,6 +13,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { effectiveConfigOf } from "./support/config-shape.ts";
 import {
   adaptersOf,
   type ApplyOrder,
@@ -131,10 +132,11 @@ describe(
     it("tier B with pluginConfig: the profile row reaches the plugin's fiber config", async () => {
       vi.stubGlobal("fetch", recordingFetch().fetch);
       tierB = await bootTierB({ pluginConfig: { debug: true } });
-      const config = tierB.pluginEntry?.fiber?.config as
+      const config = effectiveConfigOf(tierB.pluginEntry?.fiber) as
         | { debug?: unknown }
         | undefined;
-      // `debug` defaults to false, so only the row can make it true.
+      // `debug` defaults to false, so only the row can make it true, and the
+      // resolved value is the one the plugin was activated with.
       expect(config?.debug).toBe(true);
     });
 
