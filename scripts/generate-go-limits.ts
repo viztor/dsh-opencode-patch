@@ -21,18 +21,25 @@
  * ## Where the page is read from
  *
  * Two sources are asked, in turn (`GO_LIMITS_SOURCES`): the page the docs live
- * on, `https://opencode.ai/v2/docs/console/go/`, which serves HTML, and then
- * the old `https://opencode.ai/docs/go.md`. A later source is asked only when
- * the earlier ones carried nothing readable (`firstDoc`). A 2xx answer is read
- * by what its body carries; the status alone is never trusted (`docFrom`): the
- * tabbed markdown, with both plans' tabs, as it is; an HTML page with exactly
- * two allowance tables through `htmlToDoc`; and either only when
- * `parseGoLimitsDoc` reads it without an error, so anything else is not read
- * at all and the next source is asked. When no source carries the tables, the
- * error names what each one answered and the parser's reason for each shape it
- * was handed (`noDocMessage`), so the next layout change names itself. All four live in
- * `scripts/go-limits-html.ts`, which `test/go-limits-html.test.ts` exercises
- * with a fake reader; this script only fetches and writes.
+ * on, `https://opencode.ai/docs/console/go/`, which serves HTML, and then the
+ * old `https://opencode.ai/docs/go.md` (measured 2026-11-12, both it and
+ * `/v2/docs/console/go/` redirect to the first). A later source is asked only
+ * when the earlier ones carried nothing readable (`firstDoc`). A 2xx answer is
+ * read by what its body carries; the status alone is never trusted
+ * (`docFrom`): the tabbed markdown, with both plans' tabs, as it is; an HTML
+ * page's allowance tables, chosen by the plan label the page attaches to each
+ * (`chooseTables`: the table labelled "Go" and the one labelled "Go Plus",
+ * from the tab its panel names or the heading before it; two tables with no
+ * label keep the measured order, Go first; anything else is refused); and
+ * either only when `parseGoLimitsDoc` reads it without an error, so anything
+ * else is not read at all and the next source is asked. The Starlight tab
+ * markup that labelling reads is assumed, not measured, so the `source:` line
+ * names which table was read as each plan and which were ignored, and when no
+ * source carries the tables the error names every table each answer carried,
+ * with its label, its rows and its first row, and why none was read
+ * (`noDocMessage`), so the next layout change names itself. All of it lives
+ * in `scripts/go-limits-html.ts`, which `test/go-limits-html.test.ts`
+ * exercises with a fake reader; this script only fetches, logs and writes.
  *
  * **How it got here.** The table used to be generated from `go.md` alone, the
  * page's own markdown source, served as `text/plain`. Measured 2026-10-12, that
@@ -41,13 +48,17 @@
  * HTML path was added. From 2026-11-07 the old URL answered 200 again, with a
  * body that had no tab sections, and every nightly refresh failed in the parser
  * because the reader trusted the status. That is why a body is now read by its
- * shape, and why the page the docs live on is asked first.
+ * shape, and why the page the docs live on is asked first. On 2026-11-12 the
+ * page carried three allowance tables where it had carried two, and a choice
+ * by position or by count could not say which two were Go and Go Plus; that is
+ * why a table is chosen by its plan label.
  *
  * The page's allowance tables have six cells per row, `Model | Input | Output |
  * Cached Read | Cached Write | Monthly limit`, with the allowance in the LAST
  * cell; the request-estimate tables below them repeat the model names with no
  * dollar column, which is why a table is chosen by its header. Stripping tags
- * from `<tr>`/`<td>` is enough; no HTML parser is needed. Same arrangement, and
+ * from `<tr>`/`<td>`, and scanning tags for the panel and heading around a
+ * table, is enough; no HTML parser is needed. Same arrangement, and
  * the same reasoning, as `regenerate-catalog-shim.ts` against models.dev.
  *
  * ## Why this script resolves ids against the catalog
@@ -128,7 +139,15 @@ const found: FoundDoc =
   fromPath === undefined
     ? await firstDoc(GO_LIMITS_SOURCES, ask)
     : await firstDoc([fromPath], savedAnswer);
-console.log(`source: ${found.source} (${found.answer.body.length} characters)`);
+// What the page carried and which table was read as each plan: the tab markup
+// is assumed, not measured, so the live run's log is where it gets measured.
+const redirected =
+  found.answer.finalUrl === found.source
+    ? ""
+    : ` (redirected to ${found.answer.finalUrl})`;
+console.log(
+  `source: ${found.source}${redirected} (${found.answer.body.length} characters), ${found.read}`
+);
 
 /** Catalog ids, so a doc label can be resolved to the id the gateway uses. */
 const catalogIds = new Set(OPENCODE_GO_CATALOG.map((model) => model.id));

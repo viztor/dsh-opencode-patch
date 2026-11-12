@@ -115,8 +115,9 @@ export const normalizeModelLabel = (label: string): string | undefined => {
 };
 
 /**
- * The old doc URL, the page's own markdown source. The docs moved under
- * `/v2/docs/console/go/`, so the generator asks this one second
+ * The old doc URL, the page's own markdown source. The docs moved to
+ * `/docs/console/go/` (this URL redirects there, measured 2026-11-12), so the
+ * generator asks this one second
  * (`GO_LIMITS_SOURCES` in `scripts/go-limits-html.ts`).
  */
 export const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go.md";
