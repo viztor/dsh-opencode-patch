@@ -18,8 +18,10 @@ import { hostModulesForTests } from "./support/host.ts";
 import {
   catalogListenerCount,
   type CordisContext,
+  decorateModelDiscovery,
   type HostModuleSource,
   installRouteClaim,
+  mergeDiscoveredModels,
   refreshCatalog,
   replaceHostModuleSource,
   resolveConfig,
@@ -248,6 +250,7 @@ describe("route-claim · standing down", () => {
     await expect(claim.mounted).resolves.toBeUndefined();
     expect(claim.committedEntries()).toEqual({});
     expect(claim.piAiNamespace()).toBe("llm-pi-ai");
+    expect(claim.claiming()).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("offers no on, inject, effect")
     );
@@ -260,13 +263,16 @@ describe("route-claim · standing down", () => {
     });
     const pi = piFiber();
     const host = standIn({ fibers: () => [pi] });
-    await installRouteClaim(host.ctx, config).mounted;
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
     await flush();
     expect(host.llm.registerAdapter).not.toHaveBeenCalled();
     expect(pi.restart).toHaveBeenCalledTimes(1);
     expect(host.warn).toHaveBeenCalledWith(
       expect.stringContaining("unavailable; the plane routes stay pi-ai's")
     );
+    // Stood down: pi-ai takes the planes and their saves again.
+    expect(claim.claiming()).toBe(false);
     // Inert from here: the listener passes through.
     expect(oldRun(host.listeners.get("internal/config"), pi, pi._config)).toBe(
       pi._config
@@ -367,6 +373,55 @@ describe("route-claim · standing down", () => {
     expect(host.warn).toHaveBeenCalledWith(
       expect.stringContaining("did not restart to take the plane routes back"),
       expect.any(Error)
+    );
+  });
+});
+
+describe("route-claim · a claim that never engages", () => {
+  it("on a host whose internal/config waterfall hands listeners the fiber, pi-ai keeps the planes, claiming() reads false once the mount settles, and Settings' fetch answers the merge only", async () => {
+    useTestModules();
+    // pi-ai resolved its planes before the listener existed, and its restart
+    // re-resolves them through a waterfall that hands each listener the fiber
+    // and leaves the config to `next()`: a contract the claim does not speak,
+    // so the planes stay pi-ai's.
+    let held: Record<string, unknown> = { deepseek: {}, opencode: zen };
+    const pi = piFiber();
+    pi.config = { providers: { get: () => held } };
+    const host = standIn({ fibers: () => [pi] });
+    pi.restart = vi.fn(async () => {
+      const resolved = host.listeners
+        .get("internal/config")
+        ?.call(undefined, pi, () => pi._config);
+      held = (resolved as { providers: Record<string, unknown> }).providers;
+    });
+    const claim = installRouteClaim(host.ctx, config);
+    const pis = [{ id: "deepseek-v4-pro" }];
+    const service = {
+      discoverModels: vi.fn(
+        async (_settingsNs: string, _request?: unknown) => pis
+      ),
+    };
+    decorateModelDiscovery(
+      { llm: service } as unknown as CordisContext,
+      config,
+      claim
+    );
+    const fetchZen = async (): Promise<unknown> =>
+      service.discoverModels("llm-pi-ai", { provider: "opencode" });
+    // The known answer: before the mount settles the claim is assumed to
+    // engage, and the fetch is complemented beyond pi's own row.
+    expect(claim.claiming()).toBe(true);
+    expect(((await fetchZen()) as unknown[]).length).toBeGreaterThan(1);
+    await claim.mounted;
+    await flush();
+    expect(pi.restart).toHaveBeenCalledTimes(1);
+    expect(held).toHaveProperty("opencode");
+    expect(host.llm.registerAdapter).not.toHaveBeenCalled();
+    // Settled with pi-ai still holding the plane: the claim did not engage,
+    // so pi-ai validates a save and refuses an id it does not list.
+    expect(claim.claiming()).toBe(false);
+    await expect(fetchZen()).resolves.toStrictEqual(
+      mergeDiscoveredModels(pis, "zen")
     );
   });
 });
@@ -949,6 +1004,7 @@ describe("route-claim · reconcile", () => {
     const claim = installRouteClaim(host.ctx, config);
     await claim.mounted;
     await flush();
+    expect(claim.claiming()).toBe(true);
     expect(host.info).toHaveBeenCalledWith(
       expect.stringContaining("still held elsewhere")
     );
@@ -1062,13 +1118,16 @@ describe("route-claim · teardown", () => {
     useTestModules();
     const pi = piFiber();
     const host = standIn({ fibers: () => [pi] });
-    await installRouteClaim(host.ctx, config).mounted;
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
     await flush();
     expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
+    expect(claim.claiming()).toBe(true);
     const [teardown] = host.cleanups;
     expect(teardown?.()).toBeUndefined();
     expect(host.handle).toHaveBeenCalledTimes(1);
     expect(pi.restart).not.toHaveBeenCalled();
+    expect(claim.claiming()).toBe(false);
   });
 
   it("unsubscribes from the catalog on a reload too, so a reloaded activation leaves nothing behind", async () => {

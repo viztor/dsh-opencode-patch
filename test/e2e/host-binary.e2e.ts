@@ -16,7 +16,10 @@
  * unnoticed. Since P-R1 the plugin owns both plane routes (D13): no row
  * depends on which of pi-ai and the plugin applies first, so the per-model
  * rows are the cell's `rows` in either order, and the listing and save rows no
- * longer depend on which ids pi describes.
+ * longer depend on which ids pi describes. The Settings fetch rows (P3) are
+ * checked against this checkout's servable shim catalog, and their order
+ * against the list the prefix's own pi exports, in every cell where the route
+ * claim engages.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
  * directory whose `node_modules/@deepseek-ai/dsh` is the installed host of the
@@ -113,11 +116,17 @@ import {
   CHARACTERIZED_PROFILE,
   type HostCell,
   PI_AI_PACKAGE,
+  type Plane,
   PLANES,
   S0_TODAY_BY_CELL,
   SAVE_CANDIDATE,
   ZEN_UNDESCRIBED,
 } from "../support/host.ts";
+import {
+  isServableSdk,
+  OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
+} from "../support/src.ts";
 
 const ENABLED = process.env.DSH_HOST_E2E === "1";
 const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
@@ -266,6 +275,12 @@ interface ProbeOutput {
     dispatch: { sent: string[]; finish: string };
     listed: unknown;
   };
+  /** Settings → Models → Fetch per plane, through the gateway's Remote face. */
+  readonly discovery: Record<
+    string,
+    | { ids: string[]; fields: string[]; undefinedFields: string[] }
+    | { error: { code?: string; message: string } }
+  >;
 }
 
 /**
@@ -306,6 +321,73 @@ const hostCannotSave = (probe: ProbeOutput): boolean =>
   hostListenerFailed(probe.saveBlocked) &&
   hostListenerFailed(probe.control) &&
   probe.control?.rejected === probe.saveBlocked.rejected;
+
+/** The Remote's five `LlmDiscoveredModel` fields. */
+const REMOTE_FIELDS = [
+  "contextWindow",
+  "id",
+  "inputModalities",
+  "maxTokens",
+  "name",
+];
+
+/** The plane's servable catalog ids, in catalog order, from this checkout. */
+const servable = (plane: Plane): string[] =>
+  (plane === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG)
+    .filter((spec) => isServableSdk(spec.provider_npm))
+    .map((spec) => spec.id);
+
+/**
+ * pi's own ids for each plane, once each, from the PREFIX's pi (the one the
+ * host answers Settings' fetch from); set in `beforeAll` by
+ * {@link prefixPiIds}, `undefined` when that pi exports no builtin list.
+ */
+let piIdsByPlane: Record<string, string[]> | undefined;
+
+/**
+ * The prefix pi's own ids per plane, read through pi's own exported
+ * `getBuiltinModels` (`./providers/all`), so the order row holds in every cell
+ * rather than only where the checkout's pi is the host's.
+ *
+ * @param piRoot - the prefix's pi package root.
+ * @returns each plane's ids once each, or `undefined` when pi exports no such list.
+ */
+const prefixPiIds = async (
+  piRoot: string
+): Promise<Record<string, string[]> | undefined> => {
+  const manifest = JSON.parse(
+    readFileSync(join(piRoot, "package.json"), "utf8")
+  ) as { exports?: Record<string, string | { import?: string }> };
+  const target =
+    manifest.exports?.["./providers/all"] ??
+    manifest.exports?.["./providers/*"];
+  const entry = typeof target === "string" ? target : target?.import;
+  if (entry === undefined) {
+    return undefined;
+  }
+  const all = (await import(
+    pathToFileURL(join(piRoot, entry.replace("*", "all"))).href
+  )) as {
+    getBuiltinModels?: (provider: string) => readonly { id: string }[];
+  };
+  const read = all.getBuiltinModels;
+  if (read === undefined) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    PLANES.map((plane) => [
+      plane,
+      [...new Set(read(plane).map((model) => model.id))],
+    ])
+  );
+};
+
+/** The ids Settings' fetch offered on a plane; fails by name on an error. */
+const fetchedIds = (plane: Plane): string[] => {
+  const answered = out.discovery[plane];
+  expect(answered, plane).toHaveProperty("ids");
+  return answered !== undefined && "ids" in answered ? answered.ids : [];
+};
 
 /** The entries of a directory, or none when it cannot be read. */
 const entriesOf = (dir: string): string[] => {
@@ -446,6 +528,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
       RECORD.dsh
     );
     piSendsArgonLevels = await piNamesLevelModel(piRoot, GEMINI_LEVEL_ID);
+    piIdsByPlane = await prefixPiIds(piRoot);
     expect(piCopies(join(PREFIX, "node_modules"))).toHaveLength(1);
     expect(
       satisfiesCaret(piVersion, RECORD.piRange),
@@ -853,5 +936,47 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
       finish: "AUTH",
       sent: ["https://opencode.ai/inference/openai/v1/chat/completions"],
     });
+  });
+
+  it("[BASELINE] Settings' fetch on each plane offers the whole servable catalog, each id once, in the Remote's row shape (D3)", () => {
+    // The wrapper appends the catalog only while the route claim has
+    // engaged, which the claim's [BASELINE] row above asserts in every cell.
+    for (const plane of PLANES) {
+      const ids = fetchedIds(plane);
+      expect(new Set(ids).size, plane).toBe(ids.length);
+      expect(ids, plane).toEqual(expect.arrayContaining(servable(plane)));
+      const answered = out.discovery[plane];
+      const fields =
+        answered !== undefined && "fields" in answered ? answered.fields : [];
+      expect(fields, plane).toContain("id");
+      expect(REMOTE_FIELDS, plane).toEqual(expect.arrayContaining(fields));
+      // No key is present with an `undefined` value: the codec would hide it.
+      expect(
+        answered !== undefined && "undefinedFields" in answered
+          ? answered.undefinedFields
+          : undefined,
+        plane
+      ).toEqual([]);
+    }
+    expect(fetchedIds("opencode")).toContain("gpt-5.3-codex-spark");
+    expect(fetchedIds("opencode-go")).toContain("minimax-m3.1-flash");
+    expect(fetchedIds("opencode-go")).toContain(GEMINI_LEVEL_ID);
+  });
+
+  // The order is read against the list the PREFIX's own pi exports, so it
+  // holds in every cell where the route claim engages, a newer pi than the
+  // record's included.
+  it("[BASELINE] Settings' fetch answers the host pi's own list first, then the catalog models that pi lacks", (context) => {
+    context.skip(
+      piIdsByPlane === undefined,
+      "the prefix's pi exports no getBuiltinModels under ./providers/all"
+    );
+    for (const plane of PLANES) {
+      const pi = piIdsByPlane?.[plane] ?? [];
+      expect(fetchedIds(plane), plane).toEqual([
+        ...pi,
+        ...servable(plane).filter((id) => !pi.includes(id)),
+      ]);
+    }
   });
 });
