@@ -159,6 +159,65 @@ describe("host drift · the rules", () => {
     ]);
   });
 
+  it("compares the newest build on the record's line, whichever dist-tag carries it", () => {
+    // The rc line publishes under two tags: `next` carries the newest rc build
+    // ahead of `latest`, which catches up later. Measured 2026-11-12:
+    // `latest` 0.2.2-rc.1, `next` 0.2.2-rc.2, `alpha` 0.2.2-alpha.3.
+    const record: DriftRecord = {
+      ...CHANNELS.rc,
+      distTag: "next",
+      dsh: "0.2.2-rc.2",
+    };
+    const base = registryOf({ rc: record });
+    const bridge = base.bridge.versions?.[record.dsh] ?? {};
+    const tagged = (tags: Record<string, string>): RegistryView => ({
+      ...base,
+      bridge: {
+        versions: { ...base.bridge.versions, "0.2.2-rc.3": bridge },
+      },
+      dsh: { "dist-tags": tags },
+    });
+    // Today: the record's build is the newest on its line.
+    expect(
+      hostDrift(
+        { rc: record },
+        tagged({
+          alpha: "0.2.2-alpha.3",
+          latest: "0.2.2-rc.1",
+          next: record.dsh,
+        })
+      )
+    ).toStrictEqual([]);
+    // `latest` catches up and `next` is retired: still current, not "no tag".
+    expect(
+      hostDrift(
+        { rc: record },
+        tagged({ alpha: "0.2.2-alpha.3", latest: record.dsh })
+      )
+    ).toStrictEqual([]);
+    // A newer rc build under any tag is the drift, named by the tag carrying
+    // it; a newer build on another line, or an older one, never is.
+    expect(
+      hostDrift(
+        { rc: record },
+        tagged({
+          alpha: "0.2.3-alpha.1",
+          latest: "0.2.2-rc.3",
+          next: record.dsh,
+          old: "0.2.1-rc.5",
+        })
+      )
+    ).toStrictEqual([
+      "rc: @deepseek-ai/dsh@latest is 0.2.2-rc.3 on the registry; the record says 0.2.2-rc.2",
+    ]);
+    // Nothing on the line and no record tag: said, never read as current.
+    expect(
+      hostDrift({ rc: record }, tagged({ alpha: "0.2.2-alpha.3" }))
+    ).toStrictEqual([
+      "rc: @deepseek-ai/dsh has no 'next' dist-tag and no build on the rc line; nothing compared",
+    ]);
+  });
+
   it("follows the cluster's ranges, not the packages' own tags: today's alpha cut", () => {
     const lines = hostDrift(CHANNELS, ALPHA_3);
     expect(lines).toHaveLength(4);
@@ -229,8 +288,8 @@ describe("host drift · the rules", () => {
         schemastery: {},
       })
     ).toStrictEqual([
-      "alpha: @deepseek-ai/dsh has no 'alpha' dist-tag; nothing compared",
-      "rc: @deepseek-ai/dsh has no 'latest' dist-tag; nothing compared",
+      `alpha: @deepseek-ai/dsh has no '${CHANNELS.alpha.distTag}' dist-tag and no build on the alpha line; nothing compared`,
+      `rc: @deepseek-ai/dsh has no '${CHANNELS.rc.distTag}' dist-tag and no build on the rc line; nothing compared`,
     ]);
     const registry = registryOf(CHANNELS);
     expect(

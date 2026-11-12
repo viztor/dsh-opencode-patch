@@ -110,12 +110,14 @@ jobs:
   # The channel records name what each channel installs TODAY, and the harness
   # cuts a release without telling this repository. Nightly and on dispatch,
   # `scripts/report-host-drift.ts` reads the registry the way npm resolves a
-  # channel (dsh at its dist-tag; cordis, the loader, schemastery and pi at the
-  # newest version the bridge's declared ranges admit) and prints one warning
-  # per field that moved past `test/support/host-versions.ts`. It REPORTS and
-  # never gates, so it exits 0 whatever it finds: a channel moving is the
-  # harness's release, not a regression. P-T3 turns the report into a proposed
-  # bump pull request; the bump follows CONTRIBUTING's release step 3.
+  # channel (dsh as the newest build any dist-tag carries on the channel's
+  # line, since the rc line publishes under `next` ahead of `latest`; cordis,
+  # the loader, schemastery and pi at the newest version the bridge's declared
+  # ranges admit) and prints one warning per field that moved past
+  # `test/support/host-versions.ts`. It REPORTS and never gates, so it exits 0
+  # whatever it finds: a channel moving is the harness's release, not a
+  # regression. P-T3 turns the report into a proposed bump pull request; the
+  # bump follows CONTRIBUTING's release step 3.
   host-drift:
     name: harness channels · drift report
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

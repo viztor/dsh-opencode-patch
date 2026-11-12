@@ -6,7 +6,11 @@
  * A record names what an npm install of the channel resolves, so drift is
  * read the way npm resolves it, never off a package's own dist-tags:
  *
- * - `dsh` is `@deepseek-ai/dsh` at the record's `distTag`;
+ * - `dsh` is the newest `@deepseek-ai/dsh` any dist-tag carries on the
+ *   record's line (its prerelease identifier, `rc` or `alpha`), the record's
+ *   own `distTag` included (`channelBuild`): the rc line publishes its newest
+ *   build under `next` ahead of `latest`, so one tag alone would stop reading
+ *   the channel the day `latest` catches up and `next` is retired;
  * - the bridge (`@deepseek-ai/dsh-llm-pi-ai`, one version with the cluster)
  *   declares the pi range and the cordis, loader and schemastery ranges, and
  *   each of those is the newest published version the range admits (a
@@ -84,6 +88,44 @@ export const floorOf = (range: string): string | undefined =>
     ? undefined
     : (semver.minVersion(range)?.version ?? undefined);
 
+/** A version's prerelease identifier (`rc`, `alpha`), or undefined. */
+const lineOf = (version: string): string | undefined => {
+  const identifier = semver.prerelease(version)?.[0];
+  return typeof identifier === "string" ? identifier : undefined;
+};
+
+/**
+ * The build a channel's record is compared with, and the dist-tag carrying
+ * it: the newest version any tag carries on the record's line, the record's
+ * own `distTag` counted whatever it carries (so a stable record still reads
+ * its tag). A tag left on an older build, or on another line, never hides
+ * the newest. On a tie the record's own tag names it, else the first by name.
+ * Undefined when no tag qualifies.
+ */
+export const channelBuild = (
+  distTags: Readonly<Record<string, string>>,
+  record: Pick<DriftRecord, "distTag" | "dsh">
+): { readonly tag: string; readonly version: string } | undefined => {
+  const line = lineOf(record.dsh);
+  const candidates = Object.entries(distTags)
+    .filter(
+      ([tag, version]) =>
+        semver.valid(version) !== null &&
+        (tag === record.distTag ||
+          (line !== undefined && lineOf(version) === line))
+    )
+    .toSorted(
+      ([tagA, versionA], [tagB, versionB]) =>
+        semver.rcompare(versionA, versionB) ||
+        Number(tagB === record.distTag) - Number(tagA === record.distTag) ||
+        tagA.localeCompare(tagB)
+    );
+  const [newest] = candidates;
+  return newest === undefined
+    ? undefined
+    : { tag: newest[0], version: newest[1] };
+};
+
 /**
  * One line per field where the registry and a channel's record disagree, each
  * naming the channel, the field, the record's value and the registry's. An
@@ -102,15 +144,17 @@ export const hostDrift = (
         `${channel}: ${field} is ${found} on the registry; the record says ${recorded}`
       );
     };
-    const tagged = registry.dsh["dist-tags"]?.[record.distTag];
-    if (tagged === undefined) {
+    const build = channelBuild(registry.dsh["dist-tags"] ?? {}, record);
+    if (build === undefined) {
+      const line = lineOf(record.dsh);
       lines.push(
-        `${channel}: ${REGISTRY_PACKAGES.dsh} has no '${record.distTag}' dist-tag; nothing compared`
+        `${channel}: ${REGISTRY_PACKAGES.dsh} has no '${record.distTag}' dist-tag${line === undefined ? "" : ` and no build on the ${line} line`}; nothing compared`
       );
       continue;
     }
+    const tagged = build.version;
     if (tagged !== record.dsh) {
-      say(`${REGISTRY_PACKAGES.dsh}@${record.distTag}`, record.dsh, tagged);
+      say(`${REGISTRY_PACKAGES.dsh}@${build.tag}`, record.dsh, tagged);
     }
     const bridge = registry.bridge.versions?.[tagged];
     if (bridge === undefined) {
