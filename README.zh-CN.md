@@ -423,6 +423,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **更小的公开 API。** 包入口只导出 `apply`、`Config`、`inject` 和 `name`（宿主读取的名称），以及配置类型（`PluginConfig`、`ResolvedPluginConfig`、`ModelOverrideConfig`、`ModelRouteConfig`、`EndpointFamily`、`KeySourcePolicy`）。此前额外重新导出的其余内容现在都是内部实现。
 - **`./src/*` 不再是导出路径。** `src/` 从未包含在发布文件中，所以这个子路径只在仓库内可解析，安装后并不存在。
 - **`internalRoutes` 已移除。** 按协议划分的内部路由总是会挂载。仍带有 `internalRoutes` 的 profile 配置行可以通过校验，该键会被忽略。
+- **停用或重载插件会还原它包装过的宿主方法。** 模型列表、模型发现与模型信息的装饰，以及平面适配器的补全，在停用时都会撤下；实时重载会替换它们，而不是再叠加一层，因此重载时移除的设置随即不再生效。
 - **`@viztor/dsh-opencode` 已弃用，但仍在发布。** 它是一个转导出 `dsh-opencode-patch` 的薄包装，所以用旧名的安装照常解析；registry 上标记为弃用并指向正式名称。新安装请用 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 
 ## 📜 兼容性与验证
