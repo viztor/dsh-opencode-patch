@@ -21,6 +21,7 @@ import {
   type DocAnswer,
   docFrom,
   firstDoc,
+  GO_LIMITS_DOC_MOVED_TO,
   GO_LIMITS_SOURCES,
   htmlToDoc,
   monthlyLimitTables,
@@ -631,8 +632,9 @@ const tablessGoMd = (): DocAnswer =>
 describe("asking the sources in turn", () => {
   it("asks the page the docs live on first, then the old markdown URL", () => {
     expect(GO_LIMITS_SOURCES).toEqual([MOVED_PAGE, GO_MD]);
-    // Both old URLs redirect to the canonical page, measured 2026-11-12.
-    expect(MOVED_PAGE).toBe("https://opencode.ai/docs/console/go/");
+    // Both old URLs redirect to the canonical page, measured 2026-11-12, and
+    // the exported constant names that page, not the `/v2/` URL before it.
+    expect(GO_LIMITS_DOC_MOVED_TO).toBe(MOVED_PAGE);
   });
 
   it("stops at the first source that carries the tables", async () => {
