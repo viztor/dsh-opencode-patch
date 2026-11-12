@@ -21,7 +21,7 @@ import {
   type CatalogModelSpec,
   LEGACY_PLANE_API,
   OPENCODE_FAMILY_API,
-  protocolFor,
+  protocolForSdk,
 } from "./src.ts";
 
 export type MatrixPlane = "opencode" | "opencode-go";
@@ -57,45 +57,27 @@ export const cellKey = (
 
 /**
  * The cells the plugin sends turns to with the default endpoint (`auto`, an
- * alias of `modern`), on both planes, on EVERY supported host: the three
- * hidden routes' MODERN paths (Responses, Messages, Google). A path-gone
- * verdict on one of these breaks a shipped model in the default
- * configuration, so the live matrix asserts them. Completions follow pi's
- * catalog instead: pi 1.5, either channel's newest, sends them to the modern
- * cells ({@link NEXT_DISPATCH}, also asserted live), and pi 1.3.0, both
- * channels' floor (the desktop app's pi), to the root family
- * `/inference(/go)/v1`, which no cell here names yet (P-R2 adds it). No
- * supported host sends completions to the legacy family any more: that was
- * pi 1.1.0, the rc floor while the rc record was `0.2.1-rc.5`.
- * `test/keyless-matrix.test.ts` derives these sets from the URLs each host
- * cell's `S0_TODAY` table measured, so they cannot drift.
+ * alias of `modern`), on both planes and on every host cell: since P-R1 every
+ * protocol, completions included, on the MODERN family (`/inference(/go)/…`),
+ * from the plugin's own endpoint table whatever the installed pi's catalog
+ * files. A path-gone verdict on one of these breaks a shipped model in the
+ * default configuration, so the live matrix asserts them.
+ * `test/keyless-matrix.test.ts` derives the same set from the URLs each host
+ * cell's `S0_TODAY` table measured (with the default endpoint), so the two
+ * cannot drift.
  *
- * Not covered: a user who sets `endpoint: legacy` dispatches Responses and
- * Messages on both planes, and Zen's Google, to the LEGACY cells, which the
- * matrix records for P-R2 and does not assert; P-R2 decides whether that
- * configuration is guarded. Go's Google is the exception: it stays on
- * `/inference/go/google/v1beta` under every family (`GO_GOOGLE_BASE_URL` in
- * `src/google-bridge.ts`), which is the modern cell this set already holds.
+ * Not covered: a user who sets `endpoint: legacy` dispatches to the LEGACY
+ * cells, which the matrix records for P-R2 and does not assert; P-R2 decides
+ * whether that configuration is guarded. Go's Google is the exception: it
+ * stays on `/inference/go/google/v1beta` under every family
+ * (`GO_GOOGLE_BASE_URL` in `src/utils/protocols.ts`), which is the modern cell
+ * this set already holds.
  */
 export const TODAY_DISPATCH: ReadonlySet<string> = new Set(
-  (["opencode", "opencode-go"] as const).flatMap((plane) => [
-    cellKey({ family: "modern", plane, protocol: "openai-responses" }),
-    cellKey({ family: "modern", plane, protocol: "anthropic-messages" }),
-    cellKey({ family: "modern", plane, protocol: "google-generative-ai" }),
-  ])
-);
-
-/**
- * Completions on the modern family (`/inference(/go)/openai/v1`): where both
- * channels' default install (the npm install, pi 1.5) already sends every
- * completions turn, and where P-R1 moves every host, the floors included. A
- * path-gone verdict here breaks completions for every npm user today, so the
- * live matrix asserts these cells as it does {@link TODAY_DISPATCH}, and its
- * failure says which hosts it breaks.
- */
-export const NEXT_DISPATCH: ReadonlySet<string> = new Set(
-  (["opencode", "opencode-go"] as const).map((plane) =>
-    cellKey({ family: "modern", plane, protocol: "openai-completions" })
+  (["opencode", "opencode-go"] as const).flatMap((plane) =>
+    MATRIX_PROTOCOLS.map((protocol) =>
+      cellKey({ family: "modern", plane, protocol })
+    )
   )
 );
 
@@ -216,7 +198,7 @@ const representative = (
 ): string | undefined =>
   specs.find(
     (spec) =>
-      protocolFor(spec) === protocol &&
+      protocolForSdk(spec.provider_npm) === protocol &&
       !isFreeSpec(spec) &&
       !isDeprecated(spec.id)
   )?.id;
@@ -273,6 +255,26 @@ export const keylessMatrix = (catalogs: {
  */
 export const isTransientProbeAnswer = (status: number | undefined): boolean =>
   status === undefined || status === 429 || status >= 500;
+
+/**
+ * Whether a live turn's failure message says the gateway withdrew the model.
+ *
+ * The same two answers {@link classifyKeylessProbe} reads as `model-gone` — a
+ * `410`, or a `400` saying "Model is unavailable" — as they reach a turn's
+ * failure message rather than a raw response, plus the gateway's
+ * `ModelDeprecated` error type, which it now answers for a model the catalog
+ * still lists (measured 2026-11-02 on `gemini-3-flash`). It is a PRE-FILTER, not a
+ * verdict: the gateway answers "Model is unavailable" for an id sent where it
+ * is not served too (`docs/upstream-findings.md` §3.8), so the live adapter
+ * blocks move past such a model only once a raw probe of the same id
+ * (`modelGone` in `test/support/live-probe.ts`) confirms the vendor withdrew
+ * it, and fail the turn otherwise.
+ *
+ * @param message - the turn's failure message.
+ * @returns whether the message names a withdrawn model.
+ */
+export const isModelGoneMessage = (message: string): boolean =>
+  /\b410\b|model is unavailable|\bModelDeprecated\b/iu.test(message);
 
 /**
  * Read one keyless answer.

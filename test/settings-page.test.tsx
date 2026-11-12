@@ -275,16 +275,7 @@ describe("settings-page: apply & slots", () => {
     expect(injected).toBeDefined();
     expect(injected.directory).toEqual({ isDirectory: true });
     // No scope in this context: the meter falls back to the claimed routes.
-    expect(injected.meterProviders).toEqual([
-      "opencode",
-      "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
-    ]);
+    expect(injected.meterProviders).toEqual(["opencode", "opencode-go"]);
 
     const val = await injected.readUsage();
     expect(val).toEqual({ test: 123 });

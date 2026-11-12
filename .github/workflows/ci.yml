@@ -64,10 +64,15 @@ jobs:
   # root one for alpha, `channels/rc/pnpm-lock.yaml` for rc).
   # `scripts/use-channel.ts` switches the install, and `DSH_CHANNEL`/`DSH_PI`
   # tell `test/host-versions.test.ts` which record to hold the tree to, so a
-  # switch that silently did not happen fails there by name. One exception to "what an npm user runs": the switch
-  # also repins the plugin's own `@deepseek-ai/schemastery` to the channel's
-  # line, so the rc cell runs the host's schemastery, not the plugin's
-  # published pin (which is the alpha line).
+  # switch that silently did not happen fails there by name. Two exceptions to
+  # "what an npm user runs": the lockfiles pin the whole cordis family
+  # (cordis, the loader and the plugins beside them) at the record's versions,
+  # the floors of the `~` ranges the cluster declares, what the harness
+  # vendors at the tag, where npm lets it float to the newest patch (the
+  # `e2e-host` job's `npm` cell is the run that lets cordis float); and the
+  # switch also repins the plugin's own `@deepseek-ai/schemastery` to the
+  # channel's line, so the rc cell runs the host's schemastery, not the
+  # plugin's published pin (which is the alpha line).
   #
   # The floor cells (pi at the range's floor: 1.3.0 on both channels, the
   # pi the desktop app ships, unpatched) run nightly and on dispatch, not on
@@ -459,10 +464,14 @@ jobs:
   # (`dsh@<record>` from `test/support/host-versions.ts`) installed with npm the
   # way a user installs it, pi unpatched in both cells:
   # - `npm`: the published host exactly as npm resolves it, cordis and pi
-  #   included. The record's newest pi asserts every row; a pi published since
-  #   the record skips the rows that depend on which ids pi describes, with a
-  #   warning (the nightly `host-drift` job names it). Never cached:
-  #   re-resolving is the point.
+  #   included. The record's newest pi asserts the rows wherever the route
+  #   claim engages; a pi published since the record skips the rows that
+  #   depend on which ids pi describes, with a warning (the nightly
+  #   `host-drift` job names it). On a host whose `internal/config` waterfall
+  #   hands listeners the fiber (every cell of both channels' newest builds
+  #   today), a `[KNOWN_DEFECT]` row asserts that pi-ai serves both planes and
+  #   the rows that need the claim skip by name; where the host itself cannot
+  #   save, the save rows skip. Never cached: re-resolving is the point.
   # - `floor`: the tree the desktop app ships, forced with npm `overrides`
   #   (`floorOverrides` in host-versions.ts): the channel's whole cordis family
   #   at the record's versions (the floors of the ranges the cluster declares,
@@ -522,17 +531,22 @@ jobs:
           # manifests. package.json is not (every
           # dependency bump touches it), so a change to its `test:e2e:host`
           # script alone is exercised only by the nightly run.
-          # Until P-R1 moves the host seam under src/host/, the modules that
-          # install the host patches and mounts whose behaviour depends on the
-          # real loader and apply order (the hidden-route mount, the listing
-          # patch and adapter decoration, the Google bridge, the fetch patch,
-          # the plane bases and the stream hook) are in scope by name. Every
-          # other row producer (key-capture.ts, models-catalog.ts, config.ts,
-          # the generated catalog) is covered on each pull request by the
-          # in-process characterization of the same rows, on both channels, and
-          # here by the nightly run.
+          # The host seam lives under src/host/ (the route claim, the plane
+          # adapter, the Settings graft, the host-module loaders), and the
+          # modules whose behaviour depends on the real loader and apply order
+          # sit beside it by name: the composition (lifecycle.ts, identity.ts),
+          # the host-module seam (cordis-context.ts), the remaining discovery
+          # patch (models-discovery.ts), and the two modules that still install
+          # host-level patches until P6/P10a move them under src/host/: the
+          # global fetch wrapper (fetch-patch.ts, whose order the probe reads
+          # as fetchInnermost) and the llm/stream hook (stream-hook.ts). Every
+          # other row producer (the pure plane profile and model in
+          # src/utils/, key-capture.ts, models-catalog.ts, config.ts, the
+          # generated catalog) is covered on each pull request by the
+          # in-process characterization of the same rows, on both channels,
+          # and here by the nightly run.
           if printf '%s\n' "$changed" \
-            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/responses-provider\.ts$|src/responses-routes\.ts$|src/models-discovery\.ts$|src/google-bridge\.ts$|src/fetch-patch\.ts$|src/pi-provider\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
+            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
