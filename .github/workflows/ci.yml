@@ -40,13 +40,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
-      - run: pnpm run test
-      # The zen/go compatibility matrix, offline: `test/mock/` boots a Vite
-      # server that answers the gateway's endpoints in their own wire formats
-      # and refuses a request whose shape its endpoint does not accept.
-      # Deterministic and secretless, so unlike the e2e job it gates every
-      # push and every PR.
-      - run: pnpm run test:mock
+      # The unit and mock suites run in the `test` job below, once per harness
+      # channel; coverage, further down, is the alpha (default) install's.
       - run: pnpm run build
       - run: node --experimental-strip-types scripts/check.ts
       # Coverage as its own step, not folded into `test`: the ratchet only means
@@ -60,6 +55,85 @@ jobs:
           name: coverage
           path: coverage
           retention-days: 7
+
+  # The plugin supports the latest release of BOTH harness channels (D14'',
+  # D22''): `rc` is the newest rc build (`dsh@next`, ahead of `dsh@latest`),
+  # `alpha` is `dsh@alpha`. Each channel's default install is what an npm user
+  # runs, the channel's cluster with pi unpatched at the newest version the
+  # bridge's range admits, pinned by that channel's committed lockfile (the
+  # root one for alpha, `channels/rc/pnpm-lock.yaml` for rc).
+  # `scripts/use-channel.ts` switches the install, and `DSH_CHANNEL`/`DSH_PI`
+  # tell `test/host-versions.test.ts` which record to hold the tree to, so a
+  # switch that silently did not happen fails there by name. One exception to "what an npm user runs": the switch
+  # also repins the plugin's own `@deepseek-ai/schemastery` to the channel's
+  # line, so the rc cell runs the host's schemastery, not the plugin's
+  # published pin (which is the alpha line).
+  #
+  # The floor cells (pi at the range's floor: 1.3.0 on both channels, the
+  # pi the desktop app ships, unpatched) run nightly and on dispatch, not on
+  # every pull request: they are the oldest pi a supported host can run, which
+  # moves only when a channel does.
+  test:
+    name: test · ${{ matrix.channel }}${{ matrix.pi == 'floor' && ' · pi floor' || '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [alpha, rc]
+        pi: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["newest","floor"]' || '["newest"]') }}
+    env:
+      DSH_CHANNEL: ${{ matrix.channel }}
+      DSH_PI: ${{ matrix.pi }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: switch to the ${{ matrix.channel }} install
+        run: node --experimental-strip-types scripts/use-channel.ts "$DSH_CHANNEL" ${{ matrix.pi == 'floor' && '--floor' || '' }}
+      - run: pnpm run test
+      # The zen/go compatibility matrix, offline: `test/mock/` boots a Vite
+      # server that answers the gateway's endpoints in their own wire formats
+      # and refuses a request whose shape its endpoint does not accept.
+      # Deterministic and secretless, so unlike the e2e job it gates every
+      # push and every PR.
+      - run: pnpm run test:mock
+      # A switch restores every tracked file it rewrote; anything left over
+      # would be a switch that leaks into a commit.
+      - name: the switch left the tree clean
+        run: git diff --exit-code && test -z "$(git status --porcelain)"
+
+  # The channel records name what each channel installs TODAY, and the harness
+  # cuts a release without telling this repository. Nightly and on dispatch,
+  # `scripts/report-host-drift.ts` reads the registry the way npm resolves a
+  # channel (dsh as the newest build any dist-tag carries on the channel's
+  # line, since the rc line publishes under `next` ahead of `latest`, or a
+  # newer stable release, the line graduating, under the tag the record names
+  # for that: `latest` for rc, none for alpha; cordis,
+  # the loader, schemastery and pi at the newest version the bridge's declared
+  # ranges admit) and prints one warning per field that moved past
+  # `test/support/host-versions.ts`. It REPORTS and never gates, so it exits 0
+  # whatever it finds: a channel moving is the harness's release, not a
+  # regression. P-T3 turns the report into a proposed bump pull request; the
+  # bump follows CONTRIBUTING's release step 3.
+  host-drift:
+    name: harness channels · drift report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node --experimental-strip-types scripts/report-host-drift.ts
 
   # `engines.node` promises >=24 and every other job runs 26, so the floor was a
   # claim nothing exercised. The suites that depend on the engine (node:sqlite,

@@ -13,7 +13,7 @@ A **plane** is one gateway base URL with its own catalog and its own credential.
 | Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | `OPENCODE_API_KEY` | 82 served / 132 listed |
 | Go (subscription) | `opencode-go` | the `endpoint` family's | `OPENCODE_GO_API_KEY` | 31 served / 38 listed |
 
-Counts as of 2026-11-03 (the shipped shim, regenerated in #132 and refreshed for `pulse-alpha-free`); the document's 2026-10-09 stamp is for its measurements.
+Counts as of 2026-11-05 (the shipped shim, regenerated in #132, refreshed for `pulse-alpha-free` and for the Go plane's new model in #156); the document's 2026-10-09 stamp is for its measurements.
 
 **There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto`, the default, is an alias of `modern`, the per-protocol inference family (`…/inference/openai/v1` and `…/inference/go/openai/v1` for completions), and `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`. Both are still served and they are entitled separately, which is why the choice is the user's rather than a migration. The dated measurement below was taken on the legacy family.
 
@@ -23,7 +23,7 @@ A plane is a property of the **account and the base URL**, never of a model. The
 
 ## 2. Shapes
 
-A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions. Counts as of 2026-10-31 (the shipped shim, regenerated in #132).
+A **shape** is one wire protocol, named by the SDK a model declares in the catalog (`provider.npm`). A model naming no SDK speaks its route's own protocol, which is OpenAI Chat Completions. Counts as of 2026-11-05 (the shipped shim, regenerated in #132, refreshed for `pulse-alpha-free` and for the Go plane's new model in #156).
 
 | SDK in the catalog  | Protocol                | Zen |    Go |
 | :------------------ | :---------------------- | --: | ----: |

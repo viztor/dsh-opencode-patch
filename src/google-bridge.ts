@@ -30,13 +30,15 @@
  * and deliberately not declared as a dependency.
  *
  * **Why not a dependency.** The harness wrapper (`dsh-llm-pi-ai`) already
- * depends on `@earendil-works/pi-ai` with a RANGE (`^1.1.0`), so the host
- * installs exactly the pi its own release was tested against — 1.4.0 for the
- * `0.2.1-rc.4` harness line, whatever the next harness line moves it to.
- * Declaring the same package as an exact dependency here puts a SECOND pi in
- * the tree and turns every harness bump into a version-skew bug: the worst
- * measured shape is a degraded Google route whose error names the model rather
- * than the version.
+ * depends on `@earendil-works/pi-ai` with a RANGE (`^1.3.0` on both
+ * channels today; the `0.2.1` rc builds declared `^1.1.0`). An npm install of
+ * either channel resolves it to
+ * the newest 1.x the range admits; the desktop app ships the pi the harness's
+ * own workspace pins; this repo's dev install follows the channel's committed
+ * lockfile (`test/support/host-versions.ts`). Declaring the same package as an
+ * exact dependency here puts a SECOND pi in the tree and turns every harness
+ * bump into a version-skew bug: the worst measured shape is a degraded Google
+ * route whose error names the model rather than the version.
  *
  * So the rule is the user's own: *use whatever the harness provides*. The
  * lookup below asks the harness which pi that is, from the wrapper's own
