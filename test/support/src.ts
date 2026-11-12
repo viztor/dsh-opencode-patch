@@ -136,6 +136,13 @@ export {
 } from "../../src/google-bridge.ts";
 export type { GoogleBridgeInputs, PiRuntime } from "../../src/google-bridge.ts";
 
+// host/patch-method.ts
+export {
+  inspectPatch,
+  patchMethod,
+  rewrapOnAdaptersUpdated,
+} from "../../src/host/patch-method.ts";
+
 // identity.ts
 export {
   inject,
@@ -168,6 +175,7 @@ export {
   isDeprecatedModelOn,
   isGoModelsListingUrl,
   isModelsListingUrl,
+  MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
   refreshCatalog,
   resetCatalogState,

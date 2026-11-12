@@ -1,0 +1,5 @@
+# The measurement bundle the e2e-host job links into a throwaway profile: one
+# row, the probe. See test/e2e/host-binary.e2e.ts.
+- insert:
+    - id: dsh-host-probe
+      name: dsh-host-probe

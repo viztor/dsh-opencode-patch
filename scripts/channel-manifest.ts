@@ -11,10 +11,28 @@ import { parseAllDocuments } from "yaml";
 /** The fields of a channel record the manifest rewrite reads. */
 export interface ChannelPins {
   readonly cordis: string;
+  readonly cosmokit: string;
   readonly dsh: string;
+  readonly group: string;
+  readonly include: string;
   readonly loader: string;
   readonly schemastery: string;
 }
+
+/**
+ * The cordis-family members the manifest pins only so a fresh resolve holds
+ * them at the record's floors: include and group arrive as peers pnpm
+ * installs itself and cosmokit as a dependency of cordis, so without a direct
+ * pin a relock takes the newest patch each `~` range admits. pnpm resolves
+ * those peers from the root's direct dependencies and dedupes the dependency
+ * onto the direct pin.
+ */
+const FAMILY_PINS: Readonly<Record<string, "cosmokit" | "group" | "include">> =
+  {
+    "@deepseek-ai/cordis-plugin-group": "group",
+    "@deepseek-ai/cordis-plugin-include": "include",
+    "@deepseek-ai/cosmokit": "cosmokit",
+  };
 
 const PI = "@earendil-works/pi-ai";
 
@@ -34,6 +52,10 @@ export const pinFor = (name: string, pins: ChannelPins): string | undefined => {
   }
   if (name === "@deepseek-ai/cordis-plugin-loader") {
     return pins.loader;
+  }
+  const member = FAMILY_PINS[name];
+  if (member !== undefined) {
+    return pins[member];
   }
   return name.startsWith("@deepseek-ai/dsh-") ? pins.dsh : undefined;
 };

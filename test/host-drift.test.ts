@@ -49,46 +49,79 @@ const versions = (...list: string[]): Packument => ({
 });
 
 /**
+ * The ranges a channel's published cluster declares for the cordis family:
+ * each member's `~` range opens at the record's version, as the harness's own
+ * workspace versions do at the tag.
+ */
+const declaredBy = (
+  record: DriftRecord
+): Record<"appBoot" | "bridge" | "cordis" | "dsh", Packument["versions"]> => ({
+  appBoot: {
+    [record.dsh]: {
+      peerDependencies: {
+        "@deepseek-ai/cordis-plugin-group": `~${record.group}`,
+      },
+    },
+  },
+  bridge: {
+    [record.dsh]: {
+      dependencies: {
+        [REGISTRY_PACKAGES.pi]: record.piRange,
+        "@deepseek-ai/schemastery": `~${record.schemastery}`,
+      },
+      peerDependencies: {
+        [REGISTRY_PACKAGES.cordis]: `~${record.cordis}`,
+        "@deepseek-ai/cordis-plugin-loader": `~${record.loader}`,
+      },
+    },
+  },
+  cordis: {
+    [record.cordis]: {
+      dependencies: { "@deepseek-ai/cosmokit": `~${record.cosmokit}` },
+    },
+  },
+  dsh: {
+    [record.dsh]: {
+      dependencies: {
+        "@deepseek-ai/cordis-plugin-include": `~${record.include}`,
+        "@deepseek-ai/cordis-plugin-timer": `~${record.timer}`,
+      },
+    },
+  },
+});
+
+/**
  * The registry exactly as the records describe it: each channel's dsh under
- * its dist-tag, a bridge at that version declaring the record's ranges, and
- * every recorded version published.
+ * its dist-tag, its cluster at that version declaring the record's ranges,
+ * cordis at the record's version declaring cosmokit's, and every recorded pi
+ * published.
  */
 const registryOf = (
   records: Readonly<Record<string, DriftRecord>>
 ): RegistryView => {
   const all = Object.values(records);
+  const merged = (role: keyof ReturnType<typeof declaredBy>): Packument => ({
+    versions: Object.assign(
+      {},
+      ...all.map((record) => declaredBy(record)[role])
+    ),
+  });
   return {
-    bridge: {
-      versions: Object.fromEntries(
-        all.map((record) => [
-          record.dsh,
-          {
-            dependencies: {
-              [REGISTRY_PACKAGES.pi]: record.piRange,
-              [REGISTRY_PACKAGES.schemastery]: `~${record.schemastery}`,
-            },
-            peerDependencies: {
-              [REGISTRY_PACKAGES.cordis]: `~${record.cordis}`,
-              [REGISTRY_PACKAGES.loader]: `~${record.loader}`,
-            },
-          },
-        ])
-      ),
-    },
-    cordis: versions(...all.map((record) => record.cordis)),
+    appBoot: merged("appBoot"),
+    bridge: merged("bridge"),
+    cordis: merged("cordis"),
     dsh: {
       "dist-tags": Object.fromEntries(
         all.map((record) => [record.distTag, record.dsh])
       ),
+      ...merged("dsh"),
     },
-    loader: versions(...all.map((record) => record.loader)),
     pi: versions(
       ...all.flatMap((record) => [record.pi, record.piFloor]),
       // Never the newest 1.x: a prerelease and the next major.
       "1.99.0-beta.1",
       "2.0.0"
     ),
-    schemastery: versions(...all.map((record) => record.schemastery)),
   };
 };
 
@@ -105,55 +138,72 @@ const nextPrerelease = (version: string): string => {
   return next;
 };
 
-/** The alpha channel's next cut: dsh and every range the bridge declares. */
-const NEXT_ALPHA = {
+/** The alpha channel's next cut: dsh and every cordis-family floor moved. */
+const NEXT_ALPHA: DriftRecord = {
+  ...CHANNELS.alpha,
   cordis: nextPrerelease(CHANNELS.alpha.cordis),
+  cosmokit: nextPrerelease(CHANNELS.alpha.cosmokit),
   dsh: nextPrerelease(CHANNELS.alpha.dsh),
+  group: nextPrerelease(CHANNELS.alpha.group),
+  include: nextPrerelease(CHANNELS.alpha.include),
   loader: nextPrerelease(CHANNELS.alpha.loader),
   schemastery: nextPrerelease(CHANNELS.alpha.schemastery),
+  timer: nextPrerelease(CHANNELS.alpha.timer),
 };
 
-/** The next alpha cut published: dsh moved, the cluster's ranges with it. */
-const ALPHA_NEXT: RegistryView = (() => {
+/**
+ * `view` with the cluster published at `version` too, declaring exactly the
+ * ranges `record`'s cluster does: dsh, the app boot and the bridge.
+ */
+const withCut = (
+  view: RegistryView,
+  record: DriftRecord,
+  version: string
+): RegistryView => {
+  const same = declaredBy({ ...record, dsh: version });
+  return {
+    ...view,
+    appBoot: { versions: { ...view.appBoot.versions, ...same.appBoot } },
+    bridge: { versions: { ...view.bridge.versions, ...same.bridge } },
+    dsh: { ...view.dsh, versions: { ...view.dsh.versions, ...same.dsh } },
+  };
+};
+
+/**
+ * The registry with a newer patch inside every `~` range the recorded
+ * clusters declare (each family member at the next prerelease, and cordis's
+ * next patch declaring the next cosmokit), while the clusters themselves
+ * still declare the recorded floors.
+ */
+const PATCHED: RegistryView = (() => {
   const base = registryOf(CHANNELS);
   return {
     ...base,
-    bridge: {
+    cordis: {
       versions: {
-        ...base.bridge.versions,
-        [NEXT_ALPHA.dsh]: {
-          dependencies: {
-            [REGISTRY_PACKAGES.pi]: CHANNELS.alpha.piRange,
-            [REGISTRY_PACKAGES.schemastery]: `~${NEXT_ALPHA.schemastery}`,
-          },
-          peerDependencies: {
-            [REGISTRY_PACKAGES.cordis]: `~${NEXT_ALPHA.cordis}`,
-            [REGISTRY_PACKAGES.loader]: `~${NEXT_ALPHA.loader}`,
-          },
-        },
+        ...base.cordis.versions,
+        ...declaredBy(NEXT_ALPHA).cordis,
       },
     },
-    cordis: versions(
-      CHANNELS.rc.cordis,
-      CHANNELS.alpha.cordis,
-      NEXT_ALPHA.cordis
-    ),
+  };
+})();
+
+/** The next alpha cut: dsh moved, and its cluster's ranges open one later. */
+const ALPHA_NEXT: RegistryView = (() => {
+  const declared = declaredBy(NEXT_ALPHA);
+  return {
+    ...PATCHED,
+    appBoot: {
+      versions: { ...PATCHED.appBoot.versions, ...declared.appBoot },
+    },
+    bridge: { versions: { ...PATCHED.bridge.versions, ...declared.bridge } },
     dsh: {
       "dist-tags": {
         alpha: NEXT_ALPHA.dsh,
         [CHANNELS.rc.distTag]: CHANNELS.rc.dsh,
       },
+      versions: { ...PATCHED.dsh.versions, ...declared.dsh },
     },
-    loader: versions(
-      CHANNELS.rc.loader,
-      CHANNELS.alpha.loader,
-      NEXT_ALPHA.loader
-    ),
-    schemastery: versions(
-      CHANNELS.rc.schemastery,
-      CHANNELS.alpha.schemastery,
-      NEXT_ALPHA.schemastery
-    ),
   };
 })();
 
@@ -177,16 +227,12 @@ describe("host drift · the rules", () => {
 
   it("names a channel whose dist-tag moved, alone when nothing else did", () => {
     const registry = registryOf(CHANNELS);
+    // The next cut, declaring exactly the ranges the record's did.
+    const cut = withCut(registry, CHANNELS.alpha, NEXT_ALPHA.dsh);
     const moved: RegistryView = {
-      ...registry,
-      bridge: {
-        versions: {
-          ...registry.bridge.versions,
-          [NEXT_ALPHA.dsh]:
-            registry.bridge.versions?.[CHANNELS.alpha.dsh] ?? {},
-        },
-      },
+      ...cut,
       dsh: {
+        ...cut.dsh,
         "dist-tags": {
           alpha: NEXT_ALPHA.dsh,
           [CHANNELS.rc.distTag]: CHANNELS.rc.dsh,
@@ -207,14 +253,10 @@ describe("host drift · the rules", () => {
       distTag: "next",
       dsh: "0.2.2-rc.2",
     };
-    const base = registryOf({ rc: record });
-    const bridge = base.bridge.versions?.[record.dsh] ?? {};
+    const base = withCut(registryOf({ rc: record }), record, "0.2.2-rc.3");
     const tagged = (tags: Record<string, string>): RegistryView => ({
       ...base,
-      bridge: {
-        versions: { ...base.bridge.versions, "0.2.2-rc.3": bridge },
-      },
-      dsh: { "dist-tags": tags },
+      dsh: { ...base.dsh, "dist-tags": tags },
     });
     // Today: the record's build is the newest on its line.
     expect(
@@ -252,12 +294,10 @@ describe("host drift · the rules", () => {
     // The line graduates: a stable release newer than the record, under the
     // tag the record names for that (`graduatesUnder`, `latest` for rc), is
     // the drift too, even while `next` still carries the record's rc.
-    const graduated = (tags: Record<string, string>): RegistryView => ({
-      ...tagged(tags),
-      bridge: {
-        versions: { ...tagged(tags).bridge.versions, "0.2.2": bridge },
-      },
-    });
+    const graduated = (tags: Record<string, string>): RegistryView => {
+      const view = withCut(base, record, "0.2.2");
+      return { ...view, dsh: { ...view.dsh, "dist-tags": tags } };
+    };
     expect(
       hostDrift(
         { rc: record },
@@ -287,22 +327,19 @@ describe("host drift · the rules", () => {
     // not, though semver sorts `0.2.2` above every `0.2.2-alpha.N`.
     // The release the rc record's build leads to (`0.2.2-rc.2` to `0.2.2`).
     const stable = semver.inc(CHANNELS.rc.dsh, "patch") ?? "";
-    const base = registryOf(CHANNELS);
-    const view = (alpha: string): RegistryView => ({
-      ...base,
-      bridge: {
-        versions: {
-          ...base.bridge.versions,
-          // The stable bridge declares the newer core's ranges (the rc ones),
-          // so reading it for alpha would report every alpha range as drift.
-          [stable]: base.bridge.versions?.[CHANNELS.rc.dsh] ?? {},
-          [alpha]: base.bridge.versions?.[CHANNELS.alpha.dsh] ?? {},
+    // The stable cluster declares the newer core's ranges (the rc ones), so
+    // reading it for alpha would report every alpha floor as drift.
+    const base = withCut(registryOf(CHANNELS), CHANNELS.rc, stable);
+    const view = (alpha: string): RegistryView => {
+      const cut = withCut(base, CHANNELS.alpha, alpha);
+      return {
+        ...cut,
+        dsh: {
+          ...cut.dsh,
+          "dist-tags": { alpha, latest: stable, next: CHANNELS.rc.dsh },
         },
-      },
-      dsh: {
-        "dist-tags": { alpha, latest: stable, next: CHANNELS.rc.dsh },
-      },
-    });
+      };
+    };
     // Known answers for the fixture: the stable release outranks the alpha
     // record and its next cut alike.
     expect(semver.prerelease(stable)).toBeNull();
@@ -328,6 +365,7 @@ describe("host drift · the rules", () => {
         {
           ...view(CHANNELS.alpha.dsh),
           dsh: {
+            ...view(CHANNELS.alpha.dsh).dsh,
             "dist-tags": {
               alpha: CHANNELS.alpha.dsh,
               next: CHANNELS.rc.dsh,
@@ -339,13 +377,57 @@ describe("host drift · the rules", () => {
     ).toStrictEqual([]);
   });
 
-  it("follows the cluster's ranges, not the packages' own tags: the next alpha cut", () => {
+  it("holds the family to the floors the cluster declares, not the newest patch inside them", () => {
+    // Known answer: a newer patch is published inside the recorded range, and
+    // npm would install it (the e2e-host npm cell runs it); the record is the
+    // desktop's tree, the floor.
+    expect(
+      newestIn(
+        versions(CHANNELS.alpha.cordis, NEXT_ALPHA.cordis),
+        `~${CHANNELS.alpha.cordis}`
+      )
+    ).toBe(NEXT_ALPHA.cordis);
+    expect(hostDrift(CHANNELS, PATCHED)).toStrictEqual([]);
+  });
+
+  it("names every family floor a dsh cut moves, read from the package that declares it", () => {
     const lines = hostDrift(CHANNELS, ALPHA_NEXT);
+    const say = (name: string, found: string, recorded: string) =>
+      `alpha: the floor of ${name} ~${found} is ${found} on the registry; the record says ${recorded}`;
     expect(lines).toStrictEqual([
       `alpha: @deepseek-ai/dsh@alpha is ${NEXT_ALPHA.dsh} on the registry; the record says ${CHANNELS.alpha.dsh}`,
-      `alpha: @deepseek-ai/cordis (~${NEXT_ALPHA.cordis}) is ${NEXT_ALPHA.cordis} on the registry; the record says ${CHANNELS.alpha.cordis}`,
-      `alpha: @deepseek-ai/cordis-plugin-loader (~${NEXT_ALPHA.loader}) is ${NEXT_ALPHA.loader} on the registry; the record says ${CHANNELS.alpha.loader}`,
-      `alpha: @deepseek-ai/schemastery (~${NEXT_ALPHA.schemastery}) is ${NEXT_ALPHA.schemastery} on the registry; the record says ${CHANNELS.alpha.schemastery}`,
+      say("@deepseek-ai/cordis", NEXT_ALPHA.cordis, CHANNELS.alpha.cordis),
+      say(
+        "@deepseek-ai/cordis-plugin-loader",
+        NEXT_ALPHA.loader,
+        CHANNELS.alpha.loader
+      ),
+      say(
+        "@deepseek-ai/schemastery",
+        NEXT_ALPHA.schemastery,
+        CHANNELS.alpha.schemastery
+      ),
+      say(
+        "@deepseek-ai/cordis-plugin-include",
+        NEXT_ALPHA.include,
+        CHANNELS.alpha.include
+      ),
+      say(
+        "@deepseek-ai/cordis-plugin-timer",
+        NEXT_ALPHA.timer,
+        CHANNELS.alpha.timer
+      ),
+      say(
+        "@deepseek-ai/cordis-plugin-group",
+        NEXT_ALPHA.group,
+        CHANNELS.alpha.group
+      ),
+      // cosmokit is declared by cordis, read at the cordis floor just found.
+      say(
+        "@deepseek-ai/cosmokit",
+        NEXT_ALPHA.cosmokit,
+        CHANNELS.alpha.cosmokit
+      ),
     ]);
     // Known answer for the fixture itself: the next cut is a newer prerelease
     // on the record's own tuple (`0.2.2-alpha.3` to `0.2.2-alpha.4`).
@@ -355,6 +437,17 @@ describe("host drift · the rules", () => {
     );
     // The rc channel's records are current in this view, and stay silent.
     expect(lines.filter((line) => line.startsWith("rc:"))).toStrictEqual([]);
+  });
+
+  it("checks the timer plugin, which no lockfile holds, against the published dsh", () => {
+    const registry = registryOf(CHANNELS);
+    const wrong = {
+      ...CHANNELS,
+      alpha: { ...CHANNELS.alpha, timer: NEXT_ALPHA.timer },
+    };
+    expect(hostDrift(wrong, registry)).toStrictEqual([
+      `alpha: the floor of @deepseek-ai/cordis-plugin-timer ~${CHANNELS.alpha.timer} is ${CHANNELS.alpha.timer} on the registry; the record says ${NEXT_ALPHA.timer}`,
+    ]);
   });
 
   it("reports a moved pi range by the range, its floor and what it resolves", () => {
@@ -400,12 +493,11 @@ describe("host drift · the rules", () => {
   it("never reads 'nothing answered' as current", () => {
     expect(
       hostDrift(CHANNELS, {
+        appBoot: {},
         bridge: {},
         cordis: {},
         dsh: {},
-        loader: {},
         pi: {},
-        schemastery: {},
       })
     ).toStrictEqual([
       `alpha: @deepseek-ai/dsh has no '${CHANNELS.alpha.distTag}' dist-tag and no build on the alpha line; nothing compared`,
@@ -437,7 +529,21 @@ describe("host drift · the rules", () => {
     expect(
       hostDrift({ rc: CHANNELS.rc }, { ...registry, cordis: {} })
     ).toStrictEqual([
-      `rc: no published @deepseek-ai/cordis satisfies ~${CHANNELS.rc.cordis}`,
+      `rc: @deepseek-ai/cordis@${CHANNELS.rc.cordis} is not published; @deepseek-ai/cosmokit was not compared`,
+    ]);
+    expect(
+      hostDrift(
+        { rc: CHANNELS.rc },
+        {
+          ...registry,
+          dsh: { "dist-tags": registry.dsh["dist-tags"] },
+          appBoot: {},
+        }
+      )
+    ).toStrictEqual([
+      `rc: @deepseek-ai/dsh@${CHANNELS.rc.dsh} is not published; @deepseek-ai/cordis-plugin-include was not compared`,
+      `rc: @deepseek-ai/dsh@${CHANNELS.rc.dsh} is not published; @deepseek-ai/cordis-plugin-timer was not compared`,
+      `rc: @deepseek-ai/dsh-app-boot@${CHANNELS.rc.dsh} is not published; @deepseek-ai/cordis-plugin-group was not compared`,
     ]);
   });
 });

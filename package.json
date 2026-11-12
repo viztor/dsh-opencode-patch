@@ -81,6 +81,7 @@
     "test": "vp test",
     "test:coverage": "vp test run --coverage",
     "test:e2e": "vp test --config vitest.e2e.config.ts",
+    "test:e2e:host": "vp test --config vitest.e2e.config.ts test/e2e/host-binary.e2e.ts",
     "test:mock": "vp test --config vitest.mock.config.ts",
     "test:shuffle": "vp test run --sequence.shuffle",
     "typecheck": "tsc --noEmit",
@@ -94,7 +95,10 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.6-alpha.2",
+    "@deepseek-ai/cordis-plugin-group": "1.0.6-alpha.2",
+    "@deepseek-ai/cordis-plugin-include": "1.0.11-alpha.2",
     "@deepseek-ai/cordis-plugin-loader": "1.0.7-alpha.2",
+    "@deepseek-ai/cosmokit": "1.8.7-alpha.2",
     "@deepseek-ai/dsh-app-boot": "0.2.2-alpha.3",
     "@deepseek-ai/dsh-client-store": "0.2.2-alpha.3",
     "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-alpha.3",

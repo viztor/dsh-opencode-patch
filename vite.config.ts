@@ -25,7 +25,12 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ["test/**/*.ts", "test/**/*.tsx", "scripts/**/*.ts"],
+        files: [
+          "test/**/*.ts",
+          "test/**/*.tsx",
+          "test/**/*.mjs",
+          "scripts/**/*.ts",
+        ],
         rules: {
           "class-methods-use-this": "off",
           "func-style": "off",
@@ -263,6 +268,13 @@ export default defineConfig({
           lines: 87,
         },
         "src/responses-routes.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // The one way to patch a host method: every branch is a reload case.
+        "src/host/patch-method.ts": {
           statements: 100,
           branches: 100,
           functions: 100,
