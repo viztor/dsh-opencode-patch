@@ -57,17 +57,17 @@ export const cellKey = (
 
 /**
  * The cells the plugin sends turns to with the default endpoint (`auto`, an
- * alias of `modern`), on both planes, on the oldest supported host: the rc
- * channel's floor, pi 1.1.0, which the desktop app ships. Completions go to
- * pi's LEGACY bases
- * (`/zen(/go)/v1/chat/completions`, pi-ai's own plane route) and the three
+ * alias of `modern`), on both planes, on EVERY supported host: the three
  * hidden routes' MODERN paths (Responses, Messages, Google). A path-gone
  * verdict on one of these breaks a shipped model in the default
  * configuration, so the live matrix asserts them. Completions follow pi's
- * catalog: pi 1.5.0, either channel's newest, sends them to the modern cells
- * ({@link NEXT_DISPATCH}, also asserted live), and pi 1.3.0, alpha's floor, to
- * the root family `/inference(/go)/v1`, which no cell here names yet.
- * `test/keyless-matrix.test.ts` derives all three from the URLs each host
+ * catalog instead: pi 1.5, either channel's newest, sends them to the modern
+ * cells ({@link NEXT_DISPATCH}, also asserted live), and pi 1.3.0, both
+ * channels' floor (the desktop app's pi), to the root family
+ * `/inference(/go)/v1`, which no cell here names yet (P-R2 adds it). No
+ * supported host sends completions to the legacy family any more: that was
+ * pi 1.1.0, the rc floor while the rc record was `0.2.1-rc.5`.
+ * `test/keyless-matrix.test.ts` derives these sets from the URLs each host
  * cell's `S0_TODAY` table measured, so they cannot drift.
  *
  * Not covered: a user who sets `endpoint: legacy` dispatches Responses and
@@ -79,7 +79,6 @@ export const cellKey = (
  */
 export const TODAY_DISPATCH: ReadonlySet<string> = new Set(
   (["opencode", "opencode-go"] as const).flatMap((plane) => [
-    cellKey({ family: "legacy", plane, protocol: "openai-completions" }),
     cellKey({ family: "modern", plane, protocol: "openai-responses" }),
     cellKey({ family: "modern", plane, protocol: "anthropic-messages" }),
     cellKey({ family: "modern", plane, protocol: "google-generative-ai" }),
@@ -88,7 +87,7 @@ export const TODAY_DISPATCH: ReadonlySet<string> = new Set(
 
 /**
  * Completions on the modern family (`/inference(/go)/openai/v1`): where both
- * channels' default install (the npm install, pi 1.5.0) already sends every
+ * channels' default install (the npm install, pi 1.5) already sends every
  * completions turn, and where P-R1 moves every host, the floors included. A
  * path-gone verdict here breaks completions for every npm user today, so the
  * live matrix asserts these cells as it does {@link TODAY_DISPATCH}, and its
@@ -140,8 +139,9 @@ const suffixFor = (
 /**
  * The URL a cell probes.
  *
- * The Go plane's legacy Google cell has no `?alt=sse`: pi 1.1.0 ships no Go
- * Google provider, so that path is the bare one the plan names
+ * The Go plane's legacy Google cell has no `?alt=sse`: pi 1.1.0, which no
+ * supported host runs any more, shipped no Go Google provider, so that path
+ * is the bare one the plan names
  * (`/zen/go/v1/models/<id>:streamGenerateContent`), not a request pi makes.
  */
 export const matrixUrl = (

@@ -70,15 +70,15 @@ const piAuthOf = async (
 const ZEN_COMPLETIONS = { models: [{ id: "deepseek-v4-pro" }] };
 
 /**
- * Where pi sends it, on each host cell: pi's own catalog base, which moved
- * from the legacy family (1.1.0) to the root one (1.3.0) and to the
- * per-protocol one (1.5.0). The credential paths these cases pin do not
- * depend on the base; the URL only shows the turn reached the wire.
+ * Where pi sends it, on each host cell: pi's own catalog base, the root
+ * family on both floors (pi 1.3.0) and the per-protocol one on pi 1.5. The
+ * credential paths these cases pin do not depend on the base; the URL only
+ * shows the turn reached the wire.
  */
 const ZEN_COMPLETIONS_URL = forHost({
   "alpha-floor": "https://opencode.ai/inference/v1/chat/completions",
   newest: "https://opencode.ai/inference/openai/v1/chat/completions",
-  "rc-floor": "https://opencode.ai/zen/v1/chat/completions",
+  "rc-floor": "https://opencode.ai/inference/v1/chat/completions",
 });
 
 describe("host · pi-ai's credential paths (tier A)", () => {

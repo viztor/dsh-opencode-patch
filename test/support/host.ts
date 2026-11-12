@@ -414,8 +414,8 @@ export const recordingFetch = (
 
 /**
  * The profile run S0 measured: on each plane one known model per protocol plus
- * the models pi 1.1.0 lacks (the rc channel's floor; a newer pi describes the
- * Go ones, see {@link PI_GAPS}), and a sibling pi-ai route that is not a plane.
+ * the models the floors' pi 1.3.0 lacks (pi 1.5 describes the Go ones, see
+ * {@link PI_GAPS}), and a sibling pi-ai route that is not a plane.
  * `deepseek`'s base is loopback port 9 (discard), so nothing reaches it.
  */
 export const S0_PROFILE = {
@@ -597,7 +597,7 @@ type PlaneIds = Readonly<Record<Plane, readonly string[]>>;
 /**
  * The declared S0 ids each cell's pi cannot place (its catalog does not
  * describe them, while the plugin's catalog still does), in declaration
- * order. pi 1.5.0 describes the two Go ones; no supported pi describes Zen's.
+ * order. pi 1.5 describes the two Go ones; no supported pi describes Zen's.
  */
 export const PI_GAPS_BY_CELL: Readonly<Record<HostCell, PlaneIds>> = {
   "alpha-floor": {
@@ -655,10 +655,15 @@ const I = "INTENDED_CHANGE";
 
 /**
  * TODAY's plugin (hidden routes, listing patch, adapter decoration and all) on
- * the `rc-floor` cell (pi 1.1.0) with {@link CHARACTERIZED_PROFILE} and a key
+ * both floor cells (`rc-floor` and `alpha-floor`, pi 1.3.0 since both
+ * bridges declare `^1.3.0`) with {@link CHARACTERIZED_PROFILE} and a key
  * stored for each plane, measured in tier B with the published host's apply
- * order (`plugin-first`, see {@link ApplyOrder}). The other cells are this
- * table with the facets their pi moves ({@link S0_TODAY_BY_CELL}), and
+ * order (`plugin-first`, see {@link ApplyOrder}). pi 1.3.0 files its
+ * catalog's completions models under the root family, `/inference(/go)/v1`:
+ * the turn leaves the legacy base, but not for the per-protocol one P-R1
+ * moves it to, so that wire facet stays `INTENDED_CHANGE`; it lacks both Go
+ * gap ids. The `newest` cell is this table with the facets its pi moves
+ * ({@link S0_TODAY_BY_CELL}), and
  * {@link S0_TODAY} is the install under test's, shared with the binary e2e so
  * the two cannot drift. Each facet carries its own tag, and the characterization generates
  * one test per row and facet titled with it: P-R1 flips the `KNOWN_DEFECT` and
@@ -678,7 +683,7 @@ const I = "INTENDED_CHANGE";
  * reads the same table, but its job runs on a PR only when this file is in
  * its path scope (`.github/workflows/ci.yml`, `e2e-host`), which it is.
  */
-const S0_RC_FLOOR = {
+const S0_FLOOR = {
   /** `listModels` before any turn: the plugin sees no key, so it hides paid models. */
   keylessListing: { opencode: [], "opencode-go": [] },
   /** `listModels` once a turn captured a key: pi-resolved ids only. */
@@ -700,7 +705,7 @@ const S0_RC_FLOOR = {
       callConfig: "ok",
       info: { context: 1_000_000, efforts: ["high", "max"] },
       finish: "AUTH",
-      sent: [`${ZEN}/zen/v1/chat/completions`],
+      sent: [`${ZEN}/inference/v1/chat/completions`],
       tags: tags(B, B, I),
     },
     "opencode/gpt-5.4": {
@@ -751,7 +756,7 @@ const S0_RC_FLOOR = {
       callConfig: "ok",
       info: { context: 1_000_000, efforts: ["high", "max"] },
       finish: "AUTH",
-      sent: [`${ZEN}/zen/go/v1/chat/completions`],
+      sent: [`${ZEN}/inference/go/v1/chat/completions`],
       tags: tags(B, B, I),
     },
     "opencode-go/muse-spark-1.2-contributor": {
@@ -814,7 +819,7 @@ const S0_RC_FLOOR = {
 } as const;
 
 /** A characterized row's key, `<route>/<model>`. */
-export type S0RowKey = keyof typeof S0_RC_FLOOR.rows;
+export type S0RowKey = keyof typeof S0_FLOOR.rows;
 
 /** One cell's characterization table. */
 export interface S0Table {
@@ -840,24 +845,7 @@ const withMoved = (
 });
 
 /**
- * pi 1.3.0 (alpha's floor) files its catalog's completions models under the
- * root family, `/inference(/go)/v1`: the turn leaves the legacy base, but not
- * for the per-protocol one P-R1 moves it to, so the facet stays
- * `INTENDED_CHANGE`. It still lacks both Go gap ids.
- */
-const S0_ALPHA_FLOOR = withMoved(S0_RC_FLOOR, {
-  "opencode-go/deepseek-v4-pro": {
-    ...S0_RC_FLOOR.rows["opencode-go/deepseek-v4-pro"],
-    sent: [`${ZEN}/inference/go/v1/chat/completions`],
-  },
-  "opencode/deepseek-v4-pro": {
-    ...S0_RC_FLOOR.rows["opencode/deepseek-v4-pro"],
-    sent: [`${ZEN}/inference/v1/chat/completions`],
-  },
-});
-
-/**
- * pi 1.5.0 (both channels' newest) files completions under the per-protocol
+ * pi 1.5 (both channels' newest, 1.5.2 today) files completions under the per-protocol
  * family P-R1 targets, and describes both Go gap ids (`PI_GAPS_BY_CELL`), so
  * each facet that moves here is already what P-R1 keeps and is `BASELINE` on
  * this cell: completions reach `/inference(/go)/openai/v1`, the Go Gemini row
@@ -865,36 +853,36 @@ const S0_ALPHA_FLOOR = withMoved(S0_RC_FLOOR, {
  * completions, which is the plugin catalog's SDK too) and sent.
  */
 const S0_NEWEST = withMoved(
-  S0_RC_FLOOR,
+  S0_FLOOR,
   {
     "opencode-go/deepseek-v4-pro": {
-      ...S0_RC_FLOOR.rows["opencode-go/deepseek-v4-pro"],
+      ...S0_FLOOR.rows["opencode-go/deepseek-v4-pro"],
       sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
       tags: tags(B, B, B),
     },
     "opencode-go/gemini-4-argon": {
-      ...S0_RC_FLOOR.rows["opencode-go/gemini-4-argon"],
+      ...S0_FLOOR.rows["opencode-go/gemini-4-argon"],
       callConfig: "ok",
       tags: tags(B, B, B),
     },
     "opencode-go/minimax-m3.1-flash": {
-      ...S0_RC_FLOOR.rows["opencode-go/minimax-m3.1-flash"],
+      ...S0_FLOOR.rows["opencode-go/minimax-m3.1-flash"],
       callConfig: "ok",
       finish: "AUTH",
       sent: [`${ZEN}/inference/go/openai/v1/chat/completions`],
       tags: tags(B, B, B),
     },
     "opencode/deepseek-v4-pro": {
-      ...S0_RC_FLOOR.rows["opencode/deepseek-v4-pro"],
+      ...S0_FLOOR.rows["opencode/deepseek-v4-pro"],
       sent: [`${ZEN}/inference/openai/v1/chat/completions`],
       tags: tags(B, B, B),
     },
   },
   {
     keyedListing: {
-      ...S0_RC_FLOOR.keyedListing,
+      ...S0_FLOOR.keyedListing,
       "opencode-go": [
-        ...S0_RC_FLOOR.keyedListing["opencode-go"],
+        ...S0_FLOOR.keyedListing["opencode-go"],
         "gemini-4-argon",
         "minimax-m3.1-flash",
       ],
@@ -904,9 +892,9 @@ const S0_NEWEST = withMoved(
 
 /** Every cell's table, for a case that checks them all. */
 export const S0_TODAY_BY_CELL: Readonly<Record<HostCell, S0Table>> = {
-  "alpha-floor": S0_ALPHA_FLOOR,
+  "alpha-floor": S0_FLOOR,
   newest: S0_NEWEST,
-  "rc-floor": S0_RC_FLOOR,
+  "rc-floor": S0_FLOOR,
 };
 
 /** The install under test's table ({@link HOST_CELL}). */

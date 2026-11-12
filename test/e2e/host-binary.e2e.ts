@@ -48,16 +48,18 @@
  * what is installed, never a manifest's declared range). One rule narrows it:
  * cosmokit's declarer is cordis, so cosmokit is checked only where the
  * installed cordis is the record's; elsewhere only the nightly drift report
- * checks it. Today that leaves it out of alpha's `npm` cell, where cordis
- * floats to a newer patch.
+ * checks it. Measured 2026-11-12, every cell's installed cordis is its
+ * record's, so cosmokit is checked in all four.
  *
  * Only the `npm` cell lets cordis float, as the published host's `~` ranges
  * do for a user. Where what it resolved leaves the host unable to run its own
  * save path, the run records a `[HOST_LIMITATION]` row and skips the save
  * rows. That is detected from what the host answered, never from a version:
  * the plane edit AND a control edit no plugin's listener reads (the probe's
- * own entry) both fail with a `TypeError` thrown by `dsh-app-boot`. Today
- * that is alpha's `0.2.2-alpha.2` as npm installs it (cordis `4.0.6-alpha.2`).
+ * own entry) both fail with a `TypeError` thrown by `dsh-app-boot`. It was
+ * alpha's `0.2.2-alpha.2` as npm installed it (cordis `4.0.6-alpha.2`); on
+ * `0.2.2-alpha.3` and `0.2.2-rc.2` every cell, `npm` and `floor`, saves the
+ * control edit (measured 2026-11-12), so the row skips and the save rows run.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -207,10 +209,11 @@ interface EditVerdict {
  * Whether an edit failed the way the host's own save path fails: a TypeError
  * thrown by `@deepseek-ai/dsh-app-boot`, a package this plugin registers no
  * listener on. Measured on the alpha channel's npm install of
- * `0.2.2-alpha.2`: its `dsh-app-boot` registers an `internal/update` listener
- * in the old call shape (`(config, noSave, next)`), while the cordis its `~`
- * range now resolves (`4.0.6-alpha.2`) calls the new one, so the save throws
- * `next is not a function` there.
+ * `0.2.2-alpha.2`: its `dsh-app-boot` registered an `internal/update`
+ * listener in the old call shape (`(config, noSave, next)`), while the cordis
+ * its `~` range resolved (`4.0.6-alpha.2`) calls the new one, so the save
+ * threw `next is not a function` there. `0.2.2-alpha.3` and `0.2.2-rc.2`
+ * register theirs in the new shape, and every cell saves.
  */
 const hostListenerFailed = (verdict: EditVerdict | undefined): boolean =>
   verdict?.errorName === "TypeError" &&

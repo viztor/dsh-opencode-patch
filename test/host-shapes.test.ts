@@ -12,8 +12,9 @@
  * It runs on whichever host cell is installed (`HOST_CELL`: either channel's
  * newest pi, or a channel's floor). What differs between the cells (pi's
  * catalog bases and counts, which ids it can place, whether its Go provider
- * carries Google, pi-ai's own defaults per cluster) carries one expectation
- * per cell (`forHost`) or per channel (`forChannel`), measured on each.
+ * carries Google) carries one expectation per cell (`forHost`), measured on
+ * each; pi-ai's own defaults are the cluster's, and one expectation holds
+ * both channels while their bridges agree.
  *
  * `test/mount-protocols.test.ts` already pins the four `api/*.lazy` factories
  * against the catalog's SDKs; this file does not repeat it.
@@ -33,7 +34,6 @@ import {
   adaptersOf,
   drainStream,
   fakeCredentials,
-  forChannel,
   forHost,
   HOST_CELL,
   mountTierA,
@@ -55,14 +55,41 @@ type ByProtocol = Record<string, { count: number; bases: string[] }>;
 const ZEN_BASE = "https://opencode.ai";
 
 /**
+ * F1/F2 on both floors, pi 1.3.0: a model-less plane resolves pi's whole
+ * catalog under the root `/inference(/go)/v1` family. Go gained a Google
+ * model on 1.3.0 (F10).
+ */
+const FLOOR_CATALOG: { zen: ByProtocol; go: ByProtocol } = {
+  go: {
+    "anthropic-messages": { bases: [`${ZEN_BASE}/inference/go`], count: 5 },
+    "google-generative-ai": {
+      bases: [`${ZEN_BASE}/inference/go/v1`],
+      count: 1,
+    },
+    "openai-completions": {
+      bases: [`${ZEN_BASE}/inference/go/v1`],
+      count: 18,
+    },
+    "openai-responses": { bases: [`${ZEN_BASE}/inference/go/v1`], count: 5 },
+  },
+  zen: {
+    "anthropic-messages": { bases: [`${ZEN_BASE}/inference`], count: 18 },
+    "google-generative-ai": {
+      bases: [`${ZEN_BASE}/inference/v1`],
+      count: 8,
+    },
+    "openai-completions": { bases: [`${ZEN_BASE}/inference/v1`], count: 28 },
+    "openai-responses": { bases: [`${ZEN_BASE}/inference/v1`], count: 30 },
+  },
+};
+
+/**
  * F1/F2, measured per cell: a model-less plane resolves pi's whole catalog.
- * The bases moved twice under the plugin: the legacy family on pi 1.1.0, the
- * root `/inference(/go)/v1` on 1.3.0, and per-protocol roots on 1.5.0, where
- * the per-protocol counts moved too (Zen, net of 1.3.0: four fewer
- * completions models and one fewer Anthropic one). Go gained a Google model
- * on 1.3.0 (F10). A pi bump whose catalog moved re-measures the `newest`
- * column in its own pull request, as a reviewed change (CONTRIBUTING, release
- * step 3).
+ * The bases moved under the plugin from the root `/inference(/go)/v1` on pi
+ * 1.3.0 (both channels' floor) to per-protocol roots on 1.5, where the
+ * per-protocol counts moved too. A pi bump whose catalog moved re-measures
+ * the `newest` column in its own pull request, as a reviewed change
+ * (CONTRIBUTING, release step 3).
  */
 const WHOLE_CATALOG: Readonly<
   Record<
@@ -70,29 +97,7 @@ const WHOLE_CATALOG: Readonly<
     { zen: ByProtocol; go: ByProtocol }
   >
 > = {
-  "alpha-floor": {
-    go: {
-      "anthropic-messages": { bases: [`${ZEN_BASE}/inference/go`], count: 5 },
-      "google-generative-ai": {
-        bases: [`${ZEN_BASE}/inference/go/v1`],
-        count: 1,
-      },
-      "openai-completions": {
-        bases: [`${ZEN_BASE}/inference/go/v1`],
-        count: 18,
-      },
-      "openai-responses": { bases: [`${ZEN_BASE}/inference/go/v1`], count: 5 },
-    },
-    zen: {
-      "anthropic-messages": { bases: [`${ZEN_BASE}/inference`], count: 18 },
-      "google-generative-ai": {
-        bases: [`${ZEN_BASE}/inference/v1`],
-        count: 8,
-      },
-      "openai-completions": { bases: [`${ZEN_BASE}/inference/v1`], count: 28 },
-      "openai-responses": { bases: [`${ZEN_BASE}/inference/v1`], count: 30 },
-    },
-  },
+  "alpha-floor": FLOOR_CATALOG,
   newest: {
     go: {
       "anthropic-messages": {
@@ -105,7 +110,7 @@ const WHOLE_CATALOG: Readonly<
       },
       "openai-completions": {
         bases: [`${ZEN_BASE}/inference/go/openai/v1`],
-        count: 19,
+        count: 21,
       },
       "openai-responses": {
         bases: [`${ZEN_BASE}/inference/go/openai/v1`],
@@ -115,7 +120,7 @@ const WHOLE_CATALOG: Readonly<
     zen: {
       "anthropic-messages": {
         bases: [`${ZEN_BASE}/inference/anthropic`],
-        count: 17,
+        count: 18,
       },
       "google-generative-ai": {
         bases: [`${ZEN_BASE}/inference/google/v1beta`],
@@ -123,27 +128,15 @@ const WHOLE_CATALOG: Readonly<
       },
       "openai-completions": {
         bases: [`${ZEN_BASE}/inference/openai/v1`],
-        count: 24,
+        count: 28,
       },
       "openai-responses": {
         bases: [`${ZEN_BASE}/inference/openai/v1`],
-        count: 30,
+        count: 31,
       },
     },
   },
-  "rc-floor": {
-    go: {
-      "anthropic-messages": { bases: [`${ZEN_BASE}/zen/go`], count: 5 },
-      "openai-completions": { bases: [`${ZEN_BASE}/zen/go/v1`], count: 19 },
-      "openai-responses": { bases: [`${ZEN_BASE}/zen/go/v1`], count: 6 },
-    },
-    zen: {
-      "anthropic-messages": { bases: [`${ZEN_BASE}/zen`], count: 18 },
-      "google-generative-ai": { bases: [`${ZEN_BASE}/zen/v1`], count: 7 },
-      "openai-completions": { bases: [`${ZEN_BASE}/zen/v1`], count: 28 },
-      "openai-responses": { bases: [`${ZEN_BASE}/zen/v1`], count: 30 },
-    },
-  },
+  "rc-floor": FLOOR_CATALOG,
 };
 
 /** Collapse one cell's whole catalog onto a single protocol, as F5's route-level `api` does. */
@@ -287,15 +280,17 @@ describe("host · pi-ai's Config (llm-pi-ai/src/config.ts)", () => {
         providers: { get: () => Record<string, unknown> };
       }
     ).providers.get().x;
-    // pi-ai's own defaults are the cluster's, not pi's: the alpha cluster
-    // raised both (llm-pi-ai config.ts:65,68), the rc one keeps the old pair.
+    // pi-ai's own defaults are the cluster's, not pi's (llm-pi-ai
+    // config.ts): both supported bridges resolve the same ones today, so one
+    // expectation holds both channels; a bridge that moves one fails here.
     expect(resolved).toEqual({
       compat: { chatTemplateArgs: {}, chatTemplateKwargs: {} },
-      defaultContextWindow: forChannel({ alpha: 1_000_000, rc: 262_144 }),
+      defaultContextWindow: 1_000_000,
       defaultInput: ["text"],
-      defaultMaxTokens: forChannel({ alpha: 128_000, rc: 32_768 }),
+      defaultMaxTokens: 128_000,
       headers: {},
       maxRequestImageBytes: 20_971_520,
+      maxRequestImages: 50,
       modelOverrides: {},
       models: [],
       requestImageMaxBytes: 1_048_576,
@@ -387,6 +382,8 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
       "apiKeyEnv?",
       "streamIdleTimeoutMs",
       "maxRequestImageBytes",
+      "maxRequestImages",
+      "imageOffloadCountQuantum",
       "requestImagePixelBudget",
       "requestImageMaxBytes",
       "retryPolicy",
@@ -410,7 +407,9 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
       "defaultMaxTokens",
       "displayName",
       "headers",
+      "imageOffloadCountQuantum",
       "maxRequestImageBytes",
+      "maxRequestImages",
       "modelErrors",
       "modelOverrides",
       "piProvider",
@@ -430,7 +429,7 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
     expect(profile.catalogError).toMatch(
       /model "gpt-5\.3-codex-spark" needs an api/u
     );
-    // The Go gap ids are gaps on the floors only: pi 1.5.0 places both.
+    // The Go gap ids are gaps on the floors only: pi 1.5 places both.
     expect([
       ...(
         profileOf(tier, "opencode-go").modelErrors as Map<string, string>
@@ -508,14 +507,15 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
     expect(byProtocol(profileOf(tier, "opencode-go").piProvider)).toEqual(
       rebased(whole.go, "https://gateway.test/go")
     );
-    // A known answer for the derivation: pi 1.1.0's 83 Zen models, on two
-    // bases, measured before the tables existed.
-    expect(
-      collapsed(WHOLE_CATALOG["rc-floor"].zen, "openai-responses")
-    ).toEqual({
+    // A known answer for the derivation: pi 1.3.0's 84 Zen models (the
+    // floors'), on two bases.
+    expect(collapsed(FLOOR_CATALOG.zen, "openai-responses")).toEqual({
       "openai-responses": {
-        bases: ["https://opencode.ai/zen", "https://opencode.ai/zen/v1"],
-        count: 83,
+        bases: [
+          "https://opencode.ai/inference",
+          "https://opencode.ai/inference/v1",
+        ],
+        count: 84,
       },
     });
   });
@@ -580,72 +580,24 @@ describe(`host · pi ${PI}'s public exports (package.json exports ./providers/*,
   });
 
   /**
-   * F10, per cell: pi 1.1.0's Go provider has no Google API; pi 1.3.0 added
-   * it and 1.5.0 keeps it. A fact about pi, not a limitation of the plugin:
-   * the gateway's Go plane serves Google models whichever pi runs, and the
-   * plugin routes them itself (the Google bridge today, the plane adapter
-   * from P-R1), so neither cell's row is a `HOST_LIMITATION`.
+   * F10 on every cell: pi 1.3.0 added the Google API to its Go provider, and
+   * both channels' floor is 1.3.0 now, so the pi 1.1.0 row (no Google API on
+   * Go, the rc floor while the rc record was `0.2.1-rc.5`) has no supported
+   * cell left and is gone. The gateway's Go plane serves Google models
+   * whichever pi runs, and the plugin routes them itself, so the row was
+   * never a `HOST_LIMITATION`.
    */
-  const GO_HAS_GOOGLE = forHost({
-    "alpha-floor": true,
-    newest: true,
-    "rc-floor": false,
+  it(`[BASELINE] F10 — pi ${PI}'s Go provider carries the Google API (pi 1.3.0 added it)`, async () => {
+    const { opencodeGoProvider } =
+      await import("@earendil-works/pi-ai/providers/opencode-go");
+    const models = opencodeGoProvider().getModels() as readonly PiModel[];
+    expect([...new Set(models.map((model) => model.api))].toSorted()).toEqual([
+      "anthropic-messages",
+      "google-generative-ai",
+      "openai-completions",
+      "openai-responses",
+    ]);
   });
-
-  it.runIf(GO_HAS_GOOGLE)(
-    `[BASELINE] F10 — pi ${PI}'s Go provider carries the Google API (pi 1.3.0 added it)`,
-    async () => {
-      const { opencodeGoProvider } =
-        await import("@earendil-works/pi-ai/providers/opencode-go");
-      const models = opencodeGoProvider().getModels() as readonly PiModel[];
-      expect([...new Set(models.map((model) => model.api))].toSorted()).toEqual(
-        [
-          "anthropic-messages",
-          "google-generative-ai",
-          "openai-completions",
-          "openai-responses",
-        ]
-      );
-    }
-  );
-
-  it.skipIf(GO_HAS_GOOGLE)(
-    `[BASELINE] F10 — pi ${PI}'s Go provider has no Google API: a Google model streams pi's own 'no API implementation' error`,
-    async () => {
-      const { opencodeProvider } =
-        await import("@earendil-works/pi-ai/providers/opencode");
-      const { opencodeGoProvider } =
-        await import("@earendil-works/pi-ai/providers/opencode-go");
-      const apisOf = (provider: { getModels: () => readonly PiModel[] }) =>
-        [...new Set(provider.getModels().map((model) => model.api))].toSorted();
-      expect(apisOf(opencodeProvider())).toEqual([
-        "anthropic-messages",
-        "google-generative-ai",
-        "openai-completions",
-        "openai-responses",
-      ]);
-      expect(apisOf(opencodeGoProvider())).toEqual([
-        "anthropic-messages",
-        "openai-completions",
-        "openai-responses",
-      ]);
-      const gemini = opencodeProvider()
-        .getModels()
-        .find((model) => model.api === "google-generative-ai");
-      expect(gemini).toBeDefined();
-      const events: unknown[] = [];
-      for await (const event of opencodeGoProvider().stream(
-        { ...gemini, provider: "opencode-go" } as never,
-        { messages: [] } as never,
-        {}
-      )) {
-        events.push(event);
-      }
-      expect(JSON.stringify(events)).toContain(
-        'Provider opencode-go has no API implementation for \\"google-generative-ai\\"'
-      );
-    }
-  );
 
   it("exports createProvider and withOpenCodeSessionHeader (models.js:527; providers/opencode-headers.js:15)", async () => {
     const { createProvider } = await import("@earendil-works/pi-ai/models");

@@ -312,41 +312,39 @@ describe("keyless matrix · the cells the live run asserts", () => {
     return { reached: [...reached].toSorted(), unmatched };
   };
 
-  it("TODAY_DISPATCH is exactly the cells the rc floor's measured turns were sent to, and every other host cell's are TODAY_DISPATCH with completions moved by its pi", () => {
+  it("TODAY_DISPATCH is exactly the cells every host cell's measured turns were sent to outside completions, which follow each cell's pi", () => {
     // Each URL a characterized turn sent is matched to the one cell whose PATH
     // it is (the query aside: Messages adds `?beta=true`), with the row's own
     // model in the Google path. A row that sent nothing adds nothing. The
     // plugin's own routes (Responses, Messages, Google) are the same on every
-    // host cell; completions follow pi's catalog base, which moved twice.
-    const floor = reachedOn("rc-floor");
-    expect(floor.unmatched).toEqual([]);
-    const { reached } = floor;
-    const hidden = [...TODAY_DISPATCH].filter(
-      (cell) => !cell.includes("openai-completions")
-    );
-    // pi 1.5.0 (newest, both channels' npm install) files completions under
-    // the modern family: exactly the cells P-R1 moves every host to.
-    const newest = reachedOn("newest");
-    expect(newest.unmatched).toEqual([]);
-    expect(newest.reached).toEqual([...hidden, ...NEXT_DISPATCH].toSorted());
-    // pi 1.3.0 (alpha's floor) files them under the root family, which no
-    // matrix cell names yet.
-    const alphaFloor = reachedOn("alpha-floor");
-    expect(alphaFloor.reached).toEqual(hidden.toSorted());
-    expect(alphaFloor.unmatched.toSorted()).toEqual([
-      "/inference/go/v1/chat/completions",
-      "/inference/v1/chat/completions",
-    ]);
+    // host cell; completions follow pi's catalog base.
     expect(HOST_CELLS.toSorted()).toEqual([
       "alpha-floor",
       "newest",
       "rc-floor",
     ]);
-    expect(reached).toEqual([...TODAY_DISPATCH].toSorted());
-    // On the rc floor completions reach the legacy family; the modern
-    // completions cells are where pi 1.5.0 sends them already and P-R1 sends
-    // them on every host, so the live run asserts both sets.
-    expect([...TODAY_DISPATCH]).toContain("opencode openai-completions legacy");
+    // pi 1.3.0 (both floors) files completions under the root family, which
+    // no matrix cell names yet.
+    for (const cell of ["alpha-floor", "rc-floor"] as const) {
+      const floor = reachedOn(cell);
+      expect(floor.reached, cell).toEqual([...TODAY_DISPATCH].toSorted());
+      expect(floor.unmatched.toSorted(), cell).toEqual([
+        "/inference/go/v1/chat/completions",
+        "/inference/v1/chat/completions",
+      ]);
+    }
+    // pi 1.5 (newest, both channels' npm install) files completions under
+    // the modern family: exactly the cells P-R1 moves every host to.
+    const newest = reachedOn("newest");
+    expect(newest.unmatched).toEqual([]);
+    expect(newest.reached).toEqual(
+      [...TODAY_DISPATCH, ...NEXT_DISPATCH].toSorted()
+    );
+    // No supported host sends completions to the legacy family any more, and
+    // the two sets are disjoint.
+    expect(
+      [...TODAY_DISPATCH].filter((cell) => cell.includes("openai-completions"))
+    ).toEqual([]);
     expect(
       [...NEXT_DISPATCH].filter((cell) => TODAY_DISPATCH.has(cell))
     ).toEqual([]);

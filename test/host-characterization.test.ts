@@ -20,7 +20,7 @@
  *
  * Where the hosts differ, a row carries one expectation per cell
  * (`S0_TODAY_BY_CELL`, `forHost`), and a title names the cell's tag: a facet
- * pi 1.5.0 already serves the way P-R1 keeps is `[BASELINE]` on `newest` and
+ * pi 1.5 already serves the way P-R1 keeps is `[BASELINE]` on `newest` and
  * still `[INTENDED_CHANGE]` or `[KNOWN_DEFECT]` on a floor.
  *
  * The per-model expectations live in `S0_TODAY_BY_CELL` (`support/host.ts`;
@@ -270,14 +270,13 @@ const movedByOrder = (cell: (typeof HOST_CELLS)[number]): string[] => {
 };
 
 /**
- * Where completions go, per cell: pi's catalog base, which moved under the
- * plugin twice (the legacy family on 1.1.0, the root on 1.3.0, the
- * per-protocol family P-R1 targets on 1.5.0).
+ * Where completions go, per cell: pi's catalog base, the root family on
+ * both floors (pi 1.3.0) and the per-protocol family P-R1 targets on pi 1.5.
  */
 const COMPLETIONS_FAMILY = {
   "alpha-floor": "the root family, /inference(/go)/v1",
   newest: "the per-protocol family, /inference(/go)/openai/v1",
-  "rc-floor": "the legacy family, /zen(/go)/v1",
+  "rc-floor": "the root family, /inference(/go)/v1",
 } as const;
 
 /** The completions wire facet's tag on this cell (both planes agree). */
@@ -775,7 +774,7 @@ describe(
         expect(requests.map((request) => request.url)).toEqual([wireUrl]);
         // The claim, wherever a URL can show it: the turn did not go to the
         // repaired base. That holds on every route of both floors and on Go
-        // on newest. On newest pi 1.5.0's own Zen catalog base IS the
+        // on newest. On newest pi 1.5's own Zen catalog base IS the
         // repaired base, so that one pair sends there whichever base dispatch
         // used and cannot tell them apart; the expectation says so.
         expect(String(requests[0]?.url).startsWith(decorated)).toBe(
