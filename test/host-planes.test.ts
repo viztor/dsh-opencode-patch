@@ -443,6 +443,45 @@ describe("host planes · lifecycle", { timeout: 30_000 }, () => {
   });
 });
 
+describe(
+  "host planes · pi-ai's row removed (tier B)",
+  { timeout: 30_000 },
+  () => {
+    it("withdraws both planes and stays quiet when the loader forgets pi-ai's entry before it reports the dispose", async () => {
+      const { tier, logged, restarts } = await bootPlanes();
+      await waitForPlaneOwner(tier.llm);
+      await settle();
+      const before = restarts();
+      const linesBefore = logged().length;
+      const { piEntry } = tier;
+      // The loader's own removal: it deletes the row's entry from its store,
+      // disposes the fiber and only then emits `loader/partial-dispose`, so the
+      // claim's reconcile cannot find the entry it served. Known answer: the
+      // entry is in the store before the removal.
+      const group = piEntry.parent as unknown as {
+        remove: (id: string) => void;
+        tree: { store: Record<string, unknown> };
+      };
+      expect(group.tree.store[piEntry.options.id]).toBe(piEntry);
+      group.remove(piEntry.options.id);
+      expect(group.tree.store[piEntry.options.id]).toBeUndefined();
+      await until(
+        () => routeIds(tier.llm).length === 0,
+        "pi-ai's routes are withdrawn"
+      );
+      await settle();
+      expect(stateOf(tier.pluginEntry?.fiber)).toBe(ACTIVE);
+      // Nothing is handed back to a removed row, and nothing is reported.
+      expect(restarts()).toBe(before);
+      expect(
+        logged()
+          .slice(linesBefore)
+          .filter((line) => /^(warn|error) /u.test(line))
+      ).toEqual([]);
+    });
+  }
+);
+
 describe("host planes · config flow (tier B)", { timeout: 30_000 }, () => {
   it("a plane-only save is served with no pi-ai restart; a displayName edit renames the route; a purge edit is accepted", async () => {
     const { restarts, tier } = await bootPlanes();
