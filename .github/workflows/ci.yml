@@ -111,7 +111,9 @@ jobs:
   # cuts a release without telling this repository. Nightly and on dispatch,
   # `scripts/report-host-drift.ts` reads the registry the way npm resolves a
   # channel (dsh as the newest build any dist-tag carries on the channel's
-  # line, since the rc line publishes under `next` ahead of `latest`; cordis,
+  # line, since the rc line publishes under `next` ahead of `latest`, or a
+  # newer stable release, the line graduating, under the tag the record names
+  # for that: `latest` for rc, none for alpha; cordis,
   # the loader, schemastery and pi at the newest version the bridge's declared
   # ranges admit) and prints one warning per field that moved past
   # `test/support/host-versions.ts`. It REPORTS and never gates, so it exits 0

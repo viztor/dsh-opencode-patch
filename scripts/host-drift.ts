@@ -11,8 +11,12 @@
  *   own `distTag` included (`channelBuild`): the rc line publishes its newest
  *   build under `next` ahead of `latest`, so one tag alone would stop reading
  *   the channel the day `latest` catches up and `next` is retired. A stable
- *   release newer than the record, under any tag, counts too, so the line
- *   going stable is reported rather than filtered out;
+ *   release newer than the record counts too, but only under the tag the
+ *   record names as the one its line graduates under (`graduatesUnder`:
+ *   `latest` for rc, none for alpha), so the rc line going stable is reported
+ *   rather than filtered out while the alpha record, whose `alpha` tag has not
+ *   moved, is never read against a stable release that semver merely sorts
+ *   above every `0.2.2-alpha.N`;
  * - the bridge (`@deepseek-ai/dsh-llm-pi-ai`, one version with the cluster)
  *   declares the pi range and the cordis, loader and schemastery ranges, and
  *   each of those is the newest published version the range admits (a
@@ -33,6 +37,12 @@ export interface DriftRecord {
   readonly cordis: string;
   readonly distTag: string;
   readonly dsh: string;
+  /**
+   * The dist-tag a stable release of the record's line is published under
+   * (`latest` for rc), or absent when the line graduates under no tag this
+   * record follows (alpha). Data, so the scope is never read off a name.
+   */
+  readonly graduatesUnder?: string;
   readonly loader: string;
   readonly pi: string;
   readonly piFloor: string;
@@ -100,20 +110,25 @@ const lineOf = (version: string): string | undefined => {
  * The build a channel's record is compared with, and the dist-tag carrying
  * it: the newest version any tag carries on the record's line, the record's
  * own `distTag` counted whatever it carries (so a stable record still reads
- * its tag), and a stable release newer than the record under any tag (the
- * line graduating: `latest` reaching `0.2.2` while `next` still carries
- * `0.2.2-rc.2`). A tag left on an older build, or on another prerelease
- * line, never hides the newest. On a tie the record's own tag names it, else the first by name.
- * Undefined when no tag qualifies.
+ * its tag), and a stable release newer than the record under the record's
+ * own `graduatesUnder` tag (the line graduating: `latest` reaching `0.2.2`
+ * while `next` still carries `0.2.2-rc.2`). A record with no
+ * `graduatesUnder` never counts a stable release it does not carry under its
+ * own tag, so `latest` reaching `0.2.2` neither reads as alpha drift nor hides
+ * a later `0.2.2-alpha.N` cut. A tag left on an older build, or on another
+ * prerelease line, never hides the newest. On a tie the record's own tag
+ * names it, else the first by name. Undefined when no tag qualifies.
  */
 export const channelBuild = (
   distTags: Readonly<Record<string, string>>,
-  record: Pick<DriftRecord, "distTag" | "dsh">
+  record: Pick<DriftRecord, "distTag" | "dsh" | "graduatesUnder">
 ): { readonly tag: string; readonly version: string } | undefined => {
   const line = lineOf(record.dsh);
   // A stable release newer than the record is where a prerelease line
-  // graduates to (`0.2.2-rc.2` to `0.2.2`), whichever tag publishes it.
-  const isNewerRelease = (version: string): boolean =>
+  // graduates to (`0.2.2-rc.2` to `0.2.2`), under the tag the record names.
+  const isGraduation = (tag: string, version: string): boolean =>
+    record.graduatesUnder !== undefined &&
+    tag === record.graduatesUnder &&
     semver.prerelease(version) === null &&
     semver.valid(record.dsh) !== null &&
     semver.gt(version, record.dsh);
@@ -123,7 +138,7 @@ export const channelBuild = (
         semver.valid(version) !== null &&
         (tag === record.distTag ||
           (line !== undefined && lineOf(version) === line) ||
-          isNewerRelease(version))
+          isGraduation(tag, version))
     )
     .toSorted(
       ([tagA, versionA], [tagB, versionB]) =>

@@ -52,6 +52,13 @@ export interface ChannelRecord {
   readonly distTag: "alpha" | "latest" | "next";
   /** The `@deepseek-ai/dsh-*` cluster's version. */
   readonly dsh: string;
+  /**
+   * The dist-tag a stable release of this record's line is published under,
+   * when it graduates: `latest` for rc, whose `0.2.2-rc.N` builds lead to
+   * `0.2.2` there. Absent for alpha, whose `alpha` tag keeps carrying alpha
+   * builds, so the drift report never reads a stable release against it.
+   */
+  readonly graduatesUnder?: "latest";
   /** `@deepseek-ai/cordis-plugin-loader`, what the cluster's range resolves. */
   readonly loader: string;
   /** The committed lockfile that pins this channel, from the repo root. */
@@ -82,6 +89,7 @@ export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
     cordis: "4.1.0",
     distTag: "next",
     dsh: "0.2.2-rc.2",
+    graduatesUnder: "latest",
     loader: "1.1.0",
     lockfile: "channels/rc/pnpm-lock.yaml",
     pi: "1.5.2",

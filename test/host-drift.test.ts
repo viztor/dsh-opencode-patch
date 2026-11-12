@@ -249,8 +249,9 @@ describe("host drift · the rules", () => {
     ).toStrictEqual([
       "rc: @deepseek-ai/dsh@latest is 0.2.2-rc.3 on the registry; the record says 0.2.2-rc.2",
     ]);
-    // The line graduates: a stable release newer than the record, under any
-    // tag, is the drift too, even while `next` still carries the record's rc.
+    // The line graduates: a stable release newer than the record, under the
+    // tag the record names for that (`graduatesUnder`, `latest` for rc), is
+    // the drift too, even while `next` still carries the record's rc.
     const graduated = (tags: Record<string, string>): RegistryView => ({
       ...tagged(tags),
       bridge: {
@@ -278,6 +279,64 @@ describe("host drift · the rules", () => {
     ).toStrictEqual([
       "rc: @deepseek-ai/dsh has no 'next' dist-tag and no build on the rc line; nothing compared",
     ]);
+  });
+
+  it("scopes graduation to the record whose line graduates: the alpha record never reads `latest`", () => {
+    // `latest` reaches the stable `0.2.2` while `alpha` and `next` have not
+    // moved. The rc record graduates under `latest`; the alpha record does
+    // not, though semver sorts `0.2.2` above every `0.2.2-alpha.N`.
+    // The release the rc record's build leads to (`0.2.2-rc.2` to `0.2.2`).
+    const stable = semver.inc(CHANNELS.rc.dsh, "patch") ?? "";
+    const base = registryOf(CHANNELS);
+    const view = (alpha: string): RegistryView => ({
+      ...base,
+      bridge: {
+        versions: {
+          ...base.bridge.versions,
+          // The stable bridge declares the newer core's ranges (the rc ones),
+          // so reading it for alpha would report every alpha range as drift.
+          [stable]: base.bridge.versions?.[CHANNELS.rc.dsh] ?? {},
+          [alpha]: base.bridge.versions?.[CHANNELS.alpha.dsh] ?? {},
+        },
+      },
+      dsh: {
+        "dist-tags": { alpha, latest: stable, next: CHANNELS.rc.dsh },
+      },
+    });
+    // Known answers for the fixture: the stable release outranks the alpha
+    // record and its next cut alike.
+    expect(semver.prerelease(stable)).toBeNull();
+    expect(semver.gt(stable, CHANNELS.alpha.dsh)).toBe(true);
+    expect(semver.gt(stable, NEXT_ALPHA.dsh)).toBe(true);
+    expect(CHANNELS.rc.graduatesUnder).toBe("latest");
+    expect(CHANNELS.alpha.graduatesUnder).toBeUndefined();
+    // Only the rc line graduated: one rc line, nothing for alpha.
+    expect(hostDrift(CHANNELS, view(CHANNELS.alpha.dsh))).toStrictEqual([
+      `rc: @deepseek-ai/dsh@latest is ${stable} on the registry; the record says ${CHANNELS.rc.dsh}`,
+    ]);
+    // A real alpha cut on the same tuple is still read under `alpha`, never
+    // hidden behind the stable release.
+    expect(hostDrift(CHANNELS, view(NEXT_ALPHA.dsh))).toStrictEqual([
+      `alpha: @deepseek-ai/dsh@alpha is ${NEXT_ALPHA.dsh} on the registry; the record says ${CHANNELS.alpha.dsh}`,
+      `rc: @deepseek-ai/dsh@latest is ${stable} on the registry; the record says ${CHANNELS.rc.dsh}`,
+    ]);
+    // A stable release under a tag other than the one the line graduates
+    // under is not the rc line's either.
+    expect(
+      hostDrift(
+        { rc: CHANNELS.rc },
+        {
+          ...view(CHANNELS.alpha.dsh),
+          dsh: {
+            "dist-tags": {
+              alpha: CHANNELS.alpha.dsh,
+              next: CHANNELS.rc.dsh,
+              stable,
+            },
+          },
+        }
+      )
+    ).toStrictEqual([]);
   });
 
   it("follows the cluster's ranges, not the packages' own tags: the next alpha cut", () => {
