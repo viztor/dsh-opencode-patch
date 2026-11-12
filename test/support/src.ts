@@ -136,6 +136,13 @@ export {
 } from "../../src/google-bridge.ts";
 export type { GoogleBridgeInputs, PiRuntime } from "../../src/google-bridge.ts";
 
+// host/patch-method.ts
+export {
+  inspectPatch,
+  patchMethod,
+  rewrapOnAdaptersUpdated,
+} from "../../src/host/patch-method.ts";
+
 // identity.ts
 export {
   inject,
