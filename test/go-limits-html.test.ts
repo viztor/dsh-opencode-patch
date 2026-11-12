@@ -76,6 +76,44 @@ describe("reading a table's cells", () => {
     ).toEqual([["Grok 4.7 (peak)", "$1 input $2 long", "a b"]]);
   });
 
+  it("decodes the character references a page can carry, as a browser shows them", () => {
+    expect(
+      tableRows(
+        "<tr><td>Q&amp;A 2</td><td>(&gt; 200K &lt; 1M)</td><td>&le; 272K &ge;</td><td>&#8804; &#x2264; &#X2265;</td><td>&quot;a&quot; &#39;b&#39; &apos;c&apos;</td><td>&#36;15 &#x24;60</td></tr>"
+      )
+    ).toEqual([
+      ["Q&A 2", "(> 200K < 1M)", "≤ 272K ≥", "≤ ≤ ≥", `"a" 'b' 'c'`, "$15 $60"],
+    ]);
+  });
+
+  it("reads a no-break space as whitespace, collapsed and trimmed like any other", () => {
+    expect(
+      tableRows(
+        "<tr><td>Grok&nbsp;4.7</td><td>$15&nbsp;</td><td>a&nbsp;&nbsp; b</td></tr>"
+      )
+    ).toEqual([["Grok 4.7", "$15", "a b"]]);
+  });
+
+  it("decodes in one pass, after the tags are gone", () => {
+    // `&amp;lt;` is the text `&lt;`, not `<`; and an encoded tag is text the
+    // page shows, not markup to strip.
+    expect(
+      tableRows(
+        "<tr><td>&amp;lt; &amp;amp;</td><td>&lt;b&gt;x&lt;/b&gt;</td></tr>"
+      )
+    ).toEqual([["&lt; &amp;", "<b>x</b>"]]);
+  });
+
+  it("leaves a reference it does not know, or one that names no character, as written", () => {
+    expect(
+      tableRows(
+        "<tr><td>&copy2 &unknown; &constructor; &#xFFFFFFF; &#xD800; &#0; AT&T</td></tr>"
+      )
+    ).toEqual([
+      ["&copy2 &unknown; &constructor; &#xFFFFFFF; &#xD800; &#0; AT&T"],
+    ]);
+  });
+
   it("reads th as a cell, so a header row is a row", () => {
     expect(tableRows("<tr><th>Model</th><th>Monthly limit</th></tr>")).toEqual([
       ["Model", "Monthly limit"],
@@ -198,6 +236,67 @@ describe("the converter and the parser agree", () => {
       go: 20,
       goPlus: 80,
       name: "Grok 4.8 (peak)",
+    });
+  });
+
+  it("reads an amount whose dollar sign or padding is a character reference", () => {
+    // A browser shows `&#36;15` as $15; read verbatim it was no amount, and
+    // `$15&nbsp;` became NaN - an allowance that silently read as "no
+    // published figure" in a run that exited 0.
+    const html = [
+      monthlyTable([
+        ["MiMo-V2.6-Pro", "$0.50", "&#36;15"],
+        ["Grok 4.7", "$1.00", "$15&nbsp;"],
+      ]),
+      monthlyTable([
+        ["MiMo-V2.6-Pro", "$0.50", "&#x24;60"],
+        ["Grok 4.7", "$1.00", "&#36;60"],
+      ]),
+    ].join("");
+    const doc = docFrom(answer({ body: html }));
+    expect(doc).toBeDefined();
+    const { limits, unmapped } = parseGoLimitsDoc(doc ?? "");
+    expect(unmapped).toEqual([]);
+    expect(limits.get("mimo-v2.6-pro")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "MiMo-V2.6-Pro",
+    });
+    expect(limits.get("grok-4.7")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "Grok 4.7",
+    });
+  });
+
+  it("keys a label carrying character references by the id a browser's text gives, and names it in that text", () => {
+    // Verbatim, `Grok&nbsp;4.7` slugged to `grok-nbsp-4.7` and `Q&amp;A 2` to
+    // `q-amp-a-2`: ids no catalog carries, written with exit 0; and the names
+    // shipped with a literal `&gt;`.
+    const html = [
+      monthlyTable([
+        ["Grok&nbsp;4.7 (&gt; 200K tokens)", "$1.00", "$15"],
+        ["Q&amp;A 2 (&le; 8K)", "$1.00", "$5"],
+      ]),
+      monthlyTable([
+        ["Grok&nbsp;4.7 (&gt; 200K tokens)", "$1.00", "$60"],
+        ["Q&amp;A 2 (&le; 8K)", "$1.00", "$20"],
+      ]),
+    ].join("");
+    const doc = docFrom(answer({ body: html }));
+    expect(doc).toBeDefined();
+    const { limits, unmapped } = parseGoLimitsDoc(doc ?? "");
+    expect(unmapped).toEqual([]);
+    expect([...limits.keys()]).toEqual(["grok-4.7", "q-a-2"]);
+    expect(limits.get("grok-4.7")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "Grok 4.7 (> 200K tokens)",
+    });
+    expect(limits.get("q-a-2")).toEqual({
+      go: 5,
+      goPlus: 20,
+      name: "Q&A 2 (≤ 8K)",
     });
   });
 
@@ -372,8 +471,9 @@ describe("reading a 2xx answer by what it carries", () => {
 
   it("answers nothing for two allowance tables whose six-cell rows carry no dollar amount", () => {
     // Six cells is the table's shape; the parser also wants the last one to be
-    // a dollar amount. `Unlimited`, an entity-encoded `$` and a seventh,
-    // empty, trailing cell each leave it with zero rows.
+    // a dollar amount. `Unlimited` and a seventh, empty, trailing cell each
+    // leave it with zero rows. (An entity-encoded `$` is a dollar amount: a
+    // browser shows `&#36;15` as $15, and so does the reader.)
     const sevenCells = [
       "<table>",
       "<tr><th>Model</th><th>Input</th><th>Output</th><th>Cached Read</th><th>Cached Write</th><th>Monthly limit</th></tr>",
@@ -382,7 +482,6 @@ describe("reading a 2xx answer by what it carries", () => {
     ].join("");
     for (const table of [
       monthlyTable([["Big Pickle", "Free", "Unlimited"]]),
-      monthlyTable([["Grok 4.7", "$1.00", "&#36;15"]]),
       sevenCells,
     ]) {
       const body = table + table;

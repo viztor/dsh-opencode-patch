@@ -24,7 +24,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import {
@@ -566,10 +566,24 @@ describe("freshness scope · the CI wiring, parsed", () => {
   });
 
   /**
+   * The test process's environment without any `GIT_*` variable. A git hook,
+   * or `git rebase --exec` in a linked worktree, exports an absolute `GIT_DIR`
+   * and `GIT_INDEX_FILE`, which git honours before the working directory: a
+   * child that inherited them would commit, branch and configure the
+   * repository they name instead of the one it runs in. `GIT_CONFIG_PARAMETERS`
+   * goes too, since it carries `-c` settings such as signing.
+   */
+  const inheritedWithoutGit = (): NodeJS.ProcessEnv =>
+    Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))
+    );
+
+  /**
    * One step's `run` text, executed the way the runner executes it (`bash -e`,
    * GitHub's default shell, which has no pipefail), in the repository, with a
    * shell function named in `prelude` standing in for a command the step calls.
-   * It runs in the repository unless `cwd` names another directory.
+   * It runs in the repository unless `cwd` names another directory, and
+   * inherits no `GIT_*` variable (`inheritedWithoutGit`).
    */
   const execute = (
     run: string,
@@ -589,7 +603,7 @@ describe("freshness scope · the CI wiring, parsed", () => {
         cwd,
         encoding: "utf8",
         env: {
-          ...process.env,
+          ...inheritedWithoutGit(),
           ...env,
           CALLS: join(temp, "calls"),
           GITHUB_OUTPUT: join(temp, "github-output"),
@@ -847,7 +861,9 @@ describe("freshness scope · the CI wiring, parsed", () => {
      * The step's commands, as shell functions: `pnpm` runs each generator by
      * its outcome (and records which catalog the limits generator read, since
      * it imports that file) and formats as a no-op; `git push` and `gh` record
-     * instead of reaching GitHub; every other `git` is the real one.
+     * instead of reaching GitHub (`gh pr create` exits `$GH_CREATE_STATUS`,
+     * and `gh pr list` answers `$GH_OPEN` open pull requests, or fails with
+     * `$GH_LIST_STATUS`); every other `git` is the real one.
      */
     const PRELUDE = [
       "generate() {",
@@ -872,14 +888,21 @@ describe("freshness scope · the CI wiring, parsed", () => {
       '  if [ "$1" = push ]; then echo "git $*" >> "$CALLS"; return "$PUSH_STATUS"; fi',
       '  command git "$@"',
       "}",
-      'gh() { echo "gh $*" >> "$CALLS"; }',
+      "gh() {",
+      '  echo "gh $*" >> "$CALLS"',
+      '  case "$1 $2" in',
+      '    "pr create") return "$GH_CREATE_STATUS" ;;',
+      '    "pr list") [ "$GH_LIST_STATUS" = 0 ] || return "$GH_LIST_STATUS"; echo "$GH_OPEN" ;;',
+      '    *) echo "unexpected: gh $*" >&2; return 99 ;;',
+      "  esac",
+      "}",
     ].join("\n");
 
     const gitIn = (dir: string, ...args: string[]): string => {
       const result = spawnSync("git", args, {
         cwd: dir,
         encoding: "utf8",
-        env: { ...process.env, ...GIT_ENV },
+        env: { ...inheritedWithoutGit(), ...GIT_ENV },
       });
       if (result.status !== 0) {
         throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
@@ -896,10 +919,19 @@ describe("freshness scope · the CI wiring, parsed", () => {
       {
         earlier,
         push = 0,
+        create = 0,
+        open = 0,
+        list = 0,
       }: {
         /** A refresh branch an earlier night left, carrying these files. */
         earlier?: Readonly<Record<string, string>>;
         push?: number;
+        /** `gh pr create`'s exit status. */
+        create?: number;
+        /** How many refresh pull requests `gh pr list` finds open. */
+        open?: number;
+        /** `gh pr list`'s exit status. */
+        list?: number;
       } = {}
     ) => {
       const repo = mkdtempSync(join(tmpdir(), "ci-refresh-"));
@@ -945,6 +977,9 @@ describe("freshness scope · the CI wiring, parsed", () => {
             ...GIT_ENV,
             CATALOG_NEW: REGENERATED[CATALOG],
             CATALOG_OUTCOME: catalog,
+            GH_CREATE_STATUS: String(create),
+            GH_LIST_STATUS: String(list),
+            GH_OPEN: String(open),
             GH_TOKEN: "fixture-token",
             GITHUB_REPOSITORY: "owner/repo",
             LIMITS_NEW: REGENERATED[LIMITS],
@@ -1040,6 +1075,127 @@ describe("freshness scope · the CI wiring, parsed", () => {
       expect(found).toHaveLength(2);
       expect(found[0]).toMatch(/catalog generator failed/u);
       expect(found[1]).toMatch(/Go limits generator failed/u);
+      // Neither file was regenerated, so neither is known to be current.
+      expect(run.stdout).not.toContain("current");
+      expect(run.stdout).toContain(`not regenerated: ${CATALOG} ${LIMITS}`);
+    });
+
+    for (const [catalog, limits, failed, current] of [
+      ["fails", "unchanged", CATALOG, LIMITS],
+      ["unchanged", "fails", LIMITS, CATALOG],
+    ] as const) {
+      it(`one failing, the other unchanged (${failed} failing): exit 1, no proposal, and the log calls current only the file that regenerated`, () => {
+        const run = perform(catalog, limits);
+        expect(run.status).toBe(1);
+        expect(run.committed).toBeUndefined();
+        expect(run.tree).toStrictEqual(COMMITTED);
+        expect(run.calls).not.toContain("git push");
+        expect(run.calls).not.toContain("gh ");
+        const [error, ...more] = errors(run.stdout);
+        expect(more).toStrictEqual([]);
+        expect(error).toContain(failed);
+        expect(run.stdout).not.toContain("both generated files are current");
+        expect(run.stdout).toContain(`not regenerated: ${failed}`);
+        expect(run.stdout).not.toContain(`not regenerated: ${current}`);
+      });
+    }
+
+    it("a failed pull-request creation with a refresh pull request open is the already-open case: exit 0", () => {
+      const run = perform("regenerates", "regenerates", { create: 1, open: 1 });
+      expect(run.status).toBe(0);
+      expect(run.calls).toContain(PUSHED);
+      expect(run.calls).toContain(
+        `gh pr list --head ${BRANCH} --state open --json number --jq length`
+      );
+      expect(run.stdout).toContain("a refresh pull request is already open");
+      expect(errors(run.stdout)).toStrictEqual([]);
+    });
+
+    it("a failed pull-request creation with none open fails the step, naming the pushed branch", () => {
+      const run = perform("regenerates", "regenerates", { create: 1 });
+      expect(run.status).toBe(1);
+      expect(run.calls).toContain(PUSHED);
+      expect(run.stdout).not.toContain("already open");
+      const [error, ...more] = errors(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(error).toMatch(/could not open the refresh pull request/u);
+      expect(error).toContain(BRANCH);
+    });
+
+    it("a failed pull-request creation that cannot be told from an open one fails the step", () => {
+      const run = perform("regenerates", "regenerates", {
+        create: 1,
+        list: 1,
+      });
+      expect(run.status).toBe(1);
+      expect(run.stdout).not.toContain("already open");
+      const [error, ...more] = errors(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(error).toMatch(/could not open the refresh pull request/u);
+    });
+
+    it("a failed pull-request creation still fails the step after a generator failure, with both annotated", () => {
+      const run = perform("regenerates", "fails", { create: 1 });
+      expect(run.status).toBe(1);
+      const found = errors(run.stdout);
+      expect(found).toHaveLength(2);
+      expect(found[0]).toMatch(/Go limits generator failed/u);
+      expect(found[1]).toMatch(/could not open the refresh pull request/u);
+    });
+
+    it("a created pull request asks nothing more of gh", () => {
+      const run = perform("regenerates", "regenerates");
+      expect(run.status).toBe(0);
+      expect(run.calls).toContain("gh pr create");
+      expect(run.calls).not.toContain("gh pr list");
+      expect(run.stdout).not.toContain("already open");
+    });
+
+    it("ignores the GIT_* variables a git hook or `git rebase --exec` exports: the repository they name is left untouched", () => {
+      // A hook, or `rebase --exec` in a linked worktree, hands its child an
+      // absolute GIT_DIR (and GIT_INDEX_FILE); git honours those before the
+      // working directory, so a run that inherited them would commit, branch
+      // and configure THAT repository instead of the scratch one.
+      const decoy = mkdtempSync(join(tmpdir(), "ci-refresh-decoy-"));
+      try {
+        writeFileSync(join(decoy, "README.md"), "decoy\n");
+        gitIn(decoy, "init", "--quiet", "--initial-branch=work");
+        gitIn(decoy, "add", ".");
+        gitIn(
+          decoy,
+          "-c",
+          "user.name=fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "commit",
+          "--quiet",
+          "--message=decoy"
+        );
+        const state = (): Record<string, string> => ({
+          branches: gitIn(decoy, "branch", "--list"),
+          config: readFileSync(join(decoy, ".git", "config"), "utf8"),
+          head: gitIn(decoy, "rev-parse", "HEAD"),
+          index: gitIn(decoy, "ls-files", "--stage"),
+          log: gitIn(decoy, "log", "--all", "--format=%H %s"),
+          status: gitIn(decoy, "status", "--porcelain"),
+        });
+        const before = state();
+        vi.stubEnv("GIT_DIR", join(decoy, ".git"));
+        vi.stubEnv("GIT_WORK_TREE", decoy);
+        vi.stubEnv("GIT_INDEX_FILE", join(decoy, ".git", "index"));
+        let run: ReturnType<typeof perform>;
+        try {
+          run = perform("regenerates", "fails");
+        } finally {
+          vi.unstubAllEnvs();
+        }
+        expect(state()).toStrictEqual(before);
+        expect(run.status).toBe(1);
+        expect(run.committed?.files).toStrictEqual([CATALOG]);
+        expect(run.calls).toContain(PUSHED);
+      } finally {
+        rmSync(decoy, { force: true, recursive: true });
+      }
     });
 
     it("a generator's failure is annotated even when a later command fails the step first", () => {

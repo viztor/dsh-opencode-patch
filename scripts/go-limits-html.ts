@@ -34,13 +34,56 @@ export const GO_LIMITS_DOC_MOVED_TO = "https://opencode.ai/v2/docs/console/go/";
 /** The heading of the table this reader takes, as the page spells it. */
 const MONTHLY_LIMIT_HEADER = "monthly limit";
 
+/** The named references a cell's text can carry, and the characters they stand for. */
+const NAMED_REFERENCES: ReadonlyMap<string, string> = new Map([
+  ["amp", "&"],
+  ["apos", "'"],
+  ["ge", "≥"],
+  ["gt", ">"],
+  ["le", "≤"],
+  ["lt", "<"],
+  ["nbsp", "\u00A0"],
+  ["quot", '"'],
+]);
+
 /**
- * Strip tags from a table's cells, row by row.
+ * Decode a cell's character references into the text a browser shows.
  *
- * Each cell becomes one line: a `<br>` reads as a space and any run of
- * whitespace inside a cell, newlines included, as one space. The converter
- * writes one markdown row per line, and a newline kept inside a cell would
- * split the row in two halves the parser skips without naming either.
+ * One pass, so `&amp;lt;` is the text `&lt;` and never `<`. A name outside
+ * `NAMED_REFERENCES`, and a number that names no character, is left as written:
+ * guessing a character would put one in the table the page never showed.
+ *
+ * @param text - a cell's text, its tags already stripped.
+ * @returns the text with each reference it knows decoded.
+ */
+const decodeReferences = (text: string): string =>
+  text.replaceAll(
+    /&(?:#(\d+)|#[xX]([\da-fA-F]+)|([A-Za-z]+));/gu,
+    (reference, decimal?: string, hex?: string, name?: string) => {
+      if (name !== undefined) {
+        return NAMED_REFERENCES.get(name) ?? reference;
+      }
+      const code =
+        decimal === undefined
+          ? Number.parseInt(hex ?? "", 16)
+          : Number(decimal);
+      const names =
+        code > 0 && code <= 0x10_ff_ff && (code < 0xd8_00 || code > 0xdf_ff);
+      return names ? String.fromCodePoint(code) : reference;
+    }
+  );
+
+/**
+ * A table's cells, row by row, as the text a browser shows.
+ *
+ * Each cell becomes one line: a `<br>` reads as a space, the tags come off, the
+ * character references are decoded (after the tags, so an encoded `&lt;b&gt;`
+ * is text the page shows, not markup to strip), and any run of whitespace
+ * inside a cell, newlines and no-break spaces included, reads as one space. The
+ * converter writes one markdown row per line, and a newline kept inside a cell
+ * would split the row in two halves the parser skips without naming either. A
+ * reference kept verbatim is no better: `&#36;15` is no dollar amount to the
+ * parser, and `Grok&nbsp;4.7` slugs to an id no catalog carries.
  *
  * @param html - one `<table>` element's inner HTML.
  * @returns one array of cell strings per `<tr>`.
@@ -48,9 +91,11 @@ const MONTHLY_LIMIT_HEADER = "monthly limit";
 export const tableRows = (html: string): string[][] =>
   [...html.matchAll(/<tr[^>]*>(.*?)<\/tr>/gsu)].map((row) =>
     [...(row[1] ?? "").matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/gsu)].map((cell) =>
-      (cell[1] ?? "")
-        .replaceAll(/<br\s*\/?>/giu, " ")
-        .replaceAll(/<[^>]+>/gu, "")
+      decodeReferences(
+        (cell[1] ?? "")
+          .replaceAll(/<br\s*\/?>/giu, " ")
+          .replaceAll(/<[^>]+>/gu, "")
+      )
         .replaceAll(/\s+/gu, " ")
         .trim()
     )
@@ -292,7 +337,8 @@ export interface FoundDoc {
  * The first source whose answer carries the tables, asked one at a time.
  *
  * In turn, not all at once: a later source is asked only when every earlier one
- * carried neither shape, and the error then names what each one answered. The
+ * answered nothing the parser reads (a status outside 2xx, neither shape, or a
+ * shape the parser rejected), and the error then names what each one answered. The
  * reader is a parameter, so the walk runs without a network; a reader that
  * rejects rejects the walk, because a source that could not be asked is not one
  * that answered "nothing here".
