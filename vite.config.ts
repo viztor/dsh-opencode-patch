@@ -263,6 +263,14 @@ export default defineConfig({
         },
         // The plane routes' pure decisions (P-R1): every branch is a protocol,
         // a precedence or one of pi-ai's checks, so all of them are covered.
+        // Both host cores' internal/config call shapes and fiber fields: every
+        // branch is one shape or one core, so all of them are covered.
+        "src/utils/config-run.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         "src/utils/protocols.ts": {
           statements: 100,
           branches: 100,

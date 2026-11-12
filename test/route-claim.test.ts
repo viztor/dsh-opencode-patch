@@ -49,7 +49,7 @@ interface FakeFiber {
   runtime: { name: string };
   _config: { providers: Record<string, unknown> };
   config: { providers: { get: () => Record<string, unknown> } };
-  ctx: { waterfall?: (...args: unknown[]) => unknown };
+  ctx: { fiber?: unknown };
   entry?: unknown;
   parent?: { fiber: { state: number } };
   await: () => Promise<unknown>;
@@ -58,39 +58,53 @@ interface FakeFiber {
 
 const zen = { models: [{ id: "deepseek-v4-pro" }] };
 
-/** A pi-ai fiber that holds `providers` raw and resolves `resolved`. */
+/**
+ * A pi-ai fiber of the OLD core (cordis 4.0.5): `_config` raw, `config`
+ * resolved, holding `providers` raw and resolving `resolved`. Its own context
+ * names it, as a real fiber's does.
+ */
 const piFiber = (
   providers?: Record<string, unknown>,
   resolved?: Record<string, unknown>
-): FakeFiber => ({
-  _config: { providers: providers ?? { deepseek: {}, opencode: zen } },
-  await: vi.fn(async () => {}),
-  config: { providers: { get: () => resolved ?? { deepseek: {} } } },
-  ctx: {
-    waterfall: (
-      _fiber: unknown,
-      _name: unknown,
-      _raw: unknown,
-      inner: unknown
-    ) => (inner as () => unknown)(),
-  },
-  entry: { options: { id: "llm-pi-ai" } },
-  parent: { fiber: { state: 2 } },
-  restart: vi.fn(async () => {}),
-  runtime: { name: "llm-pi-ai" },
-  state: 2,
-  uid: 1,
-});
+): FakeFiber => {
+  const fiber: FakeFiber = {
+    _config: { providers: providers ?? { deepseek: {}, opencode: zen } },
+    await: vi.fn(async () => {}),
+    config: { providers: { get: () => resolved ?? { deepseek: {} } } },
+    ctx: {},
+    entry: { options: { id: "llm-pi-ai" } },
+    parent: { fiber: { state: 2 } },
+    restart: vi.fn(async () => {}),
+    runtime: { name: "llm-pi-ai" },
+    state: 2,
+    uid: 1,
+  };
+  fiber.ctx.fiber = fiber;
+  return fiber;
+};
+
+/**
+ * Run the listener in the OLD core's shape, `function (this: Fiber, raw,
+ * next)`, as the innermost listener of the run: `next()` answers the raw
+ * candidate itself, as cordis's innermost callback does.
+ */
+const oldRun = (
+  listener: Listener | undefined,
+  fiber: unknown,
+  raw: unknown
+): unknown => listener?.call(fiber, raw, () => raw);
 
 /** A stand-in plugin context: records listeners, effects and registrations. */
 const standIn = (
   options: {
-    fibers?: () => FakeFiber[];
+    fibers?: () => readonly object[];
     llm?: Record<string, unknown>;
     uid?: number | null;
   } = {}
 ) => {
   const listeners = new Map<string, Listener>();
+  /** Every live listener per event, outermost first, as cordis keeps them. */
+  const hooks = new Map<string, Listener[]>();
   const cleanups: (() => unknown)[] = [];
   const warn = vi.fn();
   const info = vi.fn();
@@ -119,8 +133,25 @@ const standIn = (
       callback(deps.includes("llm") ? { effect, llm } : {});
     },
     logger: { info, warn },
-    on: (event: string, listener: Listener) => {
+    on: (
+      event: string,
+      listener: Listener,
+      placement: { prepend?: boolean } = {}
+    ) => {
       listeners.set(event, listener);
+      const list = hooks.get(event) ?? [];
+      if (placement.prepend === true) {
+        list.unshift(listener);
+      } else {
+        list.push(listener);
+      }
+      hooks.set(event, list);
+      return () => {
+        const at = list.indexOf(listener);
+        if (at !== -1) {
+          list.splice(at, 1);
+        }
+      };
     },
     registry: {
       values: () => [
@@ -129,6 +160,39 @@ const standIn = (
       ],
     },
   } as unknown as CordisContext;
+  /**
+   * Run `internal/config` the way the NEW core does (cordis 4.0.6-alpha.2,
+   * 4.1.0, `events.ts:246-261`): each listener as `(fiber, next)` with `this`
+   * null, outermost first, each with its own `next`, which throws when called
+   * twice; the innermost `next()` answers `raw()`.
+   */
+  const waterfall = (target: unknown, raw: () => unknown): unknown => {
+    const chain = (hooks.get("internal/config") ?? []).toSpliced(0, 0);
+    const step = (index: number): (() => unknown) => {
+      let called = false;
+      return () => {
+        if (called) {
+          throw new Error("next() called multiple times");
+        }
+        called = true;
+        const listener = chain[index];
+        return listener === undefined
+          ? raw()
+          : Reflect.apply(listener, null, [target, step(index + 1)]);
+      };
+    };
+    return step(0)();
+  };
+  /** Emit an event to every live listener, `this` null, as cordis's `emit` does. */
+  const emit = (event: string, ...args: unknown[]): void => {
+    const live = hooks.get(event);
+    if (live === undefined) {
+      return;
+    }
+    for (const listener of live.toSpliced(0, 0)) {
+      Reflect.apply(listener, null, args);
+    }
+  };
   /** Run the `llm` inject callback again, as cordis does for a new scope. */
   const reinject = (scope: Record<string, unknown>): void => {
     injected?.({ effect, ...scope });
@@ -136,13 +200,16 @@ const standIn = (
   return {
     cleanups,
     ctx,
+    emit,
     fiber,
     handle,
+    hooks,
     info,
     listeners,
     llm,
     reinject,
     warn,
+    waterfall,
   };
 };
 
@@ -201,10 +268,9 @@ describe("route-claim · standing down", () => {
       expect.stringContaining("unavailable; the plane routes stay pi-ai's")
     );
     // Inert from here: the listener passes through.
-    const next = vi.fn(() => "next");
-    expect(
-      host.listeners.get("internal/config")?.call(pi, pi._config, next)
-    ).toBe("next");
+    expect(oldRun(host.listeners.get("internal/config"), pi, pi._config)).toBe(
+      pi._config
+    );
   });
 
   it("when the modules cannot be read at mount and pi-ai already holds a plane, it stands down with no restart at all", async () => {
@@ -224,10 +290,9 @@ describe("route-claim · standing down", () => {
       String(message).includes("unavailable; the plane routes stay pi-ai's")
     );
     expect(unavailable).toHaveLength(1);
-    const next = vi.fn(() => "next");
-    expect(
-      host.listeners.get("internal/config")?.call(pi, pi._config, next)
-    ).toBe("next");
+    expect(oldRun(host.listeners.get("internal/config"), pi, pi._config)).toBe(
+      pi._config
+    );
   });
 
   it("with the modules unreadable and no plane declared, the claim stands down, says so exactly once, and a Settings save adding a plane reaches pi-ai's own check", async () => {
@@ -254,12 +319,11 @@ describe("route-claim · standing down", () => {
     // would refuse this save with "try the save again" for good. Inert, it
     // hands the candidate to pi-ai unstripped, whose own check decides.
     const listener = host.listeners.get("internal/config");
-    const next = vi.fn(() => "next");
     const candidate = { providers: { deepseek: {}, opencode: zen } };
-    expect(listener?.call(pi, candidate, next)).toBe("next");
+    expect(oldRun(listener, pi, candidate)).toBe(candidate);
     // And the commit run that follows passes through untouched.
     pi._config = candidate;
-    expect(listener?.call(pi, pi._config, next)).toBe("next");
+    expect(oldRun(listener, pi, pi._config)).toBe(pi._config);
     await flush();
     expect(host.llm.registerAdapter).not.toHaveBeenCalled();
   });
@@ -319,19 +383,19 @@ describe("route-claim · the listener", () => {
     if (listener === undefined) {
       throw new Error("no listener");
     }
-    const next = vi.fn(() => "next");
-    expect(listener.call({ runtime: { name: "other" } }, {}, next)).toBe(
-      "next"
-    );
+    // Another plugin's run, and a run that names no fiber, pass through.
+    const other = {};
+    expect(oldRun(listener, { runtime: { name: "other" } }, other)).toBe(other);
+    expect(Reflect.apply(listener, null, [other, () => other])).toBe(other);
     // A commit holding a plane: the copy without it, and no throw.
-    const committed = listener.call(pi, pi._config, next) as {
+    const committed = oldRun(listener, pi, pi._config) as {
       providers: Record<string, unknown>;
     };
     expect(Object.keys(committed.providers)).toEqual(["deepseek"]);
     // A commit holding none passes the raw value on.
     const bare = { providers: { deepseek: {} } };
     pi._config = bare;
-    expect(listener.call(pi, bare, next)).toBe("next");
+    expect(oldRun(listener, pi, bare)).toBe(bare);
     // A candidate whose plane did not change is not validated: with a
     // malformed model stored on the plane (pi-ai keeps it as a deferred
     // error), validating it would refuse every save that touches only a
@@ -339,45 +403,30 @@ describe("route-claim · the listener", () => {
     const malformed = { models: [{ id: "" }] };
     pi._config = { providers: { deepseek: {}, opencode: malformed } };
     const same = structuredClone(pi._config);
-    expect(listener.call(pi, same, next)).toEqual({
+    expect(oldRun(listener, pi, same)).toEqual({
       providers: { deepseek: {} },
     });
     const siblingOnly = structuredClone(pi._config);
     siblingOnly.providers.deepseek = { displayName: "D" };
-    expect(listener.call(pi, siblingOnly, next)).toEqual({
+    expect(oldRun(listener, pi, siblingOnly)).toEqual({
       providers: { deepseek: { displayName: "D" } },
     });
     // The same plane changed is validated, and refused in pi-ai's words.
     expect(() =>
-      listener.call(
-        pi,
-        {
-          providers: {
-            deepseek: {},
-            opencode: { models: [{ id: "" }, { id: "x" }] },
-          },
+      oldRun(listener, pi, {
+        providers: {
+          deepseek: {},
+          opencode: { models: [{ id: "" }, { id: "x" }] },
         },
-        next
-      )
+      })
     ).toThrow(/has a model with an empty id/u);
     pi._config = { providers: { deepseek: {}, opencode: zen } };
     // A changed, malformed plane is refused in pi-ai's words.
     expect(() =>
-      listener.call(
-        pi,
-        { providers: { "opencode-go": { models: [{ id: "" }] } } },
-        next
-      )
+      oldRun(listener, pi, {
+        providers: { "opencode-go": { models: [{ id: "" }] } },
+      })
     ).toThrow(/has a model with an empty id/u);
-    // A host without `waterfall` still gets the copy.
-    pi.ctx = {};
-    expect(
-      listener.call(
-        pi,
-        { providers: { opencode: { models: [{ id: "x" }] } } },
-        next
-      )
-    ).toEqual({ providers: {} });
   });
 
   it("refuses to validate before the host's modules are read", async () => {
@@ -397,16 +446,203 @@ describe("route-claim · the listener", () => {
     const host = standIn({ fibers: () => [pi] });
     const claim = installRouteClaim(host.ctx, config);
     expect(() =>
-      host.listeners
-        .get("internal/config")
-        ?.call(
-          pi,
-          { providers: { opencode: { models: [{ id: "x" }] } } },
-          () => "next"
-        )
+      oldRun(host.listeners.get("internal/config"), pi, {
+        providers: { opencode: { models: [{ id: "x" }] } },
+      })
     ).toThrow(/cannot be validated yet/u);
     release?.();
     await claim.mounted;
+  });
+});
+
+/** A NEW-core fiber's own fields, as the claim reads them. */
+interface NewFakeFiber {
+  uid: number | null;
+  state: number;
+  runtime: { name: string };
+  /** The RAW config on the NEW core (`rawConfig` is an accessor over it). */
+  config: { providers: Record<string, unknown> };
+  readonly rawConfig: unknown;
+  readonly effectiveConfig: unknown;
+  ctx: { fiber?: unknown };
+  entry: { options: { id: string; config?: unknown } };
+  parent: { fiber: { state: number } };
+  await: () => Promise<unknown>;
+  restart: () => Promise<unknown>;
+}
+
+/**
+ * A pi-ai fiber of the NEW core (cordis 4.0.6-alpha.2, 4.1.0,
+ * `fiber.ts:190,211,649-666`): `config` is the RAW input, `rawConfig` an
+ * accessor over it, the resolved value readable only through
+ * `effectiveConfig`, and no `_config`. Its own context names it.
+ */
+const newPiFiber = (
+  providers?: Record<string, unknown>,
+  resolved?: Record<string, unknown>
+): NewFakeFiber => {
+  const fiber = {
+    await: vi.fn(async () => {}),
+    config: { providers: providers ?? { deepseek: {}, opencode: zen } },
+    ctx: {} as { fiber?: unknown },
+    get effectiveConfig(): unknown {
+      return { providers: { get: () => resolved ?? { deepseek: {} } } };
+    },
+    entry: { options: { id: "llm-pi-ai" } as { id: string; config?: unknown } },
+    parent: { fiber: { state: 2 } },
+    get rawConfig(): unknown {
+      return fiber.config;
+    },
+    restart: vi.fn(async () => {}),
+    runtime: { name: "llm-pi-ai" },
+    state: 2,
+    uid: 1 as number | null,
+  };
+  fiber.ctx.fiber = fiber;
+  return fiber;
+};
+
+/** A plane entry pi-ai's own check refuses: a model with an empty id. */
+const MALFORMED = { models: [{ id: "" }, { id: "x" }] };
+
+describe("route-claim · the new core's call shape (cordis 4.0.6-alpha.2, 4.1.0)", () => {
+  it("a commit run, (fiber, next) with this null, resolves the served pi-ai without either plane, another fiber passes through, and a candidate with a changed malformed plane is refused in pi-ai's words", async () => {
+    useTestModules();
+    const pi = newPiFiber();
+    const host = standIn({ fibers: () => [pi] });
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
+    await flush();
+    // The activation and restart run: next() answers the fiber's own raw.
+    expect(host.waterfall(pi, () => pi.rawConfig)).toEqual({
+      providers: { deepseek: {} },
+    });
+    expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+    expect(claim.committedEntries()).toHaveProperty("opencode");
+    // Another plugin's fiber, read the same way, passes through untouched.
+    const other = { ctx: {} as { fiber?: unknown }, runtime: { name: "x" } };
+    other.ctx.fiber = other;
+    const otherRaw = { providers: { opencode: MALFORMED } };
+    expect(host.waterfall(other, () => otherRaw)).toBe(otherRaw);
+    // An editor candidate: a fresh object, its plane changed and valid.
+    const valid = {
+      providers: {
+        deepseek: {},
+        opencode: { models: [{ id: "deepseek-v4-pro" }, { id: "x" }] },
+      },
+    };
+    expect(host.waterfall(pi, () => valid)).toEqual({
+      providers: { deepseek: {} },
+    });
+    // The same candidate with the plane malformed is refused.
+    expect(() =>
+      host.waterfall(pi, () => ({
+        providers: { deepseek: {}, opencode: MALFORMED },
+      }))
+    ).toThrow(/has a model with an empty id/u);
+  });
+
+  it("calls next() exactly once per run, on either shape: a commit, a candidate and a pass-through", async () => {
+    useTestModules();
+    const pi = newPiFiber();
+    const old = piFiber();
+    old.uid = 2;
+    const host = standIn({ fibers: () => [pi] });
+    await installRouteClaim(host.ctx, config).mounted;
+    await flush();
+    const listener = host.listeners.get("internal/config");
+    const counted = (raw: unknown) => {
+      const next = vi.fn(() => raw);
+      return next;
+    };
+    const candidate = {
+      providers: { opencode: { models: [{ id: "deepseek-v4-pro" }] } },
+    };
+    for (const raw of [pi.rawConfig, candidate]) {
+      const next = counted(raw);
+      Reflect.apply(listener ?? (() => {}), null, [pi, next]);
+      expect(next).toHaveBeenCalledTimes(1);
+    }
+    // The OLD shape, for a row the claim does not serve and for one it does.
+    for (const fiber of [old, pi]) {
+      const next = counted(candidate);
+      listener?.call(fiber, candidate, next);
+      expect(next).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("a commit never throws: a malformed plane in the fiber's own raw config, in the loader's stored row config, or in any run while pi-ai is not ACTIVE is stripped unjudged", async () => {
+    useTestModules();
+    const pi = newPiFiber();
+    const host = standIn({ fibers: () => [pi] });
+    await installRouteClaim(host.ctx, config).mounted;
+    await flush();
+    const stripped = { providers: { deepseek: {} } };
+    // Known answer: the same value as a fresh candidate is refused.
+    expect(() =>
+      host.waterfall(pi, () => ({
+        providers: { deepseek: {}, opencode: MALFORMED },
+      }))
+    ).toThrow(/has a model with an empty id/u);
+    // The fiber's own raw config: a restart, a volatile run.
+    pi.config = { providers: { deepseek: {}, opencode: MALFORMED } };
+    expect(host.waterfall(pi, () => pi.rawConfig)).toEqual(stripped);
+    // The loader's stored row config: a loader update, which the NEW core
+    // resolves BEFORE it stores the raw value.
+    const stored = { providers: { deepseek: {}, opencode: MALFORMED } };
+    pi.entry.options.config = stored;
+    expect(host.waterfall(pi, () => stored)).toEqual(stripped);
+    // An activation run (LOADING): a FAILED fiber on this core recovers only
+    // through update(), so no run of an activation may throw.
+    pi.state = 1;
+    expect(
+      host.waterfall(pi, () => ({
+        providers: { deepseek: {}, opencode: MALFORMED },
+      }))
+    ).toEqual(stripped);
+  });
+
+  it("stays inner to pi-ai's own listener: one pi-ai re-registered after the claim sees a plane only until pi-ai reaches ACTIVE, when the claim re-appends itself", async () => {
+    useTestModules();
+    const pi = newPiFiber();
+    const host = standIn({ fibers: () => [pi] });
+    await installRouteClaim(host.ctx, config).mounted;
+    await flush();
+    // pi-ai's own listener checks what its next() answers (dsh-llm-pi-ai
+    // `lib/index.js` 2927-2933 at 0.2.2-rc.1), and pi-ai registers it at
+    // every activation, so a restart appends it after the claim's.
+    const seen: unknown[] = [];
+    host.ctx.on?.("internal/config", (fiber: unknown, next: () => unknown) => {
+      const raw = next();
+      if (fiber === pi) {
+        seen.push(raw);
+      }
+      return raw;
+    });
+    const candidate = {
+      providers: {
+        deepseek: {},
+        opencode: { models: [{ id: "deepseek-v4-pro" }, { id: "x" }] },
+      },
+    };
+    host.waterfall(pi, () => candidate);
+    // Known answer: inner to the claim, pi-ai's listener sees the plane.
+    expect(seen.at(-1)).toBe(candidate);
+    // A status change of another fiber, or of pi-ai to a state other than
+    // ACTIVE, leaves the order alone.
+    host.emit("internal/status", { runtime: { name: "x" }, state: 2 }, 1);
+    pi.state = 1;
+    host.emit("internal/status", pi, 0);
+    host.waterfall(pi, () => candidate);
+    expect(seen.at(-1)).toBe(candidate);
+    // pi-ai reaches ACTIVE: the claim re-appends itself after pi-ai's.
+    pi.state = 2;
+    host.emit("internal/status", pi, 1);
+    expect(host.waterfall(pi, () => candidate)).toEqual({
+      providers: { deepseek: {} },
+    });
+    expect(seen.at(-1)).toEqual({ providers: { deepseek: {} } });
+    expect(host.hooks.get("internal/config")).toHaveLength(2);
   });
 });
 
@@ -429,15 +665,13 @@ describe("route-claim · validating while the modules are unloaded", () => {
         opencode: { models: [{ id: "deepseek-v4-pro" }, { id: "x" }] },
       },
     };
-    expect(listener?.call(pi, candidate, () => "next")).toEqual({
+    expect(oldRun(listener, pi, candidate)).toEqual({
       providers: { deepseek: {} },
     });
     expect(() =>
-      listener?.call(
-        pi,
-        { providers: { opencode: { models: [{ id: "" }] } } },
-        () => "next"
-      )
+      oldRun(listener, pi, {
+        providers: { opencode: { models: [{ id: "" }] } },
+      })
     ).toThrow(/has a model with an empty id/u);
     await flush();
   });
@@ -455,11 +689,10 @@ describe("route-claim · a second pi-ai row", () => {
     await installRouteClaim(host.ctx, config).mounted;
     await flush();
     const listener = host.listeners.get("internal/config");
-    const next = vi.fn(() => "next");
     // The second row's config passes through untouched: pi-ai serves its plane.
-    expect(listener?.call(second, second._config, next)).toBe("next");
+    expect(oldRun(listener, second, second._config)).toBe(second._config);
     // The first row's is stripped, and only its plane is registered.
-    expect(listener?.call(first, first._config, next)).toEqual({
+    expect(oldRun(listener, first, first._config)).toEqual({
       providers: { deepseek: {} },
     });
     expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
@@ -476,11 +709,10 @@ describe("route-claim · a second pi-ai row", () => {
     await claim.mounted;
     await flush();
     const listener = host.listeners.get("internal/config");
-    const next = vi.fn(() => "next");
     // The plane-less row ahead of it passes through: nothing to strip.
-    expect(listener?.call(bare, bare._config, next)).toBe("next");
+    expect(oldRun(listener, bare, bare._config)).toBe(bare._config);
     // The declaring row is the served one, though it comes second.
-    expect(listener?.call(declaring, declaring._config, next)).toEqual({
+    expect(oldRun(listener, declaring, declaring._config)).toEqual({
       providers: { deepseek: {} },
     });
     expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
@@ -507,13 +739,12 @@ describe("route-claim · a second pi-ai row", () => {
     await claim.mounted;
     await flush();
     const listener = host.listeners.get("internal/config");
-    const next = vi.fn(() => "next");
     expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
 
     // A Settings save removes the first row's plane: the second row, which
     // declares one, becomes the served row and is restarted once to strip it.
     first._config = { providers: { deepseek: {} } };
-    expect(listener?.call(first, first._config, next)).toBe("next");
+    expect(oldRun(listener, first, first._config)).toBe(first._config);
     host.listeners.get("llm/adapters-updated")?.();
     await flush();
     expect(host.handle).toHaveBeenCalledTimes(1);
@@ -530,13 +761,13 @@ describe("route-claim · a second pi-ai row", () => {
     // and nobody would serve `opencode-go`. It passes through and serves its
     // own plane, and is reported once.
     first._config = { providers: { deepseek: {}, opencode: zen } };
-    expect(listener?.call(first, first._config, next)).toBe("next");
+    expect(oldRun(listener, first, first._config)).toBe(first._config);
     first.config = {
       providers: { get: () => ({ deepseek: {}, opencode: {} }) },
     };
     host.listeners.get("llm/adapters-updated")?.();
     await flush();
-    expect(listener?.call(second, second._config, next)).toEqual({
+    expect(oldRun(listener, second, second._config)).toEqual({
       providers: { deepseek: {} },
     });
     expect(host.handle).toHaveBeenCalledTimes(1);
@@ -564,12 +795,11 @@ describe("route-claim · a second pi-ai row", () => {
     await claim.mounted;
     await flush();
     const listener = host.listeners.get("internal/config");
-    const next = vi.fn(() => "next");
     expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual([
       "opencode-go",
     ]);
     bare._config = { providers: { deepseek: {}, opencode: zen } };
-    expect(listener?.call(bare, bare._config, next)).toBe("next");
+    expect(oldRun(listener, bare, bare._config)).toBe(bare._config);
     bare.config = {
       providers: { get: () => ({ deepseek: {}, opencode: {} }) },
     };
@@ -581,7 +811,7 @@ describe("route-claim · a second pi-ai row", () => {
     expect(bare.restart).not.toHaveBeenCalled();
     expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
     expect(Object.keys(claim.committedEntries())).toEqual(["opencode-go"]);
-    expect(listener?.call(declaring, declaring._config, next)).toEqual({
+    expect(oldRun(listener, declaring, declaring._config)).toEqual({
       providers: { deepseek: {} },
     });
   });
@@ -623,9 +853,7 @@ describe("route-claim · a second pi-ai row", () => {
     // The new served row held its plane, so it was restarted once to strip it.
     expect(second.restart).toHaveBeenCalledTimes(1);
     expect(
-      host.listeners
-        .get("internal/config")
-        ?.call(second, second._config, () => "next")
+      oldRun(host.listeners.get("internal/config"), second, second._config)
     ).toEqual({ providers: { deepseek: {} } });
     // Its registry change brings the claim back: the plugin serves its plane.
     host.listeners.get("llm/adapters-updated")?.();
@@ -701,20 +929,20 @@ describe("route-claim · reconcile", () => {
     pi._config = {
       providers: { deepseek: {}, opencode: { ...zen, displayName: "Zen X" } },
     };
-    host.listeners.get("internal/config")?.call(pi, pi._config, () => "next");
+    oldRun(host.listeners.get("internal/config"), pi, pi._config);
     await flush();
     expect(host.handle.replace).toHaveBeenCalledWith(["opencode"]);
     // A commit that removes the last plane withdraws the routes through the
     // live handle, replace([]), never by releasing it; committing the plane
     // back moves it through the same handle, with no second registration.
     pi._config = { providers: { deepseek: {} } };
-    host.listeners.get("internal/config")?.call(pi, pi._config, () => "next");
+    oldRun(host.listeners.get("internal/config"), pi, pi._config);
     await flush();
     expect(host.handle.replace).toHaveBeenLastCalledWith([]);
     expect(host.handle).not.toHaveBeenCalled();
     expect(claim.committedEntries()).toEqual({});
     pi._config = { providers: { deepseek: {}, opencode: zen } };
-    host.listeners.get("internal/config")?.call(pi, pi._config, () => "next");
+    oldRun(host.listeners.get("internal/config"), pi, pi._config);
     await flush();
     expect(host.handle.replace).toHaveBeenLastCalledWith(["opencode"]);
     expect(host.handle).not.toHaveBeenCalled();

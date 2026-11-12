@@ -20,6 +20,7 @@ import {
 import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { rawConfigOf } from "./support/config-shape.ts";
 import {
   adaptersOf,
   type ApplyOrder,
@@ -278,9 +279,8 @@ describe(
       // The claim reconciles on every registry change and after its mount;
       // let every one of them run before reading the registry.
       await settle();
-      const raw = (
-        tier.piFiber as unknown as { _config: { providers: object } }
-      )._config.providers;
+      const raw = (rawConfigOf(tier.piFiber) as { providers: object })
+        .providers;
       expect(Object.keys(raw)).toEqual(expect.arrayContaining([...PLANES]));
       expect(
         tier.llm

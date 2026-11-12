@@ -4,36 +4,48 @@
  *
  * Four parts, each on a supported host path:
  *
- * - **The listener.** A prepended `internal/config` listener on the plugin's
- *   root. For the pi-ai fiber it serves only (`this.runtime?.name ===
- *   "llm-pi-ai"`; see {@link installRouteClaim}'s `servedRow`: the served row
- *   is sticky while it is live and declares a plane, else the first live row
- *   that declares one, else the first live row); another pi-ai row keeps its
- *   planes and serves them itself, and is reported once — it
- *   runs the nested waterfall on a fresh copy without the two plane keys and
- *   returns that, so pi-ai resolves and registers every other route and never
- *   sees the planes (F11, F12) — its own save check included, which a strip
- *   that let the raw value through would not shield. The user's file keeps
- *   every entry: the editor writes the raw value, never the resolved one. A
- *   commit run (`raw === this._config`, F14) schedules {@link reconcile}; an
- *   editor candidate has its changed plane entries validated strictly, and a
+ * - **The listener.** ONE `internal/config` listener on the plugin's root,
+ *   APPENDED, that speaks both call shapes the host core dispatches
+ *   (`utils/config-run.ts`): the OLD core (cordis 4.0.5, 4.0.6-alpha.1) calls
+ *   it as `function (this: Fiber, raw, next)`, the NEW one (4.0.6-alpha.2,
+ *   4.1.0) as `(fiber, next)` with `this` null. On both, `next` is the last
+ *   argument and is called exactly once (the NEW core throws on a second
+ *   call), and what it answers is the run's raw candidate, because the
+ *   listener is the innermost: appended, it is inner to the loader's
+ *   interpolate and, on the NEW core, to the built-in schema listener; and it
+ *   re-appends itself whenever pi-ai reaches `internal/status` ACTIVE,
+ *   because pi-ai registers its own checking listener at every activation,
+ *   which would otherwise sit inner to the claim and see the planes. For the
+ *   pi-ai fiber it serves only (see {@link installRouteClaim}'s `servedRow`:
+ *   the served row is sticky while it is live and declares a plane, else the
+ *   first live row that declares one, else the first live row); another
+ *   pi-ai row keeps its planes and serves them itself, and is reported once —
+ *   it returns a fresh copy without the two plane keys, so pi-ai resolves and
+ *   registers every other route and never sees the planes (F11, F12) — its
+ *   own save check included, which a strip that let the raw value through
+ *   would not shield. The user's file keeps every entry: the editor writes the
+ *   raw value, never the resolved one. A commit run (`isCommitRun`: the raw
+ *   value is the fiber's own raw config or the loader's stored row config, or
+ *   the fiber is not ACTIVE, F14) schedules {@link reconcile}; an editor
+ *   candidate has its changed plane entries validated strictly, and a
  *   malformed one is refused in pi-ai's message style. A commit run never
- *   throws: that would fail pi-ai's fiber and every route it holds.
+ *   throws: that would fail pi-ai's fiber and every route it holds, and on the
+ *   NEW core a FAILED fiber recovers only through `update()`.
  *
- *   **A constraint this places on the host (F12).** cordis's
+ *   **A constraint this places on the OLD core (F12).** cordis 4.0.5's
  *   `Fiber.update(config, noSave)` hands the RESOLVED value to
- *   `internal/update`, where the loader writes it to the row's options and
- *   the profile unless `noSave` is set (`cordis/src/fiber.ts:736-753` at
- *   `dsh-v0.2.1-rc.5`, `:764-782` at `dsh-v0.2.2-alpha.2`;
- *   `loader/src/index.ts:115-121` at both). So a `piFiber.update(raw)` with `noSave`
+ *   `internal/update`, where loader 1.0.6 writes it to the row's options and
+ *   the profile unless `noSave` is set (`cordis/src/fiber.ts:736-753`,
+ *   `loader/src/index.ts:115-121`). So a `piFiber.update(raw)` with `noSave`
  *   false would persist this copy and delete both planes from the user's
- *   file. No caller does that today — the editor writes the raw value, and
- *   the loader's own update passes `noSave = true`
- *   (`loader/src/config/entry.ts:106` at both tags) — and the same path would already
- *   write interpolated `!!js` values for any plugin. Guarding it waits for a
- *   real caller.
- * - **Reconcile.** Reads the committed plane entries from pi-ai's
- *   `_config.providers`, interpolates them with the loader's `interpolate`
+ *   file. No caller does that — the editor writes the raw value, and the
+ *   loader's own update passes `noSave = true` (`loader/src/config/entry.ts`)
+ *   — and the same path would already write interpolated `!!js` values for
+ *   any plugin. On the NEW core persistence moved to `internal/commit`, which
+ *   carries the RAW value (`cordis/src/fiber.ts:787-789` at 4.1.0,
+ *   `loader/src/index.ts:112-120` at 1.1.0), so the constraint does not arise.
+ * - **Reconcile.** Reads the committed plane entries from pi-ai's raw
+ *   config (`rawConfigOf`), interpolates them with the loader's `interpolate`
  *   (F16), normalizes them with pi-ai's `Config`, builds the profiles
  *   (`utils/plane-profile.ts`), and registers the declared planes with
  *   `registerAdapter`, or moves them with `handle.replace` when the route set,
@@ -61,7 +73,9 @@
  *   Settings save adds later goes to pi-ai's own save check.
  *
  * The registry and `adapter.config` are never read: what pi-ai holds is read
- * from its fiber's resolved config.
+ * from its fiber's resolved config (`effectiveConfigOf`). Every fiber config
+ * is read through the feature-detected accessors, never `_config` or a
+ * resolved `config` directly.
  *
  * @module dsh-opencode-patch/host/route-claim
  */
@@ -84,6 +98,12 @@ import {
   getLiveZenCatalog,
   onCatalogChange,
 } from "../models-catalog.ts";
+import {
+  configRunOf,
+  effectiveConfigOf,
+  isCommitRun,
+  rawConfigOf,
+} from "../utils/config-run.ts";
 import { isFunctionLike, isRecord } from "../utils/guards.ts";
 import {
   hasPlaneEntries,
@@ -137,7 +157,7 @@ const isPiAi = (fiber: unknown): fiber is HostFiber =>
 /** The plane keys a fiber's RESOLVED config holds: what pi-ai has registered. */
 const resolvedPlanes = (fiber: HostFiber): PlaneRoute[] => {
   try {
-    const config: unknown = fiber.config;
+    const config: unknown = effectiveConfigOf(fiber);
     const providers: unknown = isRecord(config) ? config.providers : undefined;
     const value: unknown =
       isRecord(providers) && isFunctionLike(providers.get)
@@ -153,7 +173,7 @@ const resolvedPlanes = (fiber: HostFiber): PlaneRoute[] => {
 
 /** Whether a fiber resolved without a plane its raw config declares. */
 const lacksDeclaredPlane = (fiber: HostFiber): boolean => {
-  const declared = planeEntriesOf(fiber._config);
+  const declared = planeEntriesOf(rawConfigOf(fiber));
   const held = resolvedPlanes(fiber);
   return PLANE_ROUTES.some(
     (plane) => Object.hasOwn(declared, plane) && !held.includes(plane)
@@ -221,7 +241,6 @@ export const installRouteClaim = (
       PlaneProfileLike
     >,
     ready: false,
-    reentrant: false,
     scheduled: false,
     /** The fiber the profiles and the handle were built from. */
     served: undefined as HostFiber | undefined,
@@ -269,11 +288,11 @@ export const installRouteClaim = (
     if (
       current !== undefined &&
       live.includes(current) &&
-      hasPlaneEntries(current._config)
+      hasPlaneEntries(rawConfigOf(current))
     ) {
       return current;
     }
-    return live.find((fiber) => hasPlaneEntries(fiber._config)) ?? live[0];
+    return live.find((fiber) => hasPlaneEntries(rawConfigOf(fiber))) ?? live[0];
   };
 
   /** The served pi-ai fiber while it is not FAILED: a FAILED one has nothing to claim. */
@@ -288,7 +307,7 @@ export const installRouteClaim = (
    * profiles (D3's default list, D16's protocol, D17's metadata).
    */
   const rebuild = (pi: HostFiber, modules: HostModules): void => {
-    const entries = planeEntriesOf(pi._config);
+    const entries = planeEntriesOf(rawConfigOf(pi));
     const key = `${catalogGeneration()}:${JSON.stringify(entries)}`;
     if (key === state.entriesKey && state.adapter !== undefined) {
       return;
@@ -604,7 +623,7 @@ export const installRouteClaim = (
 
   /** Validate an editor candidate's changed plane entries, strictly. */
   const validate = (fiber: HostFiber, raw: unknown): void => {
-    const previous = planeEntriesOf(fiber._config);
+    const previous = planeEntriesOf(rawConfigOf(fiber));
     const candidate = planeEntriesOf(raw);
     for (const plane of PLANE_ROUTES) {
       if (
@@ -660,59 +679,48 @@ export const installRouteClaim = (
     }
   };
 
-  /** The listener's body, with the fiber cordis bound as `this` passed in. */
-  const claim = (
-    fiber: unknown,
-    raw: unknown,
-    next: () => unknown
-  ): unknown => {
-    if (
-      !state.active ||
-      state.reentrant ||
-      !isPiAi(fiber) ||
-      fiber !== servedRow()
-    ) {
-      return next();
+  /**
+   * The listener's body, for the run's fiber and the raw value its `next()`
+   * answered: the innermost value, the run's raw candidate.
+   */
+  const claim = (fiber: unknown, raw: unknown): unknown => {
+    if (!state.active || !isPiAi(fiber) || fiber !== servedRow()) {
+      return raw;
     }
-    const commit = raw === fiber._config;
+    const commit = isCommitRun(raw, fiber, ACTIVE);
     if (!hasPlaneEntries(raw)) {
       if (commit) {
         schedule();
       }
-      return next();
+      return raw;
     }
     const copy = withoutPlaneProviders(raw);
-    const host: unknown = fiber.ctx;
-    let resolved: unknown;
-    state.reentrant = true;
-    try {
-      resolved =
-        isRecord(host) && isFunctionLike(host.waterfall)
-          ? Reflect.apply(host.waterfall, host, [
-              fiber,
-              "internal/config",
-              copy,
-              () => copy,
-            ])
-          : copy;
-    } finally {
-      state.reentrant = false;
-    }
     if (commit) {
       schedule();
-      return resolved;
+      return copy;
     }
     validate(fiber, raw);
-    return resolved;
+    return copy;
   };
 
-  function claimListener(
-    this: unknown,
-    raw: unknown,
-    next: () => unknown
-  ): unknown {
-    return claim(this, raw, next);
+  /**
+   * The `internal/config` listener, in either call shape: `this` is the fiber
+   * on the OLD core, the first argument on the NEW one, and `next` is the
+   * last argument on both. `next()` runs exactly once.
+   */
+  function claimListener(this: unknown, ...args: unknown[]): unknown {
+    const run = configRunOf(this, args);
+    return claim(run.fiber, run.next?.());
   }
+
+  /** The listener's current registration, so it can be moved innermost. */
+  let unlisten: unknown;
+  const listen = (): void => {
+    if (isFunctionLike(unlisten)) {
+      Reflect.apply(unlisten, undefined, []);
+    }
+    unlisten = ctx.on?.("internal/config", claimListener);
+  };
 
   const teardown = (): Promise<void> | undefined => {
     const { handle } = state;
@@ -736,7 +744,7 @@ export const installRouteClaim = (
     if (
       pi === undefined ||
       pi.parent?.fiber?.state === UNLOADING ||
-      !hasPlaneEntries(pi._config)
+      !hasPlaneEntries(rawConfigOf(pi))
     ) {
       return undefined;
     }
@@ -755,7 +763,7 @@ export const installRouteClaim = (
             isRecord(row) ? row.id : undefined
           )
         );
-        const declared = Object.keys(planeEntriesOf(pi._config));
+        const declared = Object.keys(planeEntriesOf(rawConfigOf(pi)));
         const lost = declared.filter((plane) => !ids.has(plane));
         if (lost.length > 0) {
           warn(
@@ -773,7 +781,21 @@ export const installRouteClaim = (
   const stopCatalog = onCatalogChange(schedule);
   // The first effect `apply` registers, so it is the last to run.
   ctx.effect?.(() => teardown, "dsh-opencode-patch.route-claim");
-  ctx.on?.("internal/config", claimListener, { prepend: true });
+  // Appended, so it is inner to the loader's interpolate and, on the NEW
+  // core, to the built-in schema listener; and moved innermost again each
+  // time pi-ai reaches ACTIVE, since pi-ai appends its own checking listener
+  // at every activation (`internal/status` is `(fiber, oldState)` on both
+  // cores).
+  listen();
+  ctx.on?.(
+    "internal/status",
+    (fiber: unknown) => {
+      if (state.active && isPiAi(fiber) && fiber.state === ACTIVE) {
+        listen();
+      }
+    },
+    { global: true }
+  );
   ctx.on?.("llm/adapters-updated", schedule, { global: true });
   ctx.on?.(
     "loader/partial-dispose",

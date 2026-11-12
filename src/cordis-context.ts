@@ -545,8 +545,14 @@ export interface HostFiber {
   readonly uid: number | null;
   readonly state: number;
   readonly runtime?: { readonly name?: string } | null;
+  /** The raw config on the OLD core; absent on the NEW one (read it through `rawConfigOf`). */
   readonly _config?: unknown;
+  /** The RESOLVED config on the OLD core, the RAW one on the NEW core (read it through the accessors). */
   readonly config?: unknown;
+  /** The raw config's accessor, from cordis 4.0.6-alpha.1. */
+  readonly rawConfig?: unknown;
+  /** The resolved config's accessor, from cordis 4.0.6-alpha.1. */
+  readonly effectiveConfig?: unknown;
   readonly entry?: { readonly options?: { readonly id?: string } } | undefined;
   readonly parent?: { readonly fiber?: { readonly state?: number } };
   readonly ctx?: unknown;

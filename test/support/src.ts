@@ -390,6 +390,17 @@ export type { RelativeReset } from "../../src/usage-ui.ts";
 // usage.ts
 export { GoUsageService } from "../../src/usage.ts";
 
+// utils/config-run.ts
+export {
+  configRunOf,
+  effectiveConfigOf,
+  entryConfigOf,
+  isCommitRun,
+  isFiber,
+  rawConfigOf,
+} from "../../src/utils/config-run.ts";
+export type { ConfigRun } from "../../src/utils/config-run.ts";
+
 // utils/guards.ts
 export {
   getAsyncIterator,
