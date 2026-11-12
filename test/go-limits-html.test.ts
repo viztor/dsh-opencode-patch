@@ -19,6 +19,8 @@ import { describe, expect, it } from "vitest";
 import {
   type DocAnswer,
   docFrom,
+  firstDoc,
+  GO_LIMITS_SOURCES,
   htmlToDoc,
   noDocMessage,
   tableRows,
@@ -129,13 +131,28 @@ describe("turning the page into the parser's markdown", () => {
     expect(doc).toContain("**$120**");
   });
 
-  it("refuses a page with fewer than two monthly-limit tables", () => {
+  it("refuses a page without exactly two monthly-limit tables", () => {
     // The failure mode a silent conversion would produce is worse than a throw:
     // the generated file would carry no allowances at all and still look valid.
     expect(() => htmlToDoc(monthlyTable([["a", "$1", "$60"]]))).toThrow(
       /carried 1 monthly-limit table/
     );
-    expect(() => htmlToDoc("")).toThrow(/expected 2/u);
+    expect(() => htmlToDoc("")).toThrow(/expected exactly 2/u);
+  });
+
+  it("refuses a page with a third monthly-limit table", () => {
+    // Taking the first two by position would read a third plan's page as Go and
+    // Go Plus in whatever order it came - $5, $60 and $120 read as go 5 and
+    // goPlus 60, and the run would still exit 0. Which two are the plans is not
+    // something the page says, so it is not guessed.
+    const html = [
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$5"]]),
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$60"]]),
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$120"]]),
+    ].join("");
+    expect(() => htmlToDoc(html)).toThrow(
+      /carried 3 monthly-limit table\(s\), expected exactly 2/u
+    );
   });
 });
 
@@ -201,7 +218,7 @@ const page = (): string =>
     "</body></html>",
   ].join("");
 
-describe("reading a source by what it carries, not by its status", () => {
+describe("reading a 2xx answer by what it carries", () => {
   it("passes the tabbed markdown through as it is", () => {
     const markdown = htmlToDoc(page());
     expect(
@@ -249,6 +266,53 @@ describe("reading a source by what it carries, not by its status", () => {
     expect(docFrom(answer({ body: estimateTable() }))).toBeUndefined();
   });
 
+  it("answers nothing for markdown with the Go tab and no Go Plus tab", () => {
+    // The parser reads both tabs and throws on a missing one; a body it would
+    // throw on is not a body this source carries.
+    const markdown = [
+      '<TabItem label="Go">',
+      "| Model | Input | Output | Cached Read | Cached Write | Monthly limit |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| Grok 4.7 | $1.00 | $1.00 | $0.10 | - | **$15** |",
+      "</TabItem>",
+    ].join("\n");
+    expect(() => parseGoLimitsDoc(markdown)).toThrow(/Go Plus/u);
+    expect(docFrom(answer({ body: markdown }))).toBeUndefined();
+  });
+
+  it("answers nothing for two monthly-limit tables with no model row", () => {
+    // The header matches, and nothing under it is a row the parser reads: an
+    // empty body, or rows short of the six cells the table has.
+    const emptyTable = monthlyTable([]);
+    const shortRows = [
+      "<table>",
+      "<tr><th>Model</th><th>Input</th><th>Output</th><th>Cached Read</th><th>Cached Write</th><th>Monthly limit</th></tr>",
+      "<tr><td>Grok 4.7</td><td>$15</td></tr>",
+      "</table>",
+    ].join("");
+    const readable = monthlyTable([["Grok 4.7", "$1.00", "$60"]]);
+    for (const body of [
+      emptyTable + emptyTable,
+      shortRows + shortRows,
+      readable + emptyTable,
+      shortRows + readable,
+    ]) {
+      expect(() => parseGoLimitsDoc(htmlToDoc(body))).toThrow(
+        /parsed to zero rows/u
+      );
+      expect(docFrom(answer({ body }))).toBeUndefined();
+    }
+  });
+
+  it("answers nothing for a page with three monthly-limit tables", () => {
+    const body = [
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$5"]]),
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$60"]]),
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$120"]]),
+    ].join("");
+    expect(docFrom(answer({ body }))).toBeUndefined();
+  });
+
   it("answers nothing for a status outside 2xx, whatever the body", () => {
     expect(docFrom(answer({ body: page(), status: 404 }))).toBeUndefined();
     expect(docFrom(answer({ body: page(), status: 301 }))).toBeUndefined();
@@ -275,5 +339,137 @@ describe("reading a source by what it carries, not by its status", () => {
     expect(message).toContain(
       "https://opencode.ai/docs/go.md answered 200 (redirected to https://opencode.ai/docs/go/), text/markdown, 5 characters, no Go tab, 0 monthly-limit table(s)"
     );
+    // The answer that was not redirected says nothing about a redirect.
+    const [, notFound] = message.split("\n");
+    expect(notFound).toBe(
+      "  - https://opencode.ai/v2/docs/console/go/ answered 404, text/html; charset=utf-8, 0 characters, no Go tab, 0 monthly-limit table(s)"
+    );
+    expect(notFound).not.toContain("(redirected");
+  });
+
+  it("names a missing content type, and what an HTML body did carry", () => {
+    const empty = monthlyTable([]);
+    const message = noDocMessage([
+      answer({ body: "# Go\n", contentType: "" }),
+      answer({ body: empty + empty }),
+      answer({ body: page() + monthlyTable([["a", "$1", "$5"]]) }),
+    ]);
+    const [, untyped, unreadable, tooMany] = message.split("\n");
+    expect(untyped).toContain(", no content type, 5 characters,");
+    expect(unreadable).toMatch(
+      /, no Go tab, 2 monthly-limit table\(s\), 0 with a model row$/u
+    );
+    expect(tooMany).toMatch(/, no Go tab, 3 monthly-limit table\(s\)$/u);
+  });
+
+  it("names a Go tab without its Go Plus tab", () => {
+    const message = noDocMessage([
+      answer({ body: '<TabItem label="Go">\n</TabItem>' }),
+    ]);
+    expect(message).toMatch(
+      /, the Go tab but no Go Plus tab, 0 monthly-limit table\(s\)$/u
+    );
+  });
+});
+
+/** The sources' answers, by URL, for a walk that asks nothing over the network. */
+const fakeRead = (
+  answers: Readonly<Record<string, DocAnswer>>
+): {
+  asked: string[];
+  read: (source: string) => Promise<DocAnswer>;
+} => {
+  const asked: string[] = [];
+  return {
+    asked,
+    read: async (source) => {
+      asked.push(source);
+      const found = answers[source];
+      if (found === undefined) {
+        throw new Error(`no answer for ${source}`);
+      }
+      return found;
+    },
+  };
+};
+
+/** The two sources, spelled out, so the order below is checked, not copied. */
+const MOVED_PAGE = "https://opencode.ai/v2/docs/console/go/";
+const GO_MD = "https://opencode.ai/docs/go.md";
+
+/** The answer `go.md` gave from 2026-11-07: a 200 with no tab sections. */
+const tablessGoMd = (): DocAnswer =>
+  answer({
+    body: "# Go\n\nOpenCode Go is a subscription.\n",
+    contentType: "text/markdown",
+    finalUrl: GO_MD,
+    url: GO_MD,
+  });
+
+describe("asking the sources in turn", () => {
+  it("asks the page the docs live on first, then the old markdown URL", () => {
+    expect(GO_LIMITS_SOURCES).toEqual([MOVED_PAGE, GO_MD]);
+  });
+
+  it("stops at the first source that carries the tables", async () => {
+    const { asked, read } = fakeRead({
+      [GO_MD]: tablessGoMd(),
+      [MOVED_PAGE]: answer({ body: page() }),
+    });
+    const found = await firstDoc(GO_LIMITS_SOURCES, read);
+    // The second source is never asked once the first one carried the tables.
+    expect(asked).toEqual([MOVED_PAGE]);
+    expect(found.source).toBe(MOVED_PAGE);
+    expect(found.answer.body).toBe(page());
+    expect(parseGoLimitsDoc(found.doc).limits.get("grok-4.7")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "Grok 4.7",
+    });
+  });
+
+  it("reads the second source when the first carries neither shape", async () => {
+    const markdown = htmlToDoc(page());
+    const { asked, read } = fakeRead({
+      [GO_MD]: answer({
+        body: markdown,
+        contentType: "text/plain",
+        finalUrl: GO_MD,
+        url: GO_MD,
+      }),
+      [MOVED_PAGE]: answer({ body: estimateTable() }),
+    });
+    const found = await firstDoc(GO_LIMITS_SOURCES, read);
+    expect(asked).toEqual([MOVED_PAGE, GO_MD]);
+    expect(found.source).toBe(GO_MD);
+    expect(found.doc).toBe(markdown);
+  });
+
+  it("rejects naming every source, in order, when none carries the tables", async () => {
+    // The 2026-11-07 shape as the second source: `go.md` answers 200 as
+    // markdown, without the tab sections, after the moved page did not answer.
+    const { asked, read } = fakeRead({
+      [GO_MD]: tablessGoMd(),
+      [MOVED_PAGE]: answer({ status: 404 }),
+    });
+    // An Error instance compares the whole message: both lines, in this order.
+    await expect(firstDoc(GO_LIMITS_SOURCES, read)).rejects.toThrow(
+      new Error(
+        [
+          "go-limits: no source carried the allowance tables",
+          `  - ${MOVED_PAGE} answered 404, text/html; charset=utf-8, 0 characters, no Go tab, 0 monthly-limit table(s)`,
+          `  - ${GO_MD} answered 200, text/markdown, ${tablessGoMd().body.length} characters, no Go tab, 0 monthly-limit table(s)`,
+        ].join("\n")
+      )
+    );
+    expect(asked).toEqual([MOVED_PAGE, GO_MD]);
+  });
+
+  it("rejects with the empty message when there is no source at all", async () => {
+    const { asked, read } = fakeRead({});
+    await expect(firstDoc([], read)).rejects.toThrow(
+      /^go-limits: no source carried the allowance tables$/u
+    );
+    expect(asked).toEqual([]);
   });
 });

@@ -114,7 +114,11 @@ export const normalizeModelLabel = (label: string): string | undefined => {
     .replaceAll(/^-+|-+$/gu, "");
 };
 
-/** The doc URL — the page's own markdown, served as `text/plain`. */
+/**
+ * The old doc URL, the page's own markdown source. The docs moved under
+ * `/v2/docs/console/go/`, so the generator asks this one second
+ * (`GO_LIMITS_SOURCES` in `scripts/go-limits-html.ts`).
+ */
 export const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go.md";
 export const GO_LIMITS_DOC_TIMEOUT_MS = 20_000;
 

@@ -11,13 +11,19 @@
  * request-estimate tables below them repeat model names with no dollar column at
  * all, which is exactly what the parser is written to stop before.
  *
- * It also decides which answer to read (`docFrom`), because that half broke
- * next: from 2026-11-07 the old `go.md` URL answered 200 again with a body that
- * had no tab sections, and a reader that trusted the status handed it to the
- * markdown parser. A body is now read by what it carries.
+ * It also decides which answer to read (`docFrom`) and walks the sources in turn
+ * (`firstDoc`), because that half broke next: from 2026-11-07 the old `go.md`
+ * URL answered 200 again with a body that had no tab sections, and a reader that
+ * trusted the status handed it to the markdown parser. A 2xx answer is now read
+ * by what its body carries; the status alone is never trusted. A body is taken
+ * only in a shape the parser can read — both tabs, or exactly two allowance
+ * tables each with a model row — so anything else falls through to the next
+ * source rather than to the parser's error.
  *
  * @module scripts/go-limits-html
  */
+
+import { GO_LIMITS_DOC_URL } from "../src/go-limits.ts";
 
 /** Where the page lives, for the error message. */
 export const GO_LIMITS_DOC_MOVED_TO = "https://opencode.ai/v2/docs/console/go/";
@@ -61,20 +67,31 @@ const MARKDOWN_HEADER = [
 ];
 
 /**
+ * A table's model rows: those under the header with the six cells the
+ * allowance table has. A shorter row is not one the parser reads.
+ *
+ * @param rows - one table's rows, header first.
+ * @returns the rows the converter writes out.
+ */
+const modelRows = (rows: readonly string[][]): string[][] =>
+  rows.slice(1).filter((cells) => cells.length >= 6);
+
+/**
  * Turn the moved page's HTML into the markdown `parseGoLimitsDoc` reads.
  *
  * @param html - the page's HTML.
  * @returns markdown in the shape the parser expects, one `<TabItem>` per plan.
- * @throws {Error} when the two dollar tables are not both present, because an
- * empty document would silently read as "no models" rather than as a broken
- * source — and the generated file would then be written with every allowance
- * missing.
+ * @throws {Error} unless the page carries exactly two allowance tables. Fewer
+ * would silently read as "no models" rather than as a broken source, and the
+ * generated file would then be written with every allowance missing; more would
+ * leave which two are Go and Go Plus to their position, and a wrong pair reads
+ * exactly like a right one.
  */
 export const htmlToDoc = (html: string): string => {
   const dollarTables = monthlyLimitTables(html);
-  if (dollarTables.length < 2) {
+  if (dollarTables.length !== 2) {
     throw new Error(
-      `go-limits: ${GO_LIMITS_DOC_MOVED_TO} carried ${dollarTables.length} monthly-limit table(s), expected 2`
+      `go-limits: ${GO_LIMITS_DOC_MOVED_TO} carried ${dollarTables.length} monthly-limit table(s), expected exactly 2`
     );
   }
   const [go, goPlus] = dollarTables;
@@ -82,20 +99,28 @@ export const htmlToDoc = (html: string): string => {
     [
       `<TabItem label="${label}">`,
       ...MARKDOWN_HEADER,
-      ...rows
-        .slice(1)
-        .filter((cells) => cells.length >= 6 && cells[0] !== undefined)
-        .map(
-          (cells) =>
-            `| ${cells[0]} | ${cells.slice(1, -1).join(" | ")} | **${cells.at(-1) ?? ""}** |`
-        ),
+      ...modelRows(rows).map(
+        (cells) =>
+          `| ${cells[0] ?? ""} | ${cells.slice(1, -1).join(" | ")} | **${cells.at(-1) ?? ""}** |`
+      ),
       "</TabItem>",
     ].join("\n");
   return [section("Go", go ?? []), section("Go Plus", goPlus ?? [])].join("\n");
 };
 
-/** The section the markdown source opens the Go plan's table with. */
+/** The sections the markdown source opens each plan's table with. */
 const GO_TAB = '<TabItem label="Go">';
+const GO_PLUS_TAB = '<TabItem label="Go Plus">';
+
+/**
+ * The sources, in the order they are asked: the page the docs live on, then
+ * the old markdown URL, in case it is ever the one that carries the tables
+ * again.
+ */
+export const GO_LIMITS_SOURCES: readonly string[] = [
+  GO_LIMITS_DOC_MOVED_TO,
+  GO_LIMITS_DOC_URL,
+];
 
 /** What one source answered, as the generator records it. */
 export interface DocAnswer {
@@ -113,10 +138,12 @@ export interface DocAnswer {
 /**
  * The markdown `parseGoLimitsDoc` reads, from whatever a source answered.
  *
- * Decided by the body, not the status or the URL: the tabbed markdown is passed
- * through, and an HTML page carrying both allowance tables is converted. A 2xx
- * that carries neither answers `undefined`, so the next source is tried and the
- * parser never sees a body it cannot read.
+ * A 2xx answer is read by what its body carries; the status alone is never
+ * trusted, and an answer outside 2xx is not read at all. The tabbed markdown,
+ * carrying both plans' tabs, is passed through; an HTML page carrying exactly
+ * two allowance tables, each with a model row, is converted. Anything else
+ * answers `undefined`, so the next source is tried and the parser never sees a
+ * body it would throw on.
  *
  * @param answer - one source's answer.
  * @returns the parser's markdown, or `undefined` when this answer has none.
@@ -125,12 +152,44 @@ export const docFrom = (answer: DocAnswer): string | undefined => {
   if (answer.status < 200 || answer.status > 299) {
     return undefined;
   }
-  if (answer.body.includes(GO_TAB)) {
+  if (answer.body.includes(GO_TAB) && answer.body.includes(GO_PLUS_TAB)) {
     return answer.body;
   }
-  return monthlyLimitTables(answer.body).length >= 2
+  const tables = monthlyLimitTables(answer.body);
+  return tables.length === 2 &&
+    tables.every((rows) => modelRows(rows).length > 0)
     ? htmlToDoc(answer.body)
     : undefined;
+};
+
+/**
+ * Which of the markdown tabs a body carries, for the error.
+ *
+ * @param body - one answer's body.
+ * @returns the phrase the error line uses.
+ */
+const tabsCarried = (body: string): string => {
+  if (!body.includes(GO_TAB)) {
+    return "no Go tab";
+  }
+  return body.includes(GO_PLUS_TAB)
+    ? "the Go and Go Plus tabs"
+    : "the Go tab but no Go Plus tab";
+};
+
+/**
+ * How many allowance tables a body carries, and how many of them have a model
+ * row when that is fewer.
+ *
+ * @param body - one answer's body.
+ * @returns the phrase the error line uses.
+ */
+const tablesCarried = (body: string): string => {
+  const tables = monthlyLimitTables(body);
+  const readable = tables.filter((rows) => modelRows(rows).length > 0).length;
+  return readable === tables.length
+    ? `${tables.length} monthly-limit table(s)`
+    : `${tables.length} monthly-limit table(s), ${readable} with a model row`;
 };
 
 /**
@@ -152,8 +211,47 @@ export const noDocMessage = (answers: readonly DocAnswer[]): string =>
         answer.finalUrl === answer.url
           ? ""
           : ` (redirected to ${answer.finalUrl})`;
-      const tab = answer.body.includes(GO_TAB) ? "the Go tab" : "no Go tab";
-      const tables = monthlyLimitTables(answer.body).length;
-      return `  - ${answer.url} answered ${answer.status}${redirected}, ${answer.contentType || "no content type"}, ${answer.body.length} characters, ${tab}, ${tables} monthly-limit table(s)`;
+      return `  - ${answer.url} answered ${answer.status}${redirected}, ${answer.contentType || "no content type"}, ${answer.body.length} characters, ${tabsCarried(answer.body)}, ${tablesCarried(answer.body)}`;
     }),
   ].join("\n");
+
+/** The source a walk read, and what it answered. */
+export interface FoundDoc {
+  /** The parser's markdown. */
+  readonly doc: string;
+  /** The source that carried it. */
+  readonly source: string;
+  /** What that source answered. */
+  readonly answer: DocAnswer;
+}
+
+/**
+ * The first source whose answer carries the tables, asked one at a time.
+ *
+ * In turn, not all at once: a later source is asked only when every earlier one
+ * carried neither shape, and the error then names what each one answered. The
+ * reader is a parameter, so the walk runs without a network; a reader that
+ * rejects rejects the walk, because a source that could not be asked is not one
+ * that answered "nothing here".
+ *
+ * @param sources - the sources, in the order to ask them.
+ * @param read - how a source is asked.
+ * @param answers - what the sources before these answered.
+ * @returns the markdown, the source it came from, and that source's answer.
+ * @throws {Error} `noDocMessage` of every answer, when none carried the tables.
+ */
+export const firstDoc = async (
+  sources: readonly string[],
+  read: (source: string) => Promise<DocAnswer>,
+  answers: readonly DocAnswer[] = []
+): Promise<FoundDoc> => {
+  const [source, ...rest] = sources;
+  if (source === undefined) {
+    throw new Error(noDocMessage(answers));
+  }
+  const answer = await read(source);
+  const doc = docFrom(answer);
+  return doc === undefined
+    ? firstDoc(rest, read, [...answers, answer])
+    : { answer, doc, source };
+};
