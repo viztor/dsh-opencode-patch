@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.9.2](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.1...v1.9.2) (2026-11-12)
+
+
+### Fixes
+
+* **deps:** declare support for the Cordis 4.1 line and the rc channel ([#163](https://github.com/viztor/dsh-opencode-patch/issues/163)) ([d2a0bc2](https://github.com/viztor/dsh-opencode-patch/commit/d2a0bc2b9ccc1171cce38e75796c9749f7d9da05))
+
 ## [1.9.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.0...v1.9.1) (2026-11-04)
 
 
