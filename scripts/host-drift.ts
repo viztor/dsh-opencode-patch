@@ -10,7 +10,9 @@
  *   record's line (its prerelease identifier, `rc` or `alpha`), the record's
  *   own `distTag` included (`channelBuild`): the rc line publishes its newest
  *   build under `next` ahead of `latest`, so one tag alone would stop reading
- *   the channel the day `latest` catches up and `next` is retired;
+ *   the channel the day `latest` catches up and `next` is retired. A stable
+ *   release newer than the record, under any tag, counts too, so the line
+ *   going stable is reported rather than filtered out;
  * - the bridge (`@deepseek-ai/dsh-llm-pi-ai`, one version with the cluster)
  *   declares the pi range and the cordis, loader and schemastery ranges, and
  *   each of those is the newest published version the range admits (a
@@ -98,8 +100,10 @@ const lineOf = (version: string): string | undefined => {
  * The build a channel's record is compared with, and the dist-tag carrying
  * it: the newest version any tag carries on the record's line, the record's
  * own `distTag` counted whatever it carries (so a stable record still reads
- * its tag). A tag left on an older build, or on another line, never hides
- * the newest. On a tie the record's own tag names it, else the first by name.
+ * its tag), and a stable release newer than the record under any tag (the
+ * line graduating: `latest` reaching `0.2.2` while `next` still carries
+ * `0.2.2-rc.2`). A tag left on an older build, or on another prerelease
+ * line, never hides the newest. On a tie the record's own tag names it, else the first by name.
  * Undefined when no tag qualifies.
  */
 export const channelBuild = (
@@ -107,12 +111,19 @@ export const channelBuild = (
   record: Pick<DriftRecord, "distTag" | "dsh">
 ): { readonly tag: string; readonly version: string } | undefined => {
   const line = lineOf(record.dsh);
+  // A stable release newer than the record is where a prerelease line
+  // graduates to (`0.2.2-rc.2` to `0.2.2`), whichever tag publishes it.
+  const isNewerRelease = (version: string): boolean =>
+    semver.prerelease(version) === null &&
+    semver.valid(record.dsh) !== null &&
+    semver.gt(version, record.dsh);
   const candidates = Object.entries(distTags)
     .filter(
       ([tag, version]) =>
         semver.valid(version) !== null &&
         (tag === record.distTag ||
-          (line !== undefined && lineOf(version) === line))
+          (line !== undefined && lineOf(version) === line) ||
+          isNewerRelease(version))
     )
     .toSorted(
       ([tagA, versionA], [tagB, versionB]) =>

@@ -249,6 +249,29 @@ describe("host drift · the rules", () => {
     ).toStrictEqual([
       "rc: @deepseek-ai/dsh@latest is 0.2.2-rc.3 on the registry; the record says 0.2.2-rc.2",
     ]);
+    // The line graduates: a stable release newer than the record, under any
+    // tag, is the drift too, even while `next` still carries the record's rc.
+    const graduated = (tags: Record<string, string>): RegistryView => ({
+      ...tagged(tags),
+      bridge: {
+        versions: { ...tagged(tags).bridge.versions, "0.2.2": bridge },
+      },
+    });
+    expect(
+      hostDrift(
+        { rc: record },
+        graduated({ alpha: "0.2.3-alpha.1", latest: "0.2.2", next: record.dsh })
+      )
+    ).toStrictEqual([
+      "rc: @deepseek-ai/dsh@latest is 0.2.2 on the registry; the record says 0.2.2-rc.2",
+    ]);
+    // An older stable release is not: the line's build still leads.
+    expect(
+      hostDrift(
+        { rc: record },
+        tagged({ alpha: "0.2.2-alpha.3", latest: "0.2.1", next: record.dsh })
+      )
+    ).toStrictEqual([]);
     // Nothing on the line and no record tag: said, never read as current.
     expect(
       hostDrift({ rc: record }, tagged({ alpha: "0.2.2-alpha.3" }))
