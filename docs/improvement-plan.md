@@ -8,7 +8,7 @@ The result of an architecture audit of the tree at 1.4.1, and the order in which
 - an adversarial review of the plan itself, then a nine-lens review (five reviewers, four investigators) in which two independent skeptics checked every finding: 78 of 82 were upheld and are folded in here;
 - the host's own source and data (`deepseek-ai/deepseek-harness`, and the pi 1.1.0 catalog its `0.2.1` rc tags pinned; the `0.2.2` tags of both channels declare pi `^1.3.0`, whose floor is what the desktop app ships, D14''). File references into the host are relative to that repository's `packages/`.
 
-**Restacked onto 1.8.0 (November 2026).** The stack was cut from 1.4.1. Since then `main` moved to 1.8.0 and followed the harness onto its **alpha** track (the `0.2.2-alpha.2` cluster, cordis `4.0.6-alpha.1`, pi `1.4.0` exact), and it landed several things the plan had scheduled: the plane-aware price, free flag and refusal (#133), a working retired alias (#135), the synthetic catalogue fixtures (#138), the language-pair gate and the live-run verdicts (#140), and the scripts' pure halves (#143, #144). Since 1.9.1 the stack lands by rebase, not by merge: the owner rebased P0 to P-T1a onto `main` as one commit each (#105, #106, #155, #108, #109), and each open phase is rebased onto its rebased parent as its own change, followed by the adaptation commits the rebase needs, never re-adding or reverting what `main` already has. What changed in the decisions is under "Owner decisions" (D14'', D22'', D16 and D17 as rewritten by D26, D23, D24, D25, D26), what changed per phase is under "Restack adjustments", and what two community plugins built on the same host taught is under "Lessons from opencode2dsh". A new phase, P-R3, follows P-T3.
+**Restacked onto 1.8.0 (November 2026).** The stack was cut from 1.4.1. Since then `main` moved to 1.8.0 and followed the harness onto its **alpha** track (the `0.2.2-alpha.2` cluster, cordis `4.0.6-alpha.1`, pi `1.4.0` exact), and it landed several things the plan had scheduled: the plane-aware price, free flag and refusal (#133), a working retired alias (#135), the synthetic catalogue fixtures (#138), the language-pair gate and the live-run verdicts (#140), and the scripts' pure halves (#143, #144). Since 1.9.1 the stack lands by rebase, not by merge: the owner rebased P0 to P-H onto `main` as one commit each (#105, #106, #155, #108, #109, #110, #112), and each open phase is rebased onto its rebased parent as its own change, followed by the adaptation commits the rebase needs, never re-adding or reverting what `main` already has. What changed in the decisions is under "Owner decisions" (D14'', D22'', D16 and D17 as rewritten by D26, D23, D24, D25, D26), what changed per phase is under "Restack adjustments", and what two community plugins built on the same host taught is under "Lessons from opencode2dsh". A new phase, P-R3, follows P-T3.
 
 **Outcome:** a plugin that only uses host extension points the host supports; one source of truth per decision; a suite that pins behaviour before it moves; and the owner's product rules below.
 
@@ -16,7 +16,7 @@ The result of an architecture audit of the tree at 1.4.1, and the order in which
 
 ## Status
 
-Phases land as **stacked pull requests**. The open ones are rebased, each onto its rebased parent as its own change, and the first open phase sits on `main` (P0 to P-T1a are merged). Every phase is a 1.x release: there is no major (D6).
+Phases land as **stacked pull requests**. The open ones are rebased, each onto its rebased parent as its own change, and the first open phase sits on `main` (P0 to P-H are merged). Every phase is a 1.x release: there is no major (D6).
 
 | Phase | PR | Title | State | Restack / rebase |
 | :-- | :-- | :-- | :-- | :-- |
@@ -468,7 +468,7 @@ P0 → P1a → P1b → P2 → P-T1a → P-T1b → P-H → P-R1 → P-R2 → P3 �
 
 ## Restack adjustments
 
-How each phase changes now that it sits on `main` 1.8.0 and on both harness channels' hosts (D14'', D22''; the committed manifest is `alpha`'s, as on `main`). Each open phase is rebased onto its rebased parent as its own change (the regime since 1.9.1; P0 to P-T1a are on `main`). Generated files take `main`'s blobs, and P0's one vendor refresh, which its generator change put the catalog freshness gate in force for, landed with it in #105; catalog counts are re-derived from the shipped shim, the README pair moves in step (`test/docs-pairing.test.ts`), and the repository map stays true in both directions (`test/no-local-paths.test.ts`).
+How each phase changes now that it sits on `main` 1.8.0 and on both harness channels' hosts (D14'', D22''; the committed manifest is `alpha`'s, as on `main`). Each open phase is rebased onto its rebased parent as its own change (the regime since 1.9.1; P0 to P-H are on `main`). Generated files take `main`'s blobs, and P0's one vendor refresh, which its generator change put the catalog freshness gate in force for, landed with it in #105; catalog counts are re-derived from the shipped shim, the README pair moves in step (`test/docs-pairing.test.ts`), and the repository map stays true in both directions (`test/no-local-paths.test.ts`).
 
 | Phase | Adjustment |
 | :-- | :-- |
