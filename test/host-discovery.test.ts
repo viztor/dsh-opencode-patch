@@ -267,8 +267,8 @@ describe(
       // Non-vacuous: on every cell the catalog has models pi does not list.
       expect(gaps).toBeGreaterThan(0);
       // Non-vacuous: pi knows a Zen model at a capacity the catalog does not
-      // (measured on every cell's pi, 1.1.0, 1.3.0 and 1.5.0: claude-sonnet-4-5
-      // at 200000, catalog 1000000).
+      // (measured on every cell's pi, the floor 1.3.0 and the newest 1.5.2:
+      // claude-sonnet-4-5 at 200000, catalog 1000000).
       const differing = (
         getBuiltinModels("opencode" as never) as {
           contextWindow?: number;
