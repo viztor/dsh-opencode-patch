@@ -55,9 +55,10 @@
  * **Identity is read from own descriptors, never with `===` on a property
  * read.** On the real host `ctx.llm` is cordis's traceable proxy: a read of a
  * function-valued property answers a NEW shadow-method proxy every time
- * (`createTraceable` / `createShadowMethod`, the harness's
- * `vendor/cordis/src/utils.ts:156-218`), and a `Service`'s tracker carries no
- * `noShadow` (`vendor/cordis/src/service.ts:46-49`). So `llm.discoverModels ===
+ * (`createTraceable` / `createShadowMethod`: on the NEW core both channels
+ * run, cordis `4.1.0` and `4.0.6-alpha.2`, `src/utils.ts:158-225`; on the OLD
+ * core, cordis `4.0.5`, `156-218`), and a `Service`'s tracker carries no
+ * `noShadow` (`src/service.ts:46-49` on both cores). So `llm.discoverModels ===
  * decorated` is never true there, and a disposer that checked it never
  * restored: measured with a real `LlmRuntime`, every wrapper stayed installed
  * after its dispose and a reload stacked the next one on top.
