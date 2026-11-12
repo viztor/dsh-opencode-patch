@@ -41,10 +41,13 @@ import { describe, expect, it } from "vitest";
 import { parse, parseAllDocuments } from "yaml";
 
 import { channelManifest, pinFor } from "../scripts/channel-manifest.ts";
+import { floorOf } from "../scripts/host-drift.ts";
 import {
   type Channel,
   CHANNELS,
+  cordisFamily,
   DEFAULT_CHANNEL,
+  floorOverrides,
   PI_UNION_RANGE,
 } from "./support/host-versions.ts";
 
@@ -576,6 +579,102 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       // both lines (an open owner decision).
       expect(lock.versionsOf("@deepseek-ai/schemastery")).toEqual([
         record.schemastery,
+      ]);
+    });
+
+    it("resolves the cordis family the record names, the e2e-host floor cell's overrides", () => {
+      // `cordisFamily` is what the `e2e-host` job forces on the floor cell, so
+      // a family member here and the record disagreeing would make that cell
+      // run a tree this install never measured. The timer plugin is the one
+      // member nothing here depends on, so no lockfile resolves it; the
+      // binary e2e and the nightly drift report hold it instead.
+      const lock = lockfile(record.lockfile);
+      const family = Object.entries(cordisFamily(record));
+      expect(family).toHaveLength(7);
+      const timer = "@deepseek-ai/cordis-plugin-timer";
+      expect(lock.versionsOf(timer), timer).toEqual([]);
+      const resolved = family.filter(([name]) => name !== timer);
+      for (const [name, version] of resolved) {
+        expect(lock.versionsOf(name), name).toEqual([version]);
+      }
+      expect(floorOverrides(record)).toStrictEqual({
+        ...Object.fromEntries(family),
+        "@earendil-works/pi-ai": record.piFloor,
+        "@earendil-works/pi-telemetry": record.piFloor,
+      });
+    });
+
+    it("holds the family at the record's floors by construction: every member it resolves is a direct pin", () => {
+      // The case above holds every resolved member at the record's floor.
+      // A member that arrives only transitively (include and group as peers
+      // pnpm installs itself, cosmokit as a dependency of cordis) is resolved
+      // afresh by a relock or a regenerated lockfile at the NEWEST patch its
+      // `~` range admits, so the first patch published inside a range would
+      // turn the next routine dependency change red. A direct exact pin is
+      // what pnpm resolves those peers from and dedupes that dependency onto,
+      // so the root importer names every member the lockfile holds, and
+      // `pinFor` moves each with the channel.
+      const lock = lockfile(record.lockfile);
+      const family = Object.entries(cordisFamily(record)).filter(
+        ([name]) => lock.versionsOf(name).length > 0
+      );
+      // Known answer: all but the timer plugin, which nothing here resolves.
+      expect(family.map(([name]) => name)).not.toContain(
+        "@deepseek-ai/cordis-plugin-timer"
+      );
+      expect(family).toHaveLength(6);
+      for (const [name, version] of family) {
+        expect(lock.direct.get(name), `${name} is pinned directly`).toBe(
+          version
+        );
+        expect(pinFor(name, record), name).toBe(version);
+      }
+    });
+
+    it("names each family member at the floor of the range the published cluster declares", () => {
+      // The record is not its own witness: a family version must be the floor
+      // of every `~` range the channel's published packages declare for it.
+      // A lockfile keeps a package's declared PEER ranges (its dependencies
+      // only as resolved versions), so this reads every cluster package's
+      // peers. That floor is what the harness vendors at the tag and the
+      // desktop app ships; a newer patch inside the range is the npm cell's,
+      // never the record's. cosmokit (a dependency of cordis) and the timer
+      // plugin (declared by packages no lockfile here holds) are not peers
+      // here; the drift report reads them off the published manifests, and
+      // the binary e2e off the installed ones (cosmokit only where the
+      // installed cordis is the record's).
+      const { packages } = parse(lockfile(record.lockfile).project) as {
+        packages: Record<string, { peerDependencies?: Record<string, string> }>;
+      };
+      const family = cordisFamily(record);
+      const checked = new Set<string>();
+      for (const [key, entry] of Object.entries(packages)) {
+        if (
+          !key.startsWith("@deepseek-ai/") ||
+          !(key.endsWith(`@${record.dsh}`) || key.endsWith(`@${record.cordis}`))
+        ) {
+          continue;
+        }
+        for (const [name, range] of Object.entries(
+          entry.peerDependencies ?? {}
+        )) {
+          const version = family[name];
+          if (version === undefined) {
+            continue;
+          }
+          expect(floorOf(range), `${key} declares ${name} ${range}`).toBe(
+            version
+          );
+          checked.add(name);
+        }
+      }
+      // Known answer: the five members the cluster peers on.
+      expect([...checked].toSorted()).toStrictEqual([
+        "@deepseek-ai/cordis",
+        "@deepseek-ai/cordis-plugin-group",
+        "@deepseek-ai/cordis-plugin-include",
+        "@deepseek-ai/cordis-plugin-loader",
+        "@deepseek-ai/schemastery",
       ]);
     });
 

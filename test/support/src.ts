@@ -168,6 +168,7 @@ export {
   isDeprecatedModelOn,
   isGoModelsListingUrl,
   isModelsListingUrl,
+  MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
   refreshCatalog,
   resetCatalogState,
