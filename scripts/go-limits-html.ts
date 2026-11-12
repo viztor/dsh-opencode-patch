@@ -15,7 +15,8 @@
  *
  * So each allowance table is chosen by the plan label the page attaches to it
  * (`monthlyLimitTables`, `chooseTables`): the tab its panel names, else the
- * panel's own label, else the nearest heading before it. Go is the one table
+ * panel's own label, else the nearest heading before it that is not inside
+ * another tab's panel. Go is the one table
  * labelled "Go" and Go Plus the one labelled "Go Plus"; any other labelled
  * table is ignored, and a missing or repeated plan label is refused. Exactly
  * two tables with no plan label and no tab label keep the measured order,
@@ -287,7 +288,9 @@ const labelledBy = (html: string, tags: readonly Tag[], ids: string): string =>
  *
  * In order: the innermost tab panel around it whose `aria-labelledby` names an
  * element with text, or whose own `data-label`/`aria-label` has text; else the
- * nearest `h2`-`h4` that starts before it; else none.
+ * nearest `h2`-`h4` that starts before it and is not inside a tab panel that
+ * does not hold it; else none. A heading in another tab's panel is that
+ * panel's, hidden with it, so it labels nothing after the panel closes.
  *
  * @param html - the page, inert parts blanked.
  * @param tags - its tags.
@@ -299,16 +302,15 @@ const labelAt = (
   tags: readonly Tag[],
   at: number
 ): TableLabel | undefined => {
-  const panels = tags
-    .map((tag, index) => ({ index, tag }))
-    .filter(
-      ({ index, tag }) =>
-        opensPanel(tag) &&
-        tag.end <= at &&
-        at < (closeOf(tags, index)?.start ?? html.length)
-    )
-    .toReversed();
-  for (const { tag } of panels) {
+  const panels = tags.flatMap((tag, index) =>
+    opensPanel(tag)
+      ? [{ from: tag.end, tag, to: closeOf(tags, index)?.start ?? html.length }]
+      : []
+  );
+  const holds = (panel: { from: number; to: number }, where: number): boolean =>
+    panel.from <= where && where < panel.to;
+  const around = panels.filter((panel) => holds(panel, at)).toReversed();
+  for (const { tag } of around) {
     const tab = labelledBy(
       html,
       tags,
@@ -325,7 +327,11 @@ const labelAt = (
     }
   }
   const heading = tags.findLastIndex(
-    (tag) => !tag.closing && /^h[2-4]$/u.test(tag.name) && tag.end <= at
+    (tag) =>
+      !tag.closing &&
+      /^h[2-4]$/u.test(tag.name) &&
+      tag.end <= at &&
+      !panels.some((panel) => holds(panel, tag.start) && !holds(panel, at))
   );
   const close = heading === -1 ? undefined : closeOf(tags, heading);
   const text =
@@ -673,16 +679,20 @@ export const docFrom = (answer: DocAnswer): string | undefined =>
 /**
  * Which of the markdown tabs a body carries, for the error.
  *
+ * Named as the markdown's `<TabItem>`, because the same line names each HTML
+ * table's tab (`describeTable`), and "no Go tab" beside `tab "Go"` would read
+ * as a contradiction.
+ *
  * @param body - one answer's body.
  * @returns the phrase the error line uses.
  */
 const tabsCarried = (body: string): string => {
   if (!body.includes(GO_TAB)) {
-    return "no Go tab";
+    return "no markdown Go <TabItem>";
   }
   return body.includes(GO_PLUS_TAB)
-    ? "the Go and Go Plus tabs"
-    : "the Go tab but no Go Plus tab";
+    ? "the markdown Go and Go Plus <TabItem>s"
+    : "the markdown Go <TabItem> but no Go Plus <TabItem>";
 };
 
 /**

@@ -544,12 +544,12 @@ describe("reading a 2xx answer by what it carries", () => {
     // The redirect, the type and the size are what tell a reader which of the
     // shapes changed, without a second run.
     expect(message).toContain(
-      "https://opencode.ai/docs/go.md answered 200 (redirected to https://opencode.ai/docs/go/), text/markdown, 5 characters, no Go tab, 0 monthly-limit table(s)"
+      "https://opencode.ai/docs/go.md answered 200 (redirected to https://opencode.ai/docs/go/), text/markdown, 5 characters, no markdown Go <TabItem>, 0 monthly-limit table(s)"
     );
     // The answer that was not redirected says nothing about a redirect.
     const [, notFound] = message.split("\n");
     expect(notFound).toBe(
-      "  - https://opencode.ai/docs/console/go/ answered 404, text/html; charset=utf-8, 0 characters, no Go tab, 0 monthly-limit table(s)"
+      "  - https://opencode.ai/docs/console/go/ answered 404, text/html; charset=utf-8, 0 characters, no markdown Go <TabItem>, 0 monthly-limit table(s)"
     );
     expect(notFound).not.toContain("(redirected");
   });
@@ -565,10 +565,10 @@ describe("reading a 2xx answer by what it carries", () => {
     expect(untyped).toContain(", no content type, 5 characters,");
     // The parser's own reason, for a body in a shape it was handed.
     expect(unreadable).toMatch(
-      /, no Go tab, 2 monthly-limit table\(s\), 0 with a model row: table 1 \(unlabelled, 0 model row\(s\)\); table 2 \(unlabelled, 0 model row\(s\)\), the parser rejected the allowance tables: the go table parsed to zero rows$/u
+      /, no markdown Go <TabItem>, 2 monthly-limit table\(s\), 0 with a model row: table 1 \(unlabelled, 0 model row\(s\)\); table 2 \(unlabelled, 0 model row\(s\)\), the parser rejected the allowance tables: the go table parsed to zero rows$/u
     );
     expect(tooMany).toMatch(
-      /, no Go tab, 3 monthly-limit table\(s\): .*; table 3 \(heading "Usage limits", 1 model row\(s\), first "a" → "\$5"\), the allowance tables were not chosen: none labelled Go or Go Plus, and 3 monthly-limit table\(s\), where only exactly 2 are read in the page's order$/u
+      /, no markdown Go <TabItem>, 3 monthly-limit table\(s\): .*; table 3 \(heading "Usage limits", 1 model row\(s\), first "a" → "\$5"\), the allowance tables were not chosen: none labelled Go or Go Plus, and 3 monthly-limit table\(s\), where only exactly 2 are read in the page's order$/u
     );
   });
 
@@ -580,16 +580,16 @@ describe("reading a 2xx answer by what it carries", () => {
       }),
     ]);
     expect(message.split("\n")[1]).toMatch(
-      /, the Go and Go Plus tabs, 2 monthly-limit table\(s\): table 1 \(unlabelled, 1 model row\(s\), first "Big Pickle" → "Unlimited"\); table 2 \(unlabelled, 1 model row\(s\), first "Big Pickle" → "Unlimited"\), the parser rejected the tabbed markdown: the go table parsed to zero rows, the parser rejected the allowance tables: the go table parsed to zero rows$/u
+      /, the markdown Go and Go Plus <TabItem>s, 2 monthly-limit table\(s\): table 1 \(unlabelled, 1 model row\(s\), first "Big Pickle" → "Unlimited"\); table 2 \(unlabelled, 1 model row\(s\), first "Big Pickle" → "Unlimited"\), the parser rejected the tabbed markdown: the go table parsed to zero rows, the parser rejected the allowance tables: the go table parsed to zero rows$/u
     );
   });
 
-  it("names a Go tab without its Go Plus tab", () => {
+  it("names a markdown Go tab without its Go Plus tab", () => {
     const message = noDocMessage([
       answer({ body: '<TabItem label="Go">\n</TabItem>' }),
     ]);
     expect(message).toMatch(
-      /, the Go tab but no Go Plus tab, 0 monthly-limit table\(s\)$/u
+      /, the markdown Go <TabItem> but no Go Plus <TabItem>, 0 monthly-limit table\(s\)$/u
     );
   });
 });
@@ -702,8 +702,8 @@ describe("asking the sources in turn", () => {
       new Error(
         [
           "go-limits: no source carried the allowance tables",
-          `  - ${MOVED_PAGE} answered 404, text/html; charset=utf-8, 0 characters, no Go tab, 0 monthly-limit table(s)`,
-          `  - ${GO_MD} answered 200, text/markdown, ${tablessGoMd().body.length} characters, no Go tab, 0 monthly-limit table(s)`,
+          `  - ${MOVED_PAGE} answered 404, text/html; charset=utf-8, 0 characters, no markdown Go <TabItem>, 0 monthly-limit table(s)`,
+          `  - ${GO_MD} answered 200, text/markdown, ${tablessGoMd().body.length} characters, no markdown Go <TabItem>, 0 monthly-limit table(s)`,
         ].join("\n")
       )
     );
@@ -899,6 +899,82 @@ describe("choosing the Go and Go Plus tables by their plan label", () => {
     expect([...parseGoLimitsDoc(doc ?? "").limits]).toEqual(THREE_PLANS_LIMITS);
   });
 
+  it("does not label a table outside the tabs by a heading inside a tab panel", () => {
+    // Each panel opens with a heading naming its own plan, and a third plan's
+    // table follows the group. The nearest heading before that table by
+    // position is the last panel's, hidden in a panel that does not hold it:
+    // read that way, the third table is labelled "Go Plus" and the page is
+    // refused for two Go Plus tables, though both tabs are unambiguous.
+    const body = [
+      "<h2>Usage limits</h2>",
+      starlightTabs([
+        [
+          "Go",
+          `<h3>Go</h3><h3>Go Plus</h3><p>Upgrade for more.</p>${monthlyTable([
+            ["MiMo-V2.6-Pro", "$0.50", "$60"],
+            ["Grok 4.7", "$1.00", "$15"],
+          ])}`,
+        ],
+        [
+          "Go Plus",
+          `<h3>Go Plus</h3>${monthlyTable([
+            ["MiMo-V2.6-Pro", "$0.50", "$120"],
+            ["Grok 4.7", "$1.00", "$60"],
+          ])}`,
+        ],
+      ]),
+      "<p>Teams on the enterprise plan:</p>",
+      monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$500"]]),
+    ].join("");
+    expect(monthlyLimitTables(body).map((table) => table.label)).toEqual([
+      { source: "tab", text: "Go" },
+      { source: "tab", text: "Go Plus" },
+      { source: "heading", text: "Usage limits" },
+    ]);
+    const doc = docFrom(answer({ body }));
+    expect(doc).toBeDefined();
+    expect([...parseGoLimitsDoc(doc ?? "").limits]).toEqual(THREE_PLANS_LIMITS);
+  });
+
+  it("does not read a table outside the tabs as the plan a hidden panel's heading names", () => {
+    // The second tab is "Plus", and only its panel's heading says "Go Plus".
+    // Read by position, the $500 table after the group is Go Plus, and the
+    // page is accepted with the wrong allowances.
+    const body = [
+      starlightTabs([
+        ["Go", monthlyTable([["Grok 4.7", "$1.00", "$15"]])],
+        [
+          "Plus",
+          `<h3>Go Plus</h3>${monthlyTable([["Grok 4.7", "$1.00", "$60"]])}`,
+        ],
+      ]),
+      monthlyTable([["Grok 4.7", "$1.00", "$500"]]),
+    ].join("");
+    expect(monthlyLimitTables(body).map((table) => table.label)).toEqual([
+      { source: "tab", text: "Go" },
+      { source: "tab", text: "Plus" },
+      undefined,
+    ]);
+    expect(docFrom(answer({ body }))).toBeUndefined();
+    expect(() => htmlToDoc(body)).toThrow(
+      /were not chosen: no table labelled "Go Plus"$/u
+    );
+  });
+
+  it("still labels a table inside a panel by a heading earlier in that panel", () => {
+    const tables = monthlyLimitTables(
+      [
+        '<div role="tabpanel">',
+        "<h3>Go</h3>",
+        monthlyTable([["a", "$1", "$1"]]),
+        "</div>",
+      ].join("")
+    );
+    expect(tables.map((table) => table.label)).toEqual([
+      { source: "heading", text: "Go" },
+    ]);
+  });
+
   it("keeps the measured order for exactly two tables that carry no plan label", () => {
     // The shape the shipped table was generated from: Go first, Go Plus second.
     // A heading that names no plan is not a label to choose by.
@@ -929,7 +1005,7 @@ describe("choosing the Go and Go Plus tables by their plan label", () => {
     expect(docFrom(answer({ body }))).toBeUndefined();
     expect(() => htmlToDoc(body)).toThrow(/none labelled Go or Go Plus/u);
     expect(noDocMessage([answer({ body })]).split("\n")[1]).toBe(
-      `  - ${MOVED_PAGE} answered 200, text/html; charset=utf-8, ${body.length} characters, no Go tab, 3 monthly-limit table(s), 2 with a model row: table 1 (unlabelled, 2 model row(s), first "MiMo-V2.6-Pro" → "$5"); table 2 (unlabelled, 1 model row(s), first "Kimi K3" → "$60"); table 3 (unlabelled, 0 model row(s)), the allowance tables were not chosen: none labelled Go or Go Plus, and 3 monthly-limit table(s), where only exactly 2 are read in the page's order`
+      `  - ${MOVED_PAGE} answered 200, text/html; charset=utf-8, ${body.length} characters, no markdown Go <TabItem>, 3 monthly-limit table(s), 2 with a model row: table 1 (unlabelled, 2 model row(s), first "MiMo-V2.6-Pro" → "$5"); table 2 (unlabelled, 1 model row(s), first "Kimi K3" → "$60"); table 3 (unlabelled, 0 model row(s)), the allowance tables were not chosen: none labelled Go or Go Plus, and 3 monthly-limit table(s), where only exactly 2 are read in the page's order`
     );
   });
 
@@ -940,6 +1016,11 @@ describe("choosing the Go and Go Plus tables by their plan label", () => {
       ["Go", monthlyTable([["Grok 4.7", "$1.00", "$60"]])],
     ]);
     expect(docFrom(answer({ body }))).toBeUndefined();
+    // The markdown phrase names the markdown shape, so it cannot read as
+    // contradicting the HTML tab labels on the same line.
+    expect(noDocMessage([answer({ body })])).toContain(
+      ', no markdown Go <TabItem>, 2 monthly-limit table(s): table 1 (tab "Go",'
+    );
     expect(noDocMessage([answer({ body })])).toMatch(
       /: table 1 \(tab "Go", 1 model row\(s\), first "Grok 4.7" → "\$15"\); table 2 \(tab "Go", 1 model row\(s\), first "Grok 4.7" → "\$60"\), the allowance tables were not chosen: 2 tables labelled "Go" and no table labelled "Go Plus"$/u
     );
