@@ -35,6 +35,7 @@ import { TYPERT } from "@deepseek-ai/dsh-llm/typert";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { sameFiber } from "./support/config-shape.ts";
 import {
   bootTierB,
   CHARACTERIZED_MODELS,
@@ -326,8 +327,11 @@ describe(
       const off = current.ctx.on("internal/status", (fiber, old) => {
         // pi-ai's discovery is withdrawn between UNLOADING and the reload: the
         // window is read synchronously, on the transition OUT of UNLOADING.
+        // The emitted fiber is matched by uid, not identity: on the new core
+        // the loader entry's handle is a different object from the one the
+        // status event carries.
         if (
-          fiber !== current.piFiber ||
+          !sameFiber(fiber, current.piFiber) ||
           old !== UNLOADING ||
           calls !== undefined
         ) {
