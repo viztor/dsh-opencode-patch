@@ -18,8 +18,9 @@
  * rows are the cell's `rows` in either order, and the listing and save rows no
  * longer depend on which ids pi describes. The Settings fetch rows (P3) are
  * checked against this checkout's servable shim catalog, and their order
- * against the list the prefix's own pi exports, in every cell where the route
- * claim engages.
+ * against the list the prefix's own pi exports, in every cell: the wrapper
+ * complements a plane's fetch only while the route claim has engaged, and the
+ * claim engages on both host cores.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
  * directory whose `node_modules/@deepseek-ai/dsh` is the installed host of the
@@ -940,7 +941,12 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
 
   it("[BASELINE] Settings' fetch on each plane offers the whole servable catalog, each id once, in the Remote's row shape (D3)", () => {
     // The wrapper appends the catalog only while the route claim has
-    // engaged, which the claim's [BASELINE] row above asserts in every cell.
+    // engaged. It engages on both host cores; pi-ai still holding a plane
+    // once the mount settles is the exception (the mount's restart threw),
+    // and then the fetch is pi's own list. Known answer first: the claim
+    // engaged in this cell, so the rows below are the complemented fetch.
+    expect(out.owners.opencode).toBe("PlaneAdapter");
+    expect(out.owners["opencode-go"]).toBe("PlaneAdapter");
     for (const plane of PLANES) {
       const ids = fetchedIds(plane);
       expect(new Set(ids).size, plane).toBe(ids.length);
@@ -964,9 +970,9 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
   });
 
   // The order is read against the list the PREFIX's own pi exports, so it
-  // holds in every cell where the route claim engages, a newer pi than the
-  // record's included.
+  // holds in every cell, a newer pi than the record's included.
   it("[BASELINE] Settings' fetch answers the host pi's own list first, then the catalog models that pi lacks", (context) => {
+    expect(out.planesSettled).toBe(true);
     context.skip(
       piIdsByPlane === undefined,
       "the prefix's pi exports no getBuiltinModels under ./providers/all"
