@@ -13,8 +13,11 @@
  * newest pi, or a channel's floor). What differs between the cells (pi's
  * catalog bases and counts, which ids it can place, whether its Go provider
  * carries Google) carries one expectation per cell (`forHost`), measured on
- * each; pi-ai's own defaults are the cluster's, and one expectation holds
- * both channels while their bridges agree.
+ * each. What the `@deepseek-ai` cluster decides carries one expectation per
+ * channel (`forChannel`): pi-ai's own Config defaults agree on both bridges,
+ * so one expectation holds them, while the protocols a route-level `api` may
+ * name do not (rc's bridge serves `google-generative-ai`, alpha's refuses it,
+ * a `[HOST_LIMITATION]` row).
  *
  * `test/mount-protocols.test.ts` already pins the four `api/*.lazy` factories
  * against the catalog's SDKs; this file does not repeat it.
@@ -30,10 +33,12 @@ import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import z from "@deepseek-ai/schemastery";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { HOST_VERSIONS } from "./support/host-versions.ts";
 import {
   adaptersOf,
   drainStream,
   fakeCredentials,
+  forChannel,
   forHost,
   HOST_CELL,
   mountTierA,
@@ -518,6 +523,46 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
         count: 84,
       },
     });
+  });
+});
+
+/**
+ * The protocols a route-level `api` may name are the bridge's, not pi's, and
+ * the two supported bridges differ: rc's `dsh-llm-pi-ai` serves
+ * `google-generative-ai` on a route, alpha's validates `api` against a union
+ * that ends at `anthropic-messages` and refuses it at the schema. pi-ai's
+ * Config defaults agree on both (the case above), so this is the one row the
+ * cluster decides per channel (`forChannel`). On alpha it is a host
+ * limitation (D26): P-R1's protocol order reads the route's `api` (D16), and
+ * a channel whose bridge cannot serve Google on a route is the host's to fix,
+ * never the plugin's to work around.
+ */
+const ROUTE_GOOGLE = forChannel({
+  alpha: { tag: "HOST_LIMITATION", verdict: "refuses" },
+  rc: { tag: "BASELINE", verdict: "serves" },
+} as const);
+
+describe("host · the route-level api set is the bridge's (llm-pi-ai lib/index.js PROTOCOLS and profile api: rc 843-848,1061; alpha 835-839,1053)", () => {
+  it(`[${ROUTE_GOOGLE.tag}] ${HOST_VERSIONS.channel} ${HOST_VERSIONS.dsh} (${HOST_CELL} cell): its bridge ${ROUTE_GOOGLE.verdict} a route-level api of google-generative-ai`, async () => {
+    const providers = { opencode: { api: "google-generative-ai" } };
+    if (ROUTE_GOOGLE.verdict === "serves") {
+      expect(() => LlmPiAi.Config({ providers } as never)).not.toThrow();
+      tier = await mountTierA({ providers });
+      const zen = profileOf(tier, "opencode");
+      expect(zen.catalogError).toBeUndefined();
+      // F5 with Google: every Zen model now speaks Google, on its own base.
+      expect(byProtocol(zen.piProvider)).toEqual(
+        collapsed(forHost(WHOLE_CATALOG).zen, "google-generative-ai")
+      );
+      return;
+    }
+    // The schema names the three protocols this bridge serves, Google not
+    // among them, and the mount fails with the same message: pi-ai's fiber
+    // never applies, so no route registers.
+    const refusal =
+      /\$\.providers\.opencode\.api expected "openai-completions" \| "openai-responses" \| "anthropic-messages" but got "google-generative-ai"/u;
+    expect(() => LlmPiAi.Config({ providers } as never)).toThrow(refusal);
+    await expect(mountTierA({ providers })).rejects.toThrow(refusal);
   });
 });
 

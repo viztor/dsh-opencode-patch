@@ -16,7 +16,9 @@
  * - `[HOST_LIMITATION]` is something one cell's host lacks or breaks, named
  *   with its channel and host (the definition is `RowTag` in
  *   `support/host.ts`). No row in this file carries it yet: P-R1 adds the
- *   first pi row; the binary e2e records one host-code defect.
+ *   first pi row; `host-shapes` carries one bridge row (alpha refuses a
+ *   route-level `google-generative-ai` api), and the binary e2e keeps a
+ *   detector for one host-code defect no current cell has.
  *
  * Where the hosts differ, a row carries one expectation per cell
  * (`S0_TODAY_BY_CELL`, `forHost`), and a title names the cell's tag: a facet
