@@ -60,14 +60,34 @@ describe("channel switch · the manifest a channel installs", () => {
   });
 
   it("refuses a harness package no rule covers instead of guessing its pin", () => {
+    // The timer plugin is the one family member nothing here resolves, so
+    // the manifest never pins it and no rule covers it.
     const stray = MANIFEST.replace(
       '"semver"',
-      '"@deepseek-ai/cosmokit": "1.8.7-alpha.1",\n    "semver"'
+      '"@deepseek-ai/cordis-plugin-timer": "1.1.8-alpha.1",\n    "semver"'
     );
     expect(() => channelManifest(stray, CHANNELS.rc)).toThrow(
-      /@deepseek-ai\/cosmokit has no channel rule/u
+      /@deepseek-ai\/cordis-plugin-timer has no channel rule/u
     );
-    expect(pinFor("@deepseek-ai/cosmokit", CHANNELS.rc)).toBeUndefined();
+    expect(
+      pinFor("@deepseek-ai/cordis-plugin-timer", CHANNELS.rc)
+    ).toBeUndefined();
+  });
+
+  it("moves the family members pinned only to hold their floors with the channel", () => {
+    // include, group and cosmokit arrive transitively; the manifest pins them
+    // so a relock cannot take a newer patch inside their `~` ranges.
+    for (const record of [CHANNELS.alpha, CHANNELS.rc]) {
+      expect(pinFor("@deepseek-ai/cordis-plugin-include", record)).toBe(
+        record.include
+      );
+      expect(pinFor("@deepseek-ai/cordis-plugin-group", record)).toBe(
+        record.group
+      );
+      expect(pinFor("@deepseek-ai/cosmokit", record)).toBe(record.cosmokit);
+    }
+    // Known answer: the two records differ, so the rule reads the record.
+    expect(CHANNELS.rc.cosmokit).not.toBe(CHANNELS.alpha.cosmokit);
   });
 });
 

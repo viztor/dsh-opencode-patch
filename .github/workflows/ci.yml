@@ -107,19 +107,20 @@ jobs:
       - name: the switch left the tree clean
         run: git diff --exit-code && test -z "$(git status --porcelain)"
 
-  # The channel records name what each channel installs TODAY, and the harness
+  # The channel records name each channel's latest release, and the harness
   # cuts a release without telling this repository. Nightly and on dispatch,
-  # `scripts/report-host-drift.ts` reads the registry the way npm resolves a
-  # channel (dsh as the newest build any dist-tag carries on the channel's
+  # `scripts/report-host-drift.ts` reads the registry the way the records are
+  # defined (dsh as the newest build any dist-tag carries on the channel's
   # line, since the rc line publishes under `next` ahead of `latest`, or a
   # newer stable release, the line graduating, under the tag the record names
-  # for that: `latest` for rc, none for alpha; cordis,
-  # the loader, schemastery and pi at the newest version the bridge's declared
-  # ranges admit) and prints one warning per field that moved past
-  # `test/support/host-versions.ts`. It REPORTS and never gates, so it exits 0
-  # whatever it finds: a channel moving is the harness's release, not a
-  # regression. P-T3 turns the report into a proposed bump pull request; the
-  # bump follows CONTRIBUTING's release step 3.
+  # for that: `latest` for rc, none for alpha; pi at the newest version the
+  # bridge's range admits, and that range's floor; each cordis-family member
+  # at the floor of the `~` range that cluster declares for it, the desktop's
+  # tree, so a newer patch inside a range is not drift) and prints one warning
+  # per field it compares that moved past `test/support/host-versions.ts`. It
+  # REPORTS and never gates, so it exits 0 whatever it finds: a channel moving
+  # is the harness's release, not a regression. P-T3 turns the report into a
+  # proposed bump pull request; the bump follows CONTRIBUTING's release step 3.
   host-drift:
     name: harness channels · drift report
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -390,3 +391,191 @@ jobs:
           OPENCODE_E2E: "1"
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+
+  # The published host binary with this checkout linked into a throwaway
+  # profile: the only run that boots `dsh` itself rather than the host packages
+  # the unit suite assembles. `test/e2e/host/probe-plugin.mjs` measures the
+  # registry, the listings, validation, where each turn is sent and the save of
+  # a catalog-unknown id, and `test/e2e/host-binary.e2e.ts` asserts today's
+  # rows (`S0_TODAY_BY_CELL`, shared with the in-process characterization).
+  #
+  # One run per harness channel (D14''), each the channel's published binary
+  # (`dsh@<record>` from `test/support/host-versions.ts`) installed with npm the
+  # way a user installs it, pi unpatched in both cells:
+  # - `npm`: the published host exactly as npm resolves it, cordis and pi
+  #   included. The record's newest pi asserts every row; a pi published since
+  #   the record skips the rows that depend on which ids pi describes, with a
+  #   warning (the nightly `host-drift` job names it). Never cached:
+  #   re-resolving is the point.
+  # - `floor`: the tree the desktop app ships, forced with npm `overrides`
+  #   (`floorOverrides` in host-versions.ts): the channel's whole cordis family
+  #   at the record's versions (the floors of the ranges the cluster declares,
+  #   what the harness vendors at the tag) and pi with its telemetry package
+  #   at the bridge range's floor (pi patched there, not here; the patch
+  #   touches nothing the plugin reads). Cached by the channel, its dsh and a
+  #   hash of those overrides, so a cache filled before the record or its
+  #   overrides moved is never reused; the rest of the tree is what npm
+  #   resolved when the cache was filled.
+  # Pull requests run the `npm` cell of both channels, and only when they touch
+  # the host seam; dispatch and the nightly run add both `floor` cells.
+  #
+  # The scope is decided by a step rather than by `on.pull_request.paths`: a
+  # workflow-level path filter would silence every other job in this file.
+  # Offline: the probe answers every gateway request itself, and the keys it
+  # stores are dummies. No secret is passed.
+  e2e-host:
+    name: e2e · host binary (${{ matrix.channel }} · ${{ matrix.cell }})
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [alpha, rc]
+        cell: ${{ github.event_name == 'pull_request' && fromJSON('["npm"]') || fromJSON('["npm","floor"]') }}
+    env:
+      DSH_CHANNEL: ${{ matrix.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: does this change touch the host seam?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Its own command, so a diff that cannot be computed (a base ref
+          # that was not fetched, a deleted base branch) fails the step rather
+          # than reading as "nothing changed" and skipping the job green.
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          # The job's own definition and runner config are in scope: a pull
+          # request that breaks the install, the override or the e2e config
+          # must run the job it breaks. That includes vite.config.ts: it holds
+          # the pack config that builds lib/index.mjs (the only test that
+          # loads that bundle into a real host is this one, and its externals
+          # keep cordis and schemastery the host's copies) and the test
+          # settings vitest.e2e.config.ts inherits. test/support/host-versions.ts
+          # names the binary each channel installs, and scripts/host-drift.ts
+          # holds the family table the binary e2e asserts against the installed
+          # manifests. package.json is not (every
+          # dependency bump touches it), so a change to its `test:e2e:host`
+          # script alone is exercised only by the nightly run.
+          # Until P-R1 moves the host seam under src/host/, the modules that
+          # install the host patches and mounts whose behaviour depends on the
+          # real loader and apply order (the hidden-route mount, the listing
+          # patch and adapter decoration, the Google bridge, the fetch patch,
+          # the plane bases and the stream hook) are in scope by name. Every
+          # other row producer (key-capture.ts, models-catalog.ts, config.ts,
+          # the generated catalog) is covered on each pull request by the
+          # in-process characterization of the same rows, on both channels, and
+          # here by the nightly run.
+          if printf '%s\n' "$changed" \
+            | grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/responses-provider\.ts$|src/responses-routes\.ts$|src/models-discovery\.ts$|src/google-bridge\.ts$|src/fetch-patch\.ts$|src/pi-provider\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "no host-seam path changed; the host binary e2e does not run for this pull request"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: the ${{ matrix.channel }} channel's record
+        id: versions
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          node --experimental-strip-types --input-type=module -e "import { createHash } from 'node:crypto'; import { CHANNELS, floorOverrides } from './test/support/host-versions.ts'; const r = CHANNELS[process.env.DSH_CHANNEL]; const overrides = JSON.stringify(floorOverrides(r)); console.log('dsh=' + r.dsh); console.log('pi=' + r.pi); console.log('piRange=' + r.piRange); console.log('floorOverrides=' + overrides); console.log('floorKey=' + createHash('sha256').update(overrides).digest('hex').slice(0, 16))" >> "$GITHUB_OUTPUT"
+          echo "PREFIX=$RUNNER_TEMP/dsh-host" >> "$GITHUB_ENV"
+      # The floor install forces every version that matters (the record's
+      # cordis family and the floor pi pair), so it is cached by the channel,
+      # its dsh and a hash of those overrides; the npm one is the point of
+      # re-resolving, so never.
+      - name: cache the floor host install
+        id: host-cache
+        if: steps.scope.outputs.run == 'true' && matrix.cell == 'floor'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/dsh-host
+          key: dsh-host-floor-${{ matrix.channel }}-${{ steps.versions.outputs.dsh }}-${{ steps.versions.outputs.floorKey }}
+      - name: install the published host into a throwaway prefix
+        if: steps.scope.outputs.run == 'true' && steps.host-cache.outputs.cache-hit != 'true'
+        env:
+          CELL: ${{ matrix.cell }}
+          DSH: ${{ steps.versions.outputs.dsh }}
+          FLOOR_OVERRIDES: ${{ steps.versions.outputs.floorOverrides }}
+        run: |
+          mkdir -p "$PREFIX"
+          # The overrides must be in the prefix's own package.json BEFORE the
+          # install, or npm resolves the bridge's ^range to the newest pi and
+          # the host's ~ ranges to the newest cordis patch.
+          if [ "$CELL" = floor ]; then
+            node -e "process.stdout.write(JSON.stringify({ private: true, overrides: JSON.parse(process.env.FLOOR_OVERRIDES) }) + '\n')" > "$PREFIX/package.json"
+          else
+            printf '{ "private": true }\n' > "$PREFIX/package.json"
+          fi
+          npm install --prefix "$PREFIX" --no-audit --no-fund "@deepseek-ai/dsh@$DSH"
+      - name: report the pi and the cordis family the host resolved
+        if: steps.scope.outputs.run == 'true'
+        env:
+          CELL: ${{ matrix.cell }}
+          PI: ${{ steps.versions.outputs.pi }}
+          FLOOR_OVERRIDES: ${{ steps.versions.outputs.floorOverrides }}
+        run: |
+          resolved="$(node -p "require(process.env.PREFIX + '/node_modules/@earendil-works/pi-ai/package.json').version")"
+          echo "${DSH_CHANNEL} · ${CELL}: pi $resolved"
+          copies="$(find "$PREFIX/node_modules" -path '*/@earendil-works/pi-ai/package.json' | wc -l)"
+          if [ "$copies" -ne 1 ]; then
+            echo "::error::expected one copy of pi under the host prefix, found $copies"
+            exit 1
+          fi
+          if [ "$CELL" = npm ] && [ "$resolved" != "$PI" ]; then
+            echo "::warning::npm resolved pi $resolved for ${DSH_CHANNEL}, not the record's $PI: the rows that depend on which ids pi describes are skipped"
+          fi
+          # Every package the floor cell forces (the pi pair and the cordis
+          # family): the floor cell must hold exactly the override, a cached
+          # prefix included, which catches npm ignoring one; the npm cell
+          # reports what npm resolved, which is the channel's release as a
+          # user gets it. Whether the record's values are right is not this
+          # step's: the binary e2e holds them to the ranges the installed
+          # published packages declare, and the nightly drift report to the
+          # registry's.
+          failed=0
+          for name in $(node -p "Object.keys(JSON.parse(process.env.FLOOR_OVERRIDES)).join(' ')"); do
+            want="$(node -p "JSON.parse(process.env.FLOOR_OVERRIDES)['$name']")"
+            got="$(node -p "require(process.env.PREFIX + '/node_modules/$name/package.json').version")"
+            echo "${DSH_CHANNEL} · ${CELL}: $name $got"
+            if [ "$CELL" = floor ] && [ "$got" != "$want" ]; then
+              echo "::error::the floor cell resolved $name $got, not the record's $want"
+              failed=1
+            fi
+          done
+          exit "$failed"
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm run build
+      - name: boot the host binary with the probe
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm run test:e2e:host --run
+        env:
+          DSH_HOST_E2E: "1"
+          DSH_HOST_PREFIX: ${{ runner.temp }}/dsh-host
+          DSH_HOST_PI_CELL: ${{ matrix.cell }}
+          DSH_HOST_PROBE_COPY: ${{ runner.temp }}/probe-${{ matrix.channel }}-${{ matrix.cell }}.json
+      - name: upload the probe's measurement
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: host-probe-${{ matrix.channel }}-${{ matrix.cell }}
+          path: ${{ runner.temp }}/probe-${{ matrix.channel }}-${{ matrix.cell }}.json
+          if-no-files-found: ignore
+          retention-days: 7

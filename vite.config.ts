@@ -25,7 +25,12 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ["test/**/*.ts", "test/**/*.tsx", "scripts/**/*.ts"],
+        files: [
+          "test/**/*.ts",
+          "test/**/*.tsx",
+          "test/**/*.mjs",
+          "scripts/**/*.ts",
+        ],
         rules: {
           "class-methods-use-this": "off",
           "func-style": "off",
