@@ -18,7 +18,7 @@ import {
   reconcileProfilePatches,
 } from "@deepseek-ai/dsh-app-boot";
 import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { rawConfigOf } from "./support/config-shape.ts";
 import {
@@ -30,6 +30,7 @@ import {
   drainStream,
   fakeCredentials,
   type HostLlm,
+  hostModulesForTests,
   logLines,
   mountTierA,
   ownerOf,
@@ -56,6 +57,7 @@ import {
   inject,
   name,
   recordCapturedApiKey,
+  replaceHostModuleSource,
   resolveGoApiKey,
 } from "./support/src.ts";
 
@@ -343,6 +345,54 @@ describe("host planes · lifecycle", { timeout: 30_000 }, () => {
     );
     await waitForPlaneOwner(tierA.llm);
     expect(routeIds(tierA.llm)).toEqual(["deepseek", ...PLANES]);
+  });
+
+  it("the plugin's row disposed while its mount's pi-ai restart is in flight: the restart resolves, nothing is logged at error, and the planes go back to pi-ai (tier A)", async () => {
+    offline();
+    // pi-ai alone first: it resolves holding both planes, so the plugin's
+    // mount restarts it once to take them.
+    tierA = await mountTierA({ providers: s0Providers() });
+    await waitForPlaneOwner(tierA.llm, PLANES, "PiAiAdapter");
+    // Mounted by hand below, so the host's modules are handed in here, as
+    // `mountTierA` does for a plugin it mounts itself.
+    const restoreSource = replaceHostModuleSource(hostModulesForTests());
+    onTestFinished(restoreSource);
+    const { ctx, piFiber } = tierA;
+    const log = logLines(ctx);
+    // Known answer: the exporter reads what a logger writes.
+    ctx.logger("known").error("known answer");
+    let restarted: Promise<void> | undefined;
+    const row: { plugin?: { dispose: () => Promise<void> } } = {};
+    const original = piFiber.restart.bind(piFiber);
+    vi.spyOn(piFiber, "restart").mockImplementationOnce(async () => {
+      restarted = original();
+      // The row is disabled while that restart runs: the plugin's fiber is
+      // disposed (uid null) and still LOADING, so cordis refuses any effect
+      // it registers until its teardown has run.
+      void row.plugin?.dispose();
+      await restarted;
+    });
+    const plugin = ctx.plugin(
+      { apply, Config, inject, name } as never,
+      {} as never
+    );
+    row.plugin = plugin;
+    await until(() => restarted !== undefined, "the mount restarts pi-ai");
+    // pi-ai's own restart ends in ACTIVE, whose status emit reaches the
+    // claim's listener: it must not throw into pi-ai's lifecycle.
+    await expect(restarted).resolves.toBeUndefined();
+    await plugin.dispose();
+    await waitForPlaneOwner(tierA.llm, PLANES, "PiAiAdapter");
+    expect(stateOf(piFiber)).toBe(ACTIVE);
+    const lines = log.lines();
+    expect(lines).toContain("error known: known answer");
+    expect(
+      lines.filter(
+        (line) =>
+          line !== "error known: known answer" &&
+          (line.startsWith("error ") || line.includes("did not mount"))
+      )
+    ).toEqual([]);
   });
 
   it("an edit of the plugin's own row restarts pi-ai zero times and keeps the planes the plugin's (tier B)", async () => {

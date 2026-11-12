@@ -644,6 +644,40 @@ describe("route-claim · the new core's call shape (cordis 4.0.6-alpha.2, 4.1.0)
     expect(seen.at(-1)).toEqual({ providers: { deepseek: {} } });
     expect(host.hooks.get("internal/config")).toHaveLength(2);
   });
+
+  it("a re-append the host refuses (its fiber going away) throws nothing into pi-ai's status emit and keeps the claim's listener in place", async () => {
+    useTestModules();
+    const pi = newPiFiber();
+    const host = standIn({ fibers: () => [pi] });
+    await installRouteClaim(host.ctx, config).mounted;
+    await flush();
+    const candidate = { providers: { deepseek: {}, opencode: zen } };
+    // Known answer: the claim strips the plane before the refusal.
+    expect(host.waterfall(pi, () => candidate)).toEqual({
+      providers: { deepseek: {} },
+    });
+    // The plugin's row is disposed and its teardown has not run yet: cordis
+    // refuses every effect, so `ctx.on` throws (`fiber.ts` `effect()`).
+    const refusal = Object.assign(
+      new Error("cannot create effect on inactive context"),
+      { code: "INACTIVE_EFFECT" }
+    );
+    const on = vi.fn(() => {
+      throw refusal;
+    });
+    Reflect.set(host.ctx, "on", on);
+    pi.state = 2;
+    expect(() => {
+      host.emit("internal/status", pi, 1);
+    }).not.toThrow();
+    // The host was asked, and the registration it refused left the existing
+    // one in place: the claim still strips the plane.
+    expect(on).toHaveBeenCalledWith("internal/config", expect.any(Function));
+    expect(host.hooks.get("internal/config")).toHaveLength(1);
+    expect(host.waterfall(pi, () => candidate)).toEqual({
+      providers: { deepseek: {} },
+    });
+  });
 });
 
 describe("route-claim · validating while the modules are unloaded", () => {

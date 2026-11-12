@@ -715,11 +715,24 @@ export const installRouteClaim = (
 
   /** The listener's current registration, so it can be moved innermost. */
   let unlisten: unknown;
+  /**
+   * Register the listener innermost: the new registration first, the old one
+   * released only once the host accepted it. This runs inside pi-ai's own
+   * `internal/status` emit, which calls listeners unguarded, so it must not
+   * throw. The host refuses a registration (`INACTIVE_EFFECT`) once the
+   * plugin's fiber is disposed and before its teardown runs; the refusal is
+   * the answer, and the existing registration stays until that teardown.
+   */
   const listen = (): void => {
-    if (isFunctionLike(unlisten)) {
-      Reflect.apply(unlisten, undefined, []);
+    const previous = unlisten;
+    try {
+      unlisten = ctx.on?.("internal/config", claimListener);
+    } catch {
+      return;
     }
-    unlisten = ctx.on?.("internal/config", claimListener);
+    if (isFunctionLike(previous)) {
+      Reflect.apply(previous, undefined, []);
+    }
   };
 
   const teardown = (): Promise<void> | undefined => {
