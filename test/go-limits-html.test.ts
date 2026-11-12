@@ -16,7 +16,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { htmlToDoc, tableRows } from "../scripts/go-limits-html.ts";
+import {
+  type DocAnswer,
+  docFrom,
+  htmlToDoc,
+  noDocMessage,
+  tableRows,
+} from "../scripts/go-limits-html.ts";
 import { parseGoLimitsDoc } from "./support/src.ts";
 
 /**
@@ -162,5 +168,112 @@ describe("the converter and the parser agree", () => {
       goPlus: 60,
       name: "Grok 4.7",
     });
+  });
+});
+
+/**
+ * What a source answered, as the generator records it.
+ *
+ * @param overrides - the fields this case changes.
+ * @returns a 200 from the moved page, carrying `body`.
+ */
+const answer = (overrides: Partial<DocAnswer>): DocAnswer => ({
+  body: "",
+  contentType: "text/html; charset=utf-8",
+  finalUrl: "https://opencode.ai/v2/docs/console/go/",
+  status: 200,
+  url: "https://opencode.ai/v2/docs/console/go/",
+  ...overrides,
+});
+
+/** The page's two allowance tables, as one HTML body. */
+const page = (): string =>
+  [
+    "<html><body><h2>Usage limits</h2>",
+    monthlyTable([
+      ["MiMo-V2.6-Pro", "$0.50", "$60"],
+      ["Grok 4.7", "$1.00", "$15"],
+    ]),
+    monthlyTable([
+      ["MiMo-V2.6-Pro", "$0.50", "$120"],
+      ["Grok 4.7", "$1.00", "$60"],
+    ]),
+    "</body></html>",
+  ].join("");
+
+describe("reading a source by what it carries, not by its status", () => {
+  it("passes the tabbed markdown through as it is", () => {
+    const markdown = htmlToDoc(page());
+    expect(
+      docFrom(
+        answer({
+          body: markdown,
+          contentType: "text/plain",
+          finalUrl: "https://opencode.ai/docs/go.md",
+          url: "https://opencode.ai/docs/go.md",
+        })
+      )
+    ).toBe(markdown);
+  });
+
+  it("converts a 200 that is the HTML page, wherever it was asked for", () => {
+    // Measured by the nightly run from 2026-11-07: `go.md` answers 200 again,
+    // and what it carries has no tab sections. The generator handed that body
+    // to the markdown parser because the status was ok, and every refresh since
+    // failed on "no <TabItem label="Go"> section". A body is read by its shape.
+    const doc = docFrom(
+      answer({
+        body: page(),
+        url: "https://opencode.ai/docs/go.md",
+      })
+    );
+    expect(doc).toBeDefined();
+    const { limits, unmapped } = parseGoLimitsDoc(doc ?? "");
+    expect(unmapped).toEqual([]);
+    expect(limits.get("grok-4.7")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "Grok 4.7",
+    });
+  });
+
+  it("answers nothing for a body that carries neither shape", () => {
+    // Markdown without the tab sections, and an HTML page with one allowance
+    // table or none: the next source is tried, and the parser never sees them.
+    expect(
+      docFrom(answer({ body: "# Go\n\n| Model | Limit |\n| --- | --- |" }))
+    ).toBeUndefined();
+    expect(
+      docFrom(answer({ body: monthlyTable([["a", "$1", "$60"]]) }))
+    ).toBeUndefined();
+    expect(docFrom(answer({ body: estimateTable() }))).toBeUndefined();
+  });
+
+  it("answers nothing for a status outside 2xx, whatever the body", () => {
+    expect(docFrom(answer({ body: page(), status: 404 }))).toBeUndefined();
+    expect(docFrom(answer({ body: page(), status: 301 }))).toBeUndefined();
+  });
+
+  it("names what every source answered when none carried the tables", () => {
+    const message = noDocMessage([
+      answer({ status: 404 }),
+      answer({
+        body: "# Go\n",
+        contentType: "text/markdown",
+        finalUrl: "https://opencode.ai/docs/go/",
+        url: "https://opencode.ai/docs/go.md",
+      }),
+    ]);
+    expect(message).toMatch(
+      /^go-limits: no source carried the allowance tables/u
+    );
+    expect(message).toContain(
+      "https://opencode.ai/v2/docs/console/go/ answered 404"
+    );
+    // The redirect, the type and the size are what tell a reader which of the
+    // shapes changed, without a second run.
+    expect(message).toContain(
+      "https://opencode.ai/docs/go.md answered 200 (redirected to https://opencode.ai/docs/go/), text/markdown, 5 characters, no Go tab, 0 monthly-limit table(s)"
+    );
   });
 });

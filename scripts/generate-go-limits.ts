@@ -19,11 +19,16 @@
  * any other pull request, and a push to main, warns, and the nightly run
  * proposes the refresh.
  *
- * **That URL is gone.** Measured 2026-10-12: it answers 404, the docs live under
- * `/v2/docs/console/go/` now, and the new page serves HTML - the allowance figures
- * are in a table on it, so nothing is lost, but this reader parses markdown and
- * needs an HTML path before the check can say anything again. The failure names
- * the new URL so the next person does not have to find it twice.
+ * **That URL moved, then came back as something else.** Measured 2026-10-12: it
+ * answered 404, the docs live under `/v2/docs/console/go/` now, and the new page
+ * serves HTML - the allowance figures are in a table on it, so nothing is lost.
+ * From 2026-11-07 the old URL answered 200 again, with a body that had no tab
+ * sections, and every nightly refresh failed in the parser because this reader
+ * trusted the status. So the sources are asked in turn - the page the docs live
+ * on, then the old URL - and each answer is read by what its body carries
+ * (`docFrom`): the tabbed markdown as it is, the HTML page through `htmlToDoc`,
+ * anything else not at all. When none carries the tables, the error names what
+ * each one answered (`noDocMessage`), so the next layout change names itself.
  *
  * **What the new page looks like, measured, so the HTML path is a small job.**
  * `/v2/llms.txt` indexes it and there is no `.md` beside it. The page carries a
@@ -54,7 +59,7 @@
  * ```sh
  * node --experimental-strip-types scripts/generate-go-limits.ts            # fetch, then report
  * node --experimental-strip-types scripts/generate-go-limits.ts --write    # rewrite the file
- * node --experimental-strip-types scripts/generate-go-limits.ts --from <path>
+ * node --experimental-strip-types scripts/generate-go-limits.ts --from <path>   # a saved page, markdown or HTML
  * ```
  *
  * Without `--write` it only reports what would change, so it is safe in CI.
@@ -68,7 +73,12 @@ import {
   GO_LIMITS_DOC_URL,
   parseGoLimitsDoc,
 } from "../src/go-limits.ts";
-import { GO_LIMITS_DOC_MOVED_TO, htmlToDoc } from "./go-limits-html.ts";
+import {
+  type DocAnswer,
+  docFrom,
+  GO_LIMITS_DOC_MOVED_TO,
+  noDocMessage,
+} from "./go-limits-html.ts";
 
 const TARGET = new URL("../src/go-limits-data.ts", import.meta.url);
 const argv = process.argv.slice(2);
@@ -76,29 +86,75 @@ const shouldWrite = argv.includes("--write");
 const fromIndex = argv.indexOf("--from");
 const fromPath = fromIndex === -1 ? undefined : argv[fromIndex + 1];
 
-const readDoc = async (): Promise<string> => {
-  if (fromPath !== undefined) {
-    return readFileSync(fromPath, "utf8");
-  }
-  const response = await fetch(GO_LIMITS_DOC_URL, {
+/**
+ * Ask one source and record what it answered.
+ *
+ * @param url - the source.
+ * @returns the answer; the body is read only for a 2xx.
+ */
+const ask = async (url: string): Promise<DocAnswer> => {
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(GO_LIMITS_DOC_TIMEOUT_MS),
   });
-  if (response.ok) {
-    return response.text();
-  }
-  // The markdown URL is gone; measured 2026-10-12, the docs moved under
-  // `/v2/docs/console/` and the new page serves HTML. Read the page instead of
-  // failing: the figures are the same figures, in a table.
-  const moved = await fetch(GO_LIMITS_DOC_MOVED_TO, {
-    signal: AbortSignal.timeout(GO_LIMITS_DOC_TIMEOUT_MS),
-  });
-  if (!moved.ok) {
-    throw new Error(
-      `go.md answered ${response.status} ${response.statusText} and the moved page ${GO_LIMITS_DOC_MOVED_TO} answered ${moved.status}`
-    );
-  }
-  return htmlToDoc(await moved.text());
+  return {
+    body: response.ok ? await response.text() : "",
+    contentType: response.headers.get("content-type") ?? "",
+    finalUrl: response.url || url,
+    status: response.status,
+    url,
+  };
 };
+
+/**
+ * A saved page, as `--from` names it: read as a 200 with no content type.
+ *
+ * @param path - the saved file, markdown or HTML.
+ * @returns the answer.
+ */
+const savedAnswer = async (path: string): Promise<DocAnswer> => ({
+  body: readFileSync(path, "utf8"),
+  contentType: "",
+  finalUrl: path,
+  status: 200,
+  url: path,
+});
+
+/**
+ * The first source whose body carries the tables, asked one at a time.
+ *
+ * In turn, not all at once: a later source is asked only when every earlier one
+ * carried neither shape, and the error then names what each one answered.
+ *
+ * @param sources - the sources, in the order to ask them.
+ * @param read - how a source is asked.
+ * @param answers - what the sources before this one answered.
+ * @returns the parser's markdown.
+ */
+const firstDoc = async (
+  sources: readonly string[],
+  read: (source: string) => Promise<DocAnswer>,
+  answers: readonly DocAnswer[] = []
+): Promise<string> => {
+  const [source, ...rest] = sources;
+  if (source === undefined) {
+    throw new Error(noDocMessage(answers));
+  }
+  const answer = await read(source);
+  const doc = docFrom(answer);
+  if (doc === undefined) {
+    return firstDoc(rest, read, [...answers, answer]);
+  }
+  console.log(`source: ${source} (${answer.body.length} characters)`);
+  return doc;
+};
+
+// A saved page when `--from` names one. Otherwise the page the docs live on
+// first, and the old markdown URL second, in case it is ever the one that
+// carries the tables again.
+const readDoc = (): Promise<string> =>
+  fromPath === undefined
+    ? firstDoc([GO_LIMITS_DOC_MOVED_TO, GO_LIMITS_DOC_URL], ask)
+    : firstDoc([fromPath], savedAnswer);
 
 /** Catalog ids, so a doc label can be resolved to the id the gateway uses. */
 const catalogIds = new Set(OPENCODE_GO_CATALOG.map((model) => model.id));

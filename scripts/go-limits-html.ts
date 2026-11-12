@@ -11,6 +11,11 @@
  * request-estimate tables below them repeat model names with no dollar column at
  * all, which is exactly what the parser is written to stop before.
  *
+ * It also decides which answer to read (`docFrom`), because that half broke
+ * next: from 2026-11-07 the old `go.md` URL answered 200 again with a body that
+ * had no tab sections, and a reader that trusted the status handed it to the
+ * markdown parser. A body is now read by what it carries.
+ *
  * @module scripts/go-limits-html
  */
 
@@ -33,6 +38,22 @@ export const tableRows = (html: string): string[][] =>
     )
   );
 
+/**
+ * The page's allowance tables: those whose header ends in "Monthly limit".
+ *
+ * Chosen by header, never by position or shape, because the request-estimate
+ * tables have the same column count and the same model names.
+ *
+ * @param html - a page's HTML.
+ * @returns each allowance table's rows, header first, in the page's order.
+ */
+const monthlyLimitTables = (html: string): string[][][] =>
+  [...html.matchAll(/<table[^>]*>(.*?)<\/table>/gsu)]
+    .map((table) => tableRows(table[1] ?? ""))
+    .filter((rows) =>
+      (rows[0] ?? []).at(-1)?.toLowerCase().includes(MONTHLY_LIMIT_HEADER)
+    );
+
 /** The markdown header the parser reads, repeated for each plan's section. */
 const MARKDOWN_HEADER = [
   "| Model | Input | Output | Cached Read | Cached Write | Monthly limit |",
@@ -50,11 +71,7 @@ const MARKDOWN_HEADER = [
  * missing.
  */
 export const htmlToDoc = (html: string): string => {
-  const dollarTables = [...html.matchAll(/<table[^>]*>(.*?)<\/table>/gsu)]
-    .map((table) => tableRows(table[1] ?? ""))
-    .filter((rows) =>
-      (rows[0] ?? []).at(-1)?.toLowerCase().includes(MONTHLY_LIMIT_HEADER)
-    );
+  const dollarTables = monthlyLimitTables(html);
   if (dollarTables.length < 2) {
     throw new Error(
       `go-limits: ${GO_LIMITS_DOC_MOVED_TO} carried ${dollarTables.length} monthly-limit table(s), expected 2`
@@ -76,3 +93,67 @@ export const htmlToDoc = (html: string): string => {
     ].join("\n");
   return [section("Go", go ?? []), section("Go Plus", goPlus ?? [])].join("\n");
 };
+
+/** The section the markdown source opens the Go plan's table with. */
+const GO_TAB = '<TabItem label="Go">';
+
+/** What one source answered, as the generator records it. */
+export interface DocAnswer {
+  /** The URL asked for. */
+  readonly url: string;
+  /** Where the answer came from after redirects (`Response.url`). */
+  readonly finalUrl: string;
+  readonly status: number;
+  /** The `content-type` header, or `""` when there was none. */
+  readonly contentType: string;
+  /** The body, read only for a 2xx answer; `""` otherwise. */
+  readonly body: string;
+}
+
+/**
+ * The markdown `parseGoLimitsDoc` reads, from whatever a source answered.
+ *
+ * Decided by the body, not the status or the URL: the tabbed markdown is passed
+ * through, and an HTML page carrying both allowance tables is converted. A 2xx
+ * that carries neither answers `undefined`, so the next source is tried and the
+ * parser never sees a body it cannot read.
+ *
+ * @param answer - one source's answer.
+ * @returns the parser's markdown, or `undefined` when this answer has none.
+ */
+export const docFrom = (answer: DocAnswer): string | undefined => {
+  if (answer.status < 200 || answer.status > 299) {
+    return undefined;
+  }
+  if (answer.body.includes(GO_TAB)) {
+    return answer.body;
+  }
+  return monthlyLimitTables(answer.body).length >= 2
+    ? htmlToDoc(answer.body)
+    : undefined;
+};
+
+/**
+ * The error for a run in which no source carried the tables.
+ *
+ * One line per source, with what tells the shapes apart: the status, a
+ * redirect, the content type, the size, and which of the two shapes the body
+ * carried. A layout change then names itself in the nightly log, rather than
+ * surfacing as the parser's complaint about a body it should never have seen.
+ *
+ * @param answers - every source's answer, in the order they were asked.
+ * @returns the message.
+ */
+export const noDocMessage = (answers: readonly DocAnswer[]): string =>
+  [
+    "go-limits: no source carried the allowance tables",
+    ...answers.map((answer) => {
+      const redirected =
+        answer.finalUrl === answer.url
+          ? ""
+          : ` (redirected to ${answer.finalUrl})`;
+      const tab = answer.body.includes(GO_TAB) ? "the Go tab" : "no Go tab";
+      const tables = monthlyLimitTables(answer.body).length;
+      return `  - ${answer.url} answered ${answer.status}${redirected}, ${answer.contentType || "no content type"}, ${answer.body.length} characters, ${tab}, ${tables} monthly-limit table(s)`;
+    }),
+  ].join("\n");
