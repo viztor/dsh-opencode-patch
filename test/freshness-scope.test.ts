@@ -24,7 +24,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import {
@@ -566,14 +566,30 @@ describe("freshness scope · the CI wiring, parsed", () => {
   });
 
   /**
+   * The test process's environment without any `GIT_*` variable. A git hook,
+   * or `git rebase --exec` in a linked worktree, exports an absolute `GIT_DIR`
+   * and `GIT_INDEX_FILE`, which git honours before the working directory: a
+   * child that inherited them would commit, branch and configure the
+   * repository they name instead of the one it runs in. `GIT_CONFIG_PARAMETERS`
+   * goes too, since it carries `-c` settings such as signing.
+   */
+  const inheritedWithoutGit = (): NodeJS.ProcessEnv =>
+    Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))
+    );
+
+  /**
    * One step's `run` text, executed the way the runner executes it (`bash -e`,
    * GitHub's default shell, which has no pipefail), in the repository, with a
    * shell function named in `prelude` standing in for a command the step calls.
+   * It runs in the repository unless `cwd` names another directory, and
+   * inherits no `GIT_*` variable (`inheritedWithoutGit`).
    */
   const execute = (
     run: string,
     prelude: string,
-    env: Readonly<Record<string, string>> = {}
+    env: Readonly<Record<string, string>> = {},
+    cwd: string = ROOT
   ): {
     status: number | null;
     stdout: string;
@@ -584,10 +600,10 @@ describe("freshness scope · the CI wiring, parsed", () => {
     const temp = mkdtempSync(join(tmpdir(), "ci-step-"));
     try {
       const result = spawnSync("bash", ["-e", "-c", `${prelude}\n${run}`], {
-        cwd: ROOT,
+        cwd,
         encoding: "utf8",
         env: {
-          ...process.env,
+          ...inheritedWithoutGit(),
           ...env,
           CALLS: join(temp, "calls"),
           GITHUB_OUTPUT: join(temp, "github-output"),
@@ -813,6 +829,417 @@ describe("freshness scope · the CI wiring, parsed", () => {
     const silent = execute(withoutPipefail, FAILING_PNPM);
     expect(silent.status).toBe(0);
     expect(silent.stdout).not.toContain("::warning::");
+  });
+
+  describe("the nightly refresh step, run in a scratch repository", () => {
+    const REFRESH = "propose the refresh (nightly only)";
+    const BRANCH = "chore/generated-refresh";
+    const CATALOG = "src/catalog-data.ts";
+    const LIMITS = "src/go-limits-data.ts";
+    const COMMITTED = {
+      [CATALOG]: "export const CATALOG = 'committed';\n",
+      [LIMITS]: "export const LIMITS = 'committed';\n",
+    };
+    const REGENERATED = {
+      [CATALOG]: "export const CATALOG = 'regenerated';\n",
+      [LIMITS]: "export const LIMITS = 'regenerated';\n",
+    };
+    /** Git with no user or system configuration, so a signing rule or a hook cannot decide a case. */
+    const GIT_ENV = {
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
+
+    /**
+     * What a generator does when the step runs it: rewrite its file and
+     * succeed, leave it as committed and succeed, or write garbage and fail -
+     * the way a reader that lost its page fails halfway through a write.
+     */
+    type Outcome = "regenerates" | "unchanged" | "fails";
+
+    /**
+     * The step's commands, as shell functions: `pnpm` runs each generator by
+     * its outcome (and records which catalog the limits generator read, since
+     * it imports that file) and formats as a no-op; `git push` and `gh` record
+     * instead of reaching GitHub (`gh pr create` exits `$GH_CREATE_STATUS`,
+     * and `gh pr list` answers `$GH_OPEN` open pull requests, or fails with
+     * `$GH_LIST_STATUS`); every other `git` is the real one.
+     */
+    const PRELUDE = [
+      "generate() {",
+      '  case "$2" in',
+      "    unchanged) return 0 ;;",
+      `    regenerates) printf '%s' "$3" > "$1" ;;`,
+      `    fails) printf 'garbage' > "$1"; echo "error: $1 boom" >&2; return 1 ;;`,
+      "  esac",
+      "}",
+      "pnpm() {",
+      '  echo "pnpm $*" >> "$CALLS"',
+      '  case "$*" in',
+      `    "run catalog:shim -- --write") generate ${CATALOG} "$CATALOG_OUTCOME" "$CATALOG_NEW" ;;`,
+      '    "run limits:shim -- --write")',
+      `      echo "limits read: $(cat ${CATALOG})" >> "$CALLS"`,
+      `      generate ${LIMITS} "$LIMITS_OUTCOME" "$LIMITS_NEW" ;;`,
+      '    "exec vp fmt --write "*) return 0 ;;',
+      '    *) echo "unexpected: pnpm $*" >&2; return 99 ;;',
+      "  esac",
+      "}",
+      "git() {",
+      '  if [ "$1" = push ]; then echo "git $*" >> "$CALLS"; return "$PUSH_STATUS"; fi',
+      '  command git "$@"',
+      "}",
+      "gh() {",
+      '  echo "gh $*" >> "$CALLS"',
+      '  case "$1 $2" in',
+      '    "pr create") return "$GH_CREATE_STATUS" ;;',
+      '    "pr list") [ "$GH_LIST_STATUS" = 0 ] || return "$GH_LIST_STATUS"; echo "$GH_OPEN" ;;',
+      '    *) echo "unexpected: gh $*" >&2; return 99 ;;',
+      "  esac",
+      "}",
+    ].join("\n");
+
+    const gitIn = (dir: string, ...args: string[]): string => {
+      const result = spawnSync("git", args, {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...inheritedWithoutGit(), ...GIT_ENV },
+      });
+      if (result.status !== 0) {
+        throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+      }
+      return result.stdout;
+    };
+
+    const step = steps.find((candidate) => candidate.name === REFRESH);
+
+    /** The step, performed: a repository holding the committed files, and the two generators' outcomes. */
+    const perform = (
+      catalog: Outcome,
+      limits: Outcome,
+      {
+        earlier,
+        push = 0,
+        create = 0,
+        open = 0,
+        list = 0,
+      }: {
+        /** A refresh branch an earlier night left, carrying these files. */
+        earlier?: Readonly<Record<string, string>>;
+        push?: number;
+        /** `gh pr create`'s exit status. */
+        create?: number;
+        /** How many refresh pull requests `gh pr list` finds open. */
+        open?: number;
+        /** `gh pr list`'s exit status. */
+        list?: number;
+      } = {}
+    ) => {
+      const repo = mkdtempSync(join(tmpdir(), "ci-refresh-"));
+      try {
+        mkdirSync(join(repo, "src"));
+        for (const [path, text] of Object.entries(COMMITTED)) {
+          writeFileSync(join(repo, path), text);
+        }
+        gitIn(repo, "init", "--quiet", "--initial-branch=main");
+        gitIn(repo, "add", ".");
+        gitIn(
+          repo,
+          "-c",
+          "user.name=fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "commit",
+          "--quiet",
+          "--message=base"
+        );
+        if (earlier !== undefined) {
+          gitIn(repo, "checkout", "--quiet", "-b", BRANCH);
+          for (const [path, text] of Object.entries(earlier)) {
+            writeFileSync(join(repo, path), text);
+          }
+          gitIn(repo, "add", ".");
+          gitIn(
+            repo,
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "--message=an earlier night's refresh"
+          );
+          gitIn(repo, "checkout", "--quiet", "main");
+        }
+        const result = execute(
+          step?.run ?? "",
+          PRELUDE,
+          {
+            ...GIT_ENV,
+            CATALOG_NEW: REGENERATED[CATALOG],
+            CATALOG_OUTCOME: catalog,
+            GH_CREATE_STATUS: String(create),
+            GH_LIST_STATUS: String(list),
+            GH_OPEN: String(open),
+            GH_TOKEN: "fixture-token",
+            GITHUB_REPOSITORY: "owner/repo",
+            LIMITS_NEW: REGENERATED[LIMITS],
+            LIMITS_OUTCOME: limits,
+            PUSH_STATUS: String(push),
+          },
+          repo
+        );
+        const branch = gitIn(repo, "branch", "--list", BRANCH).trim();
+        const committed =
+          branch === ""
+            ? undefined
+            : {
+                files: gitIn(repo, "diff", "--name-only", "main", BRANCH)
+                  .split("\n")
+                  .filter(Boolean),
+                [CATALOG]: gitIn(repo, "show", `${BRANCH}:${CATALOG}`),
+                [LIMITS]: gitIn(repo, "show", `${BRANCH}:${LIMITS}`),
+              };
+        const tree = {
+          [CATALOG]: readFileSync(join(repo, CATALOG), "utf8"),
+          [LIMITS]: readFileSync(join(repo, LIMITS), "utf8"),
+        };
+        return { ...result, committed, tree };
+      } finally {
+        rmSync(repo, { force: true, recursive: true });
+      }
+    };
+
+    const errors = (stdout: string): string[] =>
+      stdout.split("\n").filter((line) => line.startsWith("::error::"));
+    const warnings = (stdout: string): string[] =>
+      stdout.split("\n").filter((line) => line.startsWith("::warning::"));
+    const PUSHED = `git push --force https://x-access-token:fixture-token@github.com/owner/repo.git ${BRANCH}`;
+
+    it("is found by its name, and runs only on the nightly", () => {
+      expect(step?.run).toBeDefined();
+      expect(runs(step!, "schedule", {})).toBe(true);
+      expect(runs(step!, "push", {})).toBe(false);
+      expect(runs(step!, "pull_request", {})).toBe(false);
+      expect(runs(step!, "workflow_dispatch", {})).toBe(false);
+    });
+
+    it("a limits failure keeps the committed table, the catalog refresh still goes out, and the step fails naming the limits generator", () => {
+      const run = perform("regenerates", "fails");
+      expect(run.status).toBe(1);
+      expect(run.committed?.files).toStrictEqual([CATALOG]);
+      expect(run.committed?.[CATALOG]).toBe(REGENERATED[CATALOG]);
+      expect(run.committed?.[LIMITS]).toBe(COMMITTED[LIMITS]);
+      expect(run.tree[LIMITS]).toBe(COMMITTED[LIMITS]);
+      expect(run.calls).toContain(PUSHED);
+      expect(run.calls).toContain("gh pr create");
+      const [error, ...more] = errors(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(error).toMatch(/Go limits generator failed/u);
+      expect(error).toContain(LIMITS);
+    });
+
+    it("a catalog failure keeps the committed catalog, which the limits generator then reads, and the limits refresh still goes out", () => {
+      const run = perform("fails", "regenerates");
+      expect(run.status).toBe(1);
+      // Restored BEFORE the limits generator ran: it imports the catalog.
+      expect(run.calls).toContain(`limits read: ${COMMITTED[CATALOG]}`);
+      expect(run.calls).not.toContain("limits read: garbage");
+      expect(run.committed?.files).toStrictEqual([LIMITS]);
+      expect(run.committed?.[CATALOG]).toBe(COMMITTED[CATALOG]);
+      expect(run.committed?.[LIMITS]).toBe(REGENERATED[LIMITS]);
+      expect(run.calls).toContain(PUSHED);
+      const [error, ...more] = errors(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(error).toMatch(/catalog generator failed/u);
+      expect(error).toContain(CATALOG);
+    });
+
+    it("both current: exit 0, no commit, no push, no pull request", () => {
+      const run = perform("unchanged", "unchanged");
+      expect(run.stderr).toBe("");
+      expect(run.status).toBe(0);
+      expect(run.committed).toBeUndefined();
+      expect(run.calls).not.toContain("git push");
+      expect(run.calls).not.toContain("gh ");
+      expect(errors(run.stdout)).toStrictEqual([]);
+      expect(run.stdout).toContain("both generated files are current");
+    });
+
+    it("both failing: exit 1, both files as committed, no commit, and each generator named", () => {
+      const run = perform("fails", "fails");
+      expect(run.status).toBe(1);
+      expect(run.committed).toBeUndefined();
+      expect(run.tree).toStrictEqual(COMMITTED);
+      expect(run.calls).not.toContain("git push");
+      const found = errors(run.stdout);
+      expect(found).toHaveLength(2);
+      expect(found[0]).toMatch(/catalog generator failed/u);
+      expect(found[1]).toMatch(/Go limits generator failed/u);
+      // Neither file was regenerated, so neither is known to be current.
+      expect(run.stdout).not.toContain("current");
+      expect(run.stdout).toContain(`not regenerated: ${CATALOG} ${LIMITS}`);
+    });
+
+    for (const [catalog, limits, failed, current] of [
+      ["fails", "unchanged", CATALOG, LIMITS],
+      ["unchanged", "fails", LIMITS, CATALOG],
+    ] as const) {
+      it(`one failing, the other unchanged (${failed} failing): exit 1, no proposal, and the log calls current only the file that regenerated`, () => {
+        const run = perform(catalog, limits);
+        expect(run.status).toBe(1);
+        expect(run.committed).toBeUndefined();
+        expect(run.tree).toStrictEqual(COMMITTED);
+        expect(run.calls).not.toContain("git push");
+        expect(run.calls).not.toContain("gh ");
+        const [error, ...more] = errors(run.stdout);
+        expect(more).toStrictEqual([]);
+        expect(error).toContain(failed);
+        expect(run.stdout).not.toContain("both generated files are current");
+        expect(run.stdout).toContain(`not regenerated: ${failed}`);
+        expect(run.stdout).not.toContain(`not regenerated: ${current}`);
+      });
+    }
+
+    it("a failed pull-request creation with a refresh pull request open is the already-open case: exit 0", () => {
+      const run = perform("regenerates", "regenerates", { create: 1, open: 1 });
+      expect(run.status).toBe(0);
+      expect(run.calls).toContain(PUSHED);
+      expect(run.calls).toContain(
+        `gh pr list --head ${BRANCH} --state open --json number --jq length`
+      );
+      expect(run.stdout).toContain("a refresh pull request is already open");
+      expect(errors(run.stdout)).toStrictEqual([]);
+    });
+
+    it("a failed pull-request creation with none open fails the step, naming the pushed branch", () => {
+      const run = perform("regenerates", "regenerates", { create: 1 });
+      expect(run.status).toBe(1);
+      expect(run.calls).toContain(PUSHED);
+      expect(run.stdout).not.toContain("already open");
+      const [error, ...more] = errors(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(error).toMatch(/could not open the refresh pull request/u);
+      expect(error).toContain(BRANCH);
+    });
+
+    it("a failed pull-request creation that cannot be told from an open one fails the step", () => {
+      const run = perform("regenerates", "regenerates", {
+        create: 1,
+        list: 1,
+      });
+      expect(run.status).toBe(1);
+      expect(run.stdout).not.toContain("already open");
+      const [error, ...more] = errors(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(error).toMatch(/could not open the refresh pull request/u);
+    });
+
+    it("a failed pull-request creation still fails the step after a generator failure, with both annotated", () => {
+      const run = perform("regenerates", "fails", { create: 1 });
+      expect(run.status).toBe(1);
+      const found = errors(run.stdout);
+      expect(found).toHaveLength(2);
+      expect(found[0]).toMatch(/Go limits generator failed/u);
+      expect(found[1]).toMatch(/could not open the refresh pull request/u);
+    });
+
+    it("a created pull request asks nothing more of gh", () => {
+      const run = perform("regenerates", "regenerates");
+      expect(run.status).toBe(0);
+      expect(run.calls).toContain("gh pr create");
+      expect(run.calls).not.toContain("gh pr list");
+      expect(run.stdout).not.toContain("already open");
+    });
+
+    it("ignores the GIT_* variables a git hook or `git rebase --exec` exports: the repository they name is left untouched", () => {
+      // A hook, or `rebase --exec` in a linked worktree, hands its child an
+      // absolute GIT_DIR (and GIT_INDEX_FILE); git honours those before the
+      // working directory, so a run that inherited them would commit, branch
+      // and configure THAT repository instead of the scratch one.
+      const decoy = mkdtempSync(join(tmpdir(), "ci-refresh-decoy-"));
+      try {
+        writeFileSync(join(decoy, "README.md"), "decoy\n");
+        gitIn(decoy, "init", "--quiet", "--initial-branch=work");
+        gitIn(decoy, "add", ".");
+        gitIn(
+          decoy,
+          "-c",
+          "user.name=fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "commit",
+          "--quiet",
+          "--message=decoy"
+        );
+        const state = (): Record<string, string> => ({
+          branches: gitIn(decoy, "branch", "--list"),
+          config: readFileSync(join(decoy, ".git", "config"), "utf8"),
+          head: gitIn(decoy, "rev-parse", "HEAD"),
+          index: gitIn(decoy, "ls-files", "--stage"),
+          log: gitIn(decoy, "log", "--all", "--format=%H %s"),
+          status: gitIn(decoy, "status", "--porcelain"),
+        });
+        const before = state();
+        vi.stubEnv("GIT_DIR", join(decoy, ".git"));
+        vi.stubEnv("GIT_WORK_TREE", decoy);
+        vi.stubEnv("GIT_INDEX_FILE", join(decoy, ".git", "index"));
+        let run: ReturnType<typeof perform>;
+        try {
+          run = perform("regenerates", "fails");
+        } finally {
+          vi.unstubAllEnvs();
+        }
+        expect(state()).toStrictEqual(before);
+        expect(run.status).toBe(1);
+        expect(run.committed?.files).toStrictEqual([CATALOG]);
+        expect(run.calls).toContain(PUSHED);
+      } finally {
+        rmSync(decoy, { force: true, recursive: true });
+      }
+    });
+
+    it("a generator's failure is annotated even when a later command fails the step first", () => {
+      const run = perform("regenerates", "fails", { push: 128 });
+      expect(run.status).not.toBe(0);
+      expect(run.calls).toContain(PUSHED);
+      expect(errors(run.stdout)).toHaveLength(1);
+      expect(errors(run.stdout)[0]).toMatch(/Go limits generator failed/u);
+      // The push failed, so nothing was replaced and nothing was withdrawn.
+      expect(warnings(run.stdout)).toStrictEqual([]);
+    });
+
+    it("a partial refresh replaces an earlier night's branch, withdrawing the failed file's earlier change, and says so", () => {
+      // The branch is rebuilt from main and force-pushed every night, so a
+      // refresh pull request left open is replaced by this run's partial one:
+      // the earlier night's limits change is no longer proposed until the
+      // limits generator works again. That is the design (an older night's
+      // output is never carried into a commit that says it was regenerated),
+      // and the run says which file the replaced branch no longer changes.
+      const run = perform("regenerates", "fails", {
+        earlier: REGENERATED,
+      });
+      expect(run.status).toBe(1);
+      expect(run.committed?.files).toStrictEqual([CATALOG]);
+      expect(run.committed?.[LIMITS]).toBe(COMMITTED[LIMITS]);
+      expect(run.calls).toContain(PUSHED);
+      const [warning, ...more] = warnings(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(warning).toContain(BRANCH);
+      expect(warning).toContain(LIMITS);
+      expect(warning).not.toContain(CATALOG);
+    });
+
+    it("a complete refresh replaces an earlier night's branch with no warning", () => {
+      const run = perform("regenerates", "regenerates", {
+        earlier: { [LIMITS]: "export const LIMITS = 'an earlier night';\n" },
+      });
+      expect(run.status).toBe(0);
+      expect(run.committed?.files).toStrictEqual([CATALOG, LIMITS]);
+      expect(run.committed?.[LIMITS]).toBe(REGENERATED[LIMITS]);
+      expect(run.calls).toContain(PUSHED);
+      expect(warnings(run.stdout)).toStrictEqual([]);
+      expect(errors(run.stdout)).toStrictEqual([]);
+    });
   });
 
   it("each check's entry is the script package.json runs for it", () => {
