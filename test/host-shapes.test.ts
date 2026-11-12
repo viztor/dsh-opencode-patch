@@ -11,9 +11,9 @@
  *
  * It runs on whichever host cell is installed (`HOST_CELL`: either channel's
  * newest pi, or a channel's floor). What differs between the cells (pi's
- * catalog bases and counts, which ids it can place, whether its Go provider
- * carries Google) carries one expectation per cell (`forHost`), measured on
- * each. What the `@deepseek-ai` cluster decides carries one expectation per
+ * catalog bases and counts, which ids it can place) carries one expectation
+ * per cell (`forHost`), measured on each; every supported pi's Go provider
+ * carries Google, so F10 holds one. What the `@deepseek-ai` cluster decides carries one expectation per
  * channel (`forChannel`): pi-ai's own Config defaults agree on both bridges,
  * so one expectation holds them, while the protocols a route-level `api` may
  * name do not (rc's bridge serves `google-generative-ai`, alpha's refuses it,

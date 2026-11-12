@@ -155,7 +155,7 @@ describe(
       expect(raw.providers.opencode?.displayName).toBe("Zen (edited)");
     });
 
-    it("F14 — the editor's candidate is never the fiber's raw config; _commitVolatile's run is, on either core (config-editor:103; loader entry.ts:149,171)", async () => {
+    it("F14 — the editor's candidate is never the fiber's raw config; _commitVolatile's run is, on either core (config-editor:103; loader entry.ts: OLD 149,171; NEW 152,167-174)", async () => {
       tier = await bootTierB({
         plugin: false,
         prepare: appendStrip,
@@ -180,7 +180,7 @@ describe(
       expect(spy.records[0]?.raw).not.toBe(commit?.raw);
     });
 
-    it("F15 — a plane-only edit emits no loader/volatile-update and restarts nothing; a sibling's edit emits one (loader entry.ts:177-191)", async () => {
+    it("F15 — a plane-only edit emits no loader/volatile-update and restarts nothing; a sibling's edit emits one (loader entry.ts: OLD 177-191; NEW 180-194)", async () => {
       tier = await bootTierB({
         plugin: false,
         prepare: appendStrip,
@@ -422,7 +422,7 @@ describe(
   "host · !!js and the loader's interpolate (tier B)",
   { timeout: 30_000 },
   () => {
-    it("F16 — a listener inner to the loader sees an un-interpolated {__jsExpr} node through next(); one outer to it, and the fiber's effective config, see the evaluated value (loader/src/index.ts:104-113)", async () => {
+    it("F16 — a listener inner to the loader sees an un-interpolated {__jsExpr} node through next(); one outer to it, and the fiber's effective config, see the evaluated value (loader/src/index.ts: OLD 104-113; NEW 104-110)", async () => {
       // The expression evaluates to the NON-default value (`debug` defaults
       // to false), so a value that fell back to the default cannot pass.
       const wire = recordingFetch();

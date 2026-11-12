@@ -583,7 +583,8 @@ export const forHost = <T>(
 
 /**
  * One expectation per channel, for what the `@deepseek-ai` cluster decides
- * rather than pi (pi-ai's own defaults, say).
+ * rather than pi: today only the protocols a route-level `api` may name
+ * (rc's bridge serves `google-generative-ai`, alpha's refuses it).
  *
  * @param values - the expectation for each channel.
  * @returns the selected channel's.
