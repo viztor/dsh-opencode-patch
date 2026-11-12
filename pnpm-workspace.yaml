@@ -1,6 +1,6 @@
-# Neither is used at runtime here. They arrive as dependencies of
-# @earendil-works/pi-ai, which this repo only imports in a test that reads its
-# protocol table, so their build scripts stay off rather than being approved.
+# Both arrive as dependencies of @earendil-works/pi-ai, which the bridge loads at
+# runtime from the host and the suite imports directly. Neither package's build
+# script is needed, so their builds stay off rather than being approved.
 allowBuilds:
   "@google/genai": false
   protobufjs: false
@@ -36,6 +36,21 @@ minimumReleaseAgeExclude:
   - ultracite@8.1.0
   - "@deepseek-ai/dsh-client-store@0.2.1-rc.4 || 0.2.2-alpha.2"
   - "@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.4 || 0.2.2-alpha.2"
+#
+# No pi override and no pi patch (D14''). The pi this install runs is what an
+# npm user of the channel runs: unpatched, at the newest 1.x the bridge's range
+# admits, pinned by the committed lockfile (this one for alpha,
+# `channels/rc/pnpm-lock.yaml` for rc). `scripts/use-channel.ts` switches the
+# dev install between the channels, and to the range's floor (the harness's own
+# pin) without committing it; `test/support/host-versions.ts` names both.
+#
+# `pnpm run`/`pnpm exec` only WARN when the install looks stale against these
+# files, rather than reinstalling: a channel switch restores the committed
+# files while the tree keeps the switched install, and an automatic reinstall
+# would put the default channel back under a run that was meant to test the
+# other one. The suite itself checks which host is installed
+# (`test/host-versions.test.ts`), so a stale tree fails there, by name.
+verifyDepsBeforeRun: warn
 overrides:
   vite@*: "catalog:"
 peerDependencyRules:
