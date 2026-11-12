@@ -459,7 +459,7 @@ describe("google-bridge · the pi copy it loads", () => {
   it("declares no pi of its own at runtime, and loads the host's", async () => {
     // The rule this replaced a version pin with: the plugin must NOT ship a pi.
     // The wrapper (`dsh-llm-pi-ai`) already depends on `@earendil-works/pi-ai`
-    // with a range (`^1.1.0` on rc, `^1.3.0` on alpha): an npm install of the
+    // with a range (`^1.3.0` on both channels): an npm install of the
     // published host floats it to the newest 1.x, the desktop app ships the
     // harness workspace's own pin, and this repo's dev install follows the
     // channel's committed lockfile. A second copy here

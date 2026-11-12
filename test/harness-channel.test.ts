@@ -28,7 +28,7 @@
  *    ranges, and this repository carries no pi patch.
  *
  * `cordis` has its own line. The host vendors it as source at an exact version
- * which may or may not carry a channel tag (`4.0.5`, then `4.0.6-alpha.1`), so
+ * which may or may not carry a channel tag (`4.0.6-alpha.2` on alpha, `4.1.0` on rc), so
  * the pin is exact either way and its peer range covers the same both-channel
  * spread.
  *
@@ -246,6 +246,7 @@ describe("harness channel alignment · declarations", () => {
         "0.2.2-alpha.2",
         "0.2.2-alpha.3",
         "0.2.2-rc.1",
+        "0.2.2-rc.2",
         "0.2.2",
         ...Object.values(CHANNELS).map((record) => record.dsh),
       ]),
@@ -284,7 +285,8 @@ describe("harness channel alignment · declarations", () => {
     // `~4.0.6-alpha.2` although no 4.0.6 prerelease satisfies it, because the
     // prerelease-tuple rule npm resolves under is not part of an overlap.
     //
-    // Both tables are recorded from the registry on 2026-11-04 (`npm view
+    // Both tables are recorded from the registry on 2026-11-04, and 0.2.2-rc.2
+    // on 2026-11-12 (`npm view
     // @deepseek-ai/dsh-typert-protocol@<v> peerDependencies` for every build
     // on the 0.2.1 and 0.2.2 lines; `npm view @deepseek-ai/cordis versions`).
     // A new typert build joins the first with its cordis range, and a new
@@ -312,6 +314,7 @@ describe("harness channel alignment · declarations", () => {
       "0.2.2-alpha.2": "~4.0.6-alpha.1",
       "0.2.2-alpha.3": "~4.0.6-alpha.2",
       "0.2.2-rc.1": "~4.1.0",
+      "0.2.2-rc.2": "~4.1.0",
     };
     const peers = manifest().peerDependencies ?? {};
     const typertPeer = peers["@deepseek-ai/dsh-typert-protocol"] ?? "";
@@ -348,6 +351,7 @@ describe("harness channel alignment · declarations", () => {
     // (semver admits a prerelease only through a comparator in its own tuple).
     expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || >=4.0.6-0 <4.1.0")).toEqual([
       "typert@0.2.2-rc.1 -> cordis@4.1.0",
+      "typert@0.2.2-rc.2 -> cordis@4.1.0",
     ]);
     expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || ~4.1.0")).toEqual(
       expect.arrayContaining(["typert@0.2.2-alpha.3 -> cordis@4.0.6-alpha.2"])
@@ -565,9 +569,9 @@ describe.each(Object.keys(CHANNELS) as Channel[])(
       // to ONE copy, the channel's: a second copy would leave two of the
       // library the Config schema is built with. On rc that copy is the
       // HOST's line, not the plugin's published pin: `use-channel.ts` repins
-      // the plugin's own dependency to the record's `3.18.5`, while the
-      // published manifest pins the alpha line, which the rc bridge's `~` range
-      // does not admit. So this cell checks the host's schemastery; an rc npm
+      // the plugin's own dependency to the record's (`3.19.0`), while the
+      // published manifest pins the alpha line (`3.18.6-alpha.2`), which the
+      // rc bridge's `~3.19.0` does not admit. So this cell checks the host's schemastery; an rc npm
       // install of the published plugin holds two copies until that pin admits
       // both lines (an open owner decision).
       expect(lock.versionsOf("@deepseek-ai/schemastery")).toEqual([

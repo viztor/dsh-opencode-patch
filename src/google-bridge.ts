@@ -30,8 +30,9 @@
  * and deliberately not declared as a dependency.
  *
  * **Why not a dependency.** The harness wrapper (`dsh-llm-pi-ai`) already
- * depends on `@earendil-works/pi-ai` with a RANGE (`^1.1.0` on the rc
- * channel, `^1.3.0` on alpha). An npm install of either channel resolves it to
+ * depends on `@earendil-works/pi-ai` with a RANGE (`^1.3.0` on both
+ * channels today; the `0.2.1` rc builds declared `^1.1.0`). An npm install of
+ * either channel resolves it to
  * the newest 1.x the range admits; the desktop app ships the pi the harness's
  * own workspace pins; this repo's dev install follows the channel's committed
  * lockfile (`test/support/host-versions.ts`). Declaring the same package as an

@@ -16,14 +16,17 @@ import {
 } from "../scripts/channel-manifest.ts";
 import { CHANNELS } from "./support/host-versions.ts";
 
+// The default channel's manifest, read off its record rather than dated
+// literals, so the identity case below stays a property of `channelManifest`
+// across a channel bump instead of a pin that every bump has to re-date.
 const MANIFEST = `${JSON.stringify(
   {
     name: "x",
-    dependencies: { "@deepseek-ai/schemastery": "3.18.6-alpha.1" },
+    dependencies: { "@deepseek-ai/schemastery": CHANNELS.alpha.schemastery },
     devDependencies: {
-      "@deepseek-ai/cordis": "4.0.6-alpha.1",
-      "@deepseek-ai/cordis-plugin-loader": "1.0.7-alpha.1",
-      "@deepseek-ai/dsh-llm-pi-ai": "0.2.2-alpha.2",
+      "@deepseek-ai/cordis": CHANNELS.alpha.cordis,
+      "@deepseek-ai/cordis-plugin-loader": CHANNELS.alpha.loader,
+      "@deepseek-ai/dsh-llm-pi-ai": CHANNELS.alpha.dsh,
       "@earendil-works/pi-ai": "^1.1.0",
       semver: "^7.8.0",
     },

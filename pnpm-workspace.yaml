@@ -9,7 +9,8 @@ catalog:
   vite-plus: 1.4.0
 # pnpm refuses any version published inside the last 24h (its default
 # `minimumReleaseAge`), and the pi seam this repo follows rides fresh cuts:
-# the 0.2.2-alpha.2 cluster is hours old. These are the exact versions that
+# the 0.2.2-rc.2 cluster the rc lockfile installs was hours old when it was
+# recorded (2026-11-12). These are the exact versions that
 # window is lifted for — the wrapper the bridge's pin has to satisfy and the
 # harness packages it pulls — pinned, not wildcards, so the next bump has to
 # make its own case. The 0.2.1 entries stay listed because the peer range still
@@ -18,24 +19,34 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/cordis@4.0.6-alpha.1"
   - "@deepseek-ai/schemastery@3.18.6-alpha.1"
   - "@deepseek-ai/cosmokit@1.8.7-alpha.1"
-  - "@deepseek-ai/dsh-brand@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-llm-pi-ai@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-util-values@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-attachment@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-authorization@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-credentials@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-fs@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-launch-environment@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-llm@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-sandbox@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-scope@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-session@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-timeout@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-typert-protocol@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-util-crypto@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2"
+  - "@deepseek-ai/dsh-brand@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-llm-pi-ai@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-util-values@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-attachment@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-authorization@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-credentials@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-fs@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-launch-environment@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-llm@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-sandbox@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-scope@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-session@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-timeout@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-typert-protocol@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-util-crypto@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
   - ultracite@8.1.0
-  - "@deepseek-ai/dsh-client-store@0.2.1-rc.4 || 0.2.2-alpha.2"
-  - "@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.4 || 0.2.2-alpha.2"
+  - "@deepseek-ai/dsh-client-store@0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
+  - "@deepseek-ai/dsh-app-boot@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-atomic-write@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-config-editor@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-error@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-fs-patch@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-home-paths@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-native-command@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-official-bundles@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-package-manifest@0.2.2-rc.2"
+  - "@deepseek-ai/dsh-settings@0.2.2-rc.2"
 #
 # No pi override and no pi patch (D14''). The pi this install runs is what an
 # npm user of the channel runs: unpatched, at the newest 1.x the bridge's range

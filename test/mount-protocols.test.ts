@@ -127,9 +127,9 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
    * F10, per pi line: whether pi's own `opencode-go` provider lists a model on
    * the Google protocol. A characterization of the install under test, keyed
    * by the pi it runs (`HOST_VERSIONS.pi`: the channel's newest, or its
-   * floor), not a requirement. pi 1.1.0, the rc channel's floor and the
-   * harness's rc pin, has none; pi 1.3.0 added a Go Google row, and 1.5.0
-   * keeps it. The gateway's Go catalog carries Google models either way,
+   * floor), not a requirement. pi 1.1.0, the floor of the `0.2.1` rc
+   * builds, has none; pi 1.3.0, both channels' floor since, added a Go
+   * Google row, and 1.5 keeps it. The gateway's Go catalog carries Google models either way,
    * which the plugin routes through its own adapter, so the row describes pi,
    * not the plugin.
    *
@@ -199,8 +199,8 @@ describe("mount · what pi-ai's own gateway providers cover", () => {
  * and not a table kept here. An earlier version asked each plane's pi provider
  * whether it carried a model on the same protocol, which made the answer a
  * fact about pi's catalog: pi 1.3.0 listed a Go Gemini model and so passed,
- * while pi 1.1.0 (the rc channel's floor) lists none (characterized above,
- * F10) although the
+ * while pi 1.1.0 (the floor of the `0.2.1` rc builds) lists none
+ * (characterized above, F10) although the
  * bridge serves those models through the same `google-generative-ai` module.
  * Models whose SDK is a recorded decision (`UNSERVED_SDKS`) are skipped: that
  * is the plugin saying so, not a gap. Plane-level decisions in

@@ -2,7 +2,10 @@
  * The hosts this plugin supports, named once: the latest release of BOTH
  * harness channels, as each one actually ships (D14'', D22'').
  *
- * - `rc` is `@deepseek-ai/dsh@latest`; `alpha` is `@deepseek-ai/dsh@alpha`.
+ * - `rc` is the newest build on the rc line, which the harness publishes
+ *   under `next` ahead of `latest` (today `dsh@next`); `alpha` is
+ *   `@deepseek-ai/dsh@alpha`. Both run the host core cordis 4.0.6-alpha.2
+ *   and 4.1.0 share.
  *   Each record names the `@deepseek-ai` cluster's tag, cordis and its loader
  *   (each on its own line, at what the cluster's `~` range resolves), and the
  *   `@deepseek-ai/schemastery` the cluster's range resolves.
@@ -40,8 +43,13 @@ export type Channel = "alpha" | "rc";
 export interface ChannelRecord {
   /** `@deepseek-ai/cordis`, what the cluster's `~` range resolves. */
   readonly cordis: string;
-  /** The npm dist-tag the channel publishes `@deepseek-ai/dsh` under. */
-  readonly distTag: "alpha" | "latest";
+  /**
+   * The npm dist-tag that carries the recorded `@deepseek-ai/dsh` today. The
+   * rc line publishes its newest build under `next` ahead of `latest`, so the
+   * drift report reads the newest build on the record's line under any tag
+   * (`channelBuild` in `scripts/host-drift.ts`), this one included.
+   */
+  readonly distTag: "alpha" | "latest" | "next";
   /** The `@deepseek-ai/dsh-*` cluster's version. */
   readonly dsh: string;
   /** `@deepseek-ai/cordis-plugin-loader`, what the cluster's range resolves. */
@@ -60,26 +68,26 @@ export interface ChannelRecord {
 
 export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
   alpha: {
-    cordis: "4.0.6-alpha.1",
+    cordis: "4.0.6-alpha.2",
     distTag: "alpha",
-    dsh: "0.2.2-alpha.2",
-    loader: "1.0.7-alpha.1",
+    dsh: "0.2.2-alpha.3",
+    loader: "1.0.7-alpha.2",
     lockfile: "pnpm-lock.yaml",
-    pi: "1.5.0",
+    pi: "1.5.2",
     piFloor: "1.3.0",
     piRange: "^1.3.0",
-    schemastery: "3.18.6-alpha.1",
+    schemastery: "3.18.6-alpha.2",
   },
   rc: {
-    cordis: "4.0.5",
-    distTag: "latest",
-    dsh: "0.2.1-rc.5",
-    loader: "1.0.6",
+    cordis: "4.1.0",
+    distTag: "next",
+    dsh: "0.2.2-rc.2",
+    loader: "1.1.0",
     lockfile: "channels/rc/pnpm-lock.yaml",
-    pi: "1.5.0",
-    piFloor: "1.1.0",
-    piRange: "^1.1.0",
-    schemastery: "3.18.5",
+    pi: "1.5.2",
+    piFloor: "1.3.0",
+    piRange: "^1.3.0",
+    schemastery: "3.19.0",
   },
 };
 
@@ -87,7 +95,7 @@ export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
 export const DEFAULT_CHANNEL: Channel = "alpha";
 
 /** The pi range the plugin itself may declare: the union of both channels'. */
-export const PI_UNION_RANGE = "^1.1.0";
+export const PI_UNION_RANGE = "^1.3.0";
 
 /** Where `scripts/use-channel.ts` records what it installed. */
 export const MARKER = join("node_modules", ".dsh-channel.json");

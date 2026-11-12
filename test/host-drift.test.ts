@@ -11,6 +11,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 
+import semver from "semver";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -91,35 +92,67 @@ const registryOf = (
   };
 };
 
-/** Today's alpha cut: dsh moved, the cluster's ranges with it. */
-const ALPHA_3: RegistryView = (() => {
+/**
+ * The next prerelease of a recorded version (`4.0.6-alpha.2` to
+ * `4.0.6-alpha.3`), read off the record so the fixtures below keep their
+ * meaning across a channel bump instead of going stale with it.
+ */
+const nextPrerelease = (version: string): string => {
+  const next = semver.inc(version, "prerelease");
+  if (next === null) {
+    throw new Error(`no next prerelease for ${version}`);
+  }
+  return next;
+};
+
+/** The alpha channel's next cut: dsh and every range the bridge declares. */
+const NEXT_ALPHA = {
+  cordis: nextPrerelease(CHANNELS.alpha.cordis),
+  dsh: nextPrerelease(CHANNELS.alpha.dsh),
+  loader: nextPrerelease(CHANNELS.alpha.loader),
+  schemastery: nextPrerelease(CHANNELS.alpha.schemastery),
+};
+
+/** The next alpha cut published: dsh moved, the cluster's ranges with it. */
+const ALPHA_NEXT: RegistryView = (() => {
   const base = registryOf(CHANNELS);
   return {
     ...base,
     bridge: {
       versions: {
         ...base.bridge.versions,
-        "0.2.2-alpha.3": {
+        [NEXT_ALPHA.dsh]: {
           dependencies: {
             [REGISTRY_PACKAGES.pi]: CHANNELS.alpha.piRange,
-            [REGISTRY_PACKAGES.schemastery]: "~3.18.6-alpha.2",
+            [REGISTRY_PACKAGES.schemastery]: `~${NEXT_ALPHA.schemastery}`,
           },
           peerDependencies: {
-            [REGISTRY_PACKAGES.cordis]: "~4.0.6-alpha.2",
-            [REGISTRY_PACKAGES.loader]: "~1.0.7-alpha.2",
+            [REGISTRY_PACKAGES.cordis]: `~${NEXT_ALPHA.cordis}`,
+            [REGISTRY_PACKAGES.loader]: `~${NEXT_ALPHA.loader}`,
           },
         },
       },
     },
-    cordis: versions(CHANNELS.rc.cordis, "4.0.6-alpha.1", "4.0.6-alpha.2"),
+    cordis: versions(
+      CHANNELS.rc.cordis,
+      CHANNELS.alpha.cordis,
+      NEXT_ALPHA.cordis
+    ),
     dsh: {
-      "dist-tags": { alpha: "0.2.2-alpha.3", latest: CHANNELS.rc.dsh },
+      "dist-tags": {
+        alpha: NEXT_ALPHA.dsh,
+        [CHANNELS.rc.distTag]: CHANNELS.rc.dsh,
+      },
     },
-    loader: versions(CHANNELS.rc.loader, "1.0.7-alpha.1", "1.0.7-alpha.2"),
+    loader: versions(
+      CHANNELS.rc.loader,
+      CHANNELS.alpha.loader,
+      NEXT_ALPHA.loader
+    ),
     schemastery: versions(
       CHANNELS.rc.schemastery,
-      "3.18.6-alpha.1",
-      "3.18.6-alpha.2"
+      CHANNELS.alpha.schemastery,
+      NEXT_ALPHA.schemastery
     ),
   };
 })();
@@ -149,13 +182,19 @@ describe("host drift · the rules", () => {
       bridge: {
         versions: {
           ...registry.bridge.versions,
-          "0.2.2-alpha.3": registry.bridge.versions?.[CHANNELS.alpha.dsh] ?? {},
+          [NEXT_ALPHA.dsh]:
+            registry.bridge.versions?.[CHANNELS.alpha.dsh] ?? {},
         },
       },
-      dsh: { "dist-tags": { alpha: "0.2.2-alpha.3", latest: CHANNELS.rc.dsh } },
+      dsh: {
+        "dist-tags": {
+          alpha: NEXT_ALPHA.dsh,
+          [CHANNELS.rc.distTag]: CHANNELS.rc.dsh,
+        },
+      },
     };
     expect(hostDrift(CHANNELS, moved)).toStrictEqual([
-      `alpha: @deepseek-ai/dsh@alpha is 0.2.2-alpha.3 on the registry; the record says ${CHANNELS.alpha.dsh}`,
+      `alpha: @deepseek-ai/dsh@alpha is ${NEXT_ALPHA.dsh} on the registry; the record says ${CHANNELS.alpha.dsh}`,
     ]);
   });
 
@@ -218,20 +257,19 @@ describe("host drift · the rules", () => {
     ]);
   });
 
-  it("follows the cluster's ranges, not the packages' own tags: today's alpha cut", () => {
-    const lines = hostDrift(CHANNELS, ALPHA_3);
-    expect(lines).toHaveLength(4);
-    expect(lines[0]).toMatch(
-      /^alpha: @deepseek-ai\/dsh@alpha is 0\.2\.2-alpha\.3/u
-    );
-    expect(lines).toContain(
-      `alpha: @deepseek-ai/cordis (~4.0.6-alpha.2) is 4.0.6-alpha.2 on the registry; the record says ${CHANNELS.alpha.cordis}`
-    );
-    expect(lines).toContain(
-      `alpha: @deepseek-ai/cordis-plugin-loader (~1.0.7-alpha.2) is 1.0.7-alpha.2 on the registry; the record says ${CHANNELS.alpha.loader}`
-    );
-    expect(lines).toContain(
-      `alpha: @deepseek-ai/schemastery (~3.18.6-alpha.2) is 3.18.6-alpha.2 on the registry; the record says ${CHANNELS.alpha.schemastery}`
+  it("follows the cluster's ranges, not the packages' own tags: the next alpha cut", () => {
+    const lines = hostDrift(CHANNELS, ALPHA_NEXT);
+    expect(lines).toStrictEqual([
+      `alpha: @deepseek-ai/dsh@alpha is ${NEXT_ALPHA.dsh} on the registry; the record says ${CHANNELS.alpha.dsh}`,
+      `alpha: @deepseek-ai/cordis (~${NEXT_ALPHA.cordis}) is ${NEXT_ALPHA.cordis} on the registry; the record says ${CHANNELS.alpha.cordis}`,
+      `alpha: @deepseek-ai/cordis-plugin-loader (~${NEXT_ALPHA.loader}) is ${NEXT_ALPHA.loader} on the registry; the record says ${CHANNELS.alpha.loader}`,
+      `alpha: @deepseek-ai/schemastery (~${NEXT_ALPHA.schemastery}) is ${NEXT_ALPHA.schemastery} on the registry; the record says ${CHANNELS.alpha.schemastery}`,
+    ]);
+    // Known answer for the fixture itself: the next cut is a newer prerelease
+    // on the record's own tuple (`0.2.2-alpha.3` to `0.2.2-alpha.4`).
+    expect(semver.gt(NEXT_ALPHA.dsh, CHANNELS.alpha.dsh)).toBe(true);
+    expect(semver.prerelease(NEXT_ALPHA.cordis)?.[0]).toBe(
+      semver.prerelease(CHANNELS.alpha.cordis)?.[0]
     );
     // The rc channel's records are current in this view, and stay silent.
     expect(lines.filter((line) => line.startsWith("rc:"))).toStrictEqual([]);
@@ -369,13 +407,13 @@ describe("host drift · the CLI", () => {
     );
 
   it("prints one warning per drift and exits 0, having asked for every package", async () => {
-    const { asked, server, url } = await serve(byName(ALPHA_3));
+    const { asked, server, url } = await serve(byName(ALPHA_NEXT));
     try {
       const { stdout, stderr } = await report(url);
       expect(stderr).toBe("");
       const warnings = stdout.split("\n").filter((line) => line !== "");
       expect(warnings).toStrictEqual(
-        hostDrift(CHANNELS, ALPHA_3).map((line) => `::warning::${line}`)
+        hostDrift(CHANNELS, ALPHA_NEXT).map((line) => `::warning::${line}`)
       );
       expect(warnings.length).toBeGreaterThan(0);
       expect(asked.toSorted()).toStrictEqual(
