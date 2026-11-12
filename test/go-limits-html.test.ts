@@ -65,6 +65,17 @@ describe("reading a table's cells", () => {
     ).toEqual([["MiMo-V2.6-Pro", "$1.40"]]);
   });
 
+  it("collapses a cell's interior whitespace and line breaks to one space", () => {
+    // A cell is one markdown cell once converted, and a markdown row is one
+    // line: a newline kept inside a cell splits the row in two, and the parser
+    // reads neither half.
+    expect(
+      tableRows(
+        "<tr><td>Grok 4.7<br>\n(peak)</td><td>$1 input\n  $2 long</td><td>a<br/>b</td></tr>"
+      )
+    ).toEqual([["Grok 4.7 (peak)", "$1 input $2 long", "a b"]]);
+  });
+
   it("reads th as a cell, so a header row is a row", () => {
     expect(tableRows("<tr><th>Model</th><th>Monthly limit</th></tr>")).toEqual([
       ["Model", "Monthly limit"],
@@ -157,6 +168,39 @@ describe("turning the page into the parser's markdown", () => {
 });
 
 describe("the converter and the parser agree", () => {
+  it("keeps a model whose cells span lines, rather than dropping it unreported", () => {
+    // A pretty-printed page breaks a cell over lines. Kept as it was, the
+    // emitted row split in two, the parser skipped both halves without naming
+    // them, and the model was missing from a table that still exited 0.
+    const html = [
+      monthlyTable([
+        ["MiMo", "$1", "$60"],
+        ["Grok 4.7", "$1 input\n$2 long", "$15"],
+        ["Grok 4.8<br>\n(peak)", "$1", "$20"],
+      ]),
+      monthlyTable([
+        ["MiMo", "$1", "$120"],
+        ["Grok 4.7", "$1 input\n$2 long", "$60"],
+        ["Grok 4.8<br>\n(peak)", "$1", "$80"],
+      ]),
+    ].join("");
+    const doc = docFrom(answer({ body: html }));
+    expect(doc).toBeDefined();
+    const { limits, unmapped } = parseGoLimitsDoc(doc ?? "");
+    expect(unmapped).toEqual([]);
+    expect([...limits.keys()]).toEqual(["mimo", "grok-4.7", "grok-4.8"]);
+    expect(limits.get("grok-4.7")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "Grok 4.7",
+    });
+    expect(limits.get("grok-4.8")).toEqual({
+      go: 20,
+      goPlus: 80,
+      name: "Grok 4.8 (peak)",
+    });
+  });
+
   it("round-trips a page into the allowances the meter reads", () => {
     // The coupling: the converter writes the markdown and `parseGoLimitsDoc`
     // reads it. Either half can be wrong alone, and only this case exercises both.
@@ -304,6 +348,66 @@ describe("reading a 2xx answer by what it carries", () => {
     }
   });
 
+  it("answers nothing for both tabs the parser reads no row from", () => {
+    // Both tabs present is the markdown's shape, not its content: no rows, or
+    // a table one cell short of the allowance table, parses to zero rows.
+    const fiveCells = [
+      "| Model | Input | Output | Cached Read | Monthly limit |",
+      "| --- | --- | --- | --- | --- |",
+      "| Grok 4.7 | $1.00 | $1.00 | $0.10 | **$15** |",
+    ];
+    for (const rows of [[], fiveCells]) {
+      const body = [
+        '<TabItem label="Go">',
+        ...rows,
+        "</TabItem>",
+        '<TabItem label="Go Plus">',
+        ...rows,
+        "</TabItem>",
+      ].join("\n");
+      expect(() => parseGoLimitsDoc(body)).toThrow(/parsed to zero rows/u);
+      expect(docFrom(answer({ body }))).toBeUndefined();
+    }
+  });
+
+  it("answers nothing for two allowance tables whose six-cell rows carry no dollar amount", () => {
+    // Six cells is the table's shape; the parser also wants the last one to be
+    // a dollar amount. `Unlimited`, an entity-encoded `$` and a seventh,
+    // empty, trailing cell each leave it with zero rows.
+    const sevenCells = [
+      "<table>",
+      "<tr><th>Model</th><th>Input</th><th>Output</th><th>Cached Read</th><th>Cached Write</th><th>Monthly limit</th></tr>",
+      "<tr><td>Grok 4.7</td><td>$1</td><td>$1</td><td>$0.1</td><td>-</td><td>$15</td><td></td></tr>",
+      "</table>",
+    ].join("");
+    for (const table of [
+      monthlyTable([["Big Pickle", "Free", "Unlimited"]]),
+      monthlyTable([["Grok 4.7", "$1.00", "&#36;15"]]),
+      sevenCells,
+    ]) {
+      const body = table + table;
+      expect(() => parseGoLimitsDoc(htmlToDoc(body))).toThrow(
+        /parsed to zero rows/u
+      );
+      expect(docFrom(answer({ body }))).toBeUndefined();
+    }
+  });
+
+  it("reads an HTML page's tables when the page also quotes both tab strings", () => {
+    // The literal tab strings in a page's prose, or a code sample, do not make
+    // it the markdown: what the parser cannot read as tabs it reads as tables.
+    const quoted =
+      '<p><code>&lt;TabItem label="Go"&gt;</code></p>' +
+      '<pre><TabItem label="Go"></TabItem><TabItem label="Go Plus"></TabItem></pre>';
+    const doc = docFrom(answer({ body: quoted + page() }));
+    expect(doc).toBeDefined();
+    expect(parseGoLimitsDoc(doc ?? "").limits.get("grok-4.7")).toEqual({
+      go: 15,
+      goPlus: 60,
+      name: "Grok 4.7",
+    });
+  });
+
   it("answers nothing for a page with three monthly-limit tables", () => {
     const body = [
       monthlyTable([["MiMo-V2.6-Pro", "$0.50", "$5"]]),
@@ -356,10 +460,23 @@ describe("reading a 2xx answer by what it carries", () => {
     ]);
     const [, untyped, unreadable, tooMany] = message.split("\n");
     expect(untyped).toContain(", no content type, 5 characters,");
+    // The parser's own reason, for a body in a shape it was handed.
     expect(unreadable).toMatch(
-      /, no Go tab, 2 monthly-limit table\(s\), 0 with a model row$/u
+      /, no Go tab, 2 monthly-limit table\(s\), 0 with a model row, the parser rejected the two allowance tables: the go table parsed to zero rows$/u
     );
     expect(tooMany).toMatch(/, no Go tab, 3 monthly-limit table\(s\)$/u);
+  });
+
+  it("names the parser's reason for every shape a body was read in", () => {
+    const unlimited = monthlyTable([["Big Pickle", "Free", "Unlimited"]]);
+    const message = noDocMessage([
+      answer({
+        body: `<TabItem label="Go">\n</TabItem>\n<TabItem label="Go Plus">\n</TabItem>${unlimited}${unlimited}`,
+      }),
+    ]);
+    expect(message.split("\n")[1]).toMatch(
+      /, the Go and Go Plus tabs, 2 monthly-limit table\(s\), the parser rejected the tabbed markdown: the go table parsed to zero rows, the parser rejected the two allowance tables: the go table parsed to zero rows$/u
+    );
   });
 
   it("names a Go tab without its Go Plus tab", () => {
@@ -438,6 +555,27 @@ describe("asking the sources in turn", () => {
         url: GO_MD,
       }),
       [MOVED_PAGE]: answer({ body: estimateTable() }),
+    });
+    const found = await firstDoc(GO_LIMITS_SOURCES, read);
+    expect(asked).toEqual([MOVED_PAGE, GO_MD]);
+    expect(found.source).toBe(GO_MD);
+    expect(found.doc).toBe(markdown);
+  });
+
+  it("reads the second source when the first has the tables' shape and no row the parser reads", async () => {
+    // The moved page with both allowance tables whose rows say `Unlimited`:
+    // taken on its shape, the walk stopped there and the run died on the
+    // parser's complaint, and the valid second source was never asked.
+    const unlimited = monthlyTable([["Big Pickle", "Free", "Unlimited"]]);
+    const markdown = htmlToDoc(page());
+    const { asked, read } = fakeRead({
+      [GO_MD]: answer({
+        body: markdown,
+        contentType: "text/plain",
+        finalUrl: GO_MD,
+        url: GO_MD,
+      }),
+      [MOVED_PAGE]: answer({ body: unlimited + unlimited }),
     });
     const found = await firstDoc(GO_LIMITS_SOURCES, read);
     expect(asked).toEqual([MOVED_PAGE, GO_MD]);

@@ -16,14 +16,17 @@
  * URL answered 200 again with a body that had no tab sections, and a reader that
  * trusted the status handed it to the markdown parser. A 2xx answer is now read
  * by what its body carries; the status alone is never trusted. A body is taken
- * only in a shape the parser can read — both tabs, or exactly two allowance
- * tables each with a model row — so anything else falls through to the next
- * source rather than to the parser's error.
+ * only when the parser itself reads it: as the tabbed markdown when it carries
+ * both tabs, else as the HTML page when it carries exactly two allowance tables,
+ * and in either shape only if `parseGoLimitsDoc` reads it without an error. The
+ * parser is the test, not a proxy for it, so anything it would throw on falls
+ * through to the next source rather than to the parser's error, and the error
+ * when no source is left names the parser's reason for each shape it was handed.
  *
  * @module scripts/go-limits-html
  */
 
-import { GO_LIMITS_DOC_URL } from "../src/go-limits.ts";
+import { GO_LIMITS_DOC_URL, parseGoLimitsDoc } from "../src/go-limits.ts";
 
 /** Where the page lives, for the error message. */
 export const GO_LIMITS_DOC_MOVED_TO = "https://opencode.ai/v2/docs/console/go/";
@@ -34,13 +37,22 @@ const MONTHLY_LIMIT_HEADER = "monthly limit";
 /**
  * Strip tags from a table's cells, row by row.
  *
+ * Each cell becomes one line: a `<br>` reads as a space and any run of
+ * whitespace inside a cell, newlines included, as one space. The converter
+ * writes one markdown row per line, and a newline kept inside a cell would
+ * split the row in two halves the parser skips without naming either.
+ *
  * @param html - one `<table>` element's inner HTML.
  * @returns one array of cell strings per `<tr>`.
  */
 export const tableRows = (html: string): string[][] =>
   [...html.matchAll(/<tr[^>]*>(.*?)<\/tr>/gsu)].map((row) =>
     [...(row[1] ?? "").matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/gsu)].map((cell) =>
-      (cell[1] ?? "").replaceAll(/<[^>]+>/gu, "").trim()
+      (cell[1] ?? "")
+        .replaceAll(/<br\s*\/?>/giu, " ")
+        .replaceAll(/<[^>]+>/gu, "")
+        .replaceAll(/\s+/gu, " ")
+        .trim()
     )
   );
 
@@ -136,31 +148,78 @@ export interface DocAnswer {
 }
 
 /**
+ * The shapes a body is read in, in the order they are tried, each named for
+ * the error: the tabbed markdown as it is, when it carries both plans' tabs,
+ * then the HTML page converted, when it carries exactly two allowance tables.
+ *
+ * @param body - one answer's body.
+ * @returns each shape's name and the markdown it hands the parser.
+ */
+const shapesOf = (body: string): [string, () => string][] => {
+  const shapes: [string, () => string][] = [];
+  if (body.includes(GO_TAB) && body.includes(GO_PLUS_TAB)) {
+    shapes.push(["tabbed markdown", () => body]);
+  }
+  if (monthlyLimitTables(body).length === 2) {
+    shapes.push(["two allowance tables", () => htmlToDoc(body)]);
+  }
+  return shapes;
+};
+
+/** What a body yields: the parser's markdown, and why each shape tried before it was not. */
+interface Reading {
+  /** The first shape the parser read without an error, or `undefined`. */
+  readonly doc: string | undefined;
+  /** One phrase per shape the parser threw on, in the order they were tried. */
+  readonly rejected: readonly string[];
+}
+
+/**
+ * Read a body in each of its shapes until the parser reads one.
+ *
+ * The verdict is the parser's own: a shape is taken only when
+ * `parseGoLimitsDoc` reads it without throwing, so a body that merely looks
+ * right (both tabs and no rows, six-cell rows with no dollar amount) is not
+ * taken. Rows the parser reads but cannot map are not a rejection: they come
+ * back in its `unmapped`, which the generator reports and fails on.
+ *
+ * @param body - one answer's body.
+ * @returns the markdown, or `undefined` with the parser's reason per shape.
+ */
+const readBody = (body: string): Reading => {
+  const rejected: string[] = [];
+  for (const [shape, markdown] of shapesOf(body)) {
+    const doc = markdown();
+    try {
+      parseGoLimitsDoc(doc);
+      return { doc, rejected };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      rejected.push(
+        `the parser rejected the ${shape}: ${reason.replace(/^go-limits: /u, "")}`
+      );
+    }
+  }
+  return { doc: undefined, rejected };
+};
+
+/**
  * The markdown `parseGoLimitsDoc` reads, from whatever a source answered.
  *
  * A 2xx answer is read by what its body carries; the status alone is never
  * trusted, and an answer outside 2xx is not read at all. The tabbed markdown,
  * carrying both plans' tabs, is passed through; an HTML page carrying exactly
- * two allowance tables, each with a model row, is converted. Anything else
- * answers `undefined`, so the next source is tried and the parser never sees a
- * body it would throw on.
+ * two allowance tables is converted; and either is taken only when the parser
+ * reads it without an error. Anything else answers `undefined`, so the next
+ * source is tried and the parser never sees a body it would throw on.
  *
  * @param answer - one source's answer.
  * @returns the parser's markdown, or `undefined` when this answer has none.
  */
-export const docFrom = (answer: DocAnswer): string | undefined => {
-  if (answer.status < 200 || answer.status > 299) {
-    return undefined;
-  }
-  if (answer.body.includes(GO_TAB) && answer.body.includes(GO_PLUS_TAB)) {
-    return answer.body;
-  }
-  const tables = monthlyLimitTables(answer.body);
-  return tables.length === 2 &&
-    tables.every((rows) => modelRows(rows).length > 0)
-    ? htmlToDoc(answer.body)
-    : undefined;
-};
+export const docFrom = (answer: DocAnswer): string | undefined =>
+  answer.status < 200 || answer.status > 299
+    ? undefined
+    : readBody(answer.body).doc;
 
 /**
  * Which of the markdown tabs a body carries, for the error.
@@ -196,9 +255,10 @@ const tablesCarried = (body: string): string => {
  * The error for a run in which no source carried the tables.
  *
  * One line per source, with what tells the shapes apart: the status, a
- * redirect, the content type, the size, and which of the two shapes the body
- * carried. A layout change then names itself in the nightly log, rather than
- * surfacing as the parser's complaint about a body it should never have seen.
+ * redirect, the content type, the size, which of the two shapes the body
+ * carried, and, for each shape the parser was handed, the parser's reason for
+ * rejecting it. A layout change then names itself in the nightly log, and a
+ * body that only looked readable says what the parser could not read in it.
  *
  * @param answers - every source's answer, in the order they were asked.
  * @returns the message.
@@ -211,7 +271,10 @@ export const noDocMessage = (answers: readonly DocAnswer[]): string =>
         answer.finalUrl === answer.url
           ? ""
           : ` (redirected to ${answer.finalUrl})`;
-      return `  - ${answer.url} answered ${answer.status}${redirected}, ${answer.contentType || "no content type"}, ${answer.body.length} characters, ${tabsCarried(answer.body)}, ${tablesCarried(answer.body)}`;
+      const rejected = readBody(answer.body).rejected.map(
+        (reason) => `, ${reason}`
+      );
+      return `  - ${answer.url} answered ${answer.status}${redirected}, ${answer.contentType || "no content type"}, ${answer.body.length} characters, ${tabsCarried(answer.body)}, ${tablesCarried(answer.body)}${rejected.join("")}`;
     }),
   ].join("\n");
 

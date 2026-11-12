@@ -26,9 +26,11 @@
  * the earlier ones carried nothing readable (`firstDoc`). A 2xx answer is read
  * by what its body carries; the status alone is never trusted (`docFrom`): the
  * tabbed markdown, with both plans' tabs, as it is; an HTML page with exactly
- * two allowance tables through `htmlToDoc`; anything else not at all. When no
- * source carries the tables, the error names what each one answered
- * (`noDocMessage`), so the next layout change names itself. All four live in
+ * two allowance tables through `htmlToDoc`; and either only when
+ * `parseGoLimitsDoc` reads it without an error, so anything else is not read
+ * at all and the next source is asked. When no source carries the tables, the
+ * error names what each one answered and the parser's reason for each shape it
+ * was handed (`noDocMessage`), so the next layout change names itself. All four live in
  * `scripts/go-limits-html.ts`, which `test/go-limits-html.test.ts` exercises
  * with a fake reader; this script only fetches and writes.
  *

@@ -893,7 +893,14 @@ describe("freshness scope · the CI wiring, parsed", () => {
     const perform = (
       catalog: Outcome,
       limits: Outcome,
-      { push = 0 }: { push?: number } = {}
+      {
+        earlier,
+        push = 0,
+      }: {
+        /** A refresh branch an earlier night left, carrying these files. */
+        earlier?: Readonly<Record<string, string>>;
+        push?: number;
+      } = {}
     ) => {
       const repo = mkdtempSync(join(tmpdir(), "ci-refresh-"));
       try {
@@ -913,6 +920,24 @@ describe("freshness scope · the CI wiring, parsed", () => {
           "--quiet",
           "--message=base"
         );
+        if (earlier !== undefined) {
+          gitIn(repo, "checkout", "--quiet", "-b", BRANCH);
+          for (const [path, text] of Object.entries(earlier)) {
+            writeFileSync(join(repo, path), text);
+          }
+          gitIn(repo, "add", ".");
+          gitIn(
+            repo,
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "--message=an earlier night's refresh"
+          );
+          gitIn(repo, "checkout", "--quiet", "main");
+        }
         const result = execute(
           step?.run ?? "",
           PRELUDE,
@@ -951,6 +976,8 @@ describe("freshness scope · the CI wiring, parsed", () => {
 
     const errors = (stdout: string): string[] =>
       stdout.split("\n").filter((line) => line.startsWith("::error::"));
+    const warnings = (stdout: string): string[] =>
+      stdout.split("\n").filter((line) => line.startsWith("::warning::"));
     const PUSHED = `git push --force https://x-access-token:fixture-token@github.com/owner/repo.git ${BRANCH}`;
 
     it("is found by its name, and runs only on the nightly", () => {
@@ -1021,6 +1048,41 @@ describe("freshness scope · the CI wiring, parsed", () => {
       expect(run.calls).toContain(PUSHED);
       expect(errors(run.stdout)).toHaveLength(1);
       expect(errors(run.stdout)[0]).toMatch(/Go limits generator failed/u);
+      // The push failed, so nothing was replaced and nothing was withdrawn.
+      expect(warnings(run.stdout)).toStrictEqual([]);
+    });
+
+    it("a partial refresh replaces an earlier night's branch, withdrawing the failed file's earlier change, and says so", () => {
+      // The branch is rebuilt from main and force-pushed every night, so a
+      // refresh pull request left open is replaced by this run's partial one:
+      // the earlier night's limits change is no longer proposed until the
+      // limits generator works again. That is the design (an older night's
+      // output is never carried into a commit that says it was regenerated),
+      // and the run says which file the replaced branch no longer changes.
+      const run = perform("regenerates", "fails", {
+        earlier: REGENERATED,
+      });
+      expect(run.status).toBe(1);
+      expect(run.committed?.files).toStrictEqual([CATALOG]);
+      expect(run.committed?.[LIMITS]).toBe(COMMITTED[LIMITS]);
+      expect(run.calls).toContain(PUSHED);
+      const [warning, ...more] = warnings(run.stdout);
+      expect(more).toStrictEqual([]);
+      expect(warning).toContain(BRANCH);
+      expect(warning).toContain(LIMITS);
+      expect(warning).not.toContain(CATALOG);
+    });
+
+    it("a complete refresh replaces an earlier night's branch with no warning", () => {
+      const run = perform("regenerates", "regenerates", {
+        earlier: { [LIMITS]: "export const LIMITS = 'an earlier night';\n" },
+      });
+      expect(run.status).toBe(0);
+      expect(run.committed?.files).toStrictEqual([CATALOG, LIMITS]);
+      expect(run.committed?.[LIMITS]).toBe(REGENERATED[LIMITS]);
+      expect(run.calls).toContain(PUSHED);
+      expect(warnings(run.stdout)).toStrictEqual([]);
+      expect(errors(run.stdout)).toStrictEqual([]);
     });
   });
 
