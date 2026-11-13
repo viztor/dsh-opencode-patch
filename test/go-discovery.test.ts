@@ -6,10 +6,9 @@
  * plane, and which of the four credential sources (composition literal,
  * captured route key, credentials/env reference, any captured key) the row's
  * `keySource` policy lets win. Every other consumer — the meter's
- * `resolveGoApiKey`, `patchFetch`'s Authorization fallback, the mounted
- * Responses routes' `inheritedCredentialRef` — inherits its answer from here,
- * so a wrong answer sends the wrong key to the wrong endpoint and fails as an
- * outage the user cannot act on.
+ * `resolveGoApiKey` and `patchFetch`'s Authorization fallback — inherits its
+ * answer from here, so a wrong answer sends the wrong key to the wrong
+ * endpoint and fails as an outage the user cannot act on.
  *
  * The cases are written around the *absences*, because that is where the policy
  * lives: what each source contributes when it is missing, which reference a
@@ -39,7 +38,6 @@ import {
   type DiscoveredGoConfig,
   KEY_SOURCE_POLICIES,
   clearCapturedApiKeys,
-  declaredProviderModels,
   discoverGoConfig,
   effectiveGoKeyRef,
   getCapturedApiKey,
@@ -335,6 +333,78 @@ describe("discoverGoConfig: which entry the credential comes from", () => {
       standaloneEntry({ config: { apiKeyEnv: "SECOND" }, id: "opencode-go" }),
     ];
     expect(discoverGoConfig(composition(entries)).keyEnv).toBe("SECOND");
+  });
+});
+
+describe("discoverGoConfig: another plugin's entry is never read (D27)", () => {
+  const MARKER = { "x-opencode-plugin": "vendor/1.0.0" };
+
+  it("passes over a marked route for the user's own one beside it, and reads the marked one's sibling, never the marked one", () => {
+    const entries: unknown[] = [
+      registry({
+        opencode: {
+          apiKeyEnv: "OWN_ZEN_KEY",
+          baseURL: "https://opencode.ai/zen/v1",
+        },
+        "opencode-go": {
+          apiKey: "vendor-literal",
+          apiKeyEnv: "VENDOR_TOKEN",
+          baseURL: "https://opencode.ai/workspace/v1",
+          headers: MARKER,
+        },
+      }),
+    ];
+    expect(discoverGoConfig(composition(entries))).toEqual({
+      baseURL: "https://opencode.ai/zen/v1",
+      keyEnv: "OWN_ZEN_KEY",
+    });
+    // The targeted route, when marked, is not read either.
+    expect(discoverGoConfig(composition(entries), "opencode-go")).toEqual({
+      baseURL: "https://opencode.ai/zen/v1",
+      keyEnv: "OWN_ZEN_KEY",
+    });
+  });
+
+  it("skips a row in a credentials realm the context does not share, and a marked standalone entry; the same rows unisolated and unmarked are read (the known answer)", () => {
+    const isolated = {
+      options: {
+        config: { providers: { "opencode-go": { apiKeyEnv: "VENDOR_TOKEN" } } },
+        isolate: { credentials: "vendor" },
+      },
+    };
+    const markedStandalone = standaloneEntry({
+      config: { apiKeyEnv: "VENDOR_TOKEN", headers: MARKER },
+      id: "opencode-go",
+    });
+    expect(discoverGoConfig(composition([isolated, markedStandalone]))).toEqual(
+      {}
+    );
+    expect(
+      discoverGoConfig(
+        composition([
+          registryEntry("opencode-go", { apiKeyEnv: "OWN_GO_KEY" }),
+          standaloneEntry({
+            config: { apiKeyEnv: "OWN_TOO" },
+            id: "opencode-go",
+          }),
+        ])
+      )
+    ).toEqual({ keyEnv: "OWN_TOO" });
+  });
+
+  it("reads the context's own side safely: a context whose fields throw still discovers", () => {
+    const ctx = new Proxy(
+      composition([registryEntry("opencode-go", { apiKeyEnv: "K" })]) as object,
+      {
+        get: (target, key) => {
+          if (key === "fiber" || key === "root") {
+            throw new Error("cannot get property without inject");
+          }
+          return Reflect.get(target, key);
+        },
+      }
+    );
+    expect(discoverGoConfig(ctx)).toEqual({ keyEnv: "K" });
   });
 });
 
@@ -1237,80 +1307,5 @@ describe("go-discovery: the installation's own store, and where it sits", () => 
     await expect(
       resolveGoApiKey(composition(), undefined, "auto", true)
     ).resolves.toBeUndefined();
-  });
-});
-
-describe("go-discovery · the declaration in the loader", () => {
-  // **A GENERATOR, because that is what the host returns.** The first version of
-  // this reader guarded with `Array.isArray` and rejected a working loader —
-  // measured as the routes still not mounting after the fix that was supposed to
-  // mount them.
-  const loaderWith = (providers: unknown) => ({
-    loader: {
-      *entries() {
-        yield { options: { config: { providers } } };
-      },
-    },
-  });
-
-  it("reads the declared ids and names for one route", () => {
-    const ctx = loaderWith({
-      opencode: { models: [{ id: "gpt-5.4", name: "GPT-5.4" }, { id: "" }] },
-      "opencode-go": { models: [{ id: "deepseek-v4.1-flash" }] },
-    });
-    expect(declaredProviderModels(ctx, "opencode")).toEqual([
-      { id: "gpt-5.4", name: "GPT-5.4" },
-    ]);
-    // A route the loader does not describe is UNDEFINED, not empty: "cannot
-    // read" and "declares nothing" must stay distinguishable.
-    expect(declaredProviderModels(ctx, "nvidia")).toBeUndefined();
-  });
-
-  it("answers an empty list for a row that declares no models", () => {
-    expect(
-      declaredProviderModels(loaderWith({ opencode: {} }), "opencode")
-    ).toEqual([]);
-  });
-
-  it("survives a context it cannot read at all", () => {
-    // Not an object, no loader anywhere, and a `get` that throws: each is
-    // "cannot read", never an exception out of a boot path.
-    expect(declaredProviderModels(undefined, "opencode")).toBeUndefined();
-    expect(declaredProviderModels({}, "opencode")).toBeUndefined();
-    expect(
-      declaredProviderModels(
-        {
-          get: () => {
-            throw new Error("no loader");
-          },
-        },
-        "opencode"
-      )
-    ).toBeUndefined();
-    // A `get` that answers nothing falls through to the property, which here
-    // does not exist either.
-    expect(
-      declaredProviderModels({ get: () => {} }, "opencode")
-    ).toBeUndefined();
-  });
-
-  it("survives entries that are not an array or not shaped like rows", () => {
-    expect(
-      declaredProviderModels({ loader: { entries: () => "nope" } }, "opencode")
-    ).toBeUndefined();
-    expect(
-      declaredProviderModels(
-        {
-          loader: {
-            entries: () => [
-              null,
-              { options: null },
-              { options: { config: {} } },
-            ],
-          },
-        },
-        "opencode"
-      )
-    ).toBeUndefined();
   });
 });

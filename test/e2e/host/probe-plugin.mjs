@@ -9,10 +9,11 @@
  * the process. `test/e2e/host-binary.e2e.ts` reads the file.
  *
  * It never reaches the network: `fetch` is replaced at module load, so every
- * request to `opencode.ai` or `models.opencode.ai` is recorded (URL and model
- * only — never a header, so never a key) and answered with a 401, and every
- * other host passes through untouched. What it writes is URLs, model ids,
- * verdicts and host error messages — never a header or a key value — and
+ * request to `opencode.ai` or `models.opencode.ai` is recorded (URL, model and
+ * a Google body's `generationConfig.thinkingConfig` only — never a header, so
+ * never a key) and answered with a 401, and every other host passes through
+ * untouched. What it writes is URLs, model ids, thinking configs, verdicts and
+ * host error messages — never a header or a key value — and
  * every error message is cut to {@link MESSAGE_LIMIT} characters, since one
  * could name a path on the runner.
  *
@@ -21,36 +22,65 @@
  * - `PROBE_OUT`: where to write the JSON;
  * - `PROBE_MODELS`: `{ "<route>": ["<model id>", …] }`, the ids to ask about;
  * - `PROBE_SAVE`: an id to append to `opencode`'s models through the config
- *   editor, the way the Settings page saves one. It is tried three times over:
- *   onto the plane as booted (`saveBlocked`), then — after the ids in
- *   `PROBE_SAVE_DROP` are removed from the plane (`saveCleared`) — once more
- *   (`save`), so the last answer is about the id itself and not about a gap id
- *   the plane already stores. A rejection also names the error's class and
- *   the PACKAGE whose code threw it (never a path);
- * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove first;
- *   after those, one CONTROL edit (`control`) of the probe's OWN entry, which
- *   no plugin's listener reads, so a failure there is the host's save path
- *   failing whoever edits, not a verdict about the plane;
- * - `PROBE_ROUTES`: `["<route>", …]`, the hidden routes to wait for, which the
- *   e2e passes from `INTERNAL_ROUTES` so the probe holds no copy of them;
+ *   editor, the way the Settings page saves one. It is tried onto the plane as
+ *   booted (`saveBlocked`); only if that is refused are the ids in
+ *   `PROBE_SAVE_DROP` removed (`saveCleared`) and the id tried once more
+ *   (`save`), so the last answer is about the id itself. A rejection also
+ *   names the error's class and the PACKAGE whose code threw it (never a
+ *   path);
+ * - `PROBE_SAVE_DROP`: `["<model id>", …]`, the ids to remove on a refusal;
+ *   after the saves, one CONTROL edit (`control`) of the probe's OWN entry,
+ *   which no plugin's listener reads, so a failure there is the host's save
+ *   path failing whoever edits, not a verdict about the plane;
+ * - `PROBE_PLANES`: `["<route>", …]`, the plane routes to wait for until an
+ *   adapter other than pi-ai's serves each (the plugin's own);
  * - `PROBE_PI_PACKAGE`: the package name pi-ai's loader entry carries;
- * - `PROBE_SETTLE_MS`: how long to wait for the plugin's hidden routes
- *   (default 30000).
+ * - `PROBE_HOST_PREFIX`: the host's install prefix. The probe records which pi
+ *   the plugin's plane provider was built from RELATIVE to it, so the JSON
+ *   never holds an absolute path, and says whether it is inside it at all;
+ * - `PROBE_SETTLE_MS`: how long to wait for the planes (default 30000).
  *
  * @module test/e2e/host/probe-plugin
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
 
 export const name = "dsh-host-probe";
 
 const OUT = process.env.PROBE_OUT;
 const SETTLE_MS = Number(process.env.PROBE_SETTLE_MS ?? "30000");
 const GATEWAY_HOSTS = new Set(["opencode.ai", "models.opencode.ai"]);
-/** The routes today's plugin mounts behind the planes. */
-const HIDDEN_ROUTES = JSON.parse(process.env.PROBE_ROUTES ?? "[]");
+/** The plane routes the plugin owns. */
+const PLANES = JSON.parse(process.env.PROBE_PLANES ?? "[]");
 const PI_AI_PACKAGE = process.env.PROBE_PI_PACKAGE ?? "";
 /** The longest error message written: enough to triage, too short for a dump. */
 const MESSAGE_LIMIT = 500;
+
+const HOST_PREFIX = process.env.PROBE_HOST_PREFIX ?? "";
+
+/**
+ * Where the plane provider's pi came from, relative to the host prefix: the
+ * plane adapter's class carries the root and version it was built from. A
+ * root outside the prefix is reported as such, never as a path.
+ */
+const piLoadedFrom = (adapter) => {
+  const hostPi = adapter?.constructor?.hostPi;
+  if (hostPi === undefined || typeof hostPi.root !== "string") {
+    return null;
+  }
+  let path;
+  try {
+    path = relative(realpathSync(HOST_PREFIX), realpathSync(hostPi.root));
+  } catch {
+    path = "..";
+  }
+  const inside = path.length > 0 && !path.startsWith("..") && !isAbsolute(path);
+  return {
+    fromHostPrefix: inside,
+    path: inside ? path.split(sep).join("/") : null,
+    version: hostPi.version,
+  };
+};
 
 /** An error's message, cut to {@link MESSAGE_LIMIT}. */
 const messageOf = (error) =>
@@ -98,17 +128,31 @@ const hostOf = (url) => {
   }
 };
 
-const modelOf = async (input, init) => {
+/** A request's JSON body, or `null` where it has none. */
+const bodyOf = async (input, init) => {
   let body = init?.body;
   if (body === undefined && input instanceof Request) {
     body = await input.clone().text();
   }
   try {
-    const { model } = JSON.parse(String(body));
-    return typeof model === "string" ? model : null;
+    return JSON.parse(String(body));
   } catch {
     return null;
   }
+};
+
+/**
+ * What one gateway request is recorded as: its URL, the model its body names,
+ * and — on the Google protocol, whose body names no model — the thinking
+ * config the body carries (the D16 wire: a level, or pi's budget).
+ */
+const recordOf = async (input, init, url) => {
+  const body = await bodyOf(input, init);
+  const model = typeof body?.model === "string" ? body.model : null;
+  const thinkingConfig = body?.generationConfig?.thinkingConfig;
+  return thinkingConfig === undefined
+    ? { model, url }
+    : { model, thinkingConfig, url };
 };
 
 const probeFetch = async (input, init) => {
@@ -116,7 +160,7 @@ const probeFetch = async (input, init) => {
   if (!GATEWAY_HOSTS.has(hostOf(url))) {
     return passThrough(input, init);
   }
-  requests.push({ model: await modelOf(input, init), url });
+  requests.push(await recordOf(input, init, url));
   return Response.json(
     { error: { message: "probe: offline", type: "AuthError" } },
     { status: 401 }
@@ -256,6 +300,7 @@ const saveSequence = async (llm, editor, saveId, drop) => {
     models: [...(plane.models ?? []), { id: saveId }],
   });
   const blocked = await editZen(editor, entry, append);
+  const document = editor.documentPath;
   let out = { saveBlocked: { id: saveId, ...blocked } };
   let saved = blocked;
   if (blocked.rejected !== undefined) {
@@ -274,8 +319,15 @@ const saveSequence = async (llm, editor, saveId, drop) => {
   const call = await settle(() =>
     llm.resolveCallConfig({ model: saveId, provider: "opencode" })
   );
+  let savedInFile;
+  try {
+    savedInFile = readFileSync(document, "utf8").includes(saveId);
+  } catch {
+    savedInFile = false;
+  }
   return {
     ...out,
+    savedInFile,
     afterSave: {
       callConfig: call.error?.code ?? "ok",
       dispatch: await turn(llm, "opencode", saveId),
@@ -285,17 +337,19 @@ const saveSequence = async (llm, editor, saveId, drop) => {
 };
 
 const measure = async (ctx, state) => {
-  if (HIDDEN_ROUTES.length === 0 || PI_AI_PACKAGE.length === 0) {
-    throw new Error("probe: PROBE_ROUTES and PROBE_PI_PACKAGE must be set");
+  if (PLANES.length === 0 || PI_AI_PACKAGE.length === 0) {
+    throw new Error("probe: PROBE_PLANES and PROBE_PI_PACKAGE must be set");
   }
   await ctx.get("loader")?.await?.();
   const llm = required(ctx, "llm");
   const registry = () => llm.adapters;
+  /** Whether the plugin's adapter, not pi-ai's, serves a plane. */
+  const claimed = (route) => {
+    const owner = registry().get(route)?.adapter?.constructor.name;
+    return owner !== undefined && owner !== "PiAiAdapter";
+  };
   const until = Date.now() + SETTLE_MS;
-  while (
-    HIDDEN_ROUTES.some((route) => !registry().has(route)) &&
-    Date.now() < until
-  ) {
+  while (!PLANES.every(claimed) && Date.now() < until) {
     await sleep(100);
   }
   const ids = JSON.parse(process.env.PROBE_MODELS ?? "{}");
@@ -307,6 +361,7 @@ const measure = async (ctx, state) => {
         provider: entry.provider,
         settingsNs: entry.settingsNs,
         settingsPath: entry.settingsPath,
+        ...(entry.error === undefined ? {} : { error: messageOf(entry.error) }),
       })),
     fetchInnermost: globalThis.fetch !== probeFetch,
     owners: Object.fromEntries(
@@ -315,23 +370,11 @@ const measure = async (ctx, state) => {
         row.adapter.constructor.name,
       ])
     ),
-    // Whether the plugin's adapter decoration (decoratePlaneAdapters in
-    // src/models-discovery.ts) wrapped pi-ai's plane adapter. It wraps only
-    // the adapters registered when its effect ran, so the apply order is
-    // INFERRED from it (`inferredOrder`) — not observed: a pi-ai restart after
-    // the plugin applied would read as plugin-first. The per-model rows depend
-    // on the decoration, not on the order as such, so this is what they need.
-    planeAdapterDecorated: Object.hasOwn(
-      registry().get("opencode")?.adapter ?? {},
-      "resolveModel"
-    ),
+    piLoaded: piLoadedFrom(registry().get(PLANES[0])?.adapter),
+    planesSettled: PLANES.every(claimed),
     providers: llm.listProviders().map((provider) => provider.id),
     registryRoutes: [...registry().keys()],
-    routesSettled: HIDDEN_ROUTES.every((route) => registry().has(route)),
   };
-  registered.inferredOrder = registered.planeAdapterDecorated
-    ? "pi-ai-first"
-    : "plugin-first";
   const asked = await askAbout(llm, ids);
   const zenNs = registered.configurable.find(
     (entry) => entry.provider === "opencode"
@@ -340,9 +383,18 @@ const measure = async (ctx, state) => {
     llm.discoverModels(zenNs, { provider: "opencode" })
   );
   const dispatch = {};
+  const thinking = {};
   for (const [route, models] of Object.entries(ids)) {
     for (const model of models) {
+      const before = requests.length;
       dispatch[`${route}/${model}`] = await turn(llm, route, model);
+      const sent = requests
+        .slice(before)
+        .filter((request) => request.thinkingConfig !== undefined)
+        .map((request) => request.thinkingConfig);
+      if (sent.length > 0) {
+        thinking[`${route}/${model}`] = sent;
+      }
     }
   }
   const listModelsAfter = {};
@@ -350,9 +402,49 @@ const measure = async (ctx, state) => {
     const listed = await settle(() => llm.listModels(route));
     listModelsAfter[route] = listed.ok?.map((model) => model.id) ?? listed;
   }
-  const piDescriptor = required(ctx, "settings")
+  const settings = required(ctx, "settings");
+  const piDescriptor = settings
     .describe()
     .find((descriptor) => descriptor.ns === "llm-pi-ai");
+  // What Settings reads per plane: the profile's apiKeyEnv and model ids
+  // (`describeEntries`), and the Models page's join (`modelsJoin`) — the
+  // directory entry looked up in the redacted describe at its settingsPath.
+  const describeEntries = {};
+  for (const plane of PLANES) {
+    const entry = piDescriptor?.value?.providers?.[plane];
+    describeEntries[plane] =
+      entry === undefined
+        ? null
+        : {
+            apiKeyEnv: entry.apiKeyEnv,
+            models: (entry.models ?? []).map((model) => model.id),
+          };
+  }
+  const redacted = settings.describe({ redactSecrets: true });
+  const modelsJoin = {};
+  for (const entry of llm.listConfigurableProviders()) {
+    if (!PLANES.includes(entry.provider)) continue;
+    const view = redacted.find(
+      (namespace) => namespace.ns === entry.settingsNs
+    );
+    let profile = view?.value;
+    for (const key of entry.settingsPath) {
+      profile =
+        typeof profile === "object" && profile !== null
+          ? profile[key]
+          : undefined;
+    }
+    const ref =
+      typeof profile === "object" && profile !== null
+        ? profile.apiKeyEnv
+        : undefined;
+    modelsJoin[entry.provider] = {
+      apiKeyEnv: typeof ref === "string" && ref.length > 0 ? ref : undefined,
+      configured:
+        view !== undefined &&
+        (entry.settingsPath.length === 0 || profile !== undefined),
+    };
+  }
   const editor = required(ctx, "configEditor");
   const saveId = process.env.PROBE_SAVE ?? "";
   const drop = JSON.parse(process.env.PROBE_SAVE_DROP ?? "[]");
@@ -372,13 +464,41 @@ const measure = async (ctx, state) => {
     ...registered,
     ...asked,
     ...saving,
+    // Which contract the host's `internal/config` waterfall speaks, as its
+    // own dispatches showed it: "config" when a listener is handed the config
+    // with the fiber as `this` (the OLD core), "fiber" when `this` is null and
+    // the fiber is the first argument, the config read from `next()` (the
+    // NEW core), "neither" for a call in no known shape. `configHook` is the
+    // first call's, `configHooks` counts every call's. Observed with the same
+    // fiber predicate the route claim uses, never inferred from a version.
+    configHook: state.configHooks[0] ?? null,
+    configHooks: Object.fromEntries(
+      ["config", "fiber", "neither"].map((shape) => [
+        shape,
+        state.configHooks.filter((seen) => seen === shape).length,
+      ])
+    ),
     control,
     describe,
+    describeEntries,
     discovery: discovered.ok ? { count: discovered.ok.length } : discovered,
     dispatch,
+    modelsJoin,
     listModelsAfter,
+    thinking,
   };
 };
+
+/**
+ * A cordis fiber: an object its own context names (`fiber.ctx.fiber ===
+ * fiber`), the predicate `src/utils/config-run.ts` reads a call's shape with.
+ */
+const isFiber = (value) =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof value.ctx === "object" &&
+  value.ctx !== null &&
+  value.ctx.fiber === value;
 
 /**
  * Whether a measurement has started in this process: the control edit
@@ -391,7 +511,17 @@ export const apply = (ctx) => {
   if (started) return;
   started = true;
   let stopped = false;
-  const state = { controlling: false };
+  const state = { configHooks: [], controlling: false };
+  ctx.on?.("internal/config", function recordShape(...args) {
+    let shape = "neither";
+    if (isFiber(this)) {
+      shape = "config";
+    } else if (isFiber(args[0])) {
+      shape = "fiber";
+    }
+    state.configHooks.push(shape);
+    return args.at(-1)();
+  });
   ctx.effect?.(() => () => {
     // The control edit's own restart is not a stop: its answer is still
     // written.

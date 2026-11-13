@@ -47,6 +47,110 @@ afterEach(() => {
   clearCapturedApiKeys();
 });
 
+describe("patchFetch · another plugin's request (D27)", () => {
+  /**
+   * A route another plugin writes through pi-ai carries its
+   * `x-opencode-plugin` marker. The request goes out as it was sent: the same
+   * arguments reach the wrapped fetch, no header of this plugin's is added, no
+   * key is filled from the environment, and the request's own key is never
+   * captured. Each case runs inside a turn of a plane the plugin claims, the
+   * strongest claim there is.
+   */
+  const turn = { provider: "opencode-go", value: "ses_turn" } as never;
+
+  it.each([
+    ["on the init", "x-opencode-plugin"],
+    ["in another case", "X-OpenCode-Plugin"],
+  ])(
+    "passes a marked request through untouched (%s)",
+    async (_where, header) => {
+      process.env.OPENCODE_GO_API_KEY = "ambient-go-key";
+      const als = new AsyncLocalStorage<ActiveTurnState>();
+      const seen: unknown[][] = [];
+      const original = (async (...args: unknown[]) => {
+        seen.push(args);
+        return Response.json({ ok: true });
+      }) as unknown as typeof fetch;
+      const patched = patchFetch(original, als, resolveConfig(), {});
+      const init: RequestInit = {
+        body: JSON.stringify({ messages: [], model: "deepseek-v4-pro" }),
+        headers: { authorization: "Bearer realm-token", [header]: "x/1" },
+        method: "POST",
+      };
+      const url = "https://opencode.ai/zen/go/v1/chat/completions";
+      await als.run(turn, () => patched(url, init));
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.[0]).toBe(url);
+      expect(seen[0]?.[1]).toBe(init);
+      expect(new Headers(init.headers).has(SESSION_HEADER)).toBe(false);
+      expect(getCapturedApiKey("opencode-go")).toBeUndefined();
+      expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+    }
+  );
+
+  it("passes a request made inside another plugin's turn through untouched, marker or not: the realm is enough (the known answer: the same request outside it is claimed by URL)", async () => {
+    process.env.OPENCODE_GO_API_KEY = "ambient-go-key";
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const seen: unknown[][] = [];
+    const original = (async (...args: unknown[]) => {
+      seen.push(args);
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    const patched = patchFetch(original, als, resolveConfig(), {});
+    const url = "https://opencode.ai/zen/go/v1/chat/completions";
+    const init: RequestInit = {
+      body: JSON.stringify({ messages: [], model: "deepseek-v4-pro" }),
+      headers: { authorization: "Bearer realm-token" },
+      method: "POST",
+    };
+    const foreign = { foreign: true, provider: "opencode-go", value: "" };
+    await als.run(foreign as ActiveTurnState, () => patched(url, init));
+    expect(seen[0]?.[0]).toBe(url);
+    expect(seen[0]?.[1]).toBe(init);
+    expect(getCapturedApiKey("opencode-go")).toBeUndefined();
+    expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+    // Outside the foreign turn the gateway URL is claimed: headers are
+    // written and the key is captured.
+    await patched(url, init);
+    const sent = seen[1]?.[1] as RequestInit | undefined;
+    expect(sent).not.toBe(init);
+    expect(new Headers(sent?.headers).get(SESSION_HEADER)).toBeTruthy();
+    expect(getCapturedApiKey(undefined, "go")).toBe("realm-token");
+  });
+
+  it("passes a marked Request through as the same object, and still patches the unmarked one (the known answer)", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const seen: unknown[][] = [];
+    const original = (async (...args: unknown[]) => {
+      seen.push(args);
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    const patched = patchFetch(original, als, resolveConfig(), {});
+    const url = "https://opencode.ai/zen/go/v1/chat/completions";
+    const marked = new Request(url, {
+      body: "{}",
+      headers: {
+        authorization: "Bearer realm-token",
+        "x-opencode-plugin": "x",
+      },
+      method: "POST",
+    });
+    await als.run(turn, () => patched(marked));
+    expect(seen[0]?.[0]).toBe(marked);
+    expect(seen[0]?.[1]).toBeUndefined();
+    expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+    const plain = new Request(url, {
+      body: "{}",
+      headers: { authorization: "Bearer user-go-key" },
+      method: "POST",
+    });
+    await als.run(turn, () => patched(plain));
+    const sent = seen[1]?.[1] as RequestInit | undefined;
+    expect(new Headers(sent?.headers).get(SESSION_HEADER)).toBeTruthy();
+    expect(getCapturedApiKey(undefined, "go")).toBe("user-go-key");
+  });
+});
+
 describe("patchFetch", () => {
   it("names the sources it consulted when no credential resolves", async () => {
     // The guard for the tier bug. A mis-classified tier made a captured key
@@ -1173,12 +1277,12 @@ describe("patchFetch", () => {
     );
   });
 
-  it("resolves a credential for the Zen free model that gets redirected to /responses", async () => {
+  it("fills a captured key for the Zen free model the plane sends on /responses", async () => {
     // The reported symptom: a Go-plane free model works, Zen free models do not.
     // `muse-spark-1.2-contributor-free` is the ONE Zen free model naming
-    // `@ai-sdk/openai`, so the stream hook redirects it to `opencode-responses` -
-    // a route the plugin mounts itself, which therefore carries pi's
-    // `Bearer unused` placeholder and depends on THIS injection to authenticate.
+    // `@ai-sdk/openai`, so it is sent on Responses. Before P-R1 that went out
+    // through a route the plugin mounted itself, carrying pi's `Bearer unused`
+    // placeholder; a placeholder is still never forwarded (P6 owns the fill).
     //
     // A key captured from the user's own plane route, on the endpoint family the
     // catalog now names.
@@ -1195,7 +1299,7 @@ describe("patchFetch", () => {
     await als.run({ provider: "opencode", value: "ses_x" }, async () => {
       await patched("https://opencode.ai/inference/v1/responses", {
         body: JSON.stringify({ model: "muse-spark-1.2-contributor-free" }),
-        // The sentinel the mounted route declares; a placeholder must be
+        // pi's sentinel for a route with no key; a placeholder must be
         // replaced, never forwarded.
         headers: { authorization: "Bearer unused" },
         method: "POST",

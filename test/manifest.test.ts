@@ -56,13 +56,13 @@ describe("bundle manifest consistency", () => {
     expect(NS).toBe("dsh-opencode-patch");
   });
 
-  it("claims every route the layer mounts, in the shipped row", async () => {
-    // The row's `providers` REPLACES the code default, so a route present in one
-    // and absent from the other gets no session header, no origin headers and no
-    // key injection — silently, and only on requests that reach it. This drifted
-    // twice: `opencode-google` was missing from the code default while the row
-    // claimed `opencode-mistral`, a route this layer does not mount at all
-    // (Mistral is deliberately unserved).
+  it("ships the default providers, the two planes whose turns the plugin decorates", async () => {
+    // `providers` names only the routes whose turns the plugin decorates, and
+    // both planes are always included (src/config.ts), so the shipped row
+    // matching DEFAULT_PROVIDERS keeps the file honest about what it claims.
+    // This drifted twice, before the plugin mounted no route of its own: the
+    // code default once lacked `opencode-google`, and the row once claimed
+    // `opencode-mistral`, which was never mounted.
     const patch = await readText("cordis.patch.yml");
     const block = /providers:\s*\n((?:\s*-\s*\S+\n)+)/.exec(patch);
     if (block?.[1] === undefined) {

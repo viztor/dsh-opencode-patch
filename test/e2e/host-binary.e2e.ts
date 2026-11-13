@@ -10,15 +10,13 @@
  * The probe records what the host serves and exits the process; this file reads
  * its JSON.
  *
- * The assertions are TODAY's behaviour, read from `S0_TODAY_BY_CELL` for the
- * cell this run installed, the same tables the in-process characterization
- * pins, so the binary and the harness cannot drift
- * apart unnoticed. P-R1 flips the rows its PR names. The loader starts rows in
- * parallel, so which of pi-ai and the plugin applies first is a race. The rows
- * depend on whether the plugin's adapter decoration wrapped pi-ai's plane
- * adapter, so the probe records that and the order it implies
- * (`inferredOrder`), and the per-model rows follow it (`todayRowsFor`) rather
- * than pinning a 70 ms margin.
+ * The assertions are the plugin's behaviour, read from `S0_TODAY_BY_CELL` for
+ * the host cell this run installed, the same tables the in-process
+ * characterization pins, so the binary and the harness cannot drift apart
+ * unnoticed. Since P-R1 the plugin owns both plane routes (D13): no row
+ * depends on which of pi-ai and the plugin applies first, so the per-model
+ * rows are the cell's `rows` in either order, and the listing and save rows no
+ * longer depend on which ids pi describes.
  *
  * Gated: it runs only with `DSH_HOST_E2E=1`, and needs `DSH_HOST_PREFIX`, a
  * directory whose `node_modules/@deepseek-ai/dsh` is the installed host of the
@@ -30,13 +28,10 @@
  *   and pi included, what an npm user of the channel runs. Its rows are the
  *   `newest` cell's while the resolved pi is the channel record's `pi`. A pi
  *   published since the record was cut is still asserted to sit in the
- *   bridge's range, but the rows that depend on which ids pi describes (the
- *   keyed listing and the per-model rows) are skipped with a warning: the
- *   nightly drift report names the new pi, and its probe JSON is the record.
- *   The save rows do not depend on which pi resolved; they assume pi lacks at
- *   least one of `ZEN_UNDESCRIBED` and still describes every other declared
- *   Zen id, so a pi that learns all of them or retires a declared id turns
- *   them red by design — triage that as a pi change first.
+ *   bridge's range, but the per-model rows (a newer pi's own entry can still
+ *   move a model's metadata where the catalog states none) are skipped with a
+ *   warning: the nightly drift report names the new pi, and its probe JSON is
+ *   the record.
  * - `floor`: the tree the desktop app ships: npm `overrides`
  *   (`floorOverrides`) force the channel's cordis family at the record's
  *   versions and pi (with its telemetry package) at the range's floor; this
@@ -51,15 +46,31 @@
  * checks it. Measured 2026-11-12, every cell's installed cordis is its
  * record's, so cosmokit is checked in all four.
  *
- * Only the `npm` cell lets cordis float, as the published host's `~` ranges
- * do for a user. Where what it resolved leaves the host unable to run its own
- * save path, the run records a `[HOST_LIMITATION]` row and skips the save
- * rows. That is detected from what the host answered, never from a version:
- * the plane edit AND a control edit no plugin's listener reads (the probe's
- * own entry) both fail with a `TypeError` thrown by `dsh-app-boot`. It was
- * alpha's `0.2.2-alpha.2` as npm installed it (cordis `4.0.6-alpha.2`); on
- * `0.2.2-alpha.3` and `0.2.2-rc.2` every cell, `npm` and `floor`, saves the
- * control edit (measured 2026-11-12), so the row skips and the save rows run.
+ * Two host limitations are recorded as `[HOST_LIMITATION]` rows, each detected
+ * from what the host itself answers, never from a version (D26):
+ *
+ * - Only the `npm` cell lets cordis float, as the published host's `~` ranges
+ *   do for a user. Where what it resolved leaves the host unable to run its
+ *   own save path, the save rows skip: the plane edit AND a control edit no
+ *   plugin's listener reads (the probe's own entry) both fail with a
+ *   `TypeError` thrown by `dsh-app-boot`. It was alpha's `0.2.2-alpha.2` as
+ *   npm installed it (cordis `4.0.6-alpha.2`); on `0.2.2-alpha.3` and
+ *   `0.2.2-rc.2` every cell, `npm` and `floor`, saves the control edit
+ *   (measured 2026-11-12), so the row skips and the save rows run.
+ * - Google thinking levels are pi's to send. A host whose pi's own
+ *   exported predicate (`usesGoogleThinkingLevel`, `api/google-shared`) does
+ *   not name the level-only Google model (in either plane's catalog) sends it
+ *   a budget, which the gateway refuses: the `0.2.1` rc floor's pi 1.1.0,
+ *   which no supported cell runs any more (both floors are pi 1.3.0).
+ *
+ * The route claim engages on both host cores: a `[BASELINE]` row asserts that
+ * both planes are the plugin's `PlaneAdapter` whichever `internal/config`
+ * call shape the host dispatched, as the probe recorded every call
+ * (`configHook`, `configHooks`: `"config"` with the fiber as `this` on the
+ * OLD core, cordis 4.0.5; `"fiber"` with `this` null on the NEW one, cordis
+ * `4.0.6-alpha.2` and `4.1.0`, which both channels' newest builds run). It
+ * was a `[KNOWN_DEFECT]` on the NEW core until the claim spoke both shapes.
+ * The save rows skip only where the host cannot save at all.
  *
  * `DSH_HOST_PROBE_COPY` names a file to keep the probe's JSON in, for the CI
  * artifact; it is written whenever the probe wrote one, a failed run included.
@@ -82,7 +93,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -98,18 +109,15 @@ import {
   HOST_VERSIONS,
 } from "../support/host-versions.ts";
 import {
-  type ApplyOrder,
   CHARACTERIZED_MODELS,
   CHARACTERIZED_PROFILE,
   type HostCell,
   PI_AI_PACKAGE,
+  PLANES,
   S0_TODAY_BY_CELL,
-  SAVE_BLOCKED_BY_ANY_UNDESCRIBED,
   SAVE_CANDIDATE,
-  todayRowsFor,
   ZEN_UNDESCRIBED,
 } from "../support/host.ts";
-import { INTERNAL_ROUTES } from "../support/src.ts";
 
 const ENABLED = process.env.DSH_HOST_E2E === "1";
 const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
@@ -132,6 +140,41 @@ const ROWS_PI = CELL === "floor" ? RECORD.piFloor : RECORD.pi;
 let rowsHold = false;
 /** The cordis the prefix resolved, for the HOST_LIMITATION row's message. */
 let cordisVersion = "";
+/** The Go plane's Google model the gateway serves by thinking level only (the measured case). */
+const GEMINI_LEVEL_ID = "gemini-4-argon";
+/**
+ * Whether the prefix's own pi sends {@link GEMINI_LEVEL_ID} by thinking level;
+ * set in `beforeAll` by {@link piNamesLevelModel}.
+ */
+let piSendsArgonLevels = false;
+
+/**
+ * Whether the prefix's pi sends `id` by Google thinking level, asked of pi's
+ * own exported rule (`usesGoogleThinkingLevel`, `api/google-shared`, through
+ * pi's `./api/*` export): the feature detection D26 asks for, never a version
+ * compare.
+ *
+ * @param piRoot - the prefix's pi package root.
+ * @param id - the model id.
+ * @returns pi's own answer, or `false` when pi exports no such rule.
+ */
+const piNamesLevelModel = async (
+  piRoot: string,
+  id: string
+): Promise<boolean> => {
+  const manifest = JSON.parse(
+    readFileSync(join(piRoot, "package.json"), "utf8")
+  ) as { exports?: Record<string, string | { import?: string }> };
+  const target = manifest.exports?.["./api/*"];
+  const pattern = typeof target === "string" ? target : target?.import;
+  if (pattern === undefined) {
+    return false;
+  }
+  const shared = (await import(
+    pathToFileURL(join(piRoot, pattern.replace("*", "google-shared"))).href
+  )) as { usesGoogleThinkingLevel?: (model: { id: string }) => boolean };
+  return shared.usesGoogleThinkingLevel?.({ id }) === true;
+};
 
 /**
  * Whether `version` satisfies a caret range `^x.y.z` (x >= 1): the same
@@ -168,14 +211,20 @@ const PROBE_BUNDLE = join(CHECKOUT, "test", "e2e", "host");
 interface ProbeOutput {
   readonly fatal?: string;
   readonly fetchInnermost: boolean;
-  readonly routesSettled: boolean;
-  readonly planeAdapterDecorated: boolean;
-  /** Inferred from `planeAdapterDecorated`, not observed: see the probe. */
-  readonly inferredOrder: ApplyOrder;
+  readonly planesSettled: boolean;
+  readonly piLoaded: {
+    fromHostPrefix: boolean;
+    path: string | null;
+    version: string;
+  } | null;
   readonly providers: string[];
   readonly registryRoutes: string[];
   readonly owners: Record<string, string>;
-  readonly configurable: { provider: string; settingsNs: string }[];
+  readonly configurable: {
+    provider: string;
+    settingsNs: string;
+    error?: string;
+  }[];
   readonly listModels: Record<string, unknown>;
   readonly listModelsAfter: Record<string, unknown>;
   readonly modelInfo: Record<
@@ -184,13 +233,39 @@ interface ProbeOutput {
   >;
   readonly callConfig: Record<string, string>;
   readonly dispatch: Record<string, { sent: string[]; finish: string }>;
+  /** Each turn's Google `generationConfig.thinkingConfig`, by `route/model`. */
+  readonly thinking?: Record<string, Record<string, unknown>[]>;
   readonly describe: { user: string[]; value: string[] } | undefined;
+  readonly describeEntries: Record<
+    string,
+    { apiKeyEnv?: string; models: string[] } | null
+  >;
+  readonly modelsJoin: Record<
+    string,
+    { configured: boolean; apiKeyEnv?: string }
+  >;
+  readonly savedInFile?: boolean;
+  /**
+   * The contract the host's `internal/config` waterfall speaks, as its first
+   * dispatch showed it (`null` when none was seen): `"config"` hands a
+   * listener the config with the fiber as `this`, `"fiber"` hands it the
+   * fiber with `this` null, `"neither"` is a call in no known shape.
+   */
+  readonly configHook: "config" | "fiber" | "neither" | null;
+  /** How many of the host's `internal/config` dispatches took each shape. */
+  readonly configHooks: Readonly<
+    Record<"config" | "fiber" | "neither", number>
+  >;
   readonly saveBlocked: { id: string } & EditVerdict;
   /** The control: an edit of the probe's own entry, made after the saves. */
   readonly control?: EditVerdict;
   readonly saveCleared?: { dropped: string[] } & EditVerdict;
   readonly save: { id: string } & EditVerdict;
-  readonly afterSave?: unknown;
+  readonly afterSave?: {
+    callConfig: string;
+    dispatch: { sent: string[]; finish: string };
+    listed: unknown;
+  };
 }
 
 /**
@@ -326,6 +401,8 @@ const posix = (path: string): string => path.split(sep).join("/");
 
 let home = "";
 let out: ProbeOutput;
+/** The version of the host prefix's own pi. */
+let hostPiVersion = "";
 /** The booted host, kept so `afterAll` can stop it before removing HOME. */
 let child: ChildProcess | undefined;
 
@@ -353,6 +430,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
         version: string;
       }
     ).version;
+    hostPiVersion = piVersion;
     const dshVersion = (
       JSON.parse(
         readFileSync(
@@ -367,6 +445,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     expect(dshVersion, "the prefix holds another channel's host").toBe(
       RECORD.dsh
     );
+    piSendsArgonLevels = await piNamesLevelModel(piRoot, GEMINI_LEVEL_ID);
     expect(piCopies(join(PREFIX, "node_modules"))).toHaveLength(1);
     expect(
       satisfiesCaret(piVersion, RECORD.piRange),
@@ -509,10 +588,11 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
         cwd: home,
         env: {
           ...env,
+          PROBE_HOST_PREFIX: PREFIX,
           PROBE_MODELS: JSON.stringify(CHARACTERIZED_MODELS),
           PROBE_OUT: probeOut,
           PROBE_PI_PACKAGE: PI_AI_PACKAGE,
-          PROBE_ROUTES: JSON.stringify(INTERNAL_ROUTES),
+          PROBE_PLANES: JSON.stringify(PLANES),
           PROBE_SAVE: SAVE_CANDIDATE,
           PROBE_SAVE_DROP: JSON.stringify(ZEN_UNDESCRIBED),
         },
@@ -579,67 +659,118 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     }
   });
 
-  it("measured with the probe innermost and the hidden routes settled", () => {
+  it("measured with the probe innermost and both planes settled on the plugin's adapter", () => {
     expect(out.fatal).toBeUndefined();
     expect(out.fetchInnermost).toBe(true);
-    expect(out.routesSettled).toBe(true);
+    expect(out.planesSettled).toBe(true);
   });
 
-  it("[INTENDED_CHANGE] registry: the planes are pi-ai's; the hidden routes are registered and not listed (P-R1 claims the planes)", () => {
+  it(`[BASELINE] ${CHANNEL} ${RECORD.dsh} (${CELL} cell): the route claim engages whichever internal/config call shape the host dispatches, and both planes are the plugin's PlaneAdapter`, () => {
+    // Known answer: the probe saw the host dispatch, every call in one of
+    // the two known shapes, and the same shape throughout (a core speaks
+    // one).
+    expect(out.configHook).not.toBeNull();
+    const { config, fiber, neither } = out.configHooks;
+    expect(neither).toBe(0);
+    expect(config + fiber).toBeGreaterThan(0);
+    expect(config === 0 || fiber === 0).toBe(true);
+    console.warn(
+      `[e2e-host] ${CHANNEL} · ${CELL}: cordis ${cordisVersion} dispatched internal/config ${config + fiber} time(s) in the "${out.configHook}" shape`
+    );
+    expect(out.planesSettled).toBe(true);
+    expect(out.owners.opencode).toBe("PlaneAdapter");
+    expect(out.owners["opencode-go"]).toBe("PlaneAdapter");
+  });
+
+  it("the plane provider is built from the host's own pi, not the linked checkout's (both cells)", () => {
+    // The plugin is installed as a `link:` to this checkout, whose own
+    // development install holds a pi too; the plugin resolves the wrapper
+    // from the loader's base URL, so it reaches the host prefix's copy — the
+    // npm cell's pi included.
+    expect(out.piLoaded).toEqual({
+      fromHostPrefix: true,
+      path: "node_modules/@earendil-works/pi-ai",
+      version: hostPiVersion,
+    });
+  });
+
+  it("[BASELINE] registry: both planes are the plugin's PlaneAdapter, no hidden route exists, and Settings addresses the planes under pi-ai's namespace with no error (D13)", () => {
     expect(out.providers).toEqual(
       expect.arrayContaining(["opencode", "opencode-go"])
     );
-    for (const route of INTERNAL_ROUTES) {
-      expect(out.providers).not.toContain(route);
-      expect(out.registryRoutes).toContain(route);
-    }
-    expect(out.owners.opencode).toBe("PiAiAdapter");
-    expect(out.owners["opencode-go"]).toBe("PiAiAdapter");
-    for (const plane of ["opencode", "opencode-go"]) {
-      expect(out.configurable).toContainEqual(
-        expect.objectContaining({ provider: plane, settingsNs: "llm-pi-ai" })
-      );
+    expect(out.owners.opencode).toBe("PlaneAdapter");
+    expect(out.owners["opencode-go"]).toBe("PlaneAdapter");
+    expect(
+      out.registryRoutes.filter((route) =>
+        /^opencode-(?:responses|anthropic|google|go-)/u.test(route)
+      )
+    ).toEqual([]);
+    for (const plane of PLANES) {
+      const entry = out.configurable.find((row) => row.provider === plane);
+      expect(entry).toMatchObject({ provider: plane, settingsNs: "llm-pi-ai" });
+      expect(entry?.error).toBeUndefined();
     }
   });
 
-  it("[INTENDED_CHANGE] keyless listing: every paid model is hidden before a key is captured", () => {
-    expect(out.listModels).toEqual(ROWS.keylessListing);
+  it("[BASELINE] listing before any turn: every declared id is listed (D21)", () => {
+    expect(out.listModels).toEqual(ROWS.listingBeforeTurn);
   });
 
-  // These two depend on which ids pi describes, so they hold for the pi the
-  // cell's rows were measured on; an npm-resolved pi newer than the channel
-  // record skips them, and its probe JSON is the record.
-  describe("rows that depend on which ids pi describes", () => {
-    it("[KNOWN_DEFECT] keyed listing: the ids this cell's pi cannot place are missing", (context) => {
-      if (!rowsHold) {
-        context.skip();
-      }
-      expect(out.listModelsAfter).toEqual(ROWS.keyedListing);
-    });
+  it("[BASELINE] listing after a turn on each plane: every declared id is still listed (G1)", () => {
+    expect(out.listModelsAfter).toEqual(ROWS.listingAfterTurn);
+  });
 
-    it("resolveModelInfo, resolveCallConfig and the wire match the in-process rows of this cell, for the decoration state the probe recorded", (context) => {
-      if (!rowsHold) {
-        context.skip();
-      }
-      // The loader starts rows in parallel (F17), so whether the plugin's
-      // decoration wrapped pi-ai's plane adapter is a race: measured on the
-      // published binary it did not (the plugin applied about 70 ms first),
-      // which is no margin to pin. So the rows follow the recorded state, and
-      // `todayRowsFor` throws on a missing or unknown value.
-      console.info(
-        `[e2e-host] plane adapter decorated: ${String(out.planeAdapterDecorated)} (inferred order ${out.inferredOrder})`
-      );
-      for (const [key, row] of Object.entries(
-        todayRowsFor(out.inferredOrder, ROWS_CELL)
-      )) {
-        expect(out.modelInfo[key], key).toEqual(row.info);
-        expect(out.callConfig[key], key).toBe(row.callConfig);
-        expect(out.dispatch[key], key).toEqual({
-          finish: row.finish,
-          sent: row.sent,
-        });
-      }
-    });
+  // A pi newer than the channel record can still move a model's metadata
+  // where the catalog states none, so these hold for the pi the cell's rows
+  // were measured on; such a run's probe JSON is the record.
+  it("resolveModelInfo, resolveCallConfig and the wire match the in-process rows of this cell", (context) => {
+    if (!rowsHold) {
+      context.skip();
+    }
+    for (const [key, row] of Object.entries(ROWS.rows)) {
+      expect(out.modelInfo[key], key).toEqual(row.info);
+      expect(out.callConfig[key], key).toBe(row.callConfig);
+      expect(out.dispatch[key], key).toEqual({
+        finish: row.finish,
+        sent: row.sent,
+      });
+    }
+    expect(out.dispatch[`opencode-go/${GEMINI_LEVEL_ID}`]?.sent).toEqual([
+      `https://opencode.ai/inference/go/google/v1beta/models/${GEMINI_LEVEL_ID}:streamGenerateContent?alt=sse`,
+    ]);
+    expect(out.callConfig[`opencode-go/${GEMINI_LEVEL_ID}`]).toBe("ok");
+  });
+
+  // The probe's turn chooses no effort, so a model pi sends by level is sent
+  // the level pi falls back to, never a budget. Which ids pi sends by level is
+  // pi's own rule (`usesGoogleThinkingLevel`); the live 400 was a
+  // `thinkingBudget` here.
+  it("[BASELINE] the Go Gemini level model is sent a thinking level and no thinkingBudget, through the shipped bundle, where the host's pi names it", (context) => {
+    if (!piSendsArgonLevels) {
+      context.skip();
+    }
+    const sent = out.thinking?.[`opencode-go/${GEMINI_LEVEL_ID}`] ?? [];
+    expect(sent.length).toBeGreaterThan(0);
+    for (const config of sent) {
+      expect(config).toEqual({ thinkingLevel: "LOW" });
+    }
+  });
+
+  it(`[HOST_LIMITATION] ${CHANNEL} ${RECORD.dsh} (${CELL} cell): the host's pi sends the Go Gemini level model a thinking budget (reported upstream, D26)`, (context) => {
+    if (piSendsArgonLevels) {
+      context.skip();
+    }
+    // Recorded, not fixed here: pi's own pattern does not name the id, so pi
+    // builds a budget for it, which the gateway refuses. The plugin sends what
+    // the host's pi builds; bumping pi is the host's fix.
+    console.warn(
+      `[e2e-host] ${CHANNEL} · ${CELL}: HOST_LIMITATION — pi ${hostPiVersion} sends ${GEMINI_LEVEL_ID} a thinking budget, not a level`
+    );
+    const sent = out.thinking?.[`opencode-go/${GEMINI_LEVEL_ID}`] ?? [];
+    expect(sent.length).toBeGreaterThan(0);
+    for (const config of sent) {
+      expect(config).not.toHaveProperty("thinkingLevel");
+    }
   });
 
   it("[BASELINE] the settings page reads every plane the profile declares", () => {
@@ -677,32 +808,50 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     expect(out.control).toEqual({ accepted: true });
   });
 
-  it("[KNOWN_DEFECT] a stored gap id blocks saving any new id on its plane", (context) => {
-    if (hostCannotSave(out)) {
-      context.skip();
-    }
-    // pi-ai's strict check names the FIRST stored id the installed pi cannot
-    // describe. Every recorded cell's pi lacks the first of ZEN_UNDESCRIBED,
-    // so it is named; a newer pi may have learned it, and then names the next
-    // undescribed id — so that run asserts only that one of them blocks it.
-    expect(out.saveBlocked.rejected).toMatch(
-      rowsHold ? ROWS.saveBlockedByStoredGap : SAVE_BLOCKED_BY_ANY_UNDESCRIBED
-    );
+  it("[BASELINE] the Settings graft shows each plane's own entry, and the Models page reads both planes configured under their apiKeyEnv (D18)", () => {
+    expect(out.describeEntries).toEqual({
+      opencode: {
+        apiKeyEnv: "OPENCODE_API_KEY",
+        models: CHARACTERIZED_MODELS.opencode,
+      },
+      "opencode-go": {
+        apiKeyEnv: "OPENCODE_GO_API_KEY",
+        models: CHARACTERIZED_MODELS["opencode-go"],
+      },
+    });
+    expect(out.modelsJoin.opencode).toEqual({
+      apiKeyEnv: "OPENCODE_API_KEY",
+      configured: true,
+    });
+    expect(out.modelsJoin["opencode-go"]).toEqual({
+      apiKeyEnv: "OPENCODE_GO_API_KEY",
+      configured: true,
+    });
   });
 
-  it("[KNOWN_DEFECT] a catalog-unknown id cannot be saved, once the plane stores no gap id", (context) => {
+  it("[BASELINE] a stored gap id blocks no save: the catalog-unknown id is accepted on the first try (D15)", (context) => {
     if (hostCannotSave(out)) {
       context.skip();
     }
-    // Clearing only ZEN_UNDESCRIBED assumes the installed pi still describes
-    // the other opencode ids the profile declares. A pi newer than the record
-    // asserts it too: one that retires one of them would fail here, and that
-    // is a retirement worth a red run rather than a row to skip.
-    expect(out.saveCleared).toEqual({
-      accepted: true,
-      dropped: [...ZEN_UNDESCRIBED],
+    // D15 is the route claim's: pi-ai's own strict check would refuse the
+    // stored gap id, which the claim keeps from it.
+    expect(out.saveBlocked).toEqual({ accepted: true, id: SAVE_CANDIDATE });
+    expect(out.saveCleared).toBeUndefined();
+  });
+
+  it("[BASELINE] a catalog-unknown id saves to the file, is listed, validates and is sent as completions on the modern base (D15, D16)", (context) => {
+    if (hostCannotSave(out)) {
+      context.skip();
+    }
+    // D15 is the route claim's: pi-ai's own strict check would refuse the
+    // stored gap id, which the claim keeps from it.
+    expect(out.save).toEqual({ accepted: true, id: SAVE_CANDIDATE });
+    expect(out.savedInFile).toBe(true);
+    expect(out.afterSave?.listed).toContain(SAVE_CANDIDATE);
+    expect(out.afterSave?.callConfig).toBe("ok");
+    expect(out.afterSave?.dispatch).toEqual({
+      finish: "AUTH",
+      sent: ["https://opencode.ai/inference/openai/v1/chat/completions"],
     });
-    expect(out.save.rejected).toMatch(ROWS.saveRejectedUnknown);
-    expect(out.afterSave).toBeUndefined();
   });
 });

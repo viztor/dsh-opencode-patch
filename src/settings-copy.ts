@@ -9,9 +9,9 @@
 export const en = {
   description:
     "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
-  enrichModels: "Enrich model metadata from the OpenCode catalog (default on)",
+  enrichModels: "Enrich listings from the OpenCode catalog (default on)",
   enrichModelsHint:
-    'Fills context limits, modalities and thinking levels from the OpenCode catalog (models.opencode.ai — the same registry models.dev serves) into the model info, and lets the gateway\'s /models listing carry the full catalog. It does NOT add models to the picker — the picker shows only what you declared; use "Check catalog" above for that. Off leaves both the listing and the model info as the gateway sent them.',
+    "Lets the gateway's /models listing carry the full OpenCode catalog (models.opencode.ai — the same registry models.dev serves) with names, context limits and modalities, and offers that catalog to Settings' model discovery. It does NOT add models to the picker — the picker shows only what you declared; use \"Check catalog\" above for that. A declared model's own info (context, modalities, thinking levels) always comes from your model row and the catalog, whatever this says. Off leaves the gateway listing as the gateway sent it and offers no catalog to discovery.",
   endpoint: "API Endpoint",
   endpointAuto: "Automatic (same as Modern)",
   endpointHint:
@@ -40,7 +40,7 @@ export const en = {
   keySourceAuto: "Automatic",
   keySourceConfigured: "Declared key first",
   keySourceHint:
-    "Which key wins when several resolve. Automatic takes the declared key, then one captured from a live request; the other two promote one side.",
+    "Which key wins when several resolve. Automatic takes a literal key, then one captured from a live request, then the declared reference; Declared key first puts the reference ahead of the captured key, Live request first puts captured keys first.",
   keySourceRequest: "Live request first",
   readOpencodeStore: "Read the OpenCode installation's key (default off)",
   readOpencodeStoreHint:
@@ -180,9 +180,9 @@ export const en = {
 export const zh: Record<keyof typeof en, string> = {
   description:
     "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
-  enrichModels: "用 OpenCode 官方目录补全模型信息（默认开启）",
+  enrichModels: "用 OpenCode 官方目录补全列表（默认开启）",
   enrichModelsHint:
-    "把 OpenCode 官方目录（models.opencode.ai，与 models.dev 是同一份注册表）里的上下文上限、模态与思考档位补进模型信息，并让网关 /models 列表带上完整目录。它不会往选择器里添加模型——选择器只显示你声明的那些，要添加请用上面的「检查目录」。关闭后网关列表与模型信息都保持原样。",
+    "让网关 /models 列表带上 OpenCode 官方目录（models.opencode.ai，与 models.dev 是同一份注册表）里的完整目录，含名称、上下文上限与模态，并把这份目录提供给设置页的模型发现。它不会往选择器里添加模型——选择器只显示你声明的那些，要添加请用上面的「检查目录」。已声明模型自身的信息（上下文、模态、思考档位）始终来自你的模型行与目录，与此开关无关。关闭后网关列表保持原样，也不向模型发现提供目录。",
   injectCoreTools: "自动补全核心工具（默认开启）",
   injectCoreToolsHint:
     "在免费模型请求中自动注入 read 和 bash 工具声明以满足网关校验。留空沿用默认值。",
@@ -211,7 +211,7 @@ export const zh: Record<keyof typeof en, string> = {
   keySourceAuto: "自动",
   keySourceConfigured: "优先已声明密钥",
   keySourceHint:
-    "多个来源都可用时以哪个为准。自动先取已声明密钥、再取捕获密钥；另两项各优先一侧。",
+    "多个来源都可用时以哪个为准。自动先取字面密钥，再取实时请求捕获的密钥，最后取声明的引用；优先已声明密钥把引用排在捕获密钥之前，优先实时请求把捕获密钥排在最前。",
   keySourceRequest: "优先实时请求",
   readOpencodeStore: "读取 OpenCode 安装的密钥（默认关闭）",
   readOpencodeStoreHint:

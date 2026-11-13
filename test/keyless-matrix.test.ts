@@ -17,19 +17,19 @@ import {
   cellKey,
   classifyKeylessProbe,
   isFreeSpec,
+  isModelGoneMessage,
   isTransientProbeAnswer,
   keylessMatrix,
   MATRIX_PROTOCOLS,
   type MatrixCell,
   matrixUrl,
-  NEXT_DISPATCH,
   TODAY_DISPATCH,
 } from "./support/keyless-matrix.ts";
 import {
   type CatalogModelSpec,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-  protocolFor,
+  protocolForSdk,
 } from "./support/src.ts";
 
 const spec = (
@@ -249,7 +249,7 @@ describe("keyless matrix · the cells", () => {
         cell.plane === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
       const first = catalog.find(
         (entry) =>
-          protocolFor(entry) === cell.protocol &&
+          protocolForSdk(entry.provider_npm) === cell.protocol &&
           entry.is_free !== true &&
           !/free/iu.test(entry.id)
       );
@@ -312,48 +312,34 @@ describe("keyless matrix · the cells the live run asserts", () => {
     return { reached: [...reached].toSorted(), unmatched };
   };
 
-  it("TODAY_DISPATCH is exactly the cells every host cell's measured turns were sent to outside completions, which follow each cell's pi", () => {
+  it("TODAY_DISPATCH is exactly the cells every host cell's measured turns were sent to", () => {
     // Each URL a characterized turn sent is matched to the one cell whose PATH
     // it is (the query aside: Messages adds `?beta=true`), with the row's own
-    // model in the Google path. A row that sent nothing adds nothing. The
-    // plugin's own routes (Responses, Messages, Google) are the same on every
-    // host cell; completions follow pi's catalog base.
+    // model in the Google path. A row that sent nothing adds nothing. Since
+    // P-R1 the plugin builds every base from its own endpoint table, so no
+    // host cell's pi moves a turn: each one reaches the same cells.
     expect(HOST_CELLS.toSorted()).toEqual([
       "alpha-floor",
       "newest",
       "rc-floor",
     ]);
-    // pi 1.3.0 (both floors) files completions under the root family, which
-    // no matrix cell names yet.
-    for (const cell of ["alpha-floor", "rc-floor"] as const) {
-      const floor = reachedOn(cell);
-      expect(floor.reached, cell).toEqual([...TODAY_DISPATCH].toSorted());
-      expect(floor.unmatched.toSorted(), cell).toEqual([
-        "/inference/go/v1/chat/completions",
-        "/inference/v1/chat/completions",
-      ]);
+    for (const cell of HOST_CELLS) {
+      const { reached, unmatched } = reachedOn(cell);
+      expect(unmatched, cell).toEqual([]);
+      expect(reached, cell).toEqual([...TODAY_DISPATCH].toSorted());
     }
-    // pi 1.5 (newest, both channels' npm install) files completions under
-    // the modern family: exactly the cells P-R1 moves every host to.
-    const newest = reachedOn("newest");
-    expect(newest.unmatched).toEqual([]);
-    expect(newest.reached).toEqual(
-      [...TODAY_DISPATCH, ...NEXT_DISPATCH].toSorted()
+    // Every protocol on both planes reaches the modern family, completions
+    // included (P-R1), and nothing reaches a legacy cell by default.
+    expect([...TODAY_DISPATCH].toSorted()).toEqual(
+      PLANES.flatMap((plane) =>
+        MATRIX_PROTOCOLS.map((protocol) => `${plane} ${protocol} modern`)
+      ).toSorted()
     );
-    // No supported host sends completions to the legacy family any more, and
-    // the two sets are disjoint.
     expect(
-      [...TODAY_DISPATCH].filter((cell) => cell.includes("openai-completions"))
+      [...TODAY_DISPATCH].filter((cell) => cell.endsWith("legacy"))
     ).toEqual([]);
-    expect(
-      [...NEXT_DISPATCH].filter((cell) => TODAY_DISPATCH.has(cell))
-    ).toEqual([]);
-    expect([...NEXT_DISPATCH].toSorted()).toEqual([
-      "opencode openai-completions modern",
-      "opencode-go openai-completions modern",
-    ]);
     const all = new Set(keylessMatrix({ go: GO, zen: ZEN }).map(key));
-    for (const cell of [...TODAY_DISPATCH, ...NEXT_DISPATCH]) {
+    for (const cell of TODAY_DISPATCH) {
       expect(all.has(cell), cell).toBe(true);
     }
   });
@@ -372,6 +358,26 @@ describe("keyless matrix · reading an answer", () => {
     [500, "", "other"],
   ] as const)("%i %s → %s", (status, bodyText, verdict) => {
     expect(classifyKeylessProbe({ bodyText, status })).toBe(verdict);
+  });
+});
+
+describe("a live turn's failure message that says the model is gone", () => {
+  // The adapter blocks of the live e2e suites read this as a reason to ASK:
+  // a raw probe of the same id decides whether the vendor withdrew it.
+  it.each([
+    ["410 status code (no body)", true],
+    ["400 Upstream request failed: Model is unavailable", true],
+    ["model is UNAVAILABLE", true],
+    [
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model gemini-3-flash has been deprecated."}}',
+      true,
+    ],
+    ["ModelDeprecatedish", false],
+    ["400 Invalid request: messages is required", false],
+    ["4100 tokens exceeded", false],
+    ["", false],
+  ] as const)("%j → %s", (message, gone) => {
+    expect(isModelGoneMessage(message)).toBe(gone);
   });
 });
 
