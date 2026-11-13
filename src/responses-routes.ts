@@ -7,9 +7,10 @@
  * PRESENCE of `provider.npm` is the signal. An `opencode` model names
  * nothing (the default), `@ai-sdk/openai`, `@ai-sdk/anthropic`,
  * `@ai-sdk/google` or `@ai-sdk/mistral`, the last the only one this plugin does
- * not serve. The per-SDK counts move with the vendor, so they are stated once,
- * in `docs/redirect-planes.md` §2, which `test/catalog.test.ts` holds to the
- * shipped catalog.
+ * not serve. The per-SDK counts move with the vendor, so they are not restated
+ * here; `docs/redirect-planes.md` §2 carries them per plane, and
+ * `test/catalog.test.ts` holds that table (and the README's and the protocol
+ * doc's) to the shipped catalog.
  *
  * So the split is read from the vendor's metadata rather than kept as a list of
  * model ids we would have to notice changing. The hand-written list this
