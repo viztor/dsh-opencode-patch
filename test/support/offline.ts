@@ -16,20 +16,14 @@
  *
  * @module test/support/offline
  */
+import { urlOf } from "../test-helpers.ts";
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 /** The host a fetch input targets, or `""` when it is not an absolute URL. */
 export const hostOf = (input: RequestInfo | URL): string => {
-  let url: string;
-  if (typeof input === "string") {
-    url = input;
-  } else if (input instanceof URL) {
-    url = input.href;
-  } else {
-    ({ url } = input);
-  }
   try {
-    return new URL(url).hostname;
+    return new URL(urlOf(input)).hostname;
   } catch {
     return "";
   }

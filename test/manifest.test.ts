@@ -16,10 +16,10 @@ import {
   Config,
   CONFIG_ONLY_FIELDS,
   DEFAULT_PROVIDERS,
+  isRecord,
   name as PLUGIN_NAME,
   NS,
 } from "./support/src.ts";
-import { isRecord } from "./test-helpers.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();

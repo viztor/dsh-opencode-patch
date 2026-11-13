@@ -93,6 +93,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { e2e } from "../support/e2e-env.ts";
 import {
   type RecordedProbe,
   type RecordedVariant,
@@ -102,12 +103,10 @@ import {
   variantTable,
 } from "../support/endpoint-record.ts";
 import {
-  armedKey,
   excerpt,
   isArmed,
   KEYED_VARIANTS,
   keyedCell,
-  keyedTierOf,
   keyedVariantCells,
   keyedVerdictOf,
   planeOutcome,
@@ -128,15 +127,16 @@ import {
   parseModelsDevCatalog,
 } from "../support/src.ts";
 
-const LIVE = process.env.OPENCODE_E2E === "1";
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
+
+const LIVE = E2E.live;
 /** A mirror the rest of the suite is pointed at, which this file cannot follow. */
-const MIRRORED = ["OPENCODE_ZEN_BASE_URL", "OPENCODE_GO_BASE_URL"].some(
-  (name) => (process.env[name] ?? "").length > 0
-);
-const TIER = keyedTierOf(process.env.OPENCODE_E2E_KEYED);
+const MIRRORED = E2E.mirrored;
+const TIER = E2E.tier;
 const KEYS = {
-  opencode: armedKey(TIER, "probes", process.env.OPENCODE_API_KEY),
-  "opencode-go": armedKey(TIER, "probes", process.env.OPENCODE_GO_API_KEY),
+  opencode: E2E.keyFor("opencode", "probes"),
+  "opencode-go": E2E.keyFor("opencode-go", "probes"),
 } as const;
 
 /** Per request: protocol-routing's measured budget, so a hung gateway cannot outlast the job. */
@@ -241,11 +241,7 @@ describe.skipIf(
   /** Print and write the record: after every cell, so a killed job keeps what it measured. */
   const persist = async (print: boolean): Promise<void> => {
     const date = new Date().toISOString().slice(0, 10);
-    const run = runReference({
-      repository: process.env.GITHUB_REPOSITORY,
-      runId: process.env.GITHUB_RUN_ID,
-      server: process.env.GITHUB_SERVER_URL,
-    });
+    const run = runReference(E2E.run);
     const record = [
       recordTable({ date, probes: recorded, run, title: "Keyed" }),
       "",
@@ -257,7 +253,7 @@ describe.skipIf(
     if (print) {
       console.info(record);
     }
-    const dir = process.env.OPENCODE_E2E_RECORD_DIR ?? "";
+    const dir = E2E.recordDir;
     if (dir.length > 0) {
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, "keyed.md"), record);

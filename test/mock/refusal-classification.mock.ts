@@ -1,10 +1,11 @@
 /**
  * End-to-end refusal contract: what the classifier reads off a real socket.
  *
- * `classifyPiAiError` (`@deepseek-ai/dsh-llm-pi-ai`) asks the MESSAGE before
- * it asks anything else — its first branch is `if (/\b(?:401|403)\b/.test(message)) return "AUTH"` —
- * so a rewritten refusal that quotes the code it rewrites away is still read as
- * an invalid API key no matter what status it carries. Exactly that shipped
+ * `classifyPiAiError` (`@deepseek-ai/dsh-llm-pi-ai`) reads the failure
+ * MESSAGE pi hands it, and asks for a 401 or 403 before it asks for anything
+ * else, so a 403 is AUTH whatever its words say, and a rewritten refusal that
+ * quotes the code it rewrites away was read as an invalid API key no matter
+ * what status it carried. Exactly that shipped
  * once, with every rewritten body opening `(403 …)`, and the fix moved the text
  * off the token and onto 400 (`fix(errors): the refusal text must not carry the
  * status it rewrites`).
@@ -16,37 +17,39 @@
  * crosses reads the way a refusal on the live gateway does and which no
  * `new Response(body)` fixture produces.
  *
- * The classifier is not exported from the package, so the oracle below is a
- * copy; the first case asserts the installed bundle still carries the branches
- * the verdicts depend on, in their order — a vendor move fails here instead of
- * being absorbed by a stale copy.
+ * The classifier is not exported from the package, so the first case drives
+ * the INSTALLED pi-ai through a real route against this socket and reads the
+ * code it finishes with: the order the verdicts depend on is asserted as
+ * behaviour, on whichever bridge the channel installs, never as the text of
+ * one bundle (the `0.2.2-rc.2` bridge reads a leading HTTP status first, and
+ * a pin on the older branch's source broke on it while the order held).
  *
- * Opt-in (`OPENCODE_E2E=1`), like the sibling header suite: it binds a port.
+ * It binds a loopback port and nothing else, like the sibling header suite,
+ * so it runs in the mock suite on every push.
+ *
+ * @module test/mock/refusal-classification.mock
  */
 
 import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
 import { createServer, type Server, type ServerResponse } from "node:http";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  drainStream,
+  fakeCredentials,
+  mountTierA,
+  ownerOf,
+} from "../support/host.ts";
+import {
   type ActiveTurnState,
+  openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
 } from "../support/src.ts";
 
-const ENABLED = process.env.OPENCODE_E2E === "1";
-
-/**
- * The first case reads the INSTALLED `@deepseek-ai/dsh-llm-pi-ai` bundle and
- * pins the branch order the contract below relies on: AUTH is tested FIRST,
- * against the message text, before any status or later branch is consulted —
- * so a pass-through 403 is labelled AUTH by design, with the gateway's own
- * words under it.
- */
 /** The gateway's own bodies, as measured. */
 const BODY = {
   auth: JSON.stringify({
@@ -65,6 +68,18 @@ const BODY = {
     },
   }),
   ok: JSON.stringify({ ok: true }),
+  /**
+   * Not a measured body: words (its message and its type) that read as an
+   * invalid request, so a classifier that asked for one before AUTH would
+   * label a 403 carrying them INVALID_REQUEST. The known answer is the same words at 422, a
+   * status no classifier branch names, so only the words can make it one.
+   */
+  probe: JSON.stringify({
+    error: {
+      message: "Invalid request: this model is not on the free tier",
+      type: "invalid_request_error",
+    },
+  }),
   upstreamNamed: JSON.stringify({
     error: {
       message: "upstream answered 403 to the relay",
@@ -96,6 +111,16 @@ const handle = async (
   response: ServerResponse
 ): Promise<void> => {
   const path = new URL(url ?? "/", "http://127.0.0.1").pathname;
+  // The classifier probe: pi-ai's own route posts to `<base>/chat/completions`
+  // under `/pi-ai/<status>/`, and gets the probe's words at that status.
+  const probe = /^\/pi-ai\/(4\d\d)\//u.exec(path);
+  if (probe !== null) {
+    response.writeHead(Number(probe[1]), {
+      "content-type": "application/json",
+    });
+    response.end(BODY.probe);
+    return;
+  }
   switch (path) {
     case "/refusal/free-tier": {
       // The measured body, written in three chunks with two flushes between
@@ -167,14 +192,14 @@ interface Refusal {
   error: { message: string; type: string };
 }
 
-describe.skipIf(!ENABLED)("refusal classification over a real socket", () => {
+describe("refusal classification over a real socket", () => {
   const als = new AsyncLocalStorage<ActiveTurnState>();
   const patched = patchFetch(fetch, als, resolveConfig({}));
 
   const turn = (overrides: Partial<ActiveTurnState> = {}): ActiveTurnState => ({
     model: "gpt-5.4",
     provider: "opencode",
-    value: "ses_e2e00000000",
+    value: openCodeSessionIdFor("e2e-refusal"),
     ...overrides,
   });
 
@@ -221,31 +246,53 @@ describe.skipIf(!ENABLED)("refusal classification over a real socket", () => {
     expect(result.payload.error.message).toContain(needle);
   };
 
-  it("pins the oracle to the classifier the deployment runs", async () => {
-    const source = await readFile(
-      new URL(
-        "../../node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js",
-        import.meta.url
-      ),
-      "utf8"
-    );
-    const auth = String.raw`if (/\b(?:401|403)\b/.test(message)) return "AUTH";`;
-    const invalid = String.raw`if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";`;
-    const authAt = source.indexOf(auth);
-    const invalidAt = source.indexOf(invalid);
-    expect(
-      authAt,
-      "the AUTH branch left the installed classifier"
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      invalidAt,
-      "the 400 branch left the installed classifier"
-    ).toBeGreaterThanOrEqual(0);
-    // Order IS the contract: AUTH runs first, so a 403 body is read as AUTH.
-    // That reading is accepted now — the pass-through means a free-tier refusal
-    // surfaces as AUTH carrying the gateway's own words, which is the honest
-    // answer to a request the gateway refused outside the credential.
-    expect(authAt).toBeLessThan(invalidAt);
+  it("pins the oracle to the classifier the deployment runs: the installed pi-ai reads a 403 as AUTH even when its words read as an invalid request", async () => {
+    /** One turn on pi-ai's own route, its gateway answering `status`. */
+    const classified = async (
+      status: number
+    ): Promise<{ code: unknown; message: unknown }> => {
+      const tier = await mountTierA({
+        credentials: fakeCredentials({ refs: { OPENCODE_API_KEY: "k" } }),
+        providers: {
+          opencode: {
+            apiKeyEnv: "OPENCODE_API_KEY",
+            baseURL: `${origin}/pi-ai/${String(status)}/v1`,
+            models: [{ id: "deepseek-v4-pro" }],
+          },
+        },
+      });
+      try {
+        // pi-ai serves the route itself: no plugin is mounted to claim it.
+        expect(ownerOf(tier.llm, "opencode")).toBe("PiAiAdapter");
+        const drained = await drainStream(
+          tier.llm,
+          "opencode",
+          "deepseek-v4-pro"
+        );
+        expect(drained.finish?.kind).toBe("error");
+        return {
+          code: drained.finish?.code,
+          message: drained.failureMessage,
+        };
+      } finally {
+        await tier.dispose();
+      }
+    };
+    // The known answer: the probe's words ARE an invalid request. At 422,
+    // because no classifier branch names that status: at 400 the status
+    // token alone answers INVALID_REQUEST on either bridge, so the words
+    // would go unread and the 403 row below could pass under either order.
+    const invalid = await classified(422);
+    expect(invalid.code).toBe("INVALID_REQUEST");
+    expect(invalid.message).toContain("not on the free tier");
+    // Order IS the contract: AUTH is asked first, so the same words at 403
+    // are AUTH. That reading is accepted now — the pass-through means a
+    // free-tier refusal surfaces as AUTH carrying the gateway's own words,
+    // which is the honest answer to a request the gateway refused outside the
+    // credential.
+    const refused = await classified(403);
+    expect(refused.code).toBe("AUTH");
+    expect(refused.message).toContain("not on the free tier");
   });
 
   it("passes the chunked free-tier refusal through with the gateway's words", async () => {

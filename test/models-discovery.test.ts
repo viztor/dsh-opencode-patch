@@ -17,6 +17,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  type CatalogModelSpec,
   complementDiscoveredModels,
   type CordisContext,
   decorateModelDiscovery,
@@ -74,6 +75,32 @@ const servableIds = (
   catalog: readonly { id: string; provider_npm?: string }[]
 ): string[] =>
   catalog.filter((spec) => isServableSdk(spec.provider_npm)).map((s) => s.id);
+
+/**
+ * The servable, non-deprecated rows of a plane's shim that state a name and
+ * both capacities, in catalog order: picked by shape, so no case names a
+ * vendor id a catalog refresh can retire or resize. A case that needs one says
+ * so by position, and fails by name when the shim has too few.
+ *
+ * @param plane - the plane whose shim to read.
+ * @param position - which such row (0 for the first).
+ * @returns the row.
+ */
+const describedRow = (plane: "go" | "zen", position = 0): CatalogModelSpec => {
+  const catalog = plane === "go" ? OPENCODE_GO_CATALOG : OPENCODE_ZEN_CATALOG;
+  const row = catalog.filter(
+    (spec) =>
+      isServableSdk(spec.provider_npm) &&
+      !isDeprecatedModelOn(plane, spec.id) &&
+      typeof spec.name === "string" &&
+      typeof spec.context_window === "number" &&
+      typeof spec.max_output_tokens === "number"
+  )[position];
+  if (row === undefined) {
+    throw new Error(`the ${plane} shim has no described row ${position}`);
+  }
+  return row;
+};
 
 /** Every row carries only the Remote's fields, and no value is `undefined`. */
 const expectWhitelisted = (rows: readonly object[]): void => {
@@ -199,7 +226,7 @@ describe("mergeDiscoveredModels", () => {
           maxTokens: 2,
           name: "Adapter Model",
         },
-        { id: "beam-free", name: "Beam Free" },
+        { id: "adapter-second", name: "Adapter Second" },
         { id: "", name: "Nameless" },
       ],
       "zen"
@@ -208,10 +235,10 @@ describe("mergeDiscoveredModels", () => {
     // **Exactly what the adapter reported.** This merge is what a route the
     // plugin does NOT serve gets — another pi-ai row's planes, a custom relay,
     // a gateway-URL draft — and pi-ai serves those, so it cannot serve an id it
-    // did not list. `mimo-v2.6-flash-free`, catalogued and servable, stays out.
+    // did not list. A catalogued, servable model it did not list stays out.
     expect(merged.map((model) => model.id)).toEqual([
       "adapter-model",
-      "beam-free",
+      "adapter-second",
     ]);
     // The adapter’s own capacities win over the canonical catalog, and the
     // row is the Remote's shape: nothing added, nothing `undefined`.
@@ -321,22 +348,24 @@ describe("mergeDiscoveredModels", () => {
   });
 
   it("enriches candidate rows missing contextWindow or maxTokens from the catalog spec", () => {
+    // A Go row picked by shape; the expected capacities are read off it.
+    const spec = describedRow("go");
     const merged = mergeDiscoveredModels(
       [
         {
-          id: "minimax-m3",
-          name: "MiniMax-M3",
+          id: spec.id,
+          name: "pi's name",
         },
       ],
       "go"
     );
 
     expect(merged[0]).toEqual({
-      contextWindow: 1_000_000,
-      id: "minimax-m3",
-      inputModalities: ["text", "image"],
-      maxTokens: 131_072,
-      name: "MiniMax-M3",
+      contextWindow: spec.context_window,
+      id: spec.id,
+      inputModalities: sanitizeModalities(spec.input_modalities),
+      maxTokens: spec.max_output_tokens,
+      name: "pi's name",
     });
   });
 });
@@ -400,14 +429,19 @@ describe("decorateModelDiscovery", () => {
       "fetch",
       vi.fn().mockRejectedValue(new Error("offline catalog test"))
     );
+    // Two catalog rows pi also lists, picked by shape: the first as pi
+    // names it, the second with pi's own (stale) capacities.
+    const listed = describedRow("zen", 0).id;
+    const spec = describedRow("zen", 1);
+    expect(spec.context_window).not.toBe(7);
     const original = vi.fn().mockResolvedValue([
-      { id: "beam-free", name: "Beam Free" },
+      { id: listed, name: "pi's first" },
       {
         contextWindow: 7,
-        id: "mimo-v2.6-flash-free",
+        id: spec.id,
         inputModalities: ["text"],
         maxTokens: 3,
-        name: "pi's MiMo",
+        name: "pi's second",
       },
       {
         contextWindow: 11,
@@ -429,28 +463,25 @@ describe("decorateModelDiscovery", () => {
       undefined
     );
     // pi's three rows in pi's order, then the catalog's servable rows pi
-    // lacks, in catalog order — `mimo-v2.6-flash-free` once, not twice (D3).
+    // lacks, in catalog order — a catalog id pi listed once, not twice (D3).
     expect(rows.map((row) => row.id)).toEqual([
-      "beam-free",
-      "mimo-v2.6-flash-free",
+      listed,
+      spec.id,
       "pi-only-model",
       ...servableIds(OPENCODE_ZEN_CATALOG).filter(
-        (id) => id !== "beam-free" && id !== "mimo-v2.6-flash-free"
+        (id) => id !== listed && id !== spec.id
       ),
     ]);
     // The CATALOG's values win on a plane the plugin serves, in the composer's
     // own order (D17: the user's row, then the catalog, then pi): a row
     // adopted from the fetch is saved as the user's row, and it must carry
     // what the composer already serves, not pi's older capacities.
-    const spec = findModelSpecOn("zen", "mimo-v2.6-flash-free");
-    expect(spec).toBeDefined();
-    expect(spec?.context_window).not.toBe(7);
     expect(rows[1]).toStrictEqual({
-      contextWindow: spec?.context_window,
-      id: "mimo-v2.6-flash-free",
-      inputModalities: sanitizeModalities(spec?.input_modalities),
-      maxTokens: spec?.max_output_tokens,
-      name: spec?.name,
+      contextWindow: spec.context_window,
+      id: spec.id,
+      inputModalities: sanitizeModalities(spec.input_modalities),
+      maxTokens: spec.max_output_tokens,
+      name: spec.name,
     });
     // pi fills what the catalog lacks: an id it does not describe keeps pi's.
     expect(findModelSpecOn("zen", "pi-only-model")).toBeUndefined();
@@ -540,43 +571,40 @@ describe("decorateModelDiscovery", () => {
   it("a route the plugin does not serve keeps pi's own values over the catalog's: pi-ai serves it, in its own order", async () => {
     // pi-ai serves this route and reads pi's row, never the catalog: the
     // enrich-only merge fills only what pi's row omits.
-    const spec = findModelSpecOn("go", "minimax-m3");
-    expect(spec?.context_window).not.toBe(7);
+    const spec = describedRow("go");
+    expect(spec.context_window).not.toBe(7);
     const original = vi
       .fn()
-      .mockResolvedValue([
-        { contextWindow: 7, id: "minimax-m3", maxTokens: 3 },
-      ]);
+      .mockResolvedValue([{ contextWindow: 7, id: spec.id, maxTokens: 3 }]);
     const { wrapped } = install(original, STOOD_DOWN);
     expect(
       await wrapped("llm-pi-ai", { provider: "opencode-go" })
     ).toStrictEqual([
       {
         contextWindow: 7,
-        id: "minimax-m3",
-        inputModalities: sanitizeModalities(spec?.input_modalities),
+        id: spec.id,
+        inputModalities: sanitizeModalities(spec.input_modalities),
         maxTokens: 3,
-        name: spec?.name,
+        name: spec.name,
       },
     ]);
   });
 
   it("a plane on a pi-ai row the plugin does not serve keeps pi's own list: enriched, never widened", async () => {
-    const original = vi.fn().mockResolvedValue([{ id: "minimax-m3" }]);
+    const spec = describedRow("go");
+    const original = vi.fn().mockResolvedValue([{ id: spec.id }]);
     // A second pi-ai row serves its own planes, and pi-ai refuses at save an
     // id it does not list: offering the catalog there would offer a refusal.
     const { wrapped } = install(original);
     // Enriched: the row pi listed, its missing fields filled from the Go
     // catalog's spec, and nothing appended.
-    const spec = findModelSpecOn("go", "minimax-m3");
-    expect(spec).toBeDefined();
     const enriched = [
       {
-        contextWindow: spec?.context_window,
-        id: "minimax-m3",
-        inputModalities: sanitizeModalities(spec?.input_modalities),
-        maxTokens: spec?.max_output_tokens,
-        name: spec?.name,
+        contextWindow: spec.context_window,
+        id: spec.id,
+        inputModalities: sanitizeModalities(spec.input_modalities),
+        maxTokens: spec.max_output_tokens,
+        name: spec.name,
       },
     ];
     const second = await wrapped("llm-pi-ai:second", {
@@ -602,7 +630,8 @@ describe("decorateModelDiscovery", () => {
       steppedAside: () => new Set(),
       wouldTake: () => true,
     };
-    const original = vi.fn().mockResolvedValue([{ id: "minimax-m3" }]);
+    const listed = describedRow("go").id;
+    const original = vi.fn().mockResolvedValue([{ id: listed }]);
     const { wrapped } = install(original, claim);
     const idsOn = async (namespace: string): Promise<string[]> =>
       (
@@ -611,19 +640,19 @@ describe("decorateModelDiscovery", () => {
         }[]
       ).map((row) => row.id);
     const complement = [
-      "minimax-m3",
-      ...servableIds(OPENCODE_GO_CATALOG).filter((id) => id !== "minimax-m3"),
+      listed,
+      ...servableIds(OPENCODE_GO_CATALOG).filter((id) => id !== listed),
     ];
 
     // The served row is the claim's namespace, not the host default.
     expect(await idsOn("llm-pi-ai:custom")).toEqual(complement);
-    expect(await idsOn("llm-pi-ai")).toEqual(["minimax-m3"]);
+    expect(await idsOn("llm-pi-ai")).toEqual([listed]);
     ns = "llm-pi-ai";
     expect(await idsOn("llm-pi-ai")).toEqual(complement);
-    expect(await idsOn("llm-pi-ai:custom")).toEqual(["minimax-m3"]);
+    expect(await idsOn("llm-pi-ai:custom")).toEqual([listed]);
     // The claim stands down: the same wrapper now answers pi's list only.
     live = false;
-    expect(await idsOn("llm-pi-ai")).toEqual(["minimax-m3"]);
+    expect(await idsOn("llm-pi-ai")).toEqual([listed]);
   });
 
   it("on a served plane the original keeps every error but NO_DISCOVERY, and cancellation, as it threw them", async () => {

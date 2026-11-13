@@ -201,7 +201,7 @@ const bootRealm = async (options: {
     plugin: options.plugin ?? true,
     ...(options.pluginConfig === undefined
       ? {}
-      : { pluginConfig: options.pluginConfig }),
+      : { pluginRow: { config: options.pluginConfig } }),
     prepare: (root) => {
       restarts = piAiRestarts(root);
       log = logLines(root);

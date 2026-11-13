@@ -21,9 +21,9 @@ import {
   freeWalkCappedReason,
   freeWalkGap,
   gatewayBusy,
-  retiredAtTheGateway,
+  modelGone,
   usableAsSubject,
-} from "./e2e/verdict.ts";
+} from "./support/live-probe.ts";
 
 describe("the free tier's refusal", () => {
   it("is read from the body, whatever status carries it", () => {
@@ -80,16 +80,16 @@ describe("an account-level refusal", () => {
 
 describe("a retirement", () => {
   it("is a 410, or the vendor's word for it under another status", () => {
-    expect(retiredAtTheGateway({ status: 410, summary: "" })).toBe(true);
+    expect(modelGone({ status: 410, summary: "" })).toBe(true);
     expect(
-      retiredAtTheGateway({
+      modelGone({
         status: 200,
         summary: '{"type":"ModelDeprecated"}',
       })
     ).toBe(true);
     // The registry can still list a retired model as active — that is exactly
     // the case this rule exists for (`gemini-3-flash` was listed and refused).
-    expect(retiredAtTheGateway({ status: 200, summary: "ok" })).toBe(false);
+    expect(modelGone({ status: 200, summary: "ok" })).toBe(false);
   });
 
   it("is an upstream's withdrawal too, but only when a 400 says so", () => {
@@ -99,17 +99,17 @@ describe("a retirement", () => {
       status: 400,
       summary: "Upstream request failed: Model is unavailable",
     };
-    expect(retiredAtTheGateway(withdrawn)).toBe(true);
+    expect(modelGone(withdrawn)).toBe(true);
     expect(usableAsSubject(withdrawn)).toBe(false);
     // A 400 for any other reason is the request's fault, and a case about the
     // route has to see it rather than walk past it.
     const malformed = { status: 400, summary: "Invalid request body" };
-    expect(retiredAtTheGateway(malformed)).toBe(false);
+    expect(modelGone(malformed)).toBe(false);
     expect(usableAsSubject(malformed)).toBe(true);
     // The words under another status are not this shape.
-    expect(
-      retiredAtTheGateway({ status: 500, summary: "Model is unavailable" })
-    ).toBe(false);
+    expect(modelGone({ status: 500, summary: "Model is unavailable" })).toBe(
+      false
+    );
   });
 });
 

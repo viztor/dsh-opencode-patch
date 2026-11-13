@@ -935,6 +935,106 @@ describe("architecture · every test reaches src through one door", () => {
   });
 });
 
+describe("architecture · the unit run binds no socket", () => {
+  const TEST_DIR = import.meta.dirname;
+
+  /** A module whose only use in a test is a server or a raw socket. */
+  const SOCKET_MODULE = /^(?:node:)?(?:dgram|http|http2|https|net|tls)$/u;
+
+  /** A call that binds or serves: a server, the mock gateway, a listen. */
+  const SOCKET_CALL =
+    /\b(?:createServer|startMockGateway)\s*\(|\.listen\s*\(/gu;
+
+  /**
+   * Every socket use in one file's comment-blanked source: a runtime import
+   * of a socket module (a type-only one is erased, so it binds nothing) and a
+   * call that binds, each as `file:line why`.
+   */
+  const socketUsesIn = (file: string, raw: string): string[] => {
+    const source = stripComments(raw);
+    const imports = runtimeImportsOf(source)
+      .filter((specifier) => SOCKET_MODULE.test(specifier))
+      .map((specifier) => `${file} imports ${specifier}`);
+    const calls = [...source.matchAll(SOCKET_CALL)].map((match) => {
+      const line = source.slice(0, match.index).split("\n").length;
+      return `${file}:${String(line)} ${match[0].trim()}`;
+    });
+    return [...imports, ...calls];
+  };
+
+  /**
+   * The files the unit run loads from `test/`: every unit test file and,
+   * transitively, every module inside `test/` one of them imports at runtime
+   * (a support module, a helper, a mock module a unit case borrows a pure
+   * half from). This file is left out: its planted rows are its subject.
+   */
+  const unitGraph = (): Map<string, string> => {
+    const seen = new Map<string, string>();
+    const visit = (file: string): void => {
+      if (seen.has(file) || !existsSync(join(TEST_DIR, file))) {
+        return;
+      }
+      const raw = readFileSync(join(TEST_DIR, file), "utf8");
+      seen.set(file, raw);
+      for (const specifier of runtimeImportsOf(stripComments(raw))) {
+        if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
+          continue;
+        }
+        const target = posix.normalize(
+          posix.join(posix.dirname(file), specifier)
+        );
+        if (!target.startsWith("../")) {
+          visit(target);
+        }
+      }
+    };
+    for (const file of filesUnder(TEST_DIR)) {
+      if (/\.test\.tsx?$/u.test(file) && file !== "architecture.test.ts") {
+        visit(file);
+      }
+    }
+    return seen;
+  };
+
+  it("walks a graph that reaches the support modules and the borrowed mock half", () => {
+    const files = [...unitGraph().keys()];
+    expect(files).toContain("support/host.ts");
+    expect(files).toContain("support/catalogs.ts");
+    // `keyed-probes.test.ts` borrows the gateway's pure request handler, so
+    // the walk crosses into `mock/` and the gate reads what it loads there.
+    expect(files).toContain("mock/opencode-gateway.ts");
+    expect(files).not.toContain("architecture.test.ts");
+  });
+
+  it("no unit test, nor any test module it loads, imports a socket module or binds one", () => {
+    // The offline guard admits loopback, so it cannot hold this; a case that
+    // needs a socket belongs to the mock suite (`test/mock/*.mock.ts`).
+    const offenders = [...unitGraph()].flatMap(([file, raw]) =>
+      socketUsesIn(file, raw)
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags a planted use of each kind, in code but not in a comment, so a pass means something", () => {
+    const planted = [
+      'import { createServer } from "node:http";',
+      'import net from "node:net";',
+      'import type { IncomingMessage } from "node:http";',
+      "// createServer(() => {}).listen(0);",
+      "const server = createServer(handler);",
+      'server.listen(0, "127.0.0.1");',
+      "const gateway = await startMockGateway();",
+    ].join("\n");
+    expect(socketUsesIn("planted.ts", planted)).toEqual([
+      "planted.ts imports node:http",
+      "planted.ts imports node:net",
+      "planted.ts:5 createServer(",
+      "planted.ts:6 .listen(",
+      "planted.ts:7 startMockGateway(",
+    ]);
+  });
+});
+
 describe("architecture · the coverage floors name files that exist", () => {
   it("every per-file threshold key in vite.config.ts is a source file", () => {
     // A floor on a file that moved or was deleted is a floor on nothing: the

@@ -18,7 +18,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  freeZenModel,
   GO_FREE_PROBE,
+  payload,
   seedDivergentCatalog,
   ZEN_FREE_PROBE,
 } from "./support/catalogs.ts";
@@ -33,13 +35,18 @@ import {
   findModelSpecOn,
   isCoreToolModel,
   maybeInjectCoreTools,
+  refreshCatalog,
 } from "./support/src.ts";
 import { parseJsonBody, toolNamesOf } from "./test-helpers.ts";
 
 const RESPONSES_URL = `https://opencode.ai/zen/v1${RESPONSES_PATH}`;
 
-/** A free-tier model fixture from the shipped catalog. */
-const FREE_MODEL = "beam-free";
+/**
+ * A free-tier model from the shipped Zen catalog, picked by its free flag
+ * rather than named, so a refresh that retires one free model cannot turn
+ * these cases red or vacuous.
+ */
+const FREE_MODEL = freeZenModel();
 
 /** The shipped fallback options: enabled, scoped to the named marker. */
 const options = (
@@ -81,17 +88,12 @@ describe("isCoreToolModel", () => {
     expect(isCoreToolModel("", "")).toBe(false);
   });
 
-  it("reads the free flag off the PLANE's catalog when the plane is known", () => {
-    // A model can be free on one plane and paid on the other, and this decides
-    // whether the free tier's tools are injected — into a request the account
-    // pays for, that gives a model tools it will not be given. The flags agree
-    // for every model in the catalog today (`test/catalog.test.ts` holds that
-    // invariant), so this case cannot show a difference; it pins the RULE, and
-    // the plane's own row is what a future divergence must be read from.
-    expect(isCoreToolModel("beam-free", "", "go")).toBe(true);
-    expect(isCoreToolModel("beam-free", "", "zen")).toBe(true);
-    // A paid model stays out on either plane, and the marker's substring
-    // fallback still applies per plane.
+  it("keeps a paid model out on either plane when the plane is known", () => {
+    // Whether a model the plane calls free is admitted, and a model it charges
+    // for is not, is held on seeded rows that disagree across the planes (the
+    // describe below): the shipped flags agree for every shared id, so they
+    // cannot show the rule. What is left here is the paid half, and that the
+    // marker's substring fallback still applies per plane.
     expect(isCoreToolModel("gpt-5.4", "", "go")).toBe(false);
     expect(isCoreToolModel("gpt-5.4", "", "zen")).toBe(false);
     expect(isCoreToolModel("gpt-5.4", "preview", "go")).toBe(false);
@@ -245,7 +247,7 @@ describe("maybeInjectCoreTools: bodies it must not rewrite", () => {
 
   it("returns a body that is not JSON untouched", () => {
     const garbage = "{not json at all";
-    const truncated = '{"model":"beam-free","tools":[';
+    const truncated = `{"model":"${FREE_MODEL}","tools":[`;
     const headers = new Headers();
 
     // A stream that died mid-write reaches the interceptor as a half-written
@@ -568,21 +570,33 @@ describe("isCoreToolModel: the plane is the request's, with a plane-blind fallba
     expect(isCoreToolModel(GO_FREE_PROBE, "", "zen")).toBe(false);
   });
 
-  it("falls back to the plane-blind row when the plane is unknown or does not carry the id", () => {
-    // The id below is free on Zen and absent from the Go catalog. A Go request
-    // for it finds no Go row, so the plane-blind lookup answers — and that row
-    // is the Zen one, which says free. No seeding: this is the shipped shim.
-    // The premise, asserted: a regeneration that lists the id on Go would keep
-    // the three answers below true while the fallback stopped being taken.
-    expect(findModelSpecOn("go", "big-pickle")).toBeUndefined();
-    expect(findModelSpecOn("zen", "big-pickle")?.is_free).toBe(true);
-    expect(
-      isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "zen")
-    ).toBe(true);
-    expect(isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER, "go")).toBe(
+  it("falls back to the plane-blind row when the plane is unknown or does not carry the id", async () => {
+    // A seeded id, free on Zen and absent from Go: a Go request for it finds
+    // no Go row, so the plane-blind lookup answers — and that row is the Zen
+    // one, which says free. Seeded rather than read off the shim, because
+    // which ids the vendor lists on one plane only is the vendor's to change.
+    // The id carries no marker, so only the row can admit it.
+    const ZEN_ONLY_FREE = "zen-only-tool-probe";
+    await refreshCatalog(
+      async () =>
+        Response.json(
+          payload({ zen: [{ free: true, id: ZEN_ONLY_FREE, name: "Probe" }] })
+        ),
       true
     );
-    expect(isCoreToolModel("big-pickle", DEFAULT_FREE_MODEL_MARKER)).toBe(true);
+    // The premise, asserted: the fallback is the only way Go can see the row.
+    expect(findModelSpecOn("go", ZEN_ONLY_FREE)).toBeUndefined();
+    expect(findModelSpecOn("zen", ZEN_ONLY_FREE)?.is_free).toBe(true);
+    expect(ZEN_ONLY_FREE).not.toContain(DEFAULT_FREE_MODEL_MARKER);
+    expect(
+      isCoreToolModel(ZEN_ONLY_FREE, DEFAULT_FREE_MODEL_MARKER, "zen")
+    ).toBe(true);
+    expect(
+      isCoreToolModel(ZEN_ONLY_FREE, DEFAULT_FREE_MODEL_MARKER, "go")
+    ).toBe(true);
+    expect(isCoreToolModel(ZEN_ONLY_FREE, DEFAULT_FREE_MODEL_MARKER)).toBe(
+      true
+    );
   });
 
   it("maybeInjectCoreTools reads the plane from the URL's path", async () => {

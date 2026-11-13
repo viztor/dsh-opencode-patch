@@ -383,13 +383,13 @@ opencode   : 86 -> 86   + muse-spark-1.2, muse-spark-1.2-contributor-free, exo-f
                         - ll-alpha-free, claude-sonnet-4, step-5-preview-free, muse-spark-1.3-contributor-free
 ```
 
-Verified after: **0 offered models are measured dead**, and the generator reports `shim is current`. The SDK split moved with it — Zen is now 31 `@ai-sdk/openai` / 17 `@ai-sdk/anthropic` / 29 no-SDK / 1 Mistral / 8 Google — and `README.md`, `docs/redirect-planes.md` and `docs/protocol-routing-and-merge.md` were updated to match, because `catalog.test.ts` holds all three tables to the catalog.
+Verified after: **0 offered models are measured dead**, and the generator reports `shim is current`. The SDK split moved with it — Zen is now 31 `@ai-sdk/openai` / 17 `@ai-sdk/anthropic` / 29 no-SDK / 1 Mistral / 8 Google — and `README.md`, `docs/redirect-planes.md` and `docs/protocol-routing-and-merge.md` were updated to match, because `catalog-docs.test.ts` holds all three tables to the catalog.
 
 Fixture ids that pointed at now-dead models were retargeted to served ones: `step-5-preview-free` → `space-bunny-free` (or `cat-jam-free` where both planes are needed), `muse-spark-1.3-contributor-free` → `muse-spark-1.2-contributor-free` (still `@ai-sdk/openai`, still free, still answers `403`).
 
 ## 3.10 The picker and the protocol-routed models — the fix was withdrawn
 
-> **Superseded by P-R1 (D13).** There is one route per plane now, and no `internalRouteFor`: the plane adapter serves every protocol a plane carries on the plane's own route, and lists exactly the declared ids. The invariants this section describes are held by `test/mock/plane-dispatch.mock.ts` (every declared id dispatches on its protocol's path) and the declared-listing cases in `test/host-planes.test.ts` ("lists every declared id on both planes, keyless or not"); `test/picker-integration.test.ts` went with the hidden routes. The section is kept as the record of why a route's list is not ours to widen, which still holds.
+> **Superseded by P-R1 (D13).** There is one route per plane now, and no `internalRouteFor`: the plane adapter serves every protocol a plane carries on the plane's own route, and lists exactly the declared ids. The invariants this section describes are held by `test/mock/plane-dispatch.mock.ts` (every declared id dispatches on its protocol's path) and the declared-listing cases in `test/host-planes-credentials.test.ts` ("lists every declared id on both planes, keyless or not"); `test/picker-integration.test.ts` went with the hidden routes. The section is kept as the record of why a route's list is not ours to widen, which still holds.
 
 `buildModelCatalog` (the composer's list) is `listProviders()` × `listModels(id)`, read from the host's own `@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js`. The internal protocol routes are hidden from `listProviders`, and each carries only its own protocol's models, because `registerResponsesProvider` builds every route with `sdksForProtocol(protocol).flatMap(sdk => modelsForSdk(sdk, catalog))`.
 

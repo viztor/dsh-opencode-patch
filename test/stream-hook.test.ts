@@ -12,16 +12,24 @@
  *
  * @module test/stream-hook.test
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { payload } from "./support/catalogs.ts";
 import {
   type ActiveTurnState,
+  clearSessionUsageStore,
+  createStreamHook,
+  getSessionUsage,
+  openCodeSessionIdFor,
   projectNameFrom,
   recordDebug,
+  refreshCatalog,
+  resolveConfig,
 } from "./support/src.ts";
 import { collectUnknown, createMockStream } from "./test-helpers.ts";
 
@@ -107,6 +115,17 @@ describe("stream-hook · projectNameFrom names the repository", () => {
     expect(answer).not.toContain("/");
   });
 
+  it("answers the folder when the repository root's own name is blank", () => {
+    // A root whose name trims to nothing names nothing: the walk stops there
+    // and the folder itself is the attribution, never an empty header.
+    const outer = tree();
+    const blankRoot = join(outer, " ");
+    mkdirSync(join(blankRoot, ".git"), { recursive: true });
+    const sub = join(blankRoot, "inside");
+    mkdirSync(sub);
+    expect(projectNameFrom(sub)).toBe("inside");
+  });
+
   it("reports the root even when the marker sits beside a file", () => {
     // `.git` is a DIRECTORY, but a worktree checkout uses a `.git` FILE. Both
     // mean "repository root", and the walk only asks whether the entry exists.
@@ -124,16 +143,12 @@ describe("stream-hook · the pass-through guards", () => {
    * mistyped options object, a provider it does not own, and a model it cannot
    * serve.
    */
-  const hookWith = async (providers: string[]) => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
-    return createStreamHook(
+  const hookWith = async (providers: string[]) =>
+    createStreamHook(
       { logger: { info: () => {} } } as never,
       resolveConfig({ providers, usageEnabled: false } as never),
       new AsyncLocalStorage()
     );
-  };
 
   it("hands through anything that is not an options object", async () => {
     const hook = await hookWith(["opencode"]);
@@ -183,9 +198,6 @@ describe("stream-hook · a plane another plugin owns (D27)", () => {
    * route again once it is not stepped aside.
    */
   it("runs a stepped-aside plane's turn as another plugin's, and decorates it once it is the plugin's again", async () => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
     const info = vi.fn();
     const aside = new Set(["opencode"]);
     const als = new AsyncLocalStorage<ActiveTurnState>();
@@ -238,11 +250,8 @@ describe("stream-hook · the debug gate", () => {
     debug: boolean,
     file: string | undefined,
     info: (...args: unknown[]) => void
-  ) => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
-    return createStreamHook(
+  ) =>
+    createStreamHook(
       { logger: { info } } as never,
       resolveConfig({
         debug,
@@ -252,7 +261,6 @@ describe("stream-hook · the debug gate", () => {
       } as never),
       new AsyncLocalStorage()
     );
-  };
 
   /** Drive one turn through the hook and drain it. */
   const turn = async (
@@ -317,23 +325,15 @@ describe("stream-hook · the debug gate", () => {
 
 describe("stream-hook · a turn is priced at ITS plane's rate", () => {
   /**
-   * The two planes price the same id differently, and the plane-agnostic
-   * catalog lookup searches Go FIRST — so a Zen turn was priced at the Go rate.
-   *
-   * `deepseek-v4.1-flash` costs $0.30 per million input tokens on Zen and
-   * $0.15 on Go: a Zen turn came out at exactly half of what it cost, and the
-   * meter showed the half.
+   * The two planes can price the same id differently, and the plane-agnostic
+   * catalog lookup searches Go FIRST — so a Zen turn was priced at the Go rate
+   * (a Zen turn whose Go price was half came out at exactly half of what it
+   * cost, and the meter showed the half). The world is seeded rather than read
+   * off the shim: which ids the vendor prices differently today is the
+   * vendor's to change, and this case is about the lookup.
    */
-  const hookWith = async (providers: string[]) => {
-    const { createStreamHook, resolveConfig } =
-      await import("./support/src.ts");
-    const { AsyncLocalStorage } = await import("node:async_hooks");
-    return createStreamHook(
-      { logger: { info: () => {} } } as never,
-      resolveConfig({ providers, usageEnabled: true } as never),
-      new AsyncLocalStorage()
-    );
-  };
+  const PRICE_PROBE = "price-probe";
+  const RATES = { go: 0.15, zen: 0.3 } as const;
 
   /**
    * A stream that reports one turn's usage, the way the gateway reports it.
@@ -352,34 +352,232 @@ describe("stream-hook · a turn is priced at ITS plane's rate", () => {
   };
 
   it("prices a Zen turn at the Zen rate, and a Go turn at the Go rate", async () => {
-    const { clearSessionUsageStore, getSessionUsage } =
-      await import("./support/src.ts");
+    await refreshCatalog(
+      async () =>
+        Response.json(
+          payload({
+            go: [{ id: PRICE_PROBE, input: RATES.go }],
+            zen: [{ id: PRICE_PROBE, input: RATES.zen }],
+          })
+        ),
+      true
+    );
     clearSessionUsageStore();
-    const hook = await hookWith(["opencode", "opencode-go"]);
+    const hook = createStreamHook(
+      { logger: { info: () => {} } } as never,
+      resolveConfig({
+        providers: ["opencode", "opencode-go"],
+        usageEnabled: true,
+      } as never),
+      new AsyncLocalStorage()
+    );
 
-    // One million input tokens: $0.30 on Zen, $0.15 on Go.
+    // One million input tokens: the plane's own input rate.
     for (const [provider, sessionId, expected] of [
-      ["opencode", "s-zen", 0.3],
-      ["opencode-go", "s-go", 0.15],
+      ["opencode", "s-zen", RATES.zen],
+      ["opencode-go", "s-go", RATES.go],
     ] as const) {
-      const result = hook(
-        {
-          model: "deepseek-v4.1-flash",
-          provider,
-          sessionId,
-        },
-        () => usageStream()
+      const result = hook({ model: PRICE_PROBE, provider, sessionId }, () =>
+        usageStream()
       );
       // The hook returns the downstream's value, and the usage is recorded while
       // the stream is consumed.
       for await (const _chunk of result as AsyncGenerator) {
         void _chunk;
       }
-      const snapshot = getSessionUsage(sessionId);
-      expect(snapshot?.costUsd, `${provider} priced a Zen-rate turn`).toBe(
-        expected
-      );
+      expect(
+        getSessionUsage(sessionId)?.costUsd,
+        `${provider} priced at its own plane's rate`
+      ).toBe(expected);
     }
+    // And each spend is attributed to the plane the turn ran on, so a constant
+    // plane fails one way or the other.
+    expect(getSessionUsage("s-zen")?.costByPlane).toEqual({
+      go: 0,
+      zen: RATES.zen,
+    });
+    expect(getSessionUsage("s-go")?.costByPlane).toEqual({
+      go: RATES.go,
+      zen: 0,
+    });
     clearSessionUsageStore();
+  });
+
+  it("prices a model its own plane does not describe from the other plane's row, and attributes it to its own", async () => {
+    // The fallback (`findModelSpecOn(plane, id) ?? findModelSpec(id)`): any
+    // price is better than none for a model the plane's own catalog lacks. A
+    // Go turn on an id only Zen prices is priced at the Zen rate; an id no
+    // catalog describes is not priced at all, the known answer.
+    const ZEN_ONLY = "zen-only-price-probe";
+    await refreshCatalog(
+      async () =>
+        Response.json(payload({ zen: [{ id: ZEN_ONLY, input: RATES.zen }] })),
+      true
+    );
+    clearSessionUsageStore();
+    const hook = createStreamHook(
+      { logger: { info: () => {} } } as never,
+      resolveConfig({
+        providers: ["opencode-go"],
+        usageEnabled: true,
+      } as never),
+      new AsyncLocalStorage()
+    );
+    for (const [model, sessionId] of [
+      [ZEN_ONLY, "s-fallback"],
+      ["priced-nowhere-x", "s-unpriced"],
+    ] as const) {
+      const result = hook({ model, provider: "opencode-go", sessionId }, () =>
+        usageStream()
+      );
+      for await (const _chunk of result as AsyncGenerator) {
+        void _chunk;
+      }
+    }
+    expect(getSessionUsage("s-fallback")?.costUsd).toBe(RATES.zen);
+    // Priced from Zen's row, billed to the Go turn's plane: the row lends the
+    // price, never the attribution.
+    expect(getSessionUsage("s-fallback")?.costByPlane).toEqual({
+      go: RATES.zen,
+      zen: 0,
+    });
+    expect(getSessionUsage("s-unpriced")?.costUsd ?? 0).toBe(0);
+    clearSessionUsageStore();
+  });
+});
+
+describe("stream-hook · what a turn carries", () => {
+  /**
+   * The hook driven with a test-owned store, so what the turn hands the fetch
+   * patch is read where the fetch patch reads it: inside the stream.
+   */
+  const als = new AsyncLocalStorage<ActiveTurnState>();
+
+  const hookOn = (
+    ctx: Record<string, unknown> = {},
+    overrides: Record<string, unknown> = {}
+  ) =>
+    createStreamHook(
+      { logger: { info: () => {} }, ...ctx } as never,
+      resolveConfig({
+        providers: ["opencode"],
+        usageEnabled: false,
+        ...overrides,
+      } as never),
+      als
+    );
+
+  /**
+   * A downstream that yields the store it ran under, once.
+   *
+   * @yields {ActiveTurnState | undefined} the turn store.
+   */
+  const storeReader = async function* storeReader() {
+    yield als.getStore();
+  };
+
+  /** A Host session service answering for one id. */
+  const sessionsFor = (id: string, header: Record<string, unknown>) => ({
+    get: (name: string) =>
+      name === "sessions"
+        ? { get: (asked: string) => (asked === id ? { header } : undefined) }
+        : undefined,
+  });
+
+  const storeOf = async (stream: unknown): Promise<ActiveTurnState> => {
+    const [store] = await collectUnknown(stream as AsyncIterable<unknown>);
+    return store as ActiveTurnState;
+  };
+
+  beforeEach(() => {
+    vi.mocked(recordDebug).mockClear();
+  });
+
+  it("a numeric sessionId and a numeric parentSessionId are stringified before derivation", async () => {
+    const store = await storeOf(
+      hookOn()(
+        { model: "m", parentSessionId: 9, provider: "opencode", sessionId: 7 },
+        storeReader
+      )
+    );
+    expect(store.value).toBe(openCodeSessionIdFor("7"));
+    expect(store.parentValue).toBe(openCodeSessionIdFor("9"));
+  });
+
+  it("a session whose cwd is the filesystem root carries no project", async () => {
+    const store = await storeOf(
+      hookOn(sessionsFor("rooted", { cwd: "/" }))(
+        { model: "m", provider: "opencode", sessionId: "rooted" },
+        storeReader
+      )
+    );
+    expect(store.value).toBe(openCodeSessionIdFor("rooted"));
+    expect(store.project).toBeUndefined();
+  });
+
+  it("the debug entry carries the parent's derived id and the project", async () => {
+    const debugFile = join(tmpdir(), "dsh-stream-debug", "parent.jsonl");
+    await storeOf(
+      hookOn(sessionsFor("child", { cwd: "/home/you/projects/my-app" }), {
+        debug: true,
+        debugFile,
+      })(
+        {
+          model: "m",
+          parentSessionId: "parent",
+          provider: "opencode",
+          sessionId: "child",
+        },
+        storeReader
+      )
+    );
+    expect(recordDebug).toHaveBeenCalledTimes(1);
+    const entry = vi.mocked(recordDebug).mock.calls[0]?.[2];
+    expect(entry).toMatchObject({
+      parentSession: openCodeSessionIdFor("parent"),
+      project: "my-app",
+      session: "child",
+      value: openCodeSessionIdFor("child"),
+    });
+  });
+
+  it("a model that is not a string is recorded as no model at all", async () => {
+    const [, store] = await collectUnknown(
+      hookOn()(
+        { model: 42, provider: "opencode", sessionId: "no-model" },
+        async function* usageThenStore() {
+          yield { type: "usage", usage: { inputTokens: 3, outputTokens: 4 } };
+          yield als.getStore();
+        }
+      ) as AsyncIterable<unknown>
+    );
+    expect((store as ActiveTurnState).model).toBeUndefined();
+    const usage = getSessionUsage("no-model");
+    expect(usage?.turns).toBe(1);
+    // "unknown" is the accumulator's word for no model: never an active one.
+    expect(usage?.activeModel).toBeUndefined();
+    expect(usage?.modelsUsed).toEqual([]);
+  });
+
+  it("a usage chunk carrying only cacheReadTokens is recorded with the other counters absent", async () => {
+    await collectUnknown(
+      hookOn()(
+        { model: "m", provider: "opencode", sessionId: "cache-only" },
+        async function* cacheOnly() {
+          yield {
+            type: "usage",
+            usage: { cacheReadTokens: 12, inputTokens: "x" },
+          };
+        }
+      ) as AsyncIterable<unknown>
+    );
+    const usage = getSessionUsage("cache-only");
+    expect(usage).toMatchObject({
+      cacheReadTokens: 12,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      turns: 1,
+    });
   });
 });
