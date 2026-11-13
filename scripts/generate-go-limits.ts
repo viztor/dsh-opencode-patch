@@ -13,32 +13,53 @@
  *
  * A hand-typed table would therefore be stale within a release — and a stale
  * dollar figure is worse than none, because it looks authoritative. So the table
- * is generated from `https://opencode.ai/docs/go.md` (the page's own markdown
- * source, served as `text/plain`), and CI checks it for drift: a pull request
- * that changes this generator (or a module it loads) fails on a stale table;
- * any other pull request, and a push to main, warns, and the nightly run
+ * is generated from the vendor's own page, and CI checks it for drift: a pull
+ * request that changes this generator (or a module it loads) fails on a stale
+ * table; any other pull request, and a push to main, warns, and the nightly run
  * proposes the refresh.
  *
- * **That URL is gone.** Measured 2026-10-12: it answers 404, the docs live under
- * `/v2/docs/console/go/` now, and the new page serves HTML - the allowance figures
- * are in a table on it, so nothing is lost, but this reader parses markdown and
- * needs an HTML path before the check can say anything again. The failure names
- * the new URL so the next person does not have to find it twice.
+ * ## Where the page is read from
  *
- * **What the new page looks like, measured, so the HTML path is a small job.**
- * `/v2/llms.txt` indexes it and there is no `.md` beside it. The page carries a
- * plan table (`Plan | Price | Included usage`) and a per-model one whose columns
- * are `Model | input | output | cached | - | allowance`, where the allowance is
- * the LAST cell and a plan with no figure carries `-`:
+ * Two sources are asked, in turn (`GO_LIMITS_SOURCES`): the page the docs live
+ * on, `https://opencode.ai/docs/console/go/`, which serves HTML, and then the
+ * old `https://opencode.ai/docs/go.md` (measured 2026-11-12, both it and
+ * `/v2/docs/console/go/` redirect to the first). A later source is asked only
+ * when the earlier ones carried nothing readable (`firstDoc`). A 2xx answer is
+ * read by what its body carries; the status alone is never trusted
+ * (`docFrom`): the tabbed markdown, with both plans' tabs, as it is; an HTML
+ * page's allowance tables, chosen by the plan label the page attaches to each
+ * (`chooseTables`: the table labelled "Go" and the one labelled "Go Plus",
+ * from the tab its panel names or the heading before it; two tables with no
+ * label keep the measured order, Go first; anything else is refused); and
+ * either only when `parseGoLimitsDoc` reads it without an error, so anything
+ * else is not read at all and the next source is asked. The Starlight tab
+ * markup that labelling reads is assumed, not measured, so the `source:` line
+ * names which table was read as each plan and which were ignored, and when no
+ * source carries the tables the error names every table each answer carried,
+ * with its label, its rows and its first row, and why none was read
+ * (`noDocMessage`), so the next layout change names itself. All of it lives
+ * in `scripts/go-limits-html.ts`, which `test/go-limits-html.test.ts`
+ * exercises with a fake reader; this script only fetches, logs and writes.
  *
- *     GLM-5.3-Flash | $0.15 | $0.50 | $0.03 | - | $60
- *     GLM-5.3       | $1.40 | $4.40 | $0.26 | - | $15
+ * **How it got here.** The table used to be generated from `go.md` alone, the
+ * page's own markdown source, served as `text/plain`. Measured 2026-10-12, that
+ * URL answered 404: the docs had moved under `/v2/docs/console/go/` and the new
+ * page served HTML, with the allowance figures in one table per plan, so the
+ * HTML path was added. From 2026-11-07 the old URL answered 200 again, with a
+ * body that had no tab sections, and every nightly refresh failed in the parser
+ * because the reader trusted the status. That is why a body is now read by its
+ * shape, and why the page the docs live on is asked first. On 2026-11-12 the
+ * page carried three allowance tables where it had carried two, and a choice
+ * by position or by count could not say which two were Go and Go Plus; that is
+ * why a table is chosen by its plan label.
  *
- * Stripping tags from `<tr>`/`<td>` is enough; no parser is needed. The shapes
- * differ from this table's, though: the doc states an allowance per MODEL, while
- * `go-limits-data.ts` carries `go`/`goPlus` per plan - so the HTML path has to
- * decide which of the two the shipped table means before it can compare. Same arrangement,
- * and the same reasoning, as `regenerate-catalog-shim.ts` against models.dev.
+ * The page's allowance tables have six cells per row, `Model | Input | Output |
+ * Cached Read | Cached Write | Monthly limit`, with the allowance in the LAST
+ * cell; the request-estimate tables below them repeat the model names with no
+ * dollar column, which is why a table is chosen by its header. Stripping tags
+ * from `<tr>`/`<td>`, and scanning tags for the panel and heading around a
+ * table, is enough; no HTML parser is needed. Same arrangement, and
+ * the same reasoning, as `regenerate-catalog-shim.ts` against models.dev.
  *
  * ## Why this script resolves ids against the catalog
  *
@@ -54,7 +75,7 @@
  * ```sh
  * node --experimental-strip-types scripts/generate-go-limits.ts            # fetch, then report
  * node --experimental-strip-types scripts/generate-go-limits.ts --write    # rewrite the file
- * node --experimental-strip-types scripts/generate-go-limits.ts --from <path>
+ * node --experimental-strip-types scripts/generate-go-limits.ts --from <path>   # a saved page, markdown or HTML
  * ```
  *
  * Without `--write` it only reports what would change, so it is safe in CI.
@@ -65,10 +86,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { OPENCODE_GO_CATALOG } from "../src/catalog-data.ts";
 import {
   GO_LIMITS_DOC_TIMEOUT_MS,
-  GO_LIMITS_DOC_URL,
   parseGoLimitsDoc,
 } from "../src/go-limits.ts";
-import { GO_LIMITS_DOC_MOVED_TO, htmlToDoc } from "./go-limits-html.ts";
+import {
+  type DocAnswer,
+  firstDoc,
+  type FoundDoc,
+  GO_LIMITS_SOURCES,
+} from "./go-limits-html.ts";
 
 const TARGET = new URL("../src/go-limits-data.ts", import.meta.url);
 const argv = process.argv.slice(2);
@@ -76,29 +101,53 @@ const shouldWrite = argv.includes("--write");
 const fromIndex = argv.indexOf("--from");
 const fromPath = fromIndex === -1 ? undefined : argv[fromIndex + 1];
 
-const readDoc = async (): Promise<string> => {
-  if (fromPath !== undefined) {
-    return readFileSync(fromPath, "utf8");
-  }
-  const response = await fetch(GO_LIMITS_DOC_URL, {
+/**
+ * Ask one source and record what it answered.
+ *
+ * @param url - the source.
+ * @returns the answer; the body is read only for a 2xx.
+ */
+const ask = async (url: string): Promise<DocAnswer> => {
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(GO_LIMITS_DOC_TIMEOUT_MS),
   });
-  if (response.ok) {
-    return response.text();
-  }
-  // The markdown URL is gone; measured 2026-10-12, the docs moved under
-  // `/v2/docs/console/` and the new page serves HTML. Read the page instead of
-  // failing: the figures are the same figures, in a table.
-  const moved = await fetch(GO_LIMITS_DOC_MOVED_TO, {
-    signal: AbortSignal.timeout(GO_LIMITS_DOC_TIMEOUT_MS),
-  });
-  if (!moved.ok) {
-    throw new Error(
-      `go.md answered ${response.status} ${response.statusText} and the moved page ${GO_LIMITS_DOC_MOVED_TO} answered ${moved.status}`
-    );
-  }
-  return htmlToDoc(await moved.text());
+  return {
+    body: response.ok ? await response.text() : "",
+    contentType: response.headers.get("content-type") ?? "",
+    finalUrl: response.url || url,
+    status: response.status,
+    url,
+  };
 };
+
+/**
+ * A saved page, as `--from` names it: read as a 200 with no content type.
+ *
+ * @param path - the saved file, markdown or HTML.
+ * @returns the answer.
+ */
+const savedAnswer = async (path: string): Promise<DocAnswer> => ({
+  body: readFileSync(path, "utf8"),
+  contentType: "",
+  finalUrl: path,
+  status: 200,
+  url: path,
+});
+
+// A saved page when `--from` names one; otherwise the sources, in their order.
+const found: FoundDoc =
+  fromPath === undefined
+    ? await firstDoc(GO_LIMITS_SOURCES, ask)
+    : await firstDoc([fromPath], savedAnswer);
+// What the page carried and which table was read as each plan: the tab markup
+// is assumed, not measured, so the live run's log is where it gets measured.
+const redirected =
+  found.answer.finalUrl === found.source
+    ? ""
+    : ` (redirected to ${found.answer.finalUrl})`;
+console.log(
+  `source: ${found.source}${redirected} (${found.answer.body.length} characters), ${found.read}`
+);
 
 /** Catalog ids, so a doc label can be resolved to the id the gateway uses. */
 const catalogIds = new Set(OPENCODE_GO_CATALOG.map((model) => model.id));
@@ -129,8 +178,7 @@ const resolveId = (slug: string): string | undefined => {
 const jsKey = (id: string): string =>
   /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(id) ? id : JSON.stringify(id);
 
-const doc = await readDoc();
-const { limits, unmapped } = parseGoLimitsDoc(doc);
+const { limits, unmapped } = parseGoLimitsDoc(found.doc);
 
 const resolved = new Map<
   string,
