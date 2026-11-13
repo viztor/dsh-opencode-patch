@@ -148,7 +148,7 @@ DSH 能说其中四种，插件就把这四种都路由掉。**Google Generative
 
 - **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon`，由内部适配器 `opencode-go-google` 服务。在现有 `opencode-go` 提供商下配置该模型即可，适配器继承该提供商的 API Key 引用（默认 `OPENCODE_GO_API_KEY`），支持图片附件和带签名的工具调用回放。只挂载已配置的模型，可用范围仍由 Go 套餐决定。Go 没有旧版 Google 接口，因此 `endpoint: legacy` 也使用此地址。
 
-- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `longcat-2.5-free`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
 - **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
 - **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - 由实时三窗口额度计量监控（5 小时滚动、每周、每月）。完整集合随内置目录发布——参见[权威模型目录](#7-权威模型目录双本地预置--实时-swr-更新)。
@@ -159,18 +159,18 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 | 服务自 |
 | :-- | --: | :-- | :-- |
-| _（缺失）_ | 24 | OpenAI Chat Completions | 你配置的路由 |
-| `@ai-sdk/openai` | 31 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
-| `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
+| _（缺失）_ | 27 | OpenAI Chat Completions | 你配置的路由 |
+| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 9 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _（本插件不服务的方言）_ | **不提供** |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 82 个**在用**模型，统计于 2026-11-04 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 82 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
+数量为 `models.opencode.ai` 中 `opencode` 的 87 个**在用**模型，统计于 2026-11-12 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 87 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
 - **你的挑选仍然有效。** 选择器显示的就是你列出的模型，每个模型都会**自动匹配到正确的协议**。OpenCode 的模型分布在三种形状上——OpenAI Chat Completions（默认）、OpenAI Responses、Anthropic Messages——需要后两种的模型会被派发到对应路由。不需要手工声明第二条路由。
-- **永远不会提供跑不通的模型。** 那 8 个 `@ai-sdk/google` 模型由插件自己的适配器服务（路由 `opencode-google`），所以它们**不再被剔除**——插件曾经没有对应协议，现在有了。真正会被剔除的是 `@ai-sdk/mistral` 的那一个：它的方言网关怎么回答还没有测过，所以宁可不提供，也不送它去一个凭空想出来的地方。
+- **永远不会提供跑不通的模型。** 那些 `@ai-sdk/google` 模型由插件自己的适配器服务（路由 `opencode-google`），所以它们**不再被剔除**——插件曾经没有对应协议，现在有了。真正会被剔除的是 `@ai-sdk/mistral` 的那一个：它的方言网关怎么回答还没有测过，所以宁可不提供，也不送它去一个凭空想出来的地方。
 - **一份凭据。** 所有路由模型共用你已配置的 `opencode` key，经凭据服务解析，**不会重新问你要**。
 
 **如果你更想自己声明路由**：`opencode-responses`（以及你用上 Anthropic 平面模型后的 `opencode-anthropic`）可以写进 profile 的 `llm-pi-ai` `providers` 块里，并列出它服务的模型。声明是一个选择，不是要求：
