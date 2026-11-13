@@ -402,6 +402,7 @@ OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harnes
 - **计量从不读取 Console 的路由。** 它的 Go 密钥和端点来自你自己的条目，或来自 `OPENCODE_GO_API_KEY` 与默认端点；Console 路由的密钥引用、其背后的令牌和它的基础地址都不会被使用，即使该令牌已导出到环境中。
 - **在设置中添加或移除该请求头会立即转移路由**，无需重启：添加时交给 `llm-pi-ai`，移除时交回本插件。把 `llm-pi-ai` 的配置行移入或移出这类凭据域也会同样转移它的路由，只需重启一次 `llm-pi-ai`。
 - **清理按钮不碰 Console 的路由。** 它只改写你自己的平面条目；没有你自己的条目时，它会说明无可清理，且不写入任何内容。
+- **在 Console 的路由上，Settings → Models → Fetch 就是 `llm-pi-ai` 自己的列表。** 不会往里添加任何目录模型；`llm-pi-ai` 重启期间，获取会像 `llm-pi-ai` 自己那样失败，而不是回答目录；与之并列的你自己的平面条目仍会得到目录中的模型。
 - **日志对每条路由说明一次**，并指出是凭据域还是请求头：`… dsh-opencode-patch leaves the route opencode to pi-ai`。
 - **同名的密钥两边都会读到。** 只有凭据服务按域隔离，启动环境不隔离。环境中导出的 `OPENCODE_API_KEY`（或 `OPENCODE_GO_API_KEY`）会被本插件的计量和你自己的平面读取，也会被 `llm-pi-ai` 用于没有指定自己密钥的 Console 路由。请把工作区令牌保留在 Console 安装步骤给它的名字下，本插件从不读取这个名字。
 
@@ -413,7 +414,7 @@ OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harnes
 | `400 MissingSessionID` | 未附带会话请求头 | 确认 `dsh-opencode-patch` 已列入 profile 的 `dsh.profile.bundles` |
 | Auto Review 报 `TRANSPORT: Connection error` | 更新后宿主进程未重启 | 停止并重启 `dsh web`，让新的 `lib/index.mjs` 加载 |
 | Go 模型始终不显示额度环 | **重启 `dsh web`，然后查看浏览器控制台**——插件通过 `link:` 加载，`lib/index.mjs` 只在进程启动时读取一次，仅刷新页面仍运行旧的宿主代码；计量会报告它的哪条路径没有返回 | 控制台会指出原因：`no remote to mount on`、带异常的 `did not mount`、`still waiting for remote.opencodeGoUsage`、列出其实际暴露键的 `no opencodeGoUsage service on the remote`，或带返回内容的 `the answer is not a usage shape`。缺失或无法路由的凭据只是几个原因之一：在 `opencode-go` 条目上写明 `apiKeyEnv: OPENCODE_GO_API_KEY` 并在 DSH Credentials 中存储该密钥 |
-| 目录中的模型在 Settings → Fetch 里缺失，或已下线的模型仍然存在 | 宿主模块过期、补全关闭、该路由不是插件服务的平面（只有所服务的 `llm-pi-ai` 行上的 `opencode`/`opencode-go` 会被补全），或目录尚未读取（离线，或 `models.opencode.ai` 被拦截）——此时 pi 自己的列表（包括已下线的 id）原样通过，比随包目录更新的模型也不会出现 | `pnpm run build`、重启 `dsh web`、保持**用 OpenCode 官方目录补全列表**开启、从匹配的路由获取、搜索精确 id（如 `gpt-5.3-codex-spark`）；目录尚未读取时，待 `models.opencode.ai` 可访问后，先获取一次以触发目录刷新（这次仍是旧列表——刷新在读取之后于后台进行，且没有定时刷新），稍后再获取一次 |
+| 目录中的模型在 Settings → Fetch 里缺失，或已下线的模型仍然存在 | 宿主模块过期、补全关闭、该路由不是插件服务的平面（只有所服务的 `llm-pi-ai` 行上的 `opencode`/`opencode-go` 会被补全，留给其他插件（如 OpenCode Console）的路由从不补全），或目录尚未读取（离线，或 `models.opencode.ai` 被拦截）——此时 pi 自己的列表（包括已下线的 id）原样通过，比随包目录更新的模型也不会出现 | `pnpm run build`、重启 `dsh web`、保持**用 OpenCode 官方目录补全列表**开启、从匹配的路由获取、搜索精确 id（如 `gpt-5.3-codex-spark`）；目录尚未读取时，待 `models.opencode.ai` 可访问后，先获取一次以触发目录刷新（这次仍是旧列表——刷新在读取之后于后台进行，且没有定时刷新），稍后再获取一次 |
 | 弹出面板以红色显示“已达限额” | 滚动 / 每月窗口已用到 100% | 打开 [OpenCode 控制台](https://opencode.ai/console)并启用 _使用余额（Use balance）_，以溢出到 Zen 额度 |
 | 非 OpenCode 模型行为异常 | 与本补丁无关 | 发往其他网关的流量原样通过 |
 

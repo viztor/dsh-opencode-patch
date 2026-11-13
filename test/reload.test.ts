@@ -233,6 +233,7 @@ const installGraft =
 const SERVED = {
   claiming: () => true,
   piAiNamespace: () => "llm-pi-ai",
+  steppedAside: () => new Set<never>(),
 };
 
 const SITES: readonly Site[] = [

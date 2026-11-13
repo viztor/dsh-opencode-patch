@@ -28,6 +28,7 @@ import {
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
   parseModelsDevCatalog,
+  type PlaneRoute,
   refreshCatalog,
   resolveConfig,
   resolveDiscoveryProvider,
@@ -47,12 +48,14 @@ const config = { ...resolveConfig(), gatewayUrls, providers };
 const SERVED: DiscoveryClaim = {
   claiming: () => true,
   piAiNamespace: () => "llm-pi-ai",
+  steppedAside: () => new Set(),
 };
 
 /** The claim after a stand-down: pi-ai serves the planes again. */
 const STOOD_DOWN: DiscoveryClaim = {
   claiming: () => false,
   piAiNamespace: () => "llm-pi-ai",
+  steppedAside: () => new Set(),
 };
 
 /** The five fields of the Remote's `LlmDiscoveredModel`, sorted. */
@@ -594,6 +597,7 @@ describe("decorateModelDiscovery", () => {
     const claim: DiscoveryClaim = {
       claiming: () => live,
       piAiNamespace: () => ns,
+      steppedAside: () => new Set(),
     };
     const original = vi.fn().mockResolvedValue([{ id: "minimax-m3" }]);
     const { wrapped } = install(original, claim);
@@ -656,9 +660,8 @@ describe("decorateModelDiscovery", () => {
     );
     const answer = [{ id: "deepseek-v4-pro" }];
     const original = vi.fn().mockResolvedValue(answer);
-    const aside = new Set<string>(["opencode"]);
-    // The claim P3's wrapper reads, with the route claim's D27 accessor.
-    const claim = { ...SERVED, steppedAside: () => aside };
+    const aside = new Set<PlaneRoute>(["opencode"]);
+    const claim: DiscoveryClaim = { ...SERVED, steppedAside: () => aside };
     const { stop, wrapped } = install(original, claim);
     const complement = (
       catalog: readonly { id: string; provider_npm?: string }[]
@@ -681,6 +684,46 @@ describe("decorateModelDiscovery", () => {
     expect(taken).not.toBe(answer);
     expect(ids(taken)).toEqual(complement(OPENCODE_ZEN_CATALOG));
     stop?.();
+  });
+
+  it("on a plane another plugin owns (D27), NO_DISCOVERY and every other error reject as the host sent them, while the plane the claim takes answers its catalog (the known answer)", async () => {
+    const failure = Object.assign(
+      new Error('no model discovery is registered for "llm-pi-ai"'),
+      { code: "NO_DISCOVERY" }
+    );
+    const original = vi.fn().mockRejectedValue(failure);
+    const aside = new Set<PlaneRoute>(["opencode-go"]);
+    const { wrapped } = install(original, {
+      ...SERVED,
+      steppedAside: () => aside,
+    });
+
+    await expect(
+      wrapped("llm-pi-ai", { provider: "opencode-go" })
+    ).rejects.toBe(failure);
+    const rows = (await wrapped("llm-pi-ai", { provider: "opencode" })) as {
+      id: string;
+    }[];
+    expect(rows.map((row) => row.id)).toEqual(
+      servableIds(OPENCODE_ZEN_CATALOG)
+    );
+    // The step-aside is read before the claim's namespace: on any namespace
+    // the plane is pi-ai's alone.
+    await expect(wrapped("other-ns", { provider: "opencode-go" })).rejects.toBe(
+      failure
+    );
+    const invalid = Object.assign(new Error("boom"), {
+      code: "INVALID_DISCOVERY",
+    });
+    original.mockRejectedValueOnce(invalid);
+    await expect(
+      wrapped("llm-pi-ai", { provider: "opencode-go" })
+    ).rejects.toBe(invalid);
+    expect(original).toHaveBeenLastCalledWith(
+      "llm-pi-ai",
+      { provider: "opencode-go" },
+      undefined
+    );
   });
 
   it("calls the host's method with the service as its receiver", async () => {
