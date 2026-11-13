@@ -6,6 +6,7 @@
  * `status: "deprecated"` id and drops it from the active set — so these tests
  * seed the module through the parser rather than inventing a second list.
  */
+import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,7 +14,6 @@ import {
   parseModelsDevCatalog,
   stripRetiredReferences,
 } from "./support/src.ts";
-import { createMockContext } from "./test-helpers.ts";
 
 /** A registry reply with one retired id per plane and one live id beside it. */
 const registry = () => ({
@@ -66,12 +66,14 @@ const editorWith = (models: {
   return { edit, entries: () => [entry], entry };
 };
 
-/** A Cordis-shaped context: the Remote base needs `reflect`, the service `get`. */
-const ctxWith = (editor: unknown) =>
-  ({
-    ...(createMockContext() as object),
-    get: (name: string) => (name === "configEditor" ? editor : undefined),
-  }) as never;
+/** A real cordis context, holding the config editor when there is one. */
+const ctxWith = (editor: unknown): Context => {
+  const ctx = new Context();
+  if (editor !== undefined) {
+    ctx.provide("configEditor" as never, editor as never);
+  }
+  return ctx;
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();

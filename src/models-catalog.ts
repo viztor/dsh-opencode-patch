@@ -478,16 +478,16 @@ export const findModelSpecOn = (
  * Answers "does either plane know this model" — which is all some callers need.
  * It is **not** correct for anything the planes can disagree about:
  *
- * - **Routing.** See {@link findModelSpecOn}: `qwen3.8-max` and `minimax-m3`
- *   name `@ai-sdk/anthropic` on Go and nothing (completions) on Zen, so a
- *   Go-first read sent Zen requests to `/messages`, where the gateway answers
+ * - **Routing.** See {@link findModelSpecOn}: a shared id can name
+ *   `@ai-sdk/anthropic` on Go and no SDK (completions) on Zen, so a Go-first
+ *   read sends Zen requests to `/messages`, where the gateway answers
  *   `400 ModelProtocolUnsupported`.
- * - **Pricing.** This doc used to claim the two planes agree on price "for
- *   every shared id", and that stopped being true: `deepseek-v4.1-flash` costs
- *   $0.30/$1.20 per million on Zen and $0.15/$0.60 on Go, and
- *   `deepseek-v4-pro` differs too. A Zen turn priced through here came out at
- *   exactly half of what it cost. `test/catalog.test.ts` measures the
- *   disagreement, so the claim cannot go stale in silence again.
+ * - **Pricing.** The two planes may price a shared id differently, and a turn
+ *   costs what its OWN plane charges, read from the route. A Zen turn priced
+ *   through here takes the Go rate. The seeded cases hold the rule rather than
+ *   whichever ids the vendor prices differently today: `test/stream-hook.test.ts`
+ *   ("a turn is priced at ITS plane's rate") and `test/lifecycle.test.ts`
+ *   ("prices a turn at the rate of the plane its route belongs to").
  *
  * The plane has to come from the route in play; this function is the fallback
  * for a model the plane's OWN row does not describe.

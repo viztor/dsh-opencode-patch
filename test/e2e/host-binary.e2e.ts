@@ -107,6 +107,7 @@ import {
   floorOf,
   REGISTRY_PACKAGES,
 } from "../../scripts/host-drift.ts";
+import { e2e } from "../support/e2e-env.ts";
 import {
   CHANNELS,
   floorOverrides,
@@ -129,9 +130,12 @@ import {
   OPENCODE_ZEN_CATALOG,
 } from "../support/src.ts";
 
-const ENABLED = process.env.DSH_HOST_E2E === "1";
-const PREFIX = process.env.DSH_HOST_PREFIX ?? "";
-const CELL = process.env.DSH_HOST_PI_CELL ?? "npm";
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
+
+const ENABLED = E2E.hostBinary.enabled;
+const PREFIX = E2E.hostBinary.prefix;
+const CELL = E2E.hostBinary.cell;
 if (CELL !== "npm" && CELL !== "floor") {
   throw new Error(`DSH_HOST_PI_CELL=${CELL} names no cell; use npm or floor`);
 }
@@ -598,7 +602,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
       DSH_HOME: dshHome,
       DSH_TELEMETRY_DISABLED: "1",
       HOME: home,
-      PATH: process.env.PATH ?? "",
+      PATH: E2E.hostBinary.path,
     };
     const dsh = (args: string[]) => {
       const run = spawnSync(process.execPath, [bin, ...args], {
@@ -706,7 +710,7 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
     const written = existsSync(probeOut)
       ? readFileSync(probeOut, "utf8")
       : undefined;
-    const copy = process.env.DSH_HOST_PROBE_COPY ?? "";
+    const copy = E2E.hostBinary.probeCopy;
     if (written !== undefined && copy.length > 0) {
       writeFileSync(copy, written);
     }

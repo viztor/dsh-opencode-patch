@@ -31,10 +31,13 @@ import {
   OPENCODE_GO_CATALOG,
   OPENCODE_PLANE_API,
   OPENCODE_ZEN_CATALOG,
+  openCodeSessionIdFor,
+  protocolForSdk,
   type ResolvedPluginConfig,
   patchFetch,
 } from "../support/src.ts";
-import type { GatewayKind } from "./opencode-gateway.ts";
+import type { MockGateway } from "./gateway-server.ts";
+import type { GatewayKind, GatewayRequest } from "./opencode-gateway.ts";
 
 export { MOCK_TEXT } from "./opencode-gateway.ts";
 
@@ -51,9 +54,10 @@ export const GO_KEY = "sk-mock-go";
  * The 12 hex digits are `~((ms << 12) + counter)` for a descending id, so a real
  * one always lands in that band; `0xFFE` is what `counter = 1` produces. A
  * syntactically valid id outside the band is refused with `403 FreeTierError` —
- * measured — which is exactly what this fixture used to be.
+ * measured — which is exactly what a hand-written fixture here once was. Derived
+ * the plugin's own way, so it is in the band by construction.
  */
-export const MOCK_SESSION = "ses_eb1e9e706ffeCDEFGHIJKLMNOP";
+export const MOCK_SESSION = openCodeSessionIdFor("mock-gateway");
 
 /** The key a plane's requests should carry, per the stubs above. */
 export const keyFor = (plane: TestPlane): string =>
@@ -203,6 +207,41 @@ export const firstSpecFor = (
       ? spec.provider_npm === undefined
       : spec.provider_npm === sdk
   );
+
+/**
+ * The first catalog row one plane serves on `protocol` in `tier`, so no case
+ * names a vendor id a catalog refresh can retire. Throws when the plane has
+ * none: a case that cannot find its fixture fails by name, never vacuously.
+ *
+ * @param plane - the gateway plane.
+ * @param protocol - the wire protocol the row's SDK speaks.
+ * @param tier - whether the row is a free one.
+ * @returns the row.
+ */
+export const fixtureModel = (
+  plane: TestPlane,
+  protocol: string,
+  tier: "free" | "paid"
+): CatalogSpec => {
+  const spec = catalogFor(plane).find(
+    (row) =>
+      protocolForSdk(row.provider_npm) === protocol &&
+      (row.is_free === true) === (tier === "free")
+  );
+  if (spec === undefined) {
+    throw new Error(`the ${plane} catalog serves no ${tier} ${protocol} model`);
+  }
+  return spec;
+};
+
+/** The last request the mock gateway saw; throws when it saw none. */
+export const lastRecorded = (gateway: MockGateway): GatewayRequest => {
+  const last = gateway.requests.at(-1);
+  if (last === undefined) {
+    throw new Error("the mock gateway saw no request");
+  }
+  return last;
+};
 
 /** The turn state every request is made under, unless a case overrides it. */
 export const sessionTurn = (

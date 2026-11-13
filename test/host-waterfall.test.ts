@@ -36,6 +36,7 @@ import {
 import {
   deepFreeze,
   mountTierA,
+  routeIds,
   s0Providers,
   stripPlanesListener,
   type TierA,
@@ -51,13 +52,6 @@ const resolvedKeys = (fiber: Fiber): string[] =>
       }
     ).providers.get()
   ).toSorted();
-
-/** The registered route ids, sorted. */
-const routeIds = (tier: TierA): string[] =>
-  tier.llm
-    .listProviders()
-    .map((provider) => provider.id)
-    .toSorted();
 
 /** An adapter that registers and never streams: the claim's stand-in. */
 class StubAdapter extends LlmAdapter {
@@ -77,8 +71,8 @@ afterEach(async () => {
 describe("host · the internal/config waterfall (tier A)", () => {
   it("F11 — pi-ai registers exactly the keys of its resolved config (llm-pi-ai/src/index.ts:168-176,299,307)", async () => {
     tier = await mountTierA({ providers: s0Providers() });
-    expect(routeIds(tier)).toEqual(resolvedKeys(tier.piFiber));
-    expect(routeIds(tier)).toEqual(["deepseek", "opencode", "opencode-go"]);
+    expect(routeIds(tier.llm)).toEqual(resolvedKeys(tier.piFiber));
+    expect(routeIds(tier.llm)).toEqual(["deepseek", "opencode", "opencode-go"]);
   });
 
   it("F11 — the RESOLVED keys, not the raw ones: with a listener stripping the planes, the routes follow the resolved config while the raw still holds all three", async () => {
@@ -88,8 +82,8 @@ describe("host · the internal/config waterfall (tier A)", () => {
       },
       providers: s0Providers(),
     });
-    expect(routeIds(tier)).toEqual(resolvedKeys(tier.piFiber));
-    expect(routeIds(tier)).toEqual(["deepseek"]);
+    expect(routeIds(tier.llm)).toEqual(resolvedKeys(tier.piFiber));
+    expect(routeIds(tier.llm)).toEqual(["deepseek"]);
     expect(
       Object.keys(
         (rawConfigOf(tier.piFiber) as { providers: Record<string, unknown> })
@@ -298,7 +292,7 @@ describe("host · the internal/config waterfall (tier A)", () => {
       Object.keys((rawConfigOf(piFiber) as typeof frozen).providers).toSorted()
     ).toEqual(["deepseek", "opencode", "opencode-go"]);
     expect(resolvedKeys(piFiber)).toEqual(["deepseek"]);
-    expect(routeIds(tier)).toEqual(["deepseek"]);
+    expect(routeIds(tier.llm)).toEqual(["deepseek"]);
   });
 
   it("F13 (tier A half) — with the planes stripped, registerAdapter(planes) passes the duplicate check and the directory still lists both under llm-pi-ai (llm/src/index.ts:401-445; llm-pi-ai/src/index.ts:128-150)", async () => {
@@ -308,13 +302,17 @@ describe("host · the internal/config waterfall (tier A)", () => {
       },
       providers: s0Providers(),
     });
-    expect(routeIds(tier)).toEqual(["deepseek"]);
+    expect(routeIds(tier.llm)).toEqual(["deepseek"]);
     const handle = tier.llm.registerAdapter(
       ["opencode", "opencode-go"],
       new StubAdapter()
     );
     try {
-      expect(routeIds(tier)).toEqual(["deepseek", "opencode", "opencode-go"]);
+      expect(routeIds(tier.llm)).toEqual([
+        "deepseek",
+        "opencode",
+        "opencode-go",
+      ]);
       const directory = tier.llm.listConfigurableProviders();
       for (const id of ["opencode", "opencode-go"]) {
         expect(directory.find((entry) => entry.provider === id)).toMatchObject({

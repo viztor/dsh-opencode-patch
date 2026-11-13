@@ -215,11 +215,10 @@ export const createStreamHook = (
     }
     const modelProp: unknown = options.model;
     const modelName = typeof modelProp === "string" ? modelProp : "unknown";
-    // **The plane's own price, not the other plane's.** The two planes price
-    // some shared ids differently — one costs twice as much on Zen as on Go —
-    // and the plane-agnostic lookup searches Go FIRST, so a Zen turn was priced
-    // at the Go rate: half of what it cost. The plane decides, because the
-    // route is what the user configured.
+    // **The plane's own price, not the other plane's.** The two planes may
+    // price a shared id differently, and the plane-agnostic lookup searches Go
+    // FIRST, so a Zen turn priced through it takes the Go rate. The plane
+    // decides, because the route is what the user configured.
     //
     // The fallback is for a model the plane's own catalog does not describe,
     // where any price is better than none — and the turn is still attributed to
