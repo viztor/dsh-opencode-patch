@@ -33,7 +33,7 @@
 
 ---
 
-`dsh-opencode-patch` is a DeepSeek Harness host plugin that keeps **OpenCode Zen & Go** models working inside DSH. Connect `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3-contributor-free`, `qwen3.8-flash` and the rest of the OpenCode catalog without network rejections, Cloudflare challenges, entitlement mismatches, or invisible limits.
+`dsh-opencode-patch` is a DeepSeek Harness host plugin that keeps **OpenCode Zen & Go** models working inside DSH. Connect `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3`, `qwen3.8-flash` and the rest of the OpenCode catalog without network rejections, Cloudflare challenges, entitlement mismatches, or invisible limits.
 
 **The default state.** Point DSH at OpenCode with no plugin and the models do not work at all — not on one shape, on any of them:
 
@@ -165,10 +165,10 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 | _(absent)_ | 27 | OpenAI Chat Completions |
 | `@ai-sdk/openai` | 32 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 18 | Anthropic Messages |
-| `@ai-sdk/google` | 9 | Google Generative AI |
+| `@ai-sdk/google` | 10 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, as pi's own data files it |
 
-Counts are the **87** active `opencode` models in `models.opencode.ai` as of 2026-11-12 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 87 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
+Counts are the **88** active `opencode` models in `models.opencode.ai` as of 2026-11-13 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 88 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 
 Four properties follow:
 
