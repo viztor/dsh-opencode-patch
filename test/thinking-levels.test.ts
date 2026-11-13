@@ -151,12 +151,31 @@ describe("thinking-levels · usesCatalogThinkingLevels (which catalog models thi
 
   it("over the bundled catalogs, every Google reasoning model and nothing else (today's catalogs)", () => {
     // An oracle that does not re-derive the rule: every Google reasoning entry
-    // the vendor lists today offers only discrete levels. A future Google
-    // entry with a budget or an `xhigh` flips this row on purpose.
+    // the vendor lists today offers only discrete levels, except the ones
+    // named below. A future Google entry with a budget or an `xhigh` flips
+    // this row on purpose, and lands here by name.
+    //
+    // gemini-4-hydrogen (Zen, #171) lists `xhigh`, outside Google's four
+    // levels, beside low/medium/high.
+    const notLevelOnly = new Map([["gemini-4-hydrogen", ["xhigh"]]]);
+    for (const [id, outside] of notLevelOnly) {
+      // Each exception is still a Google reasoning entry the catalog lists,
+      // and its effort list still names the value that excludes it.
+      const spec = zen(id);
+      expect(spec.provider_npm, id).toBe(google);
+      expect(spec.reasoning, id).toBe(true);
+      const values =
+        spec.reasoning_options?.find((option) => option.type === "effort")
+          ?.values ?? [];
+      expect(values, id).toEqual(expect.arrayContaining(outside));
+    }
     const goLevelIds: string[] = [];
     let seen = 0;
     for (const spec of [...OPENCODE_GO_CATALOG, ...OPENCODE_ZEN_CATALOG]) {
-      const expected = spec.provider_npm === google && spec.reasoning === true;
+      const expected =
+        spec.provider_npm === google &&
+        spec.reasoning === true &&
+        !notLevelOnly.has(spec.id);
       seen += expected ? 1 : 0;
       expect(usesCatalogThinkingLevels(spec), spec.id).toBe(expected);
     }
