@@ -227,6 +227,13 @@ jobs:
           # parent is the base, so `HEAD^1..HEAD` is exactly the PR's own diff.
           # The default depth of one would leave `HEAD^1` missing.
           fetch-depth: 2
+          # Keep no credential in git's config. Checkout would persist
+          # GITHUB_TOKEN as an http extraheader, which git sends ahead of the
+          # token the nightly push names in its URL: the refresh then lands as
+          # github-actions[bot], and its pull request's CI waits for a human
+          # to approve it (the 2026-11-06 and 2026-11-12 refreshes did). No
+          # other step here needs a git credential.
+          persist-credentials: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -389,8 +396,9 @@ jobs:
             git checkout -B chore/generated-refresh
             git add src/catalog-data.ts src/go-limits-data.ts
             git commit -m "chore: refresh the generated catalog and limits tables"
-            # Explicit token URL: `origin` carries the checkout credential, and
-            # a push through it is what lands the run in action_required.
+            # Explicit token URL, and no credential persisted by the checkout
+            # (see its persist-credentials): a push authenticated as the
+            # checkout's GITHUB_TOKEN is what lands the run in action_required.
             git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" chore/generated-refresh
             # The branch is rebuilt from main every night, so a partial
             # refresh REPLACES an open refresh pull request: an earlier
