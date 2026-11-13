@@ -512,12 +512,24 @@ const newPiFiber = (
 const MALFORMED = { models: [{ id: "" }, { id: "x" }] };
 
 describe("route-claim · Settings' fetch follows the claim's engagement", () => {
-  /** A discovery service whose own answer is pi's single row, wrapped by the plugin. */
-  const wrapped = (claim: ReturnType<typeof installRouteClaim>) => {
+  /**
+   * A discovery service whose own answer is pi's single row, wrapped by the
+   * plugin. `withdrawn` stands for the host's own check: while it reads true
+   * pi-ai's discovery is withdrawn and the host answers `NO_DISCOVERY`.
+   */
+  const wrapped = (
+    claim: ReturnType<typeof installRouteClaim>,
+    withdrawn: () => boolean = () => false
+  ) => {
     const pis = [{ id: "deepseek-v4-pro" }];
     const service = {
       discoverModels: vi.fn(
-        async (_settingsNs: string, _request?: unknown) => pis
+        async (_settingsNs: string, _request?: unknown): Promise<unknown> => {
+          if (withdrawn()) {
+            throw Object.assign(new Error("none"), { code: "NO_DISCOVERY" });
+          }
+          return pis;
+        }
       ),
     };
     decorateModelDiscovery(
@@ -526,6 +538,8 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
       claim
     );
     return {
+      fetch: async (namespace: string, provider: string): Promise<unknown> =>
+        service.discoverModels(namespace, { provider }),
       fetchZen: async (): Promise<unknown> =>
         service.discoverModels("llm-pi-ai", { provider: "opencode" }),
       pis,
@@ -566,37 +580,123 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
     expect(answered).not.toStrictEqual(mergeDiscoveredModels(pis, "zen"));
   });
 
-  it("the exception: a mount whose restart leaves the planes with pi-ai (the restart throws) reads claiming() false once it settles, and Settings' fetch answers the merge only", async () => {
+  it("a handover's window: the newly served new-core row resolved holding its plane reads claiming() false and Settings' fetch the merge only, until its restart re-resolves through the listener", async () => {
     useTestModules();
-    const held: Record<string, unknown> = { deepseek: {}, opencode: zen };
+    // The served row resolved without its plane (the listener was in place).
+    const first = newPiFiber();
+    // A second row declaring a plane is passed through while the first is
+    // served, so it resolved holding that plane: a state the new core reaches.
+    const goPlane = { models: [{ id: "glm-5.1" }] };
+    let held: Record<string, unknown> = { deepseek: {}, "opencode-go": {} };
+    const second = newPiFiber({ deepseek: {}, "opencode-go": goPlane });
+    Object.defineProperty(second, "effectiveConfig", {
+      get: () => ({ providers: { get: () => held } }),
+    });
+    second.uid = 2;
+    second.entry = { options: { id: "llm-pi-ai:second" } };
+    const host = standIn({ fibers: () => [first, second] });
+    let release: (() => void) | undefined;
+    second.restart = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // cordis's restart re-resolves through the internal/config waterfall.
+      const resolved = host.waterfall(second, () => second.rawConfig) as {
+        providers: Record<string, unknown>;
+      };
+      held = resolved.providers;
+    });
+    const claim = installRouteClaim(host.ctx, config);
+    const { fetch, pis } = wrapped(claim);
+    await claim.mounted;
+    await flush();
+    expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+    expect(claim.claiming()).toBe(true);
+    // The known answer: the second row serves its own plane, so its fetch is
+    // the merge, not the complement, before the handover.
+    await expect(fetch("llm-pi-ai:second", "opencode-go")).resolves.toEqual(
+      mergeDiscoveredModels(pis, "go")
+    );
+
+    first.uid = null;
+    host.listeners.get("llm/adapters-updated")?.();
+    await flush();
+    expect(second.restart).toHaveBeenCalledTimes(1);
+    expect(claim.piAiNamespace()).toBe("llm-pi-ai:second");
+    // The window: the served row still resolves holding its plane, which
+    // pi-ai serves and validates, so nothing beyond pi's list is offered.
+    expect(claim.claiming()).toBe(false);
+    await expect(fetch("llm-pi-ai:second", "opencode-go")).resolves.toEqual(
+      mergeDiscoveredModels(pis, "go")
+    );
+
+    release?.();
+    await flush();
+    expect(held).not.toHaveProperty("opencode-go");
+    expect(claim.claiming()).toBe(true);
+    host.listeners.get("llm/adapters-updated")?.();
+    await flush();
+    expect(host.llm.registerAdapter.mock.calls.at(-1)?.[0]).toEqual([
+      "opencode-go",
+    ]);
+    const answered = (await fetch("llm-pi-ai:second", "opencode-go")) as {
+      id: string;
+    }[];
+    expect(answered.length).toBeGreaterThan(pis.length);
+    expect(answered).not.toStrictEqual(mergeDiscoveredModels(pis, "go"));
+  });
+
+  it("a mount whose restart throws leaves the new-core pi-ai FAILED: claiming() stays true, nothing registers, Settings' fetch answers the plane's catalog alone, and an update() recovers it through the listener", async () => {
+    useTestModules();
+    let held: Record<string, unknown> = { deepseek: {}, opencode: zen };
     const pi = newPiFiber();
     Object.defineProperty(pi, "effectiveConfig", {
       get: () => ({ providers: { get: () => held } }),
     });
-    pi.restart = vi.fn(async () => {
-      throw new Error("busy");
-    });
     const host = standIn({ fibers: () => [pi] });
+    // cordis 4.0.6-alpha.2 / 4.1.0 (`fiber.ts:694-700,753-759`): a restart
+    // throws only by rethrowing the load error from await(), which leaves the
+    // fiber FAILED until update() clears it.
+    const failure = new Error("pi-ai did not load");
+    pi.restart = vi.fn(async () => {
+      pi.state = 3;
+      throw failure;
+    });
+    pi.await = vi.fn(async () => {
+      if (pi.state === 3) {
+        throw failure;
+      }
+      return pi;
+    });
     const claim = installRouteClaim(host.ctx, config);
-    const { fetchZen, pis } = wrapped(claim);
-    // The known answer: before the mount settles the claim is assumed to
-    // engage, and the fetch is complemented beyond pi's own row.
-    expect(claim.claiming()).toBe(true);
-    expect(((await fetchZen()) as unknown[]).length).toBeGreaterThan(1);
+    // A FAILED pi-ai's discovery is withdrawn: the host answers NO_DISCOVERY.
+    const { fetchZen } = wrapped(claim, () => pi.state === 3);
     await claim.mounted;
     await flush();
     expect(pi.restart).toHaveBeenCalledTimes(1);
     expect(host.warn).toHaveBeenCalledWith(
       expect.stringContaining("did not mount"),
-      expect.any(Error)
+      failure
     );
+    // A FAILED row holds nothing to read as pi-ai's, so the claim stays engaged.
+    expect(claim.claiming()).toBe(true);
     expect(host.llm.registerAdapter).not.toHaveBeenCalled();
-    // Settled with pi-ai still holding the plane: pi-ai validates a save and
-    // refuses an id it does not list, so nothing is appended.
-    expect(claim.claiming()).toBe(false);
-    await expect(fetchZen()).resolves.toStrictEqual(
-      mergeDiscoveredModels(pis, "zen")
-    );
+    const alone = (await fetchZen()) as { id: string }[];
+    expect(alone.length).toBeGreaterThan(1);
+    expect(alone.map((row) => row.id)).toContain("deepseek-v4-pro");
+
+    // A Settings save runs update(), which re-resolves through the listener.
+    const resolved = host.waterfall(pi, () => pi.rawConfig) as {
+      providers: Record<string, unknown>;
+    };
+    held = resolved.providers;
+    pi.state = 2;
+    host.listeners.get("llm/adapters-updated")?.();
+    await flush();
+    expect(held).not.toHaveProperty("opencode");
+    expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+    expect(claim.claiming()).toBe(true);
+    expect(((await fetchZen()) as unknown[]).length).toBeGreaterThan(1);
   });
 });
 

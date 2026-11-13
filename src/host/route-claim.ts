@@ -138,17 +138,21 @@ export interface RouteClaim {
    * stood down (the host's modules could not be read) or tore down, and false
    * once `mounted` has settled while the served pi-ai row still resolves
    * holding a plane. The listener speaks both cores' `internal/config` call
-   * shapes, so on either one the mount's restart moves the planes; a row
-   * still holding one after it is the exception (that restart threw), and it
-   * is read with the same check the reconcile waits on
-   * (`resolvedPlanes` of the live served row), so the two never disagree.
-   * pi-ai serves the planes there and refuses at save an id it does not list.
-   * True from install until then, so before `mounted` settles the plane
-   * routes may still be pi-ai's: a plane save is already validated by the
-   * plugin, and a fetch complemented in that window assumes the claim
-   * engages. A later window in which the served row holds a plane again (a
-   * handover's restart) reads false until the restart moves it, which only
-   * narrows a fetch to pi's own list.
+   * shapes, so on either one the mount's restart moves the planes. A restart
+   * that throws does not leave them with pi-ai: on cordis 4.0.6-alpha.2 and
+   * 4.1.0 it throws only for a disposed fiber or by rethrowing a failed
+   * load, which leaves the fiber FAILED, and a FAILED row holds nothing to
+   * read here (it recovers through `update()`, which resolves through the
+   * listener). What reads false is a served row that still resolves holding
+   * a plane: a handover's window, in which a row that was passed through is
+   * served and holds its plane until its restart re-resolves it, or a call
+   * shape the listener does not speak. It is read with the same check the
+   * reconcile waits on (`resolvedPlanes` of the live served row), so the two
+   * never disagree; pi-ai serves the planes there and refuses at save an id
+   * it does not list, so reading false only narrows a fetch to pi's own
+   * list. True from install until `mounted` settles, so in that window the
+   * plane routes may still be pi-ai's: a plane save is already validated by
+   * the plugin, and a fetch complemented then assumes the claim engages.
    */
   readonly claiming: () => boolean;
   /** Settles once the claim is mounted; never rejects. */
