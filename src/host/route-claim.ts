@@ -919,10 +919,21 @@ export const installRouteClaim = (
    * answered: the innermost value, the run's raw candidate.
    */
   const claim = (fiber: unknown, raw: unknown): unknown => {
-    if (!state.active || !isPiAi(fiber) || fiber !== servedRow()) {
+    if (!state.active || !isPiAi(fiber)) {
       return raw;
     }
     const commit = isCommitRun(raw, fiber, ACTIVE);
+    if (fiber !== servedRow()) {
+      // The row the handle was built from, on a commit whose candidate the
+      // loader already stored (its volatile path) and which takes nothing:
+      // `servedRow` has moved on from it, yet the plugin still holds its
+      // planes, which pi-ai registers as soon as this run returns.
+      if (commit && fiber === state.served) {
+        releaseUntaken(takenOf(fiber, raw));
+        schedule();
+      }
+      return raw;
+    }
     // The run's own candidate decides: an edit can add or drop a marker.
     const taken = takenOf(fiber, raw);
     if (commit) {

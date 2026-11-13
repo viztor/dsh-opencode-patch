@@ -1018,6 +1018,69 @@ describe("route-claim · a second pi-ai row", () => {
     expect(claim.piAiNamespace()).toBe("llm-pi-ai:second");
     expect(second.restart).toHaveBeenCalledTimes(1);
   });
+
+  /** Rows ahead of the served one in the registry, and rows behind it. */
+  interface Neighbours {
+    readonly ahead: readonly FakeFiber[];
+    readonly behind: readonly FakeFiber[];
+  }
+
+  it.each([
+    ["alone (the known answer)", (): Neighbours => ({ ahead: [], behind: [] })],
+    [
+      "behind a plane-less row",
+      (): Neighbours => {
+        const bare = piFiber({ deepseek: {} });
+        bare.uid = 2;
+        bare.entry = { options: { id: "llm-pi-ai:bare" } };
+        return { ahead: [bare], behind: [] };
+      },
+    ],
+    [
+      "ahead of a row that declares a plane of its own",
+      (): Neighbours => {
+        const go = piFiber(
+          { deepseek: {}, "opencode-go": { models: [{ id: "glm-5.1" }] } },
+          { deepseek: {}, "opencode-go": {} }
+        );
+        go.uid = 2;
+        go.entry = { options: { id: "llm-pi-ai:go" } };
+        return { ahead: [], behind: [go] };
+      },
+    ],
+  ] as const)(
+    "a save that marks the served row's only plane releases it inside the commit run, %s (D27)",
+    async (_shape, neighbours) => {
+      useTestModules();
+      const served = piFiber();
+      // In both shapes with a second row, the served row, once it declares
+      // nothing the claim takes, is no longer the row `servedRow` answers.
+      const { ahead, behind } = neighbours();
+      const fibers = [...ahead, served, ...behind];
+      const host = standIn({ fibers: () => fibers });
+      const claim = installRouteClaim(host.ctx, config);
+      await claim.mounted;
+      await flush();
+      expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+      const listener = host.listeners.get("internal/config");
+      // The loader's volatile path stores the row's new raw config first, then
+      // runs `internal/config` with it: a commit run.
+      served._config = {
+        providers: {
+          deepseek: {},
+          opencode: {
+            ...zen,
+            headers: { "x-opencode-plugin": "vendor/1.0.0" },
+          },
+        },
+      };
+      expect(oldRun(listener, served, served._config)).toBe(served._config);
+      // Released before the run returns, so pi-ai's own registration of the
+      // plane, which follows the run at once, meets no duplicate.
+      expect(host.handle.replace).toHaveBeenLastCalledWith([]);
+      expect([...claim.steppedAside()]).toEqual(["opencode"]);
+    }
+  );
 });
 
 describe("route-claim · the live catalog", () => {
