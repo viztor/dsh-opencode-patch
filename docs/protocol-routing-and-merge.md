@@ -4,15 +4,15 @@ How this plugin makes OpenCode's models speak the protocol each of them is actua
 
 ## 1. Why routing exists
 
-OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17; counts as of 2026-11-12 (the shipped shim, regenerated in #132, refreshed in #156 and again in #159, which added seven Zen models and one Go model and retired `crouton-alpha-free` and `pulse-alpha-free`):
+OpenCode serves its models on **four different API shapes**, and which one a model lives on is a property of the model, not of the account. The per-plane counts, and the tables that go with them, live in [`redirect-planes.md`](./redirect-planes.md) §2; what follows is why the plugin has to care. Wire endpoints measured 2026-10-17; counts as of 2026-11-13 (the shipped shim, regenerated in #132, refreshed in #156, in #159, which added seven Zen models and one Go model and retired `crouton-alpha-free` and `pulse-alpha-free`, and in #171, which added the Zen model `gemini-4-hydrogen`):
 
 | API shape | Wire endpoint | Which models | Signal in the catalog |
 | :-- | :-- | :-- | :-- |
-| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default**: 27 of 87 | the model names **no** SDK |
-| OpenAI **Responses** | `POST /zen/v1/responses` | 32 of 87 | `@ai-sdk/openai` |
-| Anthropic **Messages** | `POST /zen/v1/messages` | 18 of 87 | `@ai-sdk/anthropic` |
-| Google **Generative AI** | `POST /zen/v1/models/<id>:streamGenerateContent` | 9 of 87 | `@ai-sdk/google` |
-| Mistral **Conversations** | `POST /zen/v1/chat/completions` | 1 of 87 | `@ai-sdk/mistral` |
+| OpenAI **Chat Completions** | `POST /zen/v1/chat/completions` | **the default**: 27 of 88 | the model names **no** SDK |
+| OpenAI **Responses** | `POST /zen/v1/responses` | 32 of 88 | `@ai-sdk/openai` |
+| Anthropic **Messages** | `POST /zen/v1/messages` | 18 of 88 | `@ai-sdk/anthropic` |
+| Google **Generative AI** | `POST /zen/v1/models/<id>:streamGenerateContent` | 10 of 88 | `@ai-sdk/google` |
+| Mistral **Conversations** | `POST /zen/v1/chat/completions` | 1 of 88 | `@ai-sdk/mistral` |
 
 Counts are the shipped catalog. They are asserted against this table by `catalog.test.ts`, because a count written into prose does not regenerate with the data it counts.
 
