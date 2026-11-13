@@ -170,7 +170,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
 - **你的挑选仍然有效。** 选择器显示的就是你列出的模型，每个模型都会**自动匹配到正确的协议**。OpenCode 的模型分布在三种形状上——OpenAI Chat Completions（默认）、OpenAI Responses、Anthropic Messages——需要后两种的模型会被派发到对应路由。不需要手工声明第二条路由。
-- **永远不会提供跑不通的模型。** 那 8 个 `@ai-sdk/google` 模型由插件自己的适配器服务（路由 `opencode-google`），所以它们**不再被剔除**——插件曾经没有对应协议，现在有了。真正会被剔除的是 `@ai-sdk/mistral` 的那一个：它的方言网关怎么回答还没有测过，所以宁可不提供，也不送它去一个凭空想出来的地方。
+- **永远不会提供跑不通的模型。** 那些 `@ai-sdk/google` 模型由插件自己的适配器服务（路由 `opencode-google`），所以它们**不再被剔除**——插件曾经没有对应协议，现在有了。真正会被剔除的是 `@ai-sdk/mistral` 的那一个：它的方言网关怎么回答还没有测过，所以宁可不提供，也不送它去一个凭空想出来的地方。
 - **一份凭据。** 所有路由模型共用你已配置的 `opencode` key，经凭据服务解析，**不会重新问你要**。
 
 **如果你更想自己声明路由**：`opencode-responses`（以及你用上 Anthropic 平面模型后的 `opencode-anthropic`）可以写进 profile 的 `llm-pi-ai` `providers` 块里，并列出它服务的模型。声明是一个选择，不是要求：
