@@ -306,7 +306,30 @@ export const complementDiscoveredModels = (
 };
 
 /** What the wrapper reads from the route claim. */
-export type DiscoveryClaim = Pick<RouteClaim, "claiming" | "piAiNamespace">;
+export type DiscoveryClaim = Pick<
+  RouteClaim,
+  "claiming" | "piAiNamespace" | "steppedAside" | "wouldTake"
+>;
+
+/**
+ * Whether a discovery request names a plane pi-ai answers for another plugin
+ * (D27): one the route claim stepped aside for, on any namespace, or one the
+ * claim would not take on the row it serves (a row in a foreign realm), even
+ * before that row declares it. pi-ai serves such an entry with its own
+ * adapter and judges its save, so its answer — a list, or `NO_DISCOVERY`
+ * while pi-ai restarts — is pi-ai's alone. Read per call, as the claim's
+ * accessors are.
+ */
+const isSteppedAside = (
+  settingsNs: unknown,
+  request: unknown,
+  claim: DiscoveryClaim
+): boolean =>
+  isRecord(request) &&
+  isPlaneRoute(request.provider) &&
+  (claim.steppedAside().has(request.provider) ||
+    (settingsNs === claim.piAiNamespace() &&
+      !claim.wouldTake(request.provider)));
 
 /**
  * The catalog plane a discovery request is complemented from, or `undefined`.
@@ -319,7 +342,9 @@ export type DiscoveryClaim = Pick<RouteClaim, "claiming" | "piAiNamespace">;
  * Anywhere else — after a stand-down, once a served row's restart has
  * settled still holding a plane (a call shape the claim's listener does not
  * speak), or on a second pi-ai row serving its own planes — pi-ai refuses at
- * save an id it does not list, so offering one would offer a refusal.
+ * save an id it does not list, so offering one would offer a refusal. A
+ * plane the claim stepped aside for, or one it would not take on the served
+ * row (D27), never reaches here: the wrapper hands it to pi-ai before it asks.
  */
 const servedPlane = (
   settingsNs: unknown,
@@ -342,6 +367,9 @@ const servedPlane = (
  * plugin serves offers the catalog's models pi does not list (D3), and answers
  * the catalog alone while pi-ai restarts instead of `NO_DISCOVERY`.
  *
+ * A plane the route claim stepped aside for, or would not take on the row it
+ * serves (D27), is another plugin's, which pi-ai serves: its answer passes
+ * through untouched, `NO_DISCOVERY` included.
  * Any other request the plugin can classify keeps the enrich-only merge, and
  * everything else passes through. The original method keeps ownership of every
  * other error and of cancellation. The returned disposer restores it.
@@ -375,6 +403,11 @@ export const decorateModelDiscovery = (
         request?: unknown,
         signal?: unknown
       ): Promise<unknown> {
+        if (isSteppedAside(settingsNs, request, claim)) {
+          // pi-ai's own answer, untouched: no complement, no merge, and its
+          // NO_DISCOVERY during a restart rejects as the host sent it.
+          return Reflect.apply(discover, this, [settingsNs, request, signal]);
+        }
         const plane = servedPlane(settingsNs, request, claim);
         let discovered: unknown;
         try {

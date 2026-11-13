@@ -92,34 +92,50 @@ const imageCountBounds = (
   };
 };
 
-/** A plane-copy of a raw config: never the input, never mutated. */
-export const withoutPlaneProviders = (raw: unknown): unknown => {
+/**
+ * A copy of a raw config without the given plane entries (by default both):
+ * never the input, never mutated. The claim passes the planes it TAKES, so an
+ * entry it leaves to pi-ai (`utils/plane-ownership.ts`) stays in pi-ai's copy.
+ */
+export const withoutPlaneProviders = (
+  raw: unknown,
+  planes: readonly PlaneRoute[] = PLANE_ROUTES
+): unknown => {
   if (!isRecord(raw) || !isRecord(raw.providers)) {
     return isRecord(raw) ? { ...raw } : raw;
   }
-  const { opencode: _zen, "opencode-go": _go, ...rest } = raw.providers;
-  return { ...raw, providers: { ...rest } };
+  const stripped: readonly string[] = planes;
+  return {
+    ...raw,
+    providers: Object.fromEntries(
+      Object.entries(raw.providers).filter(([key]) => !stripped.includes(key))
+    ),
+  };
 };
 
-/** Whether a raw config declares either plane. */
-export const hasPlaneEntries = (raw: unknown): boolean => {
+/** Whether a raw config declares any of the given planes (by default either). */
+export const hasPlaneEntries = (
+  raw: unknown,
+  planes: readonly PlaneRoute[] = PLANE_ROUTES
+): boolean => {
   const providers: unknown = isRecord(raw) ? raw.providers : undefined;
   return (
     isRecord(providers) &&
-    PLANE_ROUTES.some((plane) => Object.hasOwn(providers, plane))
+    planes.some((plane) => Object.hasOwn(providers, plane))
   );
 };
 
-/** The declared planes of a raw config, by route. */
+/** The declared planes of a raw config, by route, limited to the given ones. */
 export const planeEntriesOf = (
-  raw: unknown
+  raw: unknown,
+  planes: readonly PlaneRoute[] = PLANE_ROUTES
 ): Partial<Record<PlaneRoute, unknown>> => {
   const out: Partial<Record<PlaneRoute, unknown>> = {};
   if (!isRecord(raw) || !isRecord(raw.providers)) {
     return out;
   }
   for (const plane of PLANE_ROUTES) {
-    if (Object.hasOwn(raw.providers, plane)) {
+    if (planes.includes(plane) && Object.hasOwn(raw.providers, plane)) {
       out[plane] = raw.providers[plane];
     }
   }

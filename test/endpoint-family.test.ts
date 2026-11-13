@@ -11,13 +11,25 @@
  * also moves the copy, `TODAY_DISPATCH`, the bases pinned here and the
  * re-tagged wire facets (`docs/redirect-planes.md` §13), and this file turns
  * red until they move together. `endpoint: legacy` is recorded, not guarded,
- * on the live gateway; these pins are what guard its mapping.
+ * on the live gateway; these pins are what guard its mapping. The setting
+ * moves only the planes the route claim takes: a plane entry another plugin
+ * owns (D27) is pi-ai's, and leaves at the URL pi-ai alone sends under every
+ * setting (the last block, on a tier-A host).
  *
  * @module test/endpoint-family.test
  */
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  drainStream,
+  fakeCredentials,
+  mountTierA,
+  recordingFetch,
+  type RecordingFetch,
+  type TierA,
+  waitForPlaneOwner,
+} from "./support/host.ts";
 import {
   cellKey,
   keylessMatrix,
@@ -252,3 +264,98 @@ describe("endpoint family · what a turn reaches", () => {
     }
   });
 });
+
+describe(
+  "endpoint family · a plane another plugin owns (D27)",
+  { timeout: 30_000 },
+  () => {
+    /** A model pi's own catalog serves on both planes, on completions. */
+    const MODEL = "deepseek-v4-pro";
+    /** The marker a vendor's setup writes on each route it owns. */
+    const MARKED = {
+      apiKeyEnv: "OPENCODE_GO_API_KEY",
+      headers: { "x-opencode-plugin": "console-fixture/0.0.0" },
+      models: [{ id: MODEL }],
+    };
+    const PLAIN = { apiKeyEnv: "OPENCODE_API_KEY", models: [{ id: MODEL }] };
+
+    /** The hosts this block mounted, disposed after each case. */
+    const mounted: TierA[] = [];
+    const release = async (): Promise<void> => {
+      try {
+        for (const tier of mounted.splice(0)) {
+          // oxlint-disable-next-line no-await-in-loop -- one host at a time, as each was mounted
+          await tier.dispose();
+        }
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    };
+    afterEach(release);
+
+    /** The gateway URL one turn on `route` is sent to, the catalog read excluded. */
+    const sentUrl = async (
+      host: { readonly tier: TierA; readonly wire: RecordingFetch },
+      route: string
+    ): Promise<string | undefined> => {
+      const before = host.wire.requests.length;
+      await drainStream(host.tier.llm, route, MODEL);
+      const sent = host.wire.requests
+        .slice(before)
+        .filter(
+          (request) => !request.url.startsWith("https://models.opencode.ai/")
+        );
+      expect(sent, route).toHaveLength(1);
+      return sent[0]?.url;
+    };
+
+    /** Mount pi-ai, and the plugin under `endpoint` unless it is `undefined`. */
+    const mount = async (
+      endpoint: EndpointChoice | undefined
+    ): Promise<{ readonly tier: TierA; readonly wire: RecordingFetch }> => {
+      const wire = recordingFetch();
+      vi.stubGlobal("fetch", wire.fetch);
+      const tier = await mountTierA({
+        credentials: fakeCredentials({
+          refs: { OPENCODE_API_KEY: "zen-k", OPENCODE_GO_API_KEY: "go-k" },
+        }),
+        ...(endpoint === undefined ? {} : { plugin: { endpoint } }),
+        providers: { opencode: PLAIN, "opencode-go": MARKED },
+      });
+      mounted.push(tier);
+      if (endpoint !== undefined) {
+        await waitForPlaneOwner(tier.llm, ["opencode"]);
+      }
+      await waitForPlaneOwner(tier.llm, ["opencode-go"], "PiAiAdapter");
+      return { tier, wire };
+    };
+
+    it.each([DEFAULT_ENDPOINT_FAMILY, "modern", "legacy"] as const)(
+      "endpoint: %s moves the plane the claim takes and leaves the marked one at the URL pi-ai alone sends",
+      async (endpoint) => {
+        // The known answer: pi-ai alone, no plugin mounted.
+        const alone = await sentUrl(await mount(undefined), "opencode-go");
+        expect(alone).toBeDefined();
+        await release();
+
+        const host = await mount(endpoint);
+        // The plane the claim takes follows the setting: the completions
+        // cell of the family it names.
+        const family = endpoint === "auto" ? AUTO_ENDPOINT_FAMILY : endpoint;
+        expect(await sentUrl(host, "opencode")).toBe(
+          matrixUrl("opencode", "openai-completions", family, MODEL)
+        );
+        // The marked plane does not: pi-ai serves it as it would alone.
+        expect(await sentUrl(host, "opencode-go")).toBe(alone);
+      }
+    );
+
+    it("the case above can see a move: what pi-ai alone sends for the marked plane is not the legacy cell `endpoint: legacy` would send it to", async () => {
+      const alone = await sentUrl(await mount(undefined), "opencode-go");
+      expect(alone).toBeDefined();
+      expect(alone).not.toBe(
+        matrixUrl("opencode-go", "openai-completions", "legacy", MODEL)
+      );
+    });
+  }
+);

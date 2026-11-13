@@ -14,6 +14,12 @@ import { getAsyncIterator } from "./utils/guards.ts";
 
 /** What one active streamed turn contributes to outgoing requests. */
 export interface ActiveTurnState {
+  /**
+   * A turn on a plane pi-ai serves for another plugin (D27): every request it
+   * issues is that plugin's, and the fetch patch passes it through untouched,
+   * whatever its URL. No other field is read for such a turn.
+   */
+  foreign?: true;
   model?: string;
   parentValue?: string;
   project?: string;

@@ -58,6 +58,9 @@ describe("route-claim · standing down", () => {
     expect(claim.committedEntries()).toEqual({});
     expect(claim.piAiNamespace()).toBe("llm-pi-ai");
     expect(claim.claiming()).toBe(false);
+    // No row is judged, so none is foreign: discovery keeps its merge.
+    expect(claim.wouldTake("opencode")).toBe(true);
+    expect([...claim.steppedAside()]).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("offers no on, inject, effect")
     );

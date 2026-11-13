@@ -292,6 +292,14 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // Which plane entries the claim takes and which it leaves to another
+        // plugin (D27): every branch is a realm or a marker reading.
+        "src/utils/plane-ownership.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         "src/utils/plane-profile.ts": {
           statements: 100,
           branches: 100,
