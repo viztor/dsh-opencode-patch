@@ -63,7 +63,11 @@
  *   declaring a plane, so the previous one never has a stripped plane to take
  *   back — the previous one's handle and profiles are dropped first, and a new
  *   served row already holding a plane is restarted once it settles, as the
- *   mount does.
+ *   mount does. A live change of the served row's `isolate` alone, which
+ *   swaps its realm map with no config run (D27), is reconciled the same
+ *   way: a plane pi-ai resolved stripped and now keeps is released and pi-ai
+ *   restarted once it settles; a plane it resolved holding and the claim now
+ *   takes restarts it. Each restart is asked once per need.
  * - **Mount.** Inside `apply`'s promise, never on a timer: when pi-ai applied
  *   first and already holds a plane, wait for it to settle and restart it
  *   once, so it re-resolves through the listener (F17) — unless the host's
@@ -275,6 +279,13 @@ export const installRouteClaim = (
     served: undefined as HostFiber | undefined,
     /** The stepped-aside entries already reported, per row (`<plane>:<reason>`). */
     reportedAside: new WeakMap<HostFiber, Set<string>>(),
+    /**
+     * The restart the claim last asked of a row, by what it was for
+     * (`take:<planes>` or `give:<planes>`), so a row whose shape does not
+     * change is never restarted twice for it. Cleared once the row holds
+     * exactly what it should.
+     */
+    restartAsked: new WeakMap<HostFiber, string>(),
     /** Rows serving a plane themselves that were already reported. */
     warnedHolders: new WeakSet<HostFiber>(),
     warnedUnavailable: false,
@@ -325,6 +336,19 @@ export const installRouteClaim = (
   const heldPlanes = (fiber: HostFiber): PlaneRoute[] => {
     const taken = takenOf(fiber);
     return resolvedPlanes(fiber).filter((plane) => taken.includes(plane));
+  };
+
+  /**
+   * The planes a fiber's raw config leaves to pi-ai (D27) that its RESOLVED
+   * config lacks: stripped while the claim still took them, before a change
+   * that touched no config (a live edit of the row's `isolate` alone) made
+   * them another plugin's. pi-ai registers them only once it re-resolves.
+   */
+  const lentPlanes = (fiber: HostFiber): PlaneRoute[] => {
+    const held = resolvedPlanes(fiber);
+    return [
+      ...steppedAsidePlanes(rawConfigOf(fiber), foreignRealmOf(fiber)).keys(),
+    ].filter((plane) => !held.includes(plane));
   };
 
   const missing = ["on", "inject", "effect"].filter(
@@ -504,11 +528,15 @@ export const installRouteClaim = (
   };
 
   /**
-   * Restart a served pi-ai that resolved holding a plane, once it settles, so
-   * it re-resolves through the listener and the planes become the plugin's
-   * (the mount's restart, and a handover's).
+   * Restart the served pi-ai once it settles, if `still` holds of it then:
+   * recorded under `key` first, so the same need never asks twice.
    */
-  const restartHolder = async (fiber: HostFiber): Promise<void> => {
+  const restartServed = async (
+    fiber: HostFiber,
+    key: string,
+    still: (fiber: HostFiber) => boolean
+  ): Promise<void> => {
+    state.restartAsked.set(fiber, key);
     try {
       await fiber.await?.();
     } catch {
@@ -519,10 +547,59 @@ export const installRouteClaim = (
       fiber === servedRow() &&
       fiber.uid !== null &&
       fiber.state === ACTIVE &&
-      heldPlanes(fiber).length > 0
+      still(fiber)
     ) {
       await fiber.restart?.();
     }
+  };
+
+  const takeKey = (fiber: HostFiber): string =>
+    `take:${heldPlanes(fiber).join(",")}`;
+  const giveKey = (fiber: HostFiber): string =>
+    `give:${lentPlanes(fiber).join(",")}`;
+
+  /**
+   * Restart a served pi-ai that resolved holding a plane, once it settles, so
+   * it re-resolves through the listener and the planes become the plugin's
+   * (the mount's restart, a handover's, and a reconcile's after a live
+   * change made a plane it holds one the claim takes).
+   */
+  const restartHolder = (fiber: HostFiber): Promise<void> =>
+    restartServed(
+      fiber,
+      takeKey(fiber),
+      (settled) => heldPlanes(settled).length > 0
+    );
+
+  /**
+   * Restart a served pi-ai that resolved without a plane it now keeps, once
+   * it settles, so it re-resolves and registers it. Run only after the
+   * plugin released the plane: pi-ai's registration would otherwise meet
+   * the plugin's (DUPLICATE_ADAPTER fails pi-ai and every route it holds).
+   */
+  const restartLender = (fiber: HostFiber): Promise<void> =>
+    restartServed(
+      fiber,
+      giveKey(fiber),
+      (settled) => lentPlanes(settled).length > 0
+    );
+
+  /** Ask a restart in the background, once per need, reporting a failure. */
+  const askRestart = (
+    fiber: HostFiber,
+    key: string,
+    restart: (fiber: HostFiber) => Promise<void>
+  ): void => {
+    if (state.restartAsked.get(fiber) === key) {
+      return;
+    }
+    void (async () => {
+      try {
+        await restart(fiber);
+      } catch (error) {
+        warn("pi-ai did not restart to move the plane routes", error);
+      }
+    })();
   };
 
   /** The once-only report that the host's modules cannot be read. */
@@ -672,11 +749,18 @@ export const installRouteClaim = (
       register();
       return;
     }
+    const lent = lentPlanes(pi);
     if (heldPlanes(pi).length > 0) {
-      // pi-ai still holds a plane it resolved before the listener existed;
-      // the mount's or the handover's restart moves it, and its registry
-      // change brings us back.
+      // pi-ai holds a plane the claim takes: one it resolved before the
+      // listener existed (the mount's or the handover's restart moves it), or
+      // one a live change of its row's realm alone made the claim's again,
+      // which no config run follows. Either way a restart moves it, once, and
+      // its registry change brings us back.
+      askRestart(pi, takeKey(pi), restartHolder);
       return;
+    }
+    if (lent.length === 0) {
+      state.restartAsked.delete(pi);
     }
     if (state.pendingDuplicate) {
       state.pendingDuplicate = false;
@@ -708,6 +792,12 @@ export const installRouteClaim = (
       return;
     }
     register();
+    if (lent.length > 0) {
+      // A plane the claim no longer takes, which pi-ai resolved without (its
+      // row's realm changed and nothing else did): the registration above
+      // released it, so pi-ai is restarted to register it.
+      askRestart(pi, giveKey(pi), restartLender);
+    }
   };
 
   const reconcileReported = async (): Promise<void> => {

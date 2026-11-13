@@ -572,6 +572,178 @@ describe(
 );
 
 describe(
+  "host planes · a live change of pi-ai's realm alone moves its planes (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    /** The user's own key, as the process-wide service answers it. */
+    const USER_KEY = "zen-k";
+
+    /**
+     * Boot with the realm's credentials row in place and pi-ai's row inside
+     * the realm or outside it, declaring `opencode` under the user's own
+     * reference. The realm answers that reference with its own token, so the
+     * wire says which realm resolved a turn.
+     */
+    const bootIsolable = async (
+      order: ApplyOrder,
+      isolated: boolean
+    ): Promise<{
+      tier: TierB;
+      restarts: () => number;
+      logged: () => string[];
+    }> => {
+      offline();
+      let restarts: ReturnType<typeof piAiRestarts> | undefined;
+      let log: ReturnType<typeof logLines> | undefined;
+      const patch = [
+        {
+          insert: [
+            {
+              id: "realm-credentials",
+              isolate: { credentials: REALM },
+              name: REALM_PLUGIN_PACKAGE,
+            },
+          ],
+        },
+        {
+          config: { providers: { opencode: plain("OPENCODE_API_KEY") } },
+          id: "llm-pi-ai",
+          ...(isolated ? { isolate: { credentials: REALM } } : {}),
+        },
+      ];
+      tierB = await bootTierB({
+        credentials: fakeCredentials({
+          refs: { OPENCODE_API_KEY: USER_KEY },
+        }),
+        order,
+        prepare: (root) => {
+          restarts = piAiRestarts(root);
+          log = logLines(root);
+        },
+        profilePatchYaml: `${JSON.stringify(patch, null, 2)}\n`,
+        realm: {
+          credentials: fakeCredentials({
+            refs: { OPENCODE_API_KEY: TOKEN },
+          }),
+          label: REALM,
+        },
+      });
+      return {
+        logged: () => log?.lines() ?? [],
+        restarts: () => restarts?.count() ?? 0,
+        tier: tierB,
+      };
+    };
+
+    /** Change pi-ai's row's `isolate` and nothing else, as a live edit does. */
+    const isolatePiAi = async (
+      tier: TierB,
+      isolate: Record<string, unknown> | null
+    ): Promise<void> => {
+      await tier.piEntry.update({ isolate } as never);
+      await settle();
+    };
+
+    it.each(APPLY_ORDERS)(
+      "%s: isolating pi-ai's row into a realm the plugin does not share hands the plane to pi-ai, which serves it with the realm's key",
+      async (order) => {
+        const { logged, restarts, tier } = await bootIsolable(order, false);
+        await waitForPlaneOwner(tier.llm, ["opencode"]);
+        await settle();
+        const ours = await turn(tier.llm, "opencode");
+        expect(ours.requests).toHaveLength(1);
+        expect(ours.requests[0]?.headers.authorization).toBe(
+          `Bearer ${USER_KEY}`.length
+        );
+        const before = restarts();
+
+        await isolatePiAi(tier, { credentials: REALM });
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+        expect(resolvedPlanes(tier.piFiber)).toEqual(["opencode"]);
+        // One restart, so pi-ai re-resolves with the plane it now keeps.
+        expect(restarts() - before).toBe(1);
+        expect(steppedAsideLines(logged())).toEqual([
+          expect.stringContaining(REALM),
+        ]);
+        const theirs = await turn(tier.llm, "opencode");
+        expect(theirs.requests).toHaveLength(1);
+        expect(theirs.drained.finish?.code).not.toBe("NO_ADAPTER");
+        expect(theirs.requests[0]?.headers.authorization).toBe(
+          `Bearer ${TOKEN}`.length
+        );
+        for (const header of OURS) {
+          expect(theirs.requests[0]?.headers).not.toHaveProperty(header);
+        }
+      }
+    );
+
+    it.each(APPLY_ORDERS)(
+      "%s: taking pi-ai's row out of the realm hands the plane to the plugin, which serves it with the user's key",
+      async (order) => {
+        const { restarts, tier } = await bootIsolable(order, true);
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+        await settle();
+        const theirs = await turn(tier.llm, "opencode");
+        expect(theirs.requests[0]?.headers.authorization).toBe(
+          `Bearer ${TOKEN}`.length
+        );
+        const before = restarts();
+
+        await isolatePiAi(tier, null);
+        await waitForPlaneOwner(tier.llm, ["opencode"]);
+        expect(resolvedPlanes(tier.piFiber)).toEqual([]);
+        expect(restarts() - before).toBe(1);
+        const ours = await turn(tier.llm, "opencode");
+        expect(ours.requests).toHaveLength(1);
+        expect(ours.requests[0]?.headers.authorization).toBe(
+          `Bearer ${USER_KEY}`.length
+        );
+        expect(ours.requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
+      }
+    );
+
+    it.each(APPLY_ORDERS)(
+      "%s: a row whose reason changes says so again: marked entries isolated into a realm are reported once more, by the realm, and stay pi-ai's",
+      async (order) => {
+        const { logged, restarts, tier } = await bootRealm({
+          order,
+          providers: { opencode: marked(), "opencode-go": marked() },
+          realm: false,
+        });
+        await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
+        await settle();
+        const byMarker = steppedAsideLines(logged());
+        expect(byMarker).toHaveLength(2);
+        expect(
+          byMarker.every((line) => line.includes("x-opencode-plugin"))
+        ).toBe(true);
+        const before = restarts();
+
+        await isolatePiAi(tier, { credentials: REALM });
+        const lines = steppedAsideLines(logged());
+        expect(lines).toHaveLength(4);
+        for (const plane of PLANES) {
+          expect(
+            lines
+              .slice(2)
+              .filter(
+                (line) =>
+                  line.includes(`leaves the route ${plane} to pi-ai`) &&
+                  line.includes(REALM)
+              )
+          ).toHaveLength(1);
+        }
+        expect(restarts()).toBe(before);
+        expect(PLANES.map((plane) => ownerOf(tier.llm, plane))).toEqual([
+          "PiAiAdapter",
+          "PiAiAdapter",
+        ]);
+      }
+    );
+  }
+);
+
+describe(
   "host planes · the realm is the one each row RESOLVES, a group's included (tier B, D27)",
   { timeout: 30_000 },
   () => {
