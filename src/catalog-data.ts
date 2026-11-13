@@ -175,7 +175,7 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     id: "deepseek-v4.1-flash",
     input_modalities: ["text", "image"],
     max_output_tokens: 384_000,
-    name: "DeepSeek V4.1 Flash",
+    name: "DeepSeek V4.1 Flash 1017",
     reasoning: true,
     reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
   },
@@ -405,6 +405,21 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     input_modalities: ["text"],
     max_output_tokens: 131_072,
     name: "LongCat-2.0",
+    reasoning: true,
+    reasoning_options: [{ type: "toggle" }],
+  },
+  {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "longcat-2.5-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 262_144,
+    name: "LongCat 2.5 Free",
     reasoning: true,
     reasoning_options: [{ type: "toggle" }],
   },
@@ -668,6 +683,24 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     ],
   },
   {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0.2,
+      cache_write: 10,
+      input: 8,
+      output: 40,
+    },
+    id: "claude-fable-5-2",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 128_000,
+    name: "Claude Fable 5.2",
+    provider_npm: "@ai-sdk/anthropic",
+    reasoning: true,
+    reasoning_options: [
+      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+    ],
+  },
+  {
     context_window: 200_000,
     cost: {
       cache_read: 0.1,
@@ -868,7 +901,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
   {
     context_window: 1_000_000,
     cost: {
-      cache_read: 0.2,
+      cache_read: 0.1,
       cache_write: 2.5,
       input: 2,
       output: 10,
@@ -881,26 +914,6 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     reasoning: true,
     reasoning_options: [
       { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
-    ],
-  },
-  {
-    context_window: 1_048_576,
-    cost: {
-      cache_read: 0,
-      input: 0,
-      output: 0,
-    },
-    id: "crouton-alpha-free",
-    input_modalities: ["text", "image"],
-    is_free: true,
-    max_output_tokens: 270_000,
-    name: "Crouton Alpha Free",
-    reasoning: true,
-    reasoning_options: [
-      {
-        type: "effort",
-        values: ["minimal", "low", "medium", "high", "xhigh", "max"],
-      },
     ],
   },
   {
@@ -930,7 +943,7 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     id: "deepseek-v4.1-flash",
     input_modalities: ["text", "image"],
     max_output_tokens: 384_000,
-    name: "DeepSeek V4.1 Flash",
+    name: "DeepSeek V4.1 Flash 1017",
     reasoning: true,
     reasoning_options: [
       { type: "toggle" },
@@ -1041,9 +1054,9 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
   {
     context_window: 1_048_576,
     cost: {
-      cache_read: 0.15,
-      input: 1.5,
-      output: 7.5,
+      cache_read: 0.075,
+      input: 0.75,
+      output: 3.75,
     },
     id: "gemini-3.6-flash",
     input_modalities: ["text", "image"],
@@ -1058,9 +1071,9 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
   {
     context_window: 1_048_576,
     cost: {
-      cache_read: 0.15,
-      input: 1.5,
-      output: 7.5,
+      cache_read: 0.075,
+      input: 0.75,
+      output: 3.75,
     },
     id: "gemini-3.7-flash",
     input_modalities: ["text", "image"],
@@ -1073,9 +1086,9 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
   {
     context_window: 1_048_576,
     cost: {
-      cache_read: 0.15,
-      input: 1.5,
-      output: 7.5,
+      cache_read: 0.075,
+      input: 0.75,
+      output: 3.75,
     },
     id: "gemini-3.8-flash",
     input_modalities: ["text", "image"],
@@ -1096,6 +1109,21 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     input_modalities: ["text", "image"],
     max_output_tokens: 65_536,
     name: "Gemini 4 Argon",
+    provider_npm: "@ai-sdk/google",
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0.1,
+      input: 2,
+      output: 10,
+    },
+    id: "gemini-4-carbon",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 65_536,
+    name: "Gemini 4 Carbon",
     provider_npm: "@ai-sdk/google",
     reasoning: true,
     reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
@@ -1675,6 +1703,41 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
   {
     context_window: 262_144,
     cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "iceman-free",
+    input_modalities: ["text"],
+    is_free: true,
+    max_output_tokens: 131_072,
+    name: "Iceman Free",
+    reasoning: true,
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0,
+      cache_write: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "inkling-2-small-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 131_072,
+    name: "Inkling 2 Small Free",
+    reasoning: true,
+    reasoning_options: [
+      {
+        type: "effort",
+        values: ["none", "minimal", "low", "medium", "high", "max"],
+      },
+    ],
+  },
+  {
+    context_window: 262_144,
+    cost: {
       cache_read: 0.1,
       input: 0.6,
       output: 3,
@@ -1732,6 +1795,21 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     ],
   },
   {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "longcat-2.5-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 262_144,
+    name: "LongCat 2.5 Free",
+    reasoning: true,
+    reasoning_options: [{ type: "toggle" }],
+  },
+  {
     context_window: 200_000,
     cost: {
       cache_read: 0,
@@ -1786,6 +1864,23 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     reasoning_options: [{ type: "toggle" }],
   },
   {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "minimax-m3.1-flash-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 512_000,
+    name: "MiniMax M3.1 Flash Free",
+    reasoning: true,
+    reasoning_options: [
+      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+    ],
+  },
+  {
     context_window: 524_288,
     cost: {
       cache_read: 0.07,
@@ -1799,6 +1894,27 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     provider_npm: "@ai-sdk/mistral",
     reasoning: true,
     reasoning_options: [{ type: "effort", values: ["none", "high"] }],
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0.004,
+      cache_write: 0,
+      input: 0.1,
+      output: 0.5,
+    },
+    id: "muse-ember-1.0",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 270_000,
+    name: "Muse Ember 1.0",
+    provider_npm: "@ai-sdk/openai",
+    reasoning: true,
+    reasoning_options: [
+      {
+        type: "effort",
+        values: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      },
+    ],
   },
   {
     context_window: 1_048_576,
@@ -1887,21 +2003,6 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
         values: ["none", "minimal", "low", "medium", "high", "xhigh"],
       },
     ],
-  },
-  {
-    context_window: 1_048_576,
-    cost: {
-      cache_read: 0,
-      input: 0,
-      output: 0,
-    },
-    id: "pulse-alpha-free",
-    input_modalities: ["text", "image"],
-    is_free: true,
-    max_output_tokens: 131_072,
-    name: "Pulse Alpha Free",
-    reasoning: true,
-    reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
   },
   {
     context_window: 262_144,

@@ -553,6 +553,27 @@ describe("freshness scope · the CI wiring, parsed", () => {
           ),
         }) === true;
 
+  it("the checkout keeps no credential, so the nightly refresh pushes as the token's owner", () => {
+    // actions/checkout persists GITHUB_TOKEN as an http extraheader (v7 writes
+    // it to a credentials file the repository config includes), and git sends
+    // that header ahead of the token named in a push URL. The nightly refresh
+    // then lands as github-actions[bot], and its pull request's own CI waits
+    // in action_required for a human: measured on the 2026-11-06 and
+    // 2026-11-12 refreshes. No other step in this job needs a git credential:
+    // the scope step diffs local commits and gh reads GH_TOKEN.
+    const checkout = steps.find((step) =>
+      step.uses?.startsWith("actions/checkout@")
+    );
+    expect(checkout?.with?.["persist-credentials"]).toBe(false);
+    // Known answer: the one step that pushes names its credential itself.
+    const propose = steps.find(
+      (step) => step.name === "propose the refresh (nightly only)"
+    );
+    expect(propose?.run).toMatch(
+      /https:\/\/x-access-token:\$\{GH_TOKEN\}@github\.com\//u
+    );
+  });
+
   it("read the job: the checkout reaches the base, and the scope step decides each check", () => {
     expect(steps.length).toBeGreaterThan(5);
     const checkout = steps.find((step) =>

@@ -336,6 +336,78 @@ describe("discoverGoConfig: which entry the credential comes from", () => {
   });
 });
 
+describe("discoverGoConfig: another plugin's entry is never read (D27)", () => {
+  const MARKER = { "x-opencode-plugin": "vendor/1.0.0" };
+
+  it("passes over a marked route for the user's own one beside it, and reads the marked one's sibling, never the marked one", () => {
+    const entries: unknown[] = [
+      registry({
+        opencode: {
+          apiKeyEnv: "OWN_ZEN_KEY",
+          baseURL: "https://opencode.ai/zen/v1",
+        },
+        "opencode-go": {
+          apiKey: "vendor-literal",
+          apiKeyEnv: "VENDOR_TOKEN",
+          baseURL: "https://opencode.ai/workspace/v1",
+          headers: MARKER,
+        },
+      }),
+    ];
+    expect(discoverGoConfig(composition(entries))).toEqual({
+      baseURL: "https://opencode.ai/zen/v1",
+      keyEnv: "OWN_ZEN_KEY",
+    });
+    // The targeted route, when marked, is not read either.
+    expect(discoverGoConfig(composition(entries), "opencode-go")).toEqual({
+      baseURL: "https://opencode.ai/zen/v1",
+      keyEnv: "OWN_ZEN_KEY",
+    });
+  });
+
+  it("skips a row in a credentials realm the context does not share, and a marked standalone entry; the same rows unisolated and unmarked are read (the known answer)", () => {
+    const isolated = {
+      options: {
+        config: { providers: { "opencode-go": { apiKeyEnv: "VENDOR_TOKEN" } } },
+        isolate: { credentials: "vendor" },
+      },
+    };
+    const markedStandalone = standaloneEntry({
+      config: { apiKeyEnv: "VENDOR_TOKEN", headers: MARKER },
+      id: "opencode-go",
+    });
+    expect(discoverGoConfig(composition([isolated, markedStandalone]))).toEqual(
+      {}
+    );
+    expect(
+      discoverGoConfig(
+        composition([
+          registryEntry("opencode-go", { apiKeyEnv: "OWN_GO_KEY" }),
+          standaloneEntry({
+            config: { apiKeyEnv: "OWN_TOO" },
+            id: "opencode-go",
+          }),
+        ])
+      )
+    ).toEqual({ keyEnv: "OWN_TOO" });
+  });
+
+  it("reads the context's own side safely: a context whose fields throw still discovers", () => {
+    const ctx = new Proxy(
+      composition([registryEntry("opencode-go", { apiKeyEnv: "K" })]) as object,
+      {
+        get: (target, key) => {
+          if (key === "fiber" || key === "root") {
+            throw new Error("cannot get property without inject");
+          }
+          return Reflect.get(target, key);
+        },
+      }
+    );
+    expect(discoverGoConfig(ctx)).toEqual({ keyEnv: "K" });
+  });
+});
+
 describe("discoverGoConfig: the provider row's own fields", () => {
   it("reads the three declared fields the row may carry", () => {
     // `apiKeyEnv` is the reference, `apiKey` the literal secret, `baseURL` the

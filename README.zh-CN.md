@@ -148,7 +148,7 @@ npm install dsh-opencode-patch
 
 ### 2. OpenCode Go (`provider: opencode-go`) — 订阅额度
 
-- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Chat Completions**（`https://opencode.ai/inference/go/openai/v1/chat/completions`）：`beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `longcat-2.5-free`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
 - **OpenAI Responses**（`https://opencode.ai/inference/go/openai/v1/responses`）：`gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
 - **Anthropic Messages**（`https://opencode.ai/inference/go/anthropic/v1/messages`）：`claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - **Google Generative AI**（`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`）：`gemini-4-argon`，支持图片附件和带签名的工具调用回放。Go 没有旧版 Google 接口，因此两个家族都使用这一个地址。
@@ -160,13 +160,13 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 |
 | :-- | --: | :-- |
-| _（缺失）_ | 24 | OpenAI Chat Completions |
-| `@ai-sdk/openai` | 31 | OpenAI Responses |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages |
-| `@ai-sdk/google` | 8 | Google Generative AI |
+| _（缺失）_ | 27 | OpenAI Chat Completions |
+| `@ai-sdk/openai` | 32 | OpenAI Responses |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages |
+| `@ai-sdk/google` | 9 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions（与 pi 自己的数据一致） |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 82 个**在用**模型，统计于 2026-11-04 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 82 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
+数量为 `models.opencode.ai` 中 `opencode` 的 87 个**在用**模型，统计于 2026-11-12 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 87 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
 
 由此有四条性质：
 
@@ -393,6 +393,18 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **它服务不了的 id 会从输入框的模型列表中消失。** 也就是它内置目录未描述的 id——目录未知的 id，或比它的 pi 更新的模型。
 - **在删除这些 id 之前，对该平面的下一次设置编辑会被拒绝**，因为 `llm-pi-ai` 每次保存都会校验整个平面条目。把这些 id 从平面的模型列表中删掉，编辑即可通过。
 
+## 与 OpenCode Console 同时安装
+
+OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harness`）也能服务 `opencode` 与 `opencode-go`。它的安装步骤会把 `llm-pi-ai` 的配置行放进它自己的凭据域（realm），用工作区令牌（`apiKeyEnv: OPENCODE_CONSOLE_TOKEN`）把工作区的路由写进去，并给每条路由加上 `x-opencode-plugin` 请求头作为标记。本插件读不到那个凭据域，所以它让开，而不是去服务这些路由：
+
+- **Console 写入的每个平面都由 `llm-pi-ai` 用 Console 的凭据服务。** 当 `llm-pi-ai` 的配置行在本插件不解析凭据的凭据域中解析凭据（分组的 `isolate` 对分组内的每一行都算数），或者平面条目带有 `x-opencode-plugin` 请求头时，该平面就留给它。你自己的、未加标记且不在这类凭据域中的平面条目，仍由本插件服务。
+- **本插件不碰这些流量。** 不加会话或来源请求头，不改 User-Agent，不补密钥，不捕获密钥，不做工具回退，计量也不统计这些回合：这类平面上的回合原样按 `llm-pi-ai` 发出的样子发出，无论是凭据域还是请求头让它留给 `llm-pi-ai`。
+- **计量从不读取 Console 的路由。** 它的 Go 密钥和端点来自你自己的条目，或来自 `OPENCODE_GO_API_KEY` 与默认端点；Console 路由的密钥引用、其背后的令牌和它的基础地址都不会被使用，即使该令牌已导出到环境中。
+- **在设置中添加或移除该请求头会立即转移路由**，无需重启：添加时交给 `llm-pi-ai`，移除时交回本插件。把 `llm-pi-ai` 的配置行移入或移出这类凭据域也会同样转移它的路由，只需重启一次 `llm-pi-ai`。
+- **清理按钮不碰 Console 的路由。** 它只改写你自己的平面条目；没有你自己的条目时，它会说明无可清理，且不写入任何内容。
+- **日志对每条路由说明一次**，并指出是凭据域还是请求头：`… dsh-opencode-patch leaves the route opencode to pi-ai`。
+- **同名的密钥两边都会读到。** 只有凭据服务按域隔离，启动环境不隔离。环境中导出的 `OPENCODE_API_KEY`（或 `OPENCODE_GO_API_KEY`）会被本插件的计量和你自己的平面读取，也会被 `llm-pi-ai` 用于没有指定自己密钥的 Console 路由。请把工作区令牌保留在 Console 安装步骤给它的名字下，本插件从不读取这个名字。
+
 ## 🛠 故障排查
 
 | 症状 | 可能原因 | 解决方法 |
@@ -423,6 +435,7 @@ Zen 路线上不出现任何 Go 的数字：根本不画圆环（没有可量的
 - **停用或重载插件会恢复它包装过的宿主方法。** 停用时模型发现与设置嫁接会被撤下，热重载会替换它们而不是再叠一层。两个平面交还给 `llm-pi-ai`——见[移除或停用插件](#移除或停用插件)。
 - **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除。所有受支持宿主的 pi（npm 安装以及两个通道的桌面应用）都是 `1.3.0` 或更高版本，会列出该模型，因此其回合携带档位；在 pi 为 `1.1.0` 的宿主（`0.2.1` 的 rc 桌面应用，已不再是受支持的通道构建）上，每个 `gemini-4-argon` 回合携带的都是网关会拒绝的思考预算。
 - **`@viztor/dsh-opencode` 已弃用，但仍在发布。** 它是一个转导出 `dsh-opencode-patch` 的薄包装，所以用旧名的安装照常解析；registry 上标记为弃用并指向正式名称。新安装请用 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
+- **其他插件拥有的路由留给它自己。** 当 `llm-pi-ai` 的配置行在本插件不解析凭据的凭据域中解析凭据，或者平面条目带有 `x-opencode-plugin` 请求头时（OpenCode Console 安装步骤写入的正是这种形状），该平面由 `llm-pi-ai` 而不是本插件服务，本插件的请求头、密钥与计量都不碰它的流量。在已发布的 1.x 中，这类路由上被本插件转到其隐藏的 Responses、Messages 或 Google 路由的轮次用本插件的凭据解析，因拿不到 Console 的令牌而失败，其余轮次则带上本插件的请求头，其密钥也被记录下来供计量使用；见[与 OpenCode Console 同时安装](#与-opencode-console-同时安装)。
 
 ## 📜 兼容性与验证
 

@@ -150,7 +150,7 @@ Those endpoints authenticate in **three ways**, because they speak three wire sh
 
 ### 2. OpenCode Go (`provider: opencode-go`) — subscription quota
 
-- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
+- **OpenAI Chat Completions** (`https://opencode.ai/inference/go/openai/v1/chat/completions`): `beam-free`, `deepseek-v4-pro`, `deepseek-v4.1-flash`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`, `hy3`, `hy4`, `hy4-preview`, `iceman-contributor-free`, `kimi-k2.7-code`, `kimi-k3`, `kimi-k3.1-pro`, `longcat-2.0`, `longcat-2.5-free`, `mimo-v2.5`, `mimo-v2.5-pro`, `mimo-v2.6-flash`, `mimo-v2.6-pro`, `minimax-m3.1-flash`, `step-5-preview`
 - **OpenAI Responses** (`https://opencode.ai/inference/go/openai/v1/responses`): `gpt-5.6-luna`, `gpt-6-luna`, `grok-4.7`, `muse-spark-1.2-contributor`, `muse-spark-1.3-contributor`
 - **Anthropic Messages** (`https://opencode.ai/inference/go/anthropic/v1/messages`): `claude-haiku-5-5`, `minimax-m3`, `qwen3.7-plus`, `qwen3.8-flash`, `qwen3.8-max`
 - **Google Generative AI** (`https://opencode.ai/inference/go/google/v1beta/models/*:streamGenerateContent`): `gemini-4-argon`, with image attachments and signed tool-call replay. Go has no legacy Google endpoint, so this one base serves both families.
@@ -162,13 +162,13 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol |
 | :-- | --: | :-- |
-| _(absent)_ | 25 | OpenAI Chat Completions |
-| `@ai-sdk/openai` | 31 | OpenAI Responses |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages |
-| `@ai-sdk/google` | 8 | Google Generative AI |
+| _(absent)_ | 27 | OpenAI Chat Completions |
+| `@ai-sdk/openai` | 32 | OpenAI Responses |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages |
+| `@ai-sdk/google` | 9 | Google Generative AI |
 | `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, as pi's own data files it |
 
-Counts are the **82** active `opencode` models in `models.opencode.ai` as of 2026-11-04 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 82 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
+Counts are the **87** active `opencode` models in `models.opencode.ai` as of 2026-11-12 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 87 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 
 Four properties follow:
 
@@ -399,6 +399,18 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 - **Ids it cannot serve drop out of the composer.** That is an id its installed catalog does not describe — a catalog-unknown id, or a newer model than its pi carries.
 - **The next Settings edit of that plane is refused until they are removed**, because `llm-pi-ai` validates the whole plane entry on every save. Delete those ids from the plane's model list, and the edit goes through.
 
+## With OpenCode Console installed
+
+OpenCode's own Console plugin (`npx @opencode/console setup deepseek-harness`) can serve `opencode` and `opencode-go` as well. Its setup puts `llm-pi-ai`'s row in a credentials realm of its own, writes the workspace's routes into it with the workspace token (`apiKeyEnv: OPENCODE_CONSOLE_TOKEN`), and marks each route with an `x-opencode-plugin` header. This plugin cannot read that realm, so it steps aside instead of serving those routes:
+
+- **`llm-pi-ai` serves every plane the Console writes, with the Console's credential.** A plane is left to it when `llm-pi-ai`'s row resolves credentials in a realm this plugin does not (a group's `isolate` counts for every row inside it), or when the plane's entry carries the `x-opencode-plugin` header. A plane entry of your own, unmarked and outside such a realm, is still served by this plugin.
+- **Nothing of this plugin's touches that traffic.** No session or origin headers, no User-Agent, no key fill, no key capture, no tool fallback, and the meter does not count those turns: a turn on such a plane goes out exactly as `llm-pi-ai` sent it, whether the realm or the header left it there.
+- **The meter never reads a Console route.** Its Go key and endpoint come from your own entries, or from `OPENCODE_GO_API_KEY` and the default endpoint; a Console route's key reference, the token behind it and its base are never used, even with that token exported.
+- **A Settings edit that adds or removes the header moves the route at once**, with no restart: to `llm-pi-ai` when it is added, back to this plugin when it is removed. Moving `llm-pi-ai`'s row into or out of such a realm moves its routes the same way, with one restart of `llm-pi-ai`.
+- **The purge button leaves Console routes alone.** It rewrites only plane entries of your own; with none it says there is nothing to purge and writes nothing.
+- **The log says so once per route**, naming the realm or the header: `… dsh-opencode-patch leaves the route opencode to pi-ai`.
+- **A shared key name is read by both.** Only the credentials service is split into realms; the launch environment is not. `OPENCODE_API_KEY` (or `OPENCODE_GO_API_KEY`) exported in the environment is read by this plugin's meter and your own planes, and by `llm-pi-ai` for a Console route that names no key of its own. Keep the workspace token under the name the Console's setup gives it, which this plugin never reads.
+
 ## 🛠 Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -429,6 +441,7 @@ Disabling or removing the plugin hands both planes back to `llm-pi-ai`, with not
 - **Disabling or reloading the plugin restores the host methods it wrapped.** Model discovery and the Settings graft come off on a disable, and a live reload replaces them instead of stacking another layer. The planes go back to `llm-pi-ai` — see [Removing or disabling the plugin](#removing-or-disabling-the-plugin).
 - **The Google thinking control is the host pi's own.** Whether a Gemini request carries a thinking _level_ or a token _budget_ is decided by the host's pi, and the plugin re-derives nothing. The rewrite that sent `gemini-4-argon` a level on hosts whose pi does not name it, released in 1.4.3 (#130), is removed. Every supported host's pi, on npm installs and on both channels' desktop apps, is `1.3.0` or later and names that model, so its turns carry the level; on a pi `1.1.0` host (the `0.2.1` rc desktop app, no longer a supported channel build) every `gemini-4-argon` turn carried a thinking budget the gateway refuses.
 - **`@viztor/dsh-opencode` is deprecated, and still published.** It is a thin wrapper that re-exports `dsh-opencode-patch`, so an install on the old name keeps resolving; the registry marks it deprecated and points at the canonical name. New installs should use `dsh-opencode-patch` or `@viztor/dsh-opencode-patch`.
+- **A route another plugin owns is left to it.** A plane entry in `llm-pi-ai`'s row is served by `llm-pi-ai`, not by this plugin, when that row resolves credentials in a realm this plugin does not or the entry carries the `x-opencode-plugin` header — the shape OpenCode Console's setup writes — and no header, key or meter of this plugin's touches its traffic. In the released 1.x, a turn on such a route that the plugin moved onto one of its hidden Responses, Messages or Google routes was resolved with this plugin's credentials and failed for want of the Console's token, and every other turn on it carried this plugin's headers and had its key recorded for the meter; see [With OpenCode Console installed](#with-opencode-console-installed).
 
 ## 📜 Compatibility & Verification
 
