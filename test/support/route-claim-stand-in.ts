@@ -7,6 +7,14 @@
  * host. The stand-in records what the claim registered, and the pi-ai fiber is
  * a plain object the claim reads through `ctx.registry`.
  *
+ * Both cordis cores are modelled, each from the fiber's own fields: the OLD
+ * core's fiber (`piFiber`: `_config` raw, `config` resolved), whose listener a
+ * case calls as `function (this: Fiber, raw, next)` (`oldRun`), and the NEW
+ * core's (`newPiFiber`: `config` raw, `effectiveConfig` resolved, no
+ * `_config`), whose `internal/config` the stand-in runs as cordis does, each
+ * listener `(fiber, next)` with `this` null, outermost first (`waterfall`),
+ * and whose status events it emits to every live listener (`emit`).
+ *
  * @module test/support/route-claim-stand-in
  */
 import { type Mock, vi } from "vitest";
@@ -84,6 +92,60 @@ export const oldRun = (
   fiber: unknown,
   raw: unknown
 ): unknown => listener?.call(fiber, raw, () => raw);
+
+/** A NEW-core fiber's own fields, as the claim reads them. */
+export interface NewFakeFiber {
+  uid: number | null;
+  state: number;
+  runtime: { name: string };
+  /** The RAW config on the NEW core (`rawConfig` is an accessor over it). */
+  config: { providers: Record<string, unknown> };
+  readonly rawConfig: unknown;
+  readonly effectiveConfig: unknown;
+  ctx: { fiber?: unknown };
+  entry: { options: { id: string; config?: unknown } };
+  parent: { fiber: { state: number } };
+  await: () => Promise<unknown>;
+  restart: () => Promise<unknown>;
+}
+
+/**
+ * A pi-ai fiber of the NEW core (cordis 4.0.6-alpha.2, 4.1.0,
+ * `fiber.ts:190,211,649-666`): `config` is the RAW input, `rawConfig` an
+ * accessor over it, the resolved value readable only through
+ * `effectiveConfig`, and no `_config`. Its own context names it.
+ */
+export const newPiFiber = (
+  providers?: Record<string, unknown>,
+  resolved?: Record<string, unknown>
+): NewFakeFiber => {
+  const fiber = {
+    await: vi.fn(async () => {
+      // the stand-in fiber is settled already
+    }),
+    config: { providers: providers ?? { deepseek: {}, opencode: zen } },
+    ctx: {} as { fiber?: unknown },
+    get effectiveConfig(): unknown {
+      return { providers: { get: () => resolved ?? { deepseek: {} } } };
+    },
+    entry: { options: { id: "llm-pi-ai" } as { id: string; config?: unknown } },
+    parent: { fiber: { state: 2 } },
+    get rawConfig(): unknown {
+      return fiber.config;
+    },
+    restart: vi.fn(async () => {
+      // a restart the stand-in records and does not perform
+    }),
+    runtime: { name: "llm-pi-ai" },
+    state: 2,
+    uid: 1 as number | null,
+  };
+  fiber.ctx.fiber = fiber;
+  return fiber;
+};
+
+/** A plane entry pi-ai's own check refuses: a model with an empty id. */
+export const MALFORMED = { models: [{ id: "" }, { id: "x" }] };
 
 /** What {@link standIn} records, and the context it hands the claim. */
 export interface StandIn {
