@@ -46,12 +46,13 @@ export const until = async (
 /**
  * Every line any logger writes from now on, at every level.
  *
- * cordis's own exporter buffers only up to `info` (its default threshold, so
- * a `warn` is never kept), and tier B adds no console exporter: nothing a
- * plugin logs reaches the console or the default buffer reliably. This
- * exporter takes every level, so an assertion about what was logged reads
- * what was actually logged. A case should log one line of its own through it
- * to prove the input is read.
+ * cordis's own exporter buffers only up to `info`, its default threshold: on
+ * the supported cores (cordis 4.0.6-alpha.2 and 4.1.0, where `WARN` sits
+ * below `INFO`) that keeps `error`, `warn` and `info` but never `debug`, and
+ * tier B adds no console exporter. This exporter takes every level (3 is
+ * `DEBUG` on every core), so an assertion about what was logged reads what
+ * was actually logged, a `debug` line included. A case should log one line of
+ * its own through it to prove the input is read.
  *
  * @param root - the host's root context.
  * @returns the lines (`<type> <name>: <args>`) and the exporter's removal.

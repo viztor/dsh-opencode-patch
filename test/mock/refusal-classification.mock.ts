@@ -69,9 +69,10 @@ const BODY = {
   }),
   ok: JSON.stringify({ ok: true }),
   /**
-   * Not a measured body: words that read as an invalid request, so a
-   * classifier that asked for one before AUTH would label a 403 carrying
-   * them INVALID_REQUEST (the known answer is the same words at 400).
+   * Not a measured body: words (its message and its type) that read as an
+   * invalid request, so a classifier that asked for one before AUTH would
+   * label a 403 carrying them INVALID_REQUEST. The known answer is the same words at 422, a
+   * status no classifier branch names, so only the words can make it one.
    */
   probe: JSON.stringify({
     error: {
@@ -277,9 +278,13 @@ describe("refusal classification over a real socket", () => {
         await tier.dispose();
       }
     };
-    // The known answer: the probe's words, at 400, ARE an invalid request.
-    const invalid = await classified(400);
+    // The known answer: the probe's words ARE an invalid request. At 422,
+    // because no classifier branch names that status: at 400 the status
+    // token alone answers INVALID_REQUEST on either bridge, so the words
+    // would go unread and the 403 row below could pass under either order.
+    const invalid = await classified(422);
     expect(invalid.code).toBe("INVALID_REQUEST");
+    expect(invalid.message).toContain("not on the free tier");
     // Order IS the contract: AUTH is asked first, so the same words at 403
     // are AUTH. That reading is accepted now — the pass-through means a
     // free-tier refusal surfaces as AUTH carrying the gateway's own words,
