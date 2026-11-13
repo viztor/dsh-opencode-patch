@@ -314,13 +314,12 @@ export type DiscoveryClaim = Pick<RouteClaim, "claiming" | "piAiNamespace">;
  * Only a plane route asked on the namespace of the pi-ai row the claim serves,
  * and only while the claim has engaged (from install on, before the mount
  * settles, too — see {@link RouteClaim.claiming}): there, the plugin's adapter
- * validates and serves a saved id whatever pi lists (D15). Anywhere else —
- * after a stand-down, while the served pi-ai row still resolves holding a
- * plane once the claim's mount has settled (a handover's window, until its
- * restart re-resolves the row), or on a second pi-ai row serving its own
- * planes —
- * pi-ai refuses at save an id it does not list, so offering one would offer
- * a refusal.
+ * validates and serves a saved id whatever pi lists (D15). That includes
+ * a handover's window, while the newly served row's restart is in flight.
+ * Anywhere else — after a stand-down, once a served row's restart has
+ * settled still holding a plane (a call shape the claim's listener does not
+ * speak), or on a second pi-ai row serving its own planes — pi-ai refuses at
+ * save an id it does not list, so offering one would offer a refusal.
  */
 const servedPlane = (
   settingsNs: unknown,

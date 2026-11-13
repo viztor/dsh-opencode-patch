@@ -137,22 +137,29 @@ export interface RouteClaim {
    * Whether the claim has engaged, as the plugin observes it: false once it
    * stood down (the host's modules could not be read) or tore down, and false
    * once `mounted` has settled while the served pi-ai row still resolves
-   * holding a plane. The listener speaks both cores' `internal/config` call
-   * shapes, so on either one the mount's restart moves the planes. A restart
-   * that throws does not leave them with pi-ai: on cordis 4.0.6-alpha.2 and
-   * 4.1.0 it throws only for a disposed fiber or by rethrowing a failed
-   * load, which leaves the fiber FAILED, and a FAILED row holds nothing to
-   * read here (it recovers through `update()`, which resolves through the
-   * listener). What reads false is a served row that still resolves holding
-   * a plane: a handover's window, in which a row that was passed through is
-   * served and holds its plane until its restart re-resolves it, or a call
-   * shape the listener does not speak. It is read with the same check the
-   * reconcile waits on (`resolvedPlanes` of the live served row), so the two
-   * never disagree; pi-ai serves the planes there and refuses at save an id
-   * it does not list, so reading false only narrows a fetch to pi's own
-   * list. True from install until `mounted` settles, so in that window the
-   * plane routes may still be pi-ai's: a plane save is already validated by
-   * the plugin, and a fetch complemented then assumes the claim engages.
+   * holding a plane and no restart of that row is in flight. The listener
+   * speaks both cores' `internal/config` call shapes, so on either one the
+   * mount's restart moves the planes, and so does a handover's: a row that
+   * was passed through becomes the served one holding its plane, and is
+   * restarted once it settles. While either restart is in flight (from the
+   * call, through the wait for the row to settle, until the restart settles)
+   * this reads true, as it does before the mount settles: on both cores the
+   * restart unloads the row first and the host answers `NO_DISCOVERY` until
+   * it reloads, so a fetch is the plane's catalog alone there, and
+   * complemented before the unload begins. A restart that throws does not
+   * leave the planes with pi-ai: on cordis 4.0.6-alpha.2 and 4.1.0 it throws
+   * only for a disposed fiber or by rethrowing a failed load, which leaves
+   * the fiber FAILED, and a FAILED row holds nothing to read here (it
+   * recovers through `update()`, which resolves through the listener). What
+   * reads false is a served row whose restart has settled still holding a
+   * plane: a call shape the listener does not speak. It is read with the
+   * same check the reconcile waits on (`resolvedPlanes` of the live served
+   * row), so the two never disagree; pi-ai serves the planes there and
+   * refuses at save an id it does not list, so reading false only narrows a
+   * fetch to pi's own list. While it reads true with the plane routes still
+   * pi-ai's (before the mount or a handover's restart settles), a plane save
+   * is already judged by the plugin and re-resolves the row without its
+   * planes, so a fetch complemented then assumes the claim engages.
    */
   readonly claiming: () => boolean;
   /** Settles once the claim is mounted; never rejects. */
@@ -263,6 +270,12 @@ export const installRouteClaim = (
       PlaneProfileLike
     >,
     ready: false,
+    /**
+     * The served row whose restart `restartHolder` is carrying (the mount's
+     * or a handover's), from the call until it settles: the claim reads
+     * engaged throughout, as it does before the mount settles.
+     */
+    restarting: undefined as HostFiber | undefined,
     scheduled: false,
     /** The fiber the profiles and the handle were built from. */
     served: undefined as HostFiber | undefined,
@@ -455,19 +468,26 @@ export const installRouteClaim = (
    * (the mount's restart, and a handover's).
    */
   const restartHolder = async (fiber: HostFiber): Promise<void> => {
+    state.restarting = fiber;
     try {
-      await fiber.await?.();
-    } catch {
-      // A FAILED pi-ai holds nothing; the check below says so.
-    }
-    if (
-      state.active &&
-      fiber === servedRow() &&
-      fiber.uid !== null &&
-      fiber.state === ACTIVE &&
-      resolvedPlanes(fiber).length > 0
-    ) {
-      await fiber.restart?.();
+      try {
+        await fiber.await?.();
+      } catch {
+        // A FAILED pi-ai holds nothing; the check below says so.
+      }
+      if (
+        state.active &&
+        fiber === servedRow() &&
+        fiber.uid !== null &&
+        fiber.state === ACTIVE &&
+        resolvedPlanes(fiber).length > 0
+      ) {
+        await fiber.restart?.();
+      }
+    } finally {
+      if (state.restarting === fiber) {
+        state.restarting = undefined;
+      }
     }
   };
 
@@ -888,13 +908,20 @@ export const installRouteClaim = (
     }
   })();
 
-  /** The mount has settled and the served pi-ai row still holds a plane. */
+  /**
+   * The mount has settled, no restart of the served row is in flight, and
+   * that row still holds a plane.
+   */
   const heldByPiAi = (): boolean => {
     if (!state.ready) {
       return false;
     }
     const pi = livePiAi();
-    return pi !== undefined && resolvedPlanes(pi).length > 0;
+    return (
+      pi !== undefined &&
+      pi !== state.restarting &&
+      resolvedPlanes(pi).length > 0
+    );
   };
 
   return {

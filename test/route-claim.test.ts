@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostModulesForTests } from "./support/host.ts";
 import {
   catalogListenerCount,
+  complementDiscoveredModels,
   type CordisContext,
   decorateModelDiscovery,
   type HostModuleSource,
@@ -580,7 +581,7 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
     expect(answered).not.toStrictEqual(mergeDiscoveredModels(pis, "zen"));
   });
 
-  it("a handover's window: the newly served new-core row resolved holding its plane reads claiming() false and Settings' fetch the merge only, until its restart re-resolves through the listener", async () => {
+  it("a handover's window: while the newly served new-core row's restart is in flight, claiming() stays true and Settings' fetch is complemented before it unloads and the plane's catalog alone while it does, as in the mount's restart", async () => {
     useTestModules();
     // The served row resolved without its plane (the listener was in place).
     const first = newPiFiber();
@@ -595,19 +596,27 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
     second.uid = 2;
     second.entry = { options: { id: "llm-pi-ai:second" } };
     const host = standIn({ fibers: () => [first, second] });
+    // cordis 4.0.6-alpha.2 / 4.1.0 (`fiber.ts:630-645,706-722,768-774`):
+    // restart() sets UNLOADING synchronously and disposes pi-ai's effects, its
+    // discovery among them, so the host answers NO_DISCOVERY until the reload
+    // re-resolves the row through the internal/config waterfall.
+    let unloading = false;
     let release: (() => void) | undefined;
     second.restart = vi.fn(async () => {
+      second.state = 5;
+      unloading = true;
       await new Promise<void>((resolve) => {
         release = resolve;
       });
-      // cordis's restart re-resolves through the internal/config waterfall.
       const resolved = host.waterfall(second, () => second.rawConfig) as {
         providers: Record<string, unknown>;
       };
       held = resolved.providers;
+      second.state = 2;
+      unloading = false;
     });
     const claim = installRouteClaim(host.ctx, config);
-    const { fetch, pis } = wrapped(claim);
+    const { fetch, pis } = wrapped(claim, () => unloading);
     await claim.mounted;
     await flush();
     expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
@@ -618,16 +627,36 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
       mergeDiscoveredModels(pis, "go")
     );
 
+    // The handover's restart waits for the row to settle first.
+    let settle: (() => void) | undefined;
+    second.await = vi.fn(
+      async () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        })
+    );
     first.uid = null;
     host.listeners.get("llm/adapters-updated")?.();
     await flush();
-    expect(second.restart).toHaveBeenCalledTimes(1);
     expect(claim.piAiNamespace()).toBe("llm-pi-ai:second");
-    // The window: the served row still resolves holding its plane, which
-    // pi-ai serves and validates, so nothing beyond pi's list is offered.
-    expect(claim.claiming()).toBe(false);
+    expect(second.restart).not.toHaveBeenCalled();
+    // Before the restart begins: pi-ai's discovery still answers, and the
+    // claim reads engaged, as from install until the mount's restart settles.
+    expect(claim.claiming()).toBe(true);
+    const before = (await fetch("llm-pi-ai:second", "opencode-go")) as {
+      id: string;
+    }[];
+    expect(before.length).toBeGreaterThan(pis.length);
+    expect(before).not.toStrictEqual(mergeDiscoveredModels(pis, "go"));
+
+    settle?.();
+    await flush();
+    expect(second.restart).toHaveBeenCalledTimes(1);
+    // While the row unloads the host answers NO_DISCOVERY: the fetch is the
+    // plane's catalog alone, not the host's error.
+    expect(claim.claiming()).toBe(true);
     await expect(fetch("llm-pi-ai:second", "opencode-go")).resolves.toEqual(
-      mergeDiscoveredModels(pis, "go")
+      complementDiscoveredModels([], "go")
     );
 
     release?.();
@@ -644,6 +673,39 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
     }[];
     expect(answered.length).toBeGreaterThan(pis.length);
     expect(answered).not.toStrictEqual(mergeDiscoveredModels(pis, "go"));
+  });
+
+  it("a served row whose restart settles still holding its plane (a call shape the listener does not speak) reads claiming() false once the restart is over, and Settings' fetch is pi's merge", async () => {
+    useTestModules();
+    const pi = newPiFiber();
+    const held: Record<string, unknown> = { deepseek: {}, opencode: zen };
+    Object.defineProperty(pi, "effectiveConfig", {
+      get: () => ({ providers: { get: () => held } }),
+    });
+    const host = standIn({ fibers: () => [pi] });
+    // The restart re-resolves without reaching the claim's listener.
+    let finish: (() => void) | undefined;
+    pi.restart = vi.fn(
+      async () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const claim = installRouteClaim(host.ctx, config);
+    const { fetchZen, pis } = wrapped(claim);
+    await flush();
+    expect(pi.restart).toHaveBeenCalledTimes(1);
+    // In flight: engaged, as the mount's restart reads.
+    expect(claim.claiming()).toBe(true);
+    finish?.();
+    await claim.mounted;
+    await flush();
+    expect(host.llm.registerAdapter).not.toHaveBeenCalled();
+    // Over, and the row still holds its plane: pi-ai serves and validates it.
+    expect(claim.claiming()).toBe(false);
+    await expect(fetchZen()).resolves.toStrictEqual(
+      mergeDiscoveredModels(pis, "zen")
+    );
   });
 
   it("a mount whose restart throws leaves the new-core pi-ai FAILED: claiming() stays true, nothing registers, Settings' fetch answers the plane's catalog alone, and an update() recovers it through the listener", async () => {

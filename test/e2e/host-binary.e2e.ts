@@ -941,9 +941,9 @@ describe.skipIf(!ENABLED)("e2e · the published host binary (dsh)", () => {
 
   it("[BASELINE] Settings' fetch on each plane offers the whole servable catalog, each id once, in the Remote's row shape (D3)", () => {
     // The wrapper appends the catalog only while the route claim has
-    // engaged. It engages on both host cores; while the served pi-ai row
-    // still resolves holding a plane (a handover's window) the fetch is pi's
-    // own list. Known answer first: the claim engaged in this cell, so the
+    // engaged. It engages on both host cores, a handover's restart included;
+    // only a served row whose restart settled still holding a plane would
+    // leave the fetch pi's own list. Known answer first: the claim engaged in this cell, so the
     // rows below are the complemented fetch.
     expect(out.owners.opencode).toBe("PlaneAdapter");
     expect(out.owners["opencode-go"]).toBe("PlaneAdapter");
