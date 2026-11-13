@@ -3,7 +3,9 @@
  *
  * The live half (`test/e2e/keyless-matrix.e2e.ts`) cannot run in a sandbox
  * without the vendor's hosts, so everything it decides is decided here: which
- * sixteen URLs are probed, with which bodies, and how an answer is read. The
+ * twenty-four URLs are probed (three URL shapes), with which bodies, which
+ * cells each `endpoint` setting dispatches to, which free model the keyless
+ * free probe sends, and how each answer is read. The
  * URLs are written out from the vendor's endpoint layout, not derived from the
  * module, and the bundled-catalog case checks invariants rather than model
  * names, so the nightly catalog refresh cannot turn it red.
@@ -15,13 +17,31 @@ import { describe, expect, it } from "vitest";
 import { HOST_CELLS, PLANES, S0_TODAY_BY_CELL } from "./support/host.ts";
 import {
   cellKey,
+  classifyFreeProbe,
   classifyKeylessProbe,
+  freeProbeCells,
+  freeProbeMovesOn,
+  freeProbeOutcome,
+  freeProbeVerdictOf,
+  goneDefaultRows,
   isFreeSpec,
+  isFreeUsageLimit,
   isModelGoneMessage,
   isTransientProbeAnswer,
+  isUpstreamBusy,
   keylessMatrix,
+  LEGACY_DISPATCH,
+  type ProbeAnswer,
+  runFreeProbe,
+  MATRIX_FAMILIES,
   MATRIX_PROTOCOLS,
   type MatrixCell,
+  type MatrixFamily,
+  redirectPathOf,
+  SYSTEM_ONE_URLS,
+  systemOneCells,
+  unreadRows,
+  verdictOfAttempts,
   matrixUrl,
   TODAY_DISPATCH,
 } from "./support/keyless-matrix.ts";
@@ -84,14 +104,21 @@ const CREDENTIAL_HEADERS = new Set([
 ]);
 
 describe("keyless matrix · the cells", () => {
-  it("is sixteen cells with exactly these URLs and models", () => {
+  it("is twenty-four cells over three URL shapes with exactly these URLs and models", () => {
+    expect(MATRIX_FAMILIES).toEqual(["legacy", "root", "modern"]);
     const cells = keylessMatrix({
       go: GO,
       isDeprecated: (plane, id) =>
         plane === "opencode" && id === "zen-old-resp",
       zen: ZEN,
     });
-    expect(cells).toHaveLength(16);
+    expect(cells).toHaveLength(24);
+    // Plane, then protocol, then the three shapes in order.
+    expect(cells.slice(0, 3).map(key)).toEqual([
+      "opencode openai-completions legacy",
+      "opencode openai-completions root",
+      "opencode openai-completions modern",
+    ]);
     expect(
       Object.fromEntries(
         cells.map((cell) => [key(cell), [cell.url, cell.model]])
@@ -99,6 +126,10 @@ describe("keyless matrix · the cells", () => {
     ).toEqual({
       "opencode openai-completions legacy": [
         "https://opencode.ai/zen/v1/chat/completions",
+        "zen-chat",
+      ],
+      "opencode openai-completions root": [
+        "https://opencode.ai/inference/v1/chat/completions",
         "zen-chat",
       ],
       "opencode openai-completions modern": [
@@ -109,12 +140,20 @@ describe("keyless matrix · the cells", () => {
         "https://opencode.ai/zen/v1/responses",
         "zen-resp",
       ],
+      "opencode openai-responses root": [
+        "https://opencode.ai/inference/v1/responses",
+        "zen-resp",
+      ],
       "opencode openai-responses modern": [
         "https://opencode.ai/inference/openai/v1/responses",
         "zen-resp",
       ],
       "opencode anthropic-messages legacy": [
         "https://opencode.ai/zen/v1/messages",
+        "zen-claude",
+      ],
+      "opencode anthropic-messages root": [
+        "https://opencode.ai/inference/v1/messages",
         "zen-claude",
       ],
       "opencode anthropic-messages modern": [
@@ -125,12 +164,20 @@ describe("keyless matrix · the cells", () => {
         "https://opencode.ai/zen/v1/models/zen-gemini:streamGenerateContent?alt=sse",
         "zen-gemini",
       ],
+      "opencode google-generative-ai root": [
+        "https://opencode.ai/inference/v1/models/zen-gemini:streamGenerateContent?alt=sse",
+        "zen-gemini",
+      ],
       "opencode google-generative-ai modern": [
         "https://opencode.ai/inference/google/v1beta/models/zen-gemini:streamGenerateContent?alt=sse",
         "zen-gemini",
       ],
       "opencode-go openai-completions legacy": [
         "https://opencode.ai/zen/go/v1/chat/completions",
+        "go-chat",
+      ],
+      "opencode-go openai-completions root": [
+        "https://opencode.ai/inference/go/v1/chat/completions",
         "go-chat",
       ],
       "opencode-go openai-completions modern": [
@@ -141,6 +188,10 @@ describe("keyless matrix · the cells", () => {
         "https://opencode.ai/zen/go/v1/responses",
         "go-resp",
       ],
+      "opencode-go openai-responses root": [
+        "https://opencode.ai/inference/go/v1/responses",
+        "go-resp",
+      ],
       "opencode-go openai-responses modern": [
         "https://opencode.ai/inference/go/openai/v1/responses",
         "go-resp",
@@ -149,12 +200,20 @@ describe("keyless matrix · the cells", () => {
         "https://opencode.ai/zen/go/v1/messages",
         "go-claude",
       ],
+      "opencode-go anthropic-messages root": [
+        "https://opencode.ai/inference/go/v1/messages",
+        "go-claude",
+      ],
       "opencode-go anthropic-messages modern": [
         "https://opencode.ai/inference/go/anthropic/v1/messages",
         "go-claude",
       ],
       "opencode-go google-generative-ai legacy": [
         "https://opencode.ai/zen/go/v1/models/go-gemini:streamGenerateContent",
+        "go-gemini",
+      ],
+      "opencode-go google-generative-ai root": [
+        "https://opencode.ai/inference/go/v1/models/go-gemini:streamGenerateContent?alt=sse",
         "go-gemini",
       ],
       "opencode-go google-generative-ai modern": [
@@ -216,7 +275,7 @@ describe("keyless matrix · the cells", () => {
       zen: [spec("zen-beam", undefined, true)],
     });
     const zenCells = onlyFree.filter((cell) => cell.plane === "opencode");
-    expect(zenCells).toHaveLength(8);
+    expect(zenCells).toHaveLength(12);
     expect(zenCells.filter((cell) => cell.model !== undefined)).toEqual([]);
     expect(isFreeSpec(spec("paid"))).toBe(false);
     expect(isFreeSpec(spec("x", undefined, true))).toBe(true);
@@ -231,6 +290,7 @@ describe("keyless matrix · the cells", () => {
     const missing = cells.filter((cell) => cell.model === undefined);
     expect(missing.map(key)).toEqual([
       "opencode-go google-generative-ai legacy",
+      "opencode-go google-generative-ai root",
       "opencode-go google-generative-ai modern",
     ]);
     for (const cell of missing) {
@@ -238,12 +298,12 @@ describe("keyless matrix · the cells", () => {
     }
   });
 
-  it("on the bundled catalogs: sixteen cells, each the first PAID model of its protocol, and none can carry a key", () => {
+  it("on the bundled catalogs: twenty-four cells, each the first PAID model of its protocol, and none can carry a key", () => {
     const cells = keylessMatrix({
       go: OPENCODE_GO_CATALOG,
       zen: OPENCODE_ZEN_CATALOG,
     });
-    expect(cells).toHaveLength(16);
+    expect(cells).toHaveLength(24);
     for (const cell of cells) {
       const catalog =
         cell.plane === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
@@ -280,8 +340,8 @@ describe("keyless matrix · the cells", () => {
 describe("keyless matrix · the cells the live run asserts", () => {
   /**
    * The matrix cells one host cell's characterized turns were sent to, and
-   * the URLs that match no cell (the root family, `/inference(/go)/v1`, which
-   * the matrix does not probe yet: P-R2 adds it).
+   * the URLs that match no cell of any of the three shapes, root included —
+   * a turn sent anywhere the matrix does not probe.
    */
   const reachedOn = (cell: (typeof HOST_CELLS)[number]) => {
     const reached = new Set<string>();
@@ -293,13 +353,11 @@ describe("keyless matrix · the cells the live run asserts", () => {
       expect(PLANES, rowKey).toContain(plane);
       for (const sent of row.sent) {
         const matches = MATRIX_PROTOCOLS.flatMap((protocol) =>
-          (["legacy", "modern"] as const)
-            .filter(
-              (family) =>
-                new URL(matrixUrl(plane, protocol, family, model)).pathname ===
-                new URL(sent).pathname
-            )
-            .map((family) => cellKey({ family, plane, protocol }))
+          MATRIX_FAMILIES.filter(
+            (family) =>
+              new URL(matrixUrl(plane, protocol, family, model)).pathname ===
+              new URL(sent).pathname
+          ).map((family) => cellKey({ family, plane, protocol }))
         );
         expect(matches.length, `${cell} ${rowKey} ${sent}`).toBeLessThan(2);
         if (matches[0] === undefined) {
@@ -329,19 +387,479 @@ describe("keyless matrix · the cells the live run asserts", () => {
       expect(reached, cell).toEqual([...TODAY_DISPATCH].toSorted());
     }
     // Every protocol on both planes reaches the modern family, completions
-    // included (P-R1), and nothing reaches a legacy cell by default.
+    // included (P-R1), and nothing reaches a legacy or root cell by default.
     expect([...TODAY_DISPATCH].toSorted()).toEqual(
       PLANES.flatMap((plane) =>
         MATRIX_PROTOCOLS.map((protocol) => `${plane} ${protocol} modern`)
       ).toSorted()
     );
     expect(
-      [...TODAY_DISPATCH].filter((cell) => cell.endsWith("legacy"))
+      [...TODAY_DISPATCH].filter(
+        (cell) => cell.endsWith("legacy") || cell.endsWith("root")
+      )
     ).toEqual([]);
     const all = new Set(keylessMatrix({ go: GO, zen: ZEN }).map(key));
     for (const cell of TODAY_DISPATCH) {
       expect(all.has(cell), cell).toBe(true);
     }
+  });
+});
+
+describe("keyless matrix · the cells endpoint: legacy dispatches to", () => {
+  it("LEGACY_DISPATCH is the legacy cell of every plane × protocol, but Go's Google stays on its modern cell", () => {
+    expect([...LEGACY_DISPATCH].toSorted()).toEqual(
+      [
+        "opencode openai-completions legacy",
+        "opencode openai-responses legacy",
+        "opencode anthropic-messages legacy",
+        "opencode google-generative-ai legacy",
+        "opencode-go openai-completions legacy",
+        "opencode-go openai-responses legacy",
+        "opencode-go anthropic-messages legacy",
+        "opencode-go google-generative-ai modern",
+      ].toSorted()
+    );
+    const all = new Set(keylessMatrix({ go: GO, zen: ZEN }).map(key));
+    for (const cell of LEGACY_DISPATCH) {
+      expect(all.has(cell), cell).toBe(true);
+    }
+    // The one cell both settings share is Go's Google (`GO_GOOGLE_BASE_URL`).
+    expect(
+      [...LEGACY_DISPATCH].filter((cell) => TODAY_DISPATCH.has(cell))
+    ).toEqual(["opencode-go google-generative-ai modern"]);
+  });
+});
+
+describe("keyless matrix · the free probe", () => {
+  it("the free probe: every free completions model, on the default completions path, keyless, in catalog order", () => {
+    const cells = freeProbeCells(ZEN);
+    expect(cells.map((cell) => cell.model)).toEqual([
+      "zen-beam",
+      "zen-chat-free",
+    ]);
+    for (const cell of cells) {
+      expect(cell.url).toBe(
+        "https://opencode.ai/inference/openai/v1/chat/completions"
+      );
+      expect(cell.plane).toBe("opencode");
+      expect(cell.protocol).toBe("openai-completions");
+      expect(cell.family).toBe("modern");
+      expect(cell.method).toBe("POST");
+      expect(cell.body).toEqual({
+        max_tokens: 1,
+        messages: [{ content: "hi", role: "user" }],
+        model: cell.model,
+      });
+      expect(cell.headers).toEqual({ "content-type": "application/json" });
+    }
+    expect(freeProbeCells([spec("paid")])).toEqual([]);
+
+    const bundled = freeProbeCells(OPENCODE_ZEN_CATALOG);
+    expect(bundled.length).toBeGreaterThan(0);
+    for (const cell of bundled) {
+      const row = OPENCODE_ZEN_CATALOG.find((entry) => entry.id === cell.model);
+      expect(row, cell.model).toBeDefined();
+      expect(row !== undefined && isFreeSpec(row), cell.model).toBe(true);
+      expect(protocolForSdk(row?.provider_npm), cell.model).toBe(
+        "openai-completions"
+      );
+      expect(
+        Object.keys(cell.headers).filter((header) =>
+          CREDENTIAL_HEADERS.has(header.toLowerCase())
+        )
+      ).toEqual([]);
+    }
+  });
+
+  it.each([
+    [200, '{"choices":[]}', "served"],
+    [403, '{"error":{"type":"FreeTierError"}}', "free-tier-gated"],
+    [
+      401,
+      "ModelError: model x not supported for format oa-compat",
+      "wrong-format",
+    ],
+    [401, '{"error":{"type":"AuthError"}}', "auth-required"],
+    [403, "", "auth-required"],
+    [404, "", "path-gone"],
+    [410, "", "model-gone"],
+    [400, "Model is unavailable", "model-gone"],
+    [500, "", "other"],
+    // The vendor's withdrawal, by type at any status (the rule a turn is
+    // read by): never a gone path, never a shape that parsed the request.
+    [
+      400,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [404, '{"error":{"type":"ModelDeprecated"}}', "model-gone"],
+    [
+      410,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [400, '{"error":{"type":"ModelDeprecatedish"}}', "other"],
+    [404, '{"error":{"type":"ModelDeprecatedish"}}', "path-gone"],
+    [200, '{"choices":[{"message":{"content":"ModelDeprecated"}}]}', "served"],
+    // The upstream busy: the one keyless request that reaches the upstream
+    // is the free model's, and a busy one says nothing about the path.
+    [503, "", "upstream-busy"],
+    [529, "", "upstream-busy"],
+    [
+      500,
+      '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+      "upstream-busy",
+    ],
+    [502, "<html>Service Unavailable</html>", "other"],
+    [400, '{"error":{"message":"max_tokens too small"}}', "other"],
+    [401, '{"error":{"type":"FreeTierError"}}', "auth-required"],
+    [302, "", "redirected"],
+    // The tier's usage cap is the gate's answer, not a rate limit (L3).
+    [
+      429,
+      '{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached"}}',
+      "free-usage-limited",
+    ],
+  ] as const)("a free probe's %i %s → %s", (status, bodyText, verdict) => {
+    expect(classifyFreeProbe({ bodyText, status })).toBe(verdict);
+  });
+
+  const answer = (status: number, bodyText = "") => ({ bodyText, status });
+
+  it.each([
+    ["served", [answer(200, '{"choices":[]}')], "pass"],
+    [
+      "gated by the free tier",
+      [answer(403, '{"error":{"type":"FreeTierError"}}')],
+      "pass",
+    ],
+    [
+      "429, then no answer (the measured rate-limit hang)",
+      [answer(429), undefined],
+      "skip",
+    ],
+    ["429, then 429", [answer(429), answer(429)], "skip"],
+    ["429, then served", [answer(429), answer(200)], "pass"],
+    // The usage cap is not retried and is not read as usable: a skip with its
+    // own verdict, never the pass a served model would be (L3).
+    [
+      "the free tier's usage cap",
+      [answer(429, '{"error":{"type":"FreeUsageLimitError"}}')],
+      "skip",
+    ],
+    ["no answer, twice", [undefined, undefined], "fail"],
+    ["500, then 500", [answer(500), answer(500)], "fail"],
+    ["503, then 503 (a busy upstream)", [answer(503), answer(503)], "skip"],
+    ["529, then 529 (a busy upstream)", [answer(529), answer(529)], "skip"],
+    [
+      "500 overloaded, twice",
+      [
+        answer(500, '{"error":{"type":"overloaded_error"}}'),
+        answer(500, '{"error":{"type":"overloaded_error"}}'),
+      ],
+      "skip",
+    ],
+    ["503, then served", [answer(503), answer(200)], "pass"],
+    ["path gone", [answer(404)], "fail"],
+    ["a key demanded", [answer(401, '{"error":{"type":"AuthError"}}')], "fail"],
+    [
+      "the wrong wire format",
+      [answer(401, "not supported for format oa-compat")],
+      "fail",
+    ],
+    ["a redirect", [answer(307)], "fail"],
+    ["the last candidate retired", [answer(410)], "fail"],
+  ] as const)("the free probe: %s → %s", (_name, attempts, outcome) => {
+    expect(
+      freeProbeOutcome(verdictOfAttempts(attempts, classifyFreeProbe))
+    ).toBe(outcome);
+  });
+
+  it.each([
+    ["one candidate served", ["served"], "served"],
+    ["a retired one, then one served", ["model-gone", "served"], "served"],
+    ["a busy one, then one served", ["upstream-busy", "served"], "served"],
+    [
+      "a busy one, then a path gone",
+      ["upstream-busy", "path-gone"],
+      "path-gone",
+    ],
+    // Every candidate moved past: a busy one among them makes the run a
+    // skip, not three retired models.
+    [
+      "busy, then two retired",
+      ["upstream-busy", "model-gone", "model-gone"],
+      "upstream-busy",
+    ],
+    [
+      "three busy",
+      ["upstream-busy", "upstream-busy", "upstream-busy"],
+      "upstream-busy",
+    ],
+    ["three retired", ["model-gone", "model-gone", "model-gone"], "model-gone"],
+    ["no candidate sent", [], "transport-error"],
+  ] as const)(
+    "the free probe across its candidates: %s → %s",
+    (_name, verdicts, verdict) => {
+      expect(freeProbeVerdictOf(verdicts)).toBe(verdict);
+    }
+  );
+
+  it.each([
+    ["model-gone", true],
+    ["upstream-busy", true],
+    ["served", false],
+    ["free-tier-gated", false],
+    ["path-gone", false],
+    ["auth-required", false],
+    ["wrong-format", false],
+    ["redirected", false],
+    // A 500 on a free model is the path failing, not the model: a probe
+    // that moved past it could pass on the next candidate's answer.
+    ["other", false],
+    ["rate-limited", false],
+    ["free-usage-limited", false],
+    ["transport-error", false],
+  ] as const)("the free probe moves on after %s: %s", (verdict, movesOn) => {
+    expect(freeProbeMovesOn(verdict)).toBe(movesOn);
+  });
+
+  describe("the free probe's candidate walk", () => {
+    const cells = ["free-a", "free-b", "free-c"].map((model) => ({
+      body: {},
+      family: "modern" as const,
+      headers: {},
+      method: "POST" as const,
+      model,
+      plane: "opencode" as const,
+      protocol: "openai-completions" as const,
+      url: `https://example.test/${model}`,
+    }));
+    /** A sender that answers each model with its scripted attempts, recording what it sent. */
+    const scripted = (
+      script: Readonly<Record<string, readonly (ProbeAnswer | undefined)[]>>
+    ) => {
+      const sent: string[] = [];
+      const send = async (cell: MatrixCell) => {
+        sent.push(cell.model ?? "");
+        return script[cell.model ?? ""] ?? [];
+      };
+      return { send, sent };
+    };
+
+    it("served first: one send, and that candidate decides", async () => {
+      const { send, sent } = scripted({ "free-a": [answer(200, "ok")] });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a"]);
+      expect(result.decided).toEqual({
+        bodyText: "ok",
+        model: "free-a",
+        status: 200,
+        verdict: "served",
+      });
+    });
+
+    it("busy, then served: moves on past the busy upstream", async () => {
+      const { send, sent } = scripted({
+        "free-a": [answer(503), answer(529)],
+        "free-b": [answer(200)],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a", "free-b"]);
+      expect(result.decided.verdict).toBe("served");
+      expect(result.decided.model).toBe("free-b");
+      expect(result.candidates.map((candidate) => candidate.verdict)).toEqual([
+        "upstream-busy",
+        "served",
+      ]);
+    });
+
+    it("busy, then rate-limited: stops on the rate limit", async () => {
+      const { send, sent } = scripted({
+        "free-a": [answer(503), answer(503)],
+        "free-b": [answer(429), answer(429)],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a", "free-b"]);
+      expect(result.decided).toMatchObject({
+        model: "free-b",
+        status: 429,
+        verdict: "rate-limited",
+      });
+    });
+
+    it("withdrawn at 400 (ModelDeprecated), then served: moves on past the withdrawn model", async () => {
+      const { send, sent } = scripted({
+        "free-a": [
+          answer(
+            400,
+            '{"type":"error","error":{"type":"ModelDeprecated","message":"Model free-a has been deprecated."}}'
+          ),
+        ],
+        "free-b": [answer(200)],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a", "free-b"]);
+      expect(result.candidates.map((candidate) => candidate.verdict)).toEqual([
+        "model-gone",
+        "served",
+      ]);
+      expect(result.decided).toMatchObject({
+        model: "free-b",
+        verdict: "served",
+      });
+      expect(freeProbeOutcome(result.decided.verdict)).toBe("pass");
+    });
+
+    it("served, then nothing more is sent even if a later model would retire", async () => {
+      const { send, sent } = scripted({
+        "free-a": [answer(200)],
+        "free-b": [answer(410)],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a"]);
+      expect(result.decided.verdict).toBe("served");
+    });
+
+    it("busy, then two retired: the busy candidate decides, with its own model and status", async () => {
+      const { send, sent } = scripted({
+        "free-a": [answer(503, "busy"), answer(503, "busy")],
+        "free-b": [answer(410, "free-b has been deprecated")],
+        "free-c": [answer(410, "free-c has been deprecated")],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(sent).toEqual(["free-a", "free-b", "free-c"]);
+      expect(result.decided).toEqual({
+        bodyText: "busy",
+        model: "free-a",
+        status: 503,
+        verdict: "upstream-busy",
+      });
+    });
+
+    it("three retired: the last candidate decides", async () => {
+      const { send } = scripted({
+        "free-a": [answer(410)],
+        "free-b": [answer(410)],
+        "free-c": [answer(400, "Model is unavailable")],
+      });
+      const result = await runFreeProbe(cells, send);
+      expect(result.decided).toMatchObject({
+        model: "free-c",
+        status: 400,
+        verdict: "model-gone",
+      });
+    });
+
+    it("no candidate: nothing sent, a transport error with no model", async () => {
+      const { send, sent } = scripted({});
+      const result = await runFreeProbe([], send);
+      expect(sent).toEqual([]);
+      expect(result.decided).toEqual({
+        bodyText: "",
+        model: undefined,
+        status: undefined,
+        verdict: "transport-error",
+      });
+    });
+  });
+
+  it("the keyed and free classifiers read a busy upstream with one predicate", () => {
+    expect(isUpstreamBusy(503, "")).toBe(true);
+    expect(isUpstreamBusy(529, "")).toBe(true);
+    expect(isUpstreamBusy(502, '{"error":{"status":"UNAVAILABLE"}}')).toBe(
+      true
+    );
+    expect(isUpstreamBusy(500, "")).toBe(false);
+    expect(isUpstreamBusy(429, "overloaded_error")).toBe(false);
+  });
+});
+
+describe("keyless matrix · reading the attempts and the redirects", () => {
+  const answer = (status: number, bodyText = "") => ({ bodyText, status });
+
+  it.each([
+    ["one 401", [answer(401)], "path-exists"],
+    ["429, then no answer", [answer(429), undefined], "rate-limited"],
+    ["429, then 429", [answer(429), answer(429)], "rate-limited"],
+    ["429, then 404", [answer(429), answer(404)], "path-gone"],
+    // A usage cap is the gate's answer, read by the classifier, and so is no
+    // answer after one: only a plain 429 is the rate limit (L3).
+    [
+      "a usage cap",
+      [answer(429, '{"error":{"type":"FreeUsageLimitError"}}')],
+      "other",
+    ],
+    [
+      "a usage cap, then no answer",
+      [answer(429, '{"error":{"type":"FreeUsageLimitError"}}'), undefined],
+      "transport-error",
+    ],
+    ["no answer, twice", [undefined, undefined], "transport-error"],
+    ["503, then no answer", [answer(503), undefined], "transport-error"],
+    ["500, then 500", [answer(500), answer(500)], "other"],
+    ["no attempt at all", [], "transport-error"],
+  ] as const)("%s → %s", (_name, attempts, verdict) => {
+    expect(verdictOfAttempts(attempts, classifyKeylessProbe)).toBe(verdict);
+  });
+
+  it("a redirect's path, resolved against the URL sent, without its host or query", () => {
+    const sent = "https://opencode.ai/zen/v1/chat/completions";
+    expect(redirectPathOf("/inference/openai/v1/chat/completions", sent)).toBe(
+      "/inference/openai/v1/chat/completions"
+    );
+    expect(
+      redirectPathOf("https://elsewhere.example/x/y?token=secret", sent)
+    ).toBe("/x/y");
+    expect(redirectPathOf("../responses", sent)).toBe("/zen/v1/responses");
+    expect(redirectPathOf(null, sent)).toBeUndefined();
+    expect(redirectPathOf("", sent)).toBeUndefined();
+    expect(redirectPathOf("http://[bad", sent)).toBeUndefined();
+  });
+});
+
+describe("keyless matrix · what the live matrix asserts", () => {
+  const row = (cell: string, verdict: string) => ({
+    cell,
+    family: cell.split(" ")[2] as MatrixFamily,
+    verdict,
+  });
+
+  it("an unreadable answer fails on a legacy or modern cell, never on a root one", () => {
+    const rows = [
+      row("opencode openai-completions legacy", "path-exists"),
+      row("opencode openai-completions root", "other"),
+      row("opencode openai-completions modern", "path-gone"),
+      row("opencode openai-responses legacy", "other"),
+      row("opencode openai-responses root", "transport-error"),
+      row("opencode openai-responses modern", "model-gone"),
+      row("opencode anthropic-messages legacy", "transport-error"),
+      row("opencode anthropic-messages root", "redirected"),
+      row("opencode anthropic-messages modern", "redirected"),
+      row("opencode google-generative-ai legacy", "rate-limited"),
+      row("opencode google-generative-ai modern", "no-model"),
+    ];
+    expect(unreadRows(rows).map((entry) => entry.cell)).toEqual([
+      "opencode openai-responses legacy",
+      "opencode anthropic-messages legacy",
+      "opencode anthropic-messages modern",
+      "opencode google-generative-ai legacy",
+      "opencode google-generative-ai modern",
+    ]);
+  });
+
+  it("only a default cell's path-gone breaks the default; a legacy or root one is recorded", () => {
+    const rows = [
+      row("opencode openai-completions legacy", "path-gone"),
+      row("opencode openai-completions root", "path-gone"),
+      row("opencode openai-completions modern", "path-exists"),
+      row("opencode-go anthropic-messages modern", "path-gone"),
+      row("opencode-go google-generative-ai modern", "model-gone"),
+    ];
+    expect(goneDefaultRows(rows).map((entry) => entry.cell)).toEqual([
+      "opencode-go anthropic-messages modern",
+    ]);
+    expect(goneDefaultRows(rows.slice(0, 3))).toEqual([]);
   });
 });
 
@@ -355,7 +873,25 @@ describe("keyless matrix · reading an answer", () => {
     [400, "model is UNAVAILABLE for this plan", "model-gone"],
     [400, "Invalid API key", "path-exists"],
     [200, "{}", "other"],
+    // The vendor's withdrawal, by type at any status (the rule a turn is
+    // read by): never a gone path, never a shape that parsed the request.
+    [
+      400,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [404, '{"error":{"type":"ModelDeprecated"}}', "model-gone"],
+    [
+      410,
+      '{"type":"error","error":{"type":"ModelDeprecated","message":"Model x has been deprecated."}}',
+      "model-gone",
+    ],
+    [400, '{"error":{"type":"ModelDeprecatedish"}}', "path-exists"],
+    [404, '{"error":{"type":"ModelDeprecatedish"}}', "path-gone"],
+    [200, '{"choices":[{"message":{"content":"ModelDeprecated"}}]}', "other"],
     [500, "", "other"],
+    [301, "", "redirected"],
+    [308, "", "redirected"],
   ] as const)("%i %s → %s", (status, bodyText, verdict) => {
     expect(classifyKeylessProbe({ bodyText, status })).toBe(verdict);
   });
@@ -393,5 +929,54 @@ describe("keyless matrix · a transient answer is retried once", () => {
     [200, false],
   ] as const)("%s → %s", (status, retry) => {
     expect(isTransientProbeAnswer(status)).toBe(retry);
+  });
+
+  it("but not a 429 naming the free tier's usage cap, which a retry meets again (L3)", () => {
+    const capped = '{"type":"error","error":{"type":"FreeUsageLimitError"}}';
+    expect(isFreeUsageLimit(capped)).toBe(true);
+    expect(isTransientProbeAnswer(429, capped)).toBe(false);
+    expect(isTransientProbeAnswer(429, '{"error":"rate limited"}')).toBe(true);
+    // The name, not a word that contains it.
+    expect(isFreeUsageLimit("NotFreeUsageLimitErrorish")).toBe(false);
+    expect(isTransientProbeAnswer(500, capped)).toBe(true);
+  });
+});
+
+describe("keyless matrix · the System One family (L13)", () => {
+  it("probes the Zen plane's three shapes, keyless and naming no model", () => {
+    const cells = systemOneCells();
+    expect(cells.map((cell) => [cell.family, cell.url])).toEqual([
+      ["legacy", "https://opencode.ai/zen/v1/systemone"],
+      ["root", "https://opencode.ai/inference/v1/systemone"],
+      ["modern", "https://opencode.ai/inference/systemone/v1/systemone"],
+    ]);
+    expect(Object.keys(SYSTEM_ONE_URLS).toSorted()).toEqual(
+      [...MATRIX_FAMILIES].toSorted()
+    );
+    for (const cell of cells) {
+      expect(cell.method).toBe("POST");
+      expect(cell.body).toEqual({});
+      expect(cell.headers).toEqual({ "content-type": "application/json" });
+    }
+  });
+
+  it("is read by the keyless classifier: a 404 is gone, an auth refusal exists", () => {
+    expect(classifyKeylessProbe({ bodyText: "", status: 404 })).toBe(
+      "path-gone"
+    );
+    expect(classifyKeylessProbe({ bodyText: "", status: 401 })).toBe(
+      "path-exists"
+    );
+  });
+
+  it("is no cell either setting dispatches to", () => {
+    for (const url of Object.values(SYSTEM_ONE_URLS)) {
+      for (const cell of keylessMatrix({
+        go: OPENCODE_GO_CATALOG,
+        zen: OPENCODE_ZEN_CATALOG,
+      })) {
+        expect(cell.url.startsWith(url)).toBe(false);
+      }
+    }
   });
 });

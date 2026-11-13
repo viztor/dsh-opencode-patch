@@ -37,7 +37,7 @@ Three properties the unit and mock suites keep by construction rather than by ca
 
 **Three rules, learned from failures:**
 
-1. **A live case skips on a vendor-side move, it does not fail.** A retired model (`410 ModelDeprecated`, or an upstream's `400 … Model is unavailable`), a closed tier (`FreeTierError`), a missing entitlement and a busy gateway (`429`) are all "not observable today". The reason is printed so the run says which.
+1. **A live case skips on a vendor-side move, it does not fail.** A retired model (`410 ModelDeprecated`, or an upstream's `400 … Model is unavailable`), a closed tier (`FreeTierError`, or the free tier's usage cap, `429 FreeUsageLimitError`), a missing entitlement and a busy gateway (any other `429`) are all "not observable today". The reason is printed so the run says which.
 2. **A case that walks candidates walks past the retired ones.** A `410` is an answer, so a picker that accepts "anything but a refusal" picks a dead model and then fails on it. For a `400` it is the body, not the status, that makes it a retirement: a bare `400` is also a malformed request, which is the plugin's fault and must still fail (`test/e2e/verdict.ts`, `retiredAtTheGateway`).
 3. **An assertion about the vendor is a claim about a moving thing.** Prefer asserting the PLUGIN's behaviour (which endpoint it chose, which headers it sent) over the vendor's answer.
 
