@@ -33,7 +33,7 @@
 
 ---
 
-`dsh-opencode-patch` is a DeepSeek Harness host plugin that keeps **OpenCode Zen & Go** models working inside DSH. Connect `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3-contributor-free`, `qwen3.8-flash` and the rest of the OpenCode catalog without network rejections, Cloudflare challenges, entitlement mismatches, or invisible limits.
+`dsh-opencode-patch` is a DeepSeek Harness host plugin that keeps **OpenCode Zen & Go** models working inside DSH. Connect `claude-sonnet-4-5`, `gpt-5.4`, `gemini-3.8-flash`, `deepseek-v4.1-flash`, `muse-spark-1.3`, `qwen3.8-flash` and the rest of the OpenCode catalog without network rejections, Cloudflare challenges, entitlement mismatches, or invisible limits.
 
 **The default state.** Point DSH at OpenCode with no plugin and the models do not work at all — not on one shape, on any of them:
 
@@ -184,8 +184,8 @@ opencode-responses:
   headers:
     authorization: Bearer unused # swapped for your key by the fetch patch
   models:
-    - id: muse-spark-1.3-contributor-free
-      name: Muse Spark 1.3 Free
+    - id: muse-spark-1.3
+      name: Muse Spark 1.3
       contextWindow: 1048576
       maxTokens: 131072
       input: [text, image]

@@ -33,7 +33,7 @@
 
 ---
 
-`dsh-opencode-patch` 是一个 DeepSeek Harness 宿主插件，让 **OpenCode Zen 与 Go** 模型在 DSH 内持续可用。无需遭遇网络拒绝、Cloudflare 挑战、权益不匹配或隐形限制，即可接入 `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3-contributor-free`、`qwen3.8-flash` 以及 OpenCode 目录中的其余模型。
+`dsh-opencode-patch` 是一个 DeepSeek Harness 宿主插件，让 **OpenCode Zen 与 Go** 模型在 DSH 内持续可用。无需遭遇网络拒绝、Cloudflare 挑战、权益不匹配或隐形限制，即可接入 `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3`、`qwen3.8-flash` 以及 OpenCode 目录中的其余模型。
 
 **默认状态。** 把 DSH 直接指向 OpenCode、不装任何插件，模型是**完全不能用**的——不是某一种形状不能用，而是全部：
 
@@ -182,8 +182,8 @@ opencode-responses:
   headers:
     authorization: Bearer unused # 由 fetch 补丁换成你的 key
   models:
-    - id: muse-spark-1.3-contributor-free
-      name: Muse Spark 1.3 Free
+    - id: muse-spark-1.3
+      name: Muse Spark 1.3
       contextWindow: 1048576
       maxTokens: 131072
       input: [text, image]
