@@ -188,6 +188,15 @@ export interface RouteClaim {
    * serves. Read per call, so a turn sees the rows as they are now.
    */
   readonly steppedAside: () => ReadonlySet<PlaneRoute>;
+  /**
+   * Whether the claim would take an entry of `plane` saved on the row it
+   * serves: false only when that row resolves credentials in a realm the
+   * plugin does not share, where every plane entry, declared or not yet, is
+   * pi-ai's (D27). Read per call, from the served row as it is now; true
+   * while no live row exists. It says nothing about whether the claim has
+   * engaged: that is {@link RouteClaim.claiming}.
+   */
+  readonly wouldTake: (plane: PlaneRoute) => boolean;
 }
 
 /** The `llm` service, as the claim calls it. */
@@ -401,6 +410,9 @@ export const installRouteClaim = (
       mounted: Promise.resolve(),
       piAiNamespace: () => PI_AI_RUNTIME,
       steppedAside: () => new Set(),
+      // No row is judged here, so none is in a foreign realm: `claiming`
+      // already keeps every fetch to pi's list with the enrich-only merge.
+      wouldTake: () => true,
     };
   }
 
@@ -1205,11 +1217,22 @@ export const installRouteClaim = (
     return out;
   };
 
+  /** See {@link RouteClaim.wouldTake}: a plain entry, judged as the listener would. */
+  const wouldTake = (plane: PlaneRoute): boolean => {
+    const served = servedRow();
+    return (
+      served === undefined ||
+      takenPlanes({ providers: { [plane]: {} } }, foreignRealmOf(served))
+        .length > 0
+    );
+  };
+
   return {
     claiming: () => state.active && !heldByPiAi(),
     committedEntries: () => (state.active ? state.normalized : {}),
     mounted,
     piAiNamespace: () => livePiAi()?.entry?.options?.id ?? PI_AI_RUNTIME,
     steppedAside,
+    wouldTake,
   };
 };

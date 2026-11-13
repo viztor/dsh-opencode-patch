@@ -1382,6 +1382,28 @@ describe(
         name: "realm-only planes",
         taken: [] as string[],
       },
+      {
+        aside: ["opencode-go"],
+        boot: (order: ApplyOrder) =>
+          bootRealm({
+            order,
+            providers: { "opencode-go": plain(TOKEN_REF) },
+          }),
+        name: "a realm row declaring only opencode-go",
+        taken: [] as string[],
+        undeclared: ["opencode"],
+      },
+      {
+        aside: ["opencode"],
+        boot: (order: ApplyOrder) =>
+          bootRealm({
+            order,
+            providers: { opencode: plain(TOKEN_REF) },
+          }),
+        name: "a realm row declaring only opencode",
+        taken: [] as string[],
+        undeclared: ["opencode-go"],
+      },
     ] as const;
 
     const CASES = APPLY_ORDERS.flatMap((order) =>
@@ -1389,9 +1411,16 @@ describe(
     );
 
     it.each(CASES)(
-      "$order, $shape.name: Fetch on a stepped-aside plane is the host's own answer, never complemented, and its NO_DISCOVERY during a pi-ai restart passes through; a taken plane keeps P3's complement",
+      "$order, $shape.name: Fetch on a stepped-aside plane, or on one a realm row has not declared yet, is the host's own answer, never complemented, and its NO_DISCOVERY during a pi-ai restart passes through; a taken plane keeps P3's complement",
       async ({ order, shape }) => {
         const { tier } = await shape.boot(order);
+        // A plane route the realm row does not declare is pi-ai's too once
+        // saved there (D27), so pi-ai's save refuses an id it does not list:
+        // the fetch offers exactly pi-ai's list.
+        const passed: readonly string[] = [
+          ...shape.aside,
+          ...("undeclared" in shape ? shape.undeclared : []),
+        ];
         for (const plane of shape.aside) {
           await waitForPlaneOwner(tier.llm, [plane], "PiAiAdapter");
         }
@@ -1403,7 +1432,7 @@ describe(
         const own = hostDiscover(tier.llm);
 
         let gaps = 0;
-        for (const plane of shape.aside) {
+        for (const plane of passed) {
           const control = await own(ns, plane);
           gaps += servable(plane).filter(
             (id) => !idsOf(control).includes(id)
@@ -1448,7 +1477,7 @@ describe(
             return;
           }
           // Read synchronously, on the transition out of UNLOADING.
-          calls = [...shape.aside, ...shape.taken].map((plane) => ({
+          calls = [...passed, ...shape.taken].map((plane) => ({
             control: settledOf(own(ns, plane)),
             plane,
             wrapped: settledOf(
@@ -1470,7 +1499,7 @@ describe(
             error: { code: "NO_DISCOVERY" },
           });
           const wrapped = await call.wrapped;
-          if ((shape.aside as readonly string[]).includes(call.plane)) {
+          if (passed.includes(call.plane)) {
             expect(wrapped, call.plane).toMatchObject({
               error: { code: "NO_DISCOVERY" },
             });

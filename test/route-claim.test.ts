@@ -252,6 +252,9 @@ describe("route-claim · standing down", () => {
     expect(claim.committedEntries()).toEqual({});
     expect(claim.piAiNamespace()).toBe("llm-pi-ai");
     expect(claim.claiming()).toBe(false);
+    // No row is judged, so none is foreign: discovery keeps its merge.
+    expect(claim.wouldTake("opencode")).toBe(true);
+    expect([...claim.steppedAside()]).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("offers no on, inject, effect")
     );
@@ -1107,6 +1110,37 @@ describe("route-claim · a second pi-ai row", () => {
       expect([...claim.steppedAside()]).toEqual(["opencode-go"]);
     }
   );
+
+  it("wouldTake reads the served row's realm per call: a row in a foreign realm takes no plane, declared or not yet; a row sharing the plugin's takes both (D27)", async () => {
+    useTestModules();
+    const vendor = piFiber({ deepseek: {}, "opencode-go": { ...zen } });
+    vendor.entry = {
+      options: {
+        id: "llm-pi-ai:vendor",
+        isolate: { credentials: "vendor-realm" },
+      },
+    };
+    let rows = [vendor];
+    const host = standIn({ fibers: () => rows });
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
+    await flush();
+    // The realm row is served (it takes nothing, and is the only one): its
+    // declared plane is stepped aside, and the undeclared one is not taken
+    // either, though nothing steps aside for it.
+    expect([...claim.steppedAside()]).toEqual(["opencode-go"]);
+    expect(claim.wouldTake("opencode-go")).toBe(false);
+    expect(claim.wouldTake("opencode")).toBe(false);
+    // The known answer: a row sharing the plugin's realm takes either plane.
+    const own = piFiber({ deepseek: {} });
+    own.uid = 2;
+    rows = [own];
+    expect(claim.wouldTake("opencode")).toBe(true);
+    expect(claim.wouldTake("opencode-go")).toBe(true);
+    // No live row: nothing is judged foreign.
+    rows = [];
+    expect(claim.wouldTake("opencode")).toBe(true);
+  });
 
   it("serves the row that declares the planes, whatever the registry order: a re-enabled row cordis appended last", async () => {
     useTestModules();

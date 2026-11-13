@@ -49,6 +49,7 @@ const SERVED: DiscoveryClaim = {
   claiming: () => true,
   piAiNamespace: () => "llm-pi-ai",
   steppedAside: () => new Set(),
+  wouldTake: () => true,
 };
 
 /** The claim after a stand-down: pi-ai serves the planes again. */
@@ -56,6 +57,7 @@ const STOOD_DOWN: DiscoveryClaim = {
   claiming: () => false,
   piAiNamespace: () => "llm-pi-ai",
   steppedAside: () => new Set(),
+  wouldTake: () => true,
 };
 
 /** The five fields of the Remote's `LlmDiscoveredModel`, sorted. */
@@ -598,6 +600,7 @@ describe("decorateModelDiscovery", () => {
       claiming: () => live,
       piAiNamespace: () => ns,
       steppedAside: () => new Set(),
+      wouldTake: () => true,
     };
     const original = vi.fn().mockResolvedValue([{ id: "minimax-m3" }]);
     const { wrapped } = install(original, claim);
@@ -724,6 +727,51 @@ describe("decorateModelDiscovery", () => {
       { provider: "opencode-go" },
       undefined
     );
+  });
+
+  it("passes pi-ai's answer through untouched, NO_DISCOVERY included, on a plane route the claim would not take on the served row (a foreign realm, D27), even one no row declares yet; the same answer is complemented once it would (the known answer)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("offline catalog test"))
+    );
+    const answer = [{ id: "deepseek-v4-pro" }];
+    const original = vi.fn().mockResolvedValue(answer);
+    let foreign = true;
+    const claim: DiscoveryClaim = {
+      ...SERVED,
+      // Nothing declared, so nothing stepped aside: only the realm says no.
+      steppedAside: () => new Set(),
+      wouldTake: () => !foreign,
+    };
+    const { stop, wrapped } = install(original, claim);
+    const ids = (rows: unknown): string[] =>
+      (rows as { id: string }[]).map((row) => row.id);
+
+    for (const provider of ["opencode", "opencode-go"]) {
+      await expect(wrapped("llm-pi-ai", { provider })).resolves.toBe(answer);
+    }
+    const failure = Object.assign(
+      new Error('no model discovery is registered for "llm-pi-ai"'),
+      { code: "NO_DISCOVERY" }
+    );
+    original.mockRejectedValueOnce(failure);
+    await expect(wrapped("llm-pi-ai", { provider: "opencode" })).rejects.toBe(
+      failure
+    );
+    // Read per call: once the served row would be taken, the plane is
+    // complemented, and its NO_DISCOVERY answers the catalog.
+    foreign = false;
+    expect(ids(await wrapped("llm-pi-ai", { provider: "opencode" }))).toEqual([
+      "deepseek-v4-pro",
+      ...servableIds(OPENCODE_ZEN_CATALOG).filter(
+        (id) => id !== "deepseek-v4-pro"
+      ),
+    ]);
+    original.mockRejectedValueOnce(failure);
+    expect(ids(await wrapped("llm-pi-ai", { provider: "opencode" }))).toEqual(
+      servableIds(OPENCODE_ZEN_CATALOG)
+    );
+    stop?.();
   });
 
   it("calls the host's method with the service as its receiver", async () => {
