@@ -435,7 +435,7 @@ OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harnes
 - **停用或重载插件会恢复它包装过的宿主方法。** 停用时模型发现与设置嫁接会被撤下，热重载会替换它们而不是再叠一层。两个平面交还给 `llm-pi-ai`——见[移除或停用插件](#移除或停用插件)。
 - **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除。所有受支持宿主的 pi（npm 安装以及两个通道的桌面应用）都是 `1.3.0` 或更高版本，会列出该模型，因此其回合携带档位；在 pi 为 `1.1.0` 的宿主（`0.2.1` 的 rc 桌面应用，已不再是受支持的通道构建）上，每个 `gemini-4-argon` 回合携带的都是网关会拒绝的思考预算。
 - **`@viztor/dsh-opencode` 已弃用，但仍在发布。** 它是一个转导出 `dsh-opencode-patch` 的薄包装，所以用旧名的安装照常解析；registry 上标记为弃用并指向正式名称。新安装请用 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
-- **其他插件拥有的路由留给它自己。** 当 `llm-pi-ai` 的配置行在本插件不解析凭据的凭据域中解析凭据，或者平面条目带有 `x-opencode-plugin` 请求头时（OpenCode Console 安装步骤写入的正是这种形状），该平面由 `llm-pi-ai` 而不是本插件服务，本插件的请求头、密钥与计量都不碰它的流量。过去这样的路由会被接管，并因拿不到 Console 的令牌而失败；见[与 OpenCode Console 同时安装](#与-opencode-console-同时安装)。
+- **其他插件拥有的路由留给它自己。** 当 `llm-pi-ai` 的配置行在本插件不解析凭据的凭据域中解析凭据，或者平面条目带有 `x-opencode-plugin` 请求头时（OpenCode Console 安装步骤写入的正是这种形状），该平面由 `llm-pi-ai` 而不是本插件服务，本插件的请求头、密钥与计量都不碰它的流量。在已发布的 1.x 中，这类路由上被本插件转到其隐藏的 Responses、Messages 或 Google 路由的轮次用本插件的凭据解析，因拿不到 Console 的令牌而失败，其余轮次则带上本插件的请求头，其密钥也被记录下来供计量使用；见[与 OpenCode Console 同时安装](#与-opencode-console-同时安装)。
 
 ## 📜 兼容性与验证
 
