@@ -783,6 +783,74 @@ describe("route-claim · a second pi-ai row", () => {
     expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
   });
 
+  it("a plane the served row takes is the plugin's, whatever a second row that steps aside for it declares; it is stepped aside once that row is gone (D27)", async () => {
+    useTestModules();
+    const served = piFiber();
+    const vendor = piFiber({
+      deepseek: {},
+      opencode: { ...zen, headers: { "x-opencode-plugin": "vendor/1.0.0" } },
+    });
+    vendor.uid = 2;
+    const host = standIn({ fibers: () => [served, vendor] });
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
+    await flush();
+    expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+    // The stream hook and the fetch patch read this: the plugin's own turns
+    // on `opencode` stay decorated.
+    expect([...claim.steppedAside()]).toEqual([]);
+    // The known answer: with the served row gone, the second row's marked
+    // entry is the only `opencode` left, and it is another plugin's.
+    served.uid = null;
+    expect([...claim.steppedAside()]).toEqual(["opencode"]);
+  });
+
+  it.each([
+    [
+      "its realm",
+      {
+        entry: {
+          options: {
+            id: "llm-pi-ai:vendor",
+            isolate: { credentials: "vendor-realm" },
+          },
+        },
+        goEntry: { models: [{ id: "glm-5.1" }] },
+      },
+    ],
+    [
+      "its marker",
+      {
+        entry: { options: { id: "llm-pi-ai:vendor" } },
+        goEntry: {
+          headers: { "x-opencode-plugin": "vendor/1.0.0" },
+          models: [{ id: "glm-5.1" }],
+        },
+      },
+    ],
+  ] as const)(
+    "serves the row whose planes the claim TAKES: a row ahead of it that declares only a plane another plugin owns, by %s, is passed over (D27)",
+    async (_reason, shape) => {
+      useTestModules();
+      const vendor = piFiber({ deepseek: {}, "opencode-go": shape.goEntry });
+      vendor.entry = shape.entry;
+      const own = piFiber();
+      own.uid = 2;
+      const host = standIn({ fibers: () => [vendor, own] });
+      const claim = installRouteClaim(host.ctx, config);
+      await claim.mounted;
+      await flush();
+      const listener = host.listeners.get("internal/config");
+      expect(oldRun(listener, vendor, vendor._config)).toBe(vendor._config);
+      expect(oldRun(listener, own, own._config)).toEqual({
+        providers: { deepseek: {} },
+      });
+      expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
+      expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+      expect([...claim.steppedAside()]).toEqual(["opencode-go"]);
+    }
+  );
+
   it("serves the row that declares the planes, whatever the registry order: a re-enabled row cordis appended last", async () => {
     useTestModules();
     const bare = piFiber({ deepseek: {} });

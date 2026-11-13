@@ -457,6 +457,43 @@ describe(
       }
     );
 
+    it("a save to the marked entry is judged by pi-ai's own check, while the same save to the plane beside it the plugin takes is judged by the plugin's", async () => {
+      const { tier } = await bootRealm({
+        providers: {
+          opencode: { ...marked(), apiKeyEnv: "OPENCODE_API_KEY" },
+          "opencode-go": plain("OPENCODE_GO_API_KEY"),
+        },
+        realm: false,
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode-go"]);
+      await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+      await settle();
+      // A route-level api with a compat flag only that api honours: pi-ai's
+      // check applies the route's api and accepts it; the plugin's takes the
+      // protocol from the catalog first (D16), which is completions, and
+      // refuses the flag.
+      const edit = (plane: string) => (current: Record<string, unknown>) => {
+        const providers = { ...(current.providers as Providers) };
+        providers[plane] = {
+          ...providers[plane],
+          api: "anthropic-messages",
+          models: [{ compat: { supportsTemperature: false }, id: MODEL }],
+        };
+        return { ...current, providers };
+      };
+      // The known answer: on the plane the plugin takes, its check refuses.
+      await expect(
+        tier.ctx.configEditor.edit(tier.piEntry, edit("opencode-go"))
+      ).rejects.toThrow(/supportsTemperature/u);
+      // On the marked plane beside it, pi-ai's check is the only one.
+      await expect(
+        tier.ctx.configEditor.edit(tier.piEntry, edit("opencode"))
+      ).resolves.not.toThrow();
+      await settle();
+      expect(ownerOf(tier.llm, "opencode")).toBe("PiAiAdapter");
+      expect(ownerOf(tier.llm, "opencode-go")).toBe("PlaneAdapter");
+    });
+
     it("tier A: the marker is read case-insensitively, and an unmarked plane in an unisolated row is still the plugin's (the known answer)", async () => {
       offline();
       tierA = await mountTierA({
