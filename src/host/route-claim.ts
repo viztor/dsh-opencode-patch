@@ -1049,13 +1049,18 @@ export const installRouteClaim = (
     { global: true }
   );
   ctx.on?.("llm/adapters-updated", schedule, { global: true });
+  // Any row's partial dispose, not only pi-ai's: a live edit of the plugin's
+  // own row's `isolate`, or of a group around either row, moves a realm and
+  // changes which planes the claim takes (D27) without a config run, a
+  // restart or a registry change. The loader swaps the realm map before the
+  // scheduled reconcile runs, which then moves the plane with one restart.
   ctx.on?.(
     "loader/partial-dispose",
     (entry: unknown) => {
       if (isRecord(entry) && isPiAi(entry.fiber)) {
         state.modules = undefined;
-        schedule();
       }
+      schedule();
     },
     { global: true }
   );

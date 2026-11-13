@@ -780,6 +780,131 @@ describe(
         ]);
       }
     );
+
+    /**
+     * Change the plugin's own row's `isolate` and nothing else, as a live edit
+     * of that row does: the loader swaps its realm map in place, and nothing
+     * restarts the plugin or pi-ai or touches the registry.
+     */
+    const isolatePlugin = async (
+      tier: TierB,
+      isolate: Record<string, unknown> | null
+    ): Promise<void> => {
+      await tier.pluginEntry?.update({ isolate } as never);
+      await settle();
+    };
+
+    it.each(APPLY_ORDERS)(
+      "%s: the plugin's own row joining pi-ai's realm takes the plane, which it serves with the realm's key, and leaving it hands the plane back, each with one restart",
+      async (order) => {
+        const { logged, restarts, tier } = await bootIsolable(order, true);
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+        await settle();
+        expect(steppedAsideLines(logged())).toHaveLength(1);
+        const fiber = tier.pluginEntry?.fiber;
+        const before = restarts();
+
+        // Joining: the realm is the plugin's too, so D20 holds again and the
+        // plane is the plugin's.
+        await isolatePlugin(tier, { credentials: REALM });
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PlaneAdapter", 3000);
+        // The plugin's row was not restarted: only its realm map moved.
+        expect(tier.pluginEntry?.fiber).toBe(fiber);
+        expect(resolvedPlanes(tier.piFiber)).toEqual([]);
+        expect(restarts() - before).toBe(1);
+        const ours = await turn(tier.llm, "opencode");
+        expect(ours.requests).toHaveLength(1);
+        expect(ours.requests[0]?.headers.authorization).toBe(
+          `Bearer ${TOKEN}`.length
+        );
+        expect(ours.requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
+
+        // Leaving: the realm is another plugin's again, so the plane is
+        // pi-ai's, and the plugin's process-wide key never reaches it.
+        await isolatePlugin(tier, null);
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter", 3000);
+        expect(resolvedPlanes(tier.piFiber)).toEqual(["opencode"]);
+        expect(restarts() - before).toBe(2);
+        const theirs = await turn(tier.llm, "opencode");
+        expect(theirs.requests).toHaveLength(1);
+        expect(theirs.requests[0]?.headers.authorization).toBe(
+          `Bearer ${TOKEN}`.length
+        );
+        for (const header of OURS) {
+          expect(theirs.requests[0]?.headers).not.toHaveProperty(header);
+        }
+      }
+    );
+
+    it.each(APPLY_ORDERS)(
+      "%s: a group around the plugin's row moving into pi-ai's realm takes the plane, which the plugin serves with the realm's key",
+      async (order) => {
+        offline();
+        const realm = fakeCredentials({ refs: { [TOKEN_REF]: TOKEN } });
+        let restarts: ReturnType<typeof piAiRestarts> | undefined;
+        const patch = [
+          {
+            insert: [
+              {
+                id: "realm-credentials",
+                isolate: { credentials: REALM },
+                name: REALM_PLUGIN_PACKAGE,
+              },
+            ],
+          },
+          {
+            config: { providers: { opencode: plain(TOKEN_REF) } },
+            id: "llm-pi-ai",
+            isolate: { credentials: REALM },
+          },
+          {
+            insert: [
+              {
+                config: [
+                  { id: "dsh-opencode-patch", name: "dsh-opencode-patch" },
+                ],
+                id: "realm-group",
+                name: "cordis:group",
+              },
+            ],
+          },
+        ];
+        tierB = await bootTierB({
+          credentials: fakeCredentials({ refs: {} }),
+          order,
+          plugin: false,
+          prepare: (root) => {
+            restarts = piAiRestarts(root);
+          },
+          profilePatchYaml: `${JSON.stringify(patch, null, 2)}\n`,
+          realm: { credentials: realm, label: REALM },
+        });
+        const tier = tierB;
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+        await settle();
+        const group = (
+          tier.ctx as unknown as {
+            loader: { entries: () => Iterable<TierB["piEntry"]> };
+          }
+        ).loader;
+        const groupEntry = [...group.entries()].find(
+          (entry) => entry.options.id === "realm-group"
+        );
+        expect(groupEntry).toBeDefined();
+        const before = restarts?.count() ?? 0;
+
+        await groupEntry?.update({ isolate: { credentials: REALM } } as never);
+        await settle();
+        await waitForPlaneOwner(tier.llm, ["opencode"], "PlaneAdapter", 3000);
+        expect((restarts?.count() ?? 0) - before).toBe(1);
+        const { requests } = await turn(tier.llm, "opencode");
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.headers.authorization).toBe(
+          `Bearer ${TOKEN}`.length
+        );
+        expect(requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
+      }
+    );
   }
 );
 
