@@ -468,12 +468,14 @@ const installModelDiscovery = (
 
 /**
  * Discovery for one `llm` scope: the catalog namespaces, and the wrapper that
- * merges the catalog into a discovery answer, tied to the scope so an `llm`
- * restart or a disable undoes it.
+ * merges the catalog into a discovery answer — never on a plane the route
+ * claim left to another plugin (D27) — tied to the scope so an `llm` restart
+ * or a disable undoes it.
  */
 const installDiscovery = (
   ctx: CordisContext,
-  config: ResolvedPluginConfig
+  config: ResolvedPluginConfig,
+  steppedAside: () => ReadonlySet<string>
 ): void => {
   ctx.inject?.(["llm"], (scope: unknown) => {
     if (!isRecord(scope)) {
@@ -481,7 +483,7 @@ const installDiscovery = (
     }
     const llmScope = scope as CordisContext;
     installModelDiscovery(llmScope, config);
-    const stop = decorateModelDiscovery(llmScope, config);
+    const stop = decorateModelDiscovery(llmScope, config, steppedAside);
     if (isFunctionLike(llmScope.effect)) {
       llmScope.effect(() => () => stop?.(), "dsh-opencode-patch.discovery");
     }
@@ -529,7 +531,7 @@ export const apply = async (
 
   if (installFetchPatch(ctx, config, als)) {
     installStreamHook(ctx, config, als, claim.steppedAside);
-    installDiscovery(ctx, config);
+    installDiscovery(ctx, config, claim.steppedAside);
   }
   await claim.mounted;
 };

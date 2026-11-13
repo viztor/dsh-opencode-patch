@@ -18,7 +18,11 @@ import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { projectNameFrom, recordDebug } from "./support/src.ts";
+import {
+  type ActiveTurnState,
+  projectNameFrom,
+  recordDebug,
+} from "./support/src.ts";
 import { collectUnknown, createMockStream } from "./test-helpers.ts";
 
 // The debug sink is observed rather than written: a negative assertion over a
@@ -171,28 +175,42 @@ describe("stream-hook · the pass-through guards", () => {
 describe("stream-hook · a plane another plugin owns (D27)", () => {
   /**
    * The route claim hands the hook the planes pi-ai serves for another plugin;
-   * a turn on one is that plugin's, so it reaches `next()` and comes back as
-   * it went, with no turn state, no price and no debug line. The read is per
-   * turn: the same hook decorates the route again once it is not stepped
-   * aside.
+   * a turn on one is that plugin's. Its chunks come back as they went, with no
+   * session, no price and no debug line, and its requests run under a turn
+   * marked as another plugin's, which the fetch patch passes through
+   * untouched: without the mark, a request on the gateway's URL would be
+   * claimed by URL alone. The read is per turn: the same hook decorates the
+   * route again once it is not stepped aside.
    */
-  it("hands a stepped-aside plane's turn through untouched, and decorates it once it is the plugin's again", async () => {
+  it("runs a stepped-aside plane's turn as another plugin's, and decorates it once it is the plugin's again", async () => {
     const { createStreamHook, resolveConfig } =
       await import("./support/src.ts");
     const { AsyncLocalStorage } = await import("node:async_hooks");
     const info = vi.fn();
     const aside = new Set(["opencode"]);
+    const als = new AsyncLocalStorage<ActiveTurnState>();
     const hook = createStreamHook(
       { logger: { info } } as never,
       resolveConfig({ debug: true, usageEnabled: false } as never),
-      new AsyncLocalStorage(),
+      als,
       () => aside
     );
-    const downstream = createMockStream("chunk");
+    const seen: unknown[] = [];
+    const downstream = (async function* foreignTurn() {
+      seen.push(als.getStore());
+      yield "chunk";
+    })();
     const next = vi.fn(() => downstream);
-    expect(hook({ model: "m", provider: "opencode" }, next)).toBe(downstream);
+    const stream = hook({ model: "m", provider: "opencode" }, next);
+    expect(await collectUnknown(stream as AsyncIterable<unknown>)).toEqual([
+      "chunk",
+    ]);
     expect(next).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ foreign: true, provider: "opencode", value: "" }]);
     expect(info).not.toHaveBeenCalled();
+    // A non-stream answer is returned as it is.
+    const plain = { done: true };
+    expect(hook({ model: "m", provider: "opencode" }, () => plain)).toBe(plain);
     // The known answer: the other plane, and then this one, are decorated.
     const other = createMockStream("chunk");
     expect(hook({ model: "m", provider: "opencode-go" }, () => other)).not.toBe(

@@ -315,6 +315,39 @@ describe("decorateModelDiscovery", () => {
     expect(ctx.llm?.discoverModels).toBe(original);
   });
 
+  it("passes pi-ai's answer through untouched on a plane another plugin owns (D27), and enriches the same answer on a plane the claim takes (the known answer)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("offline catalog test"))
+    );
+    const answer = [{ id: "deepseek-v4-pro" }];
+    const original = vi.fn().mockResolvedValue(answer);
+    const ctx = {
+      llm: { discoverModels: original },
+    } as unknown as CordisContext;
+    const aside = new Set<string>(["opencode"]);
+    const stop = decorateModelDiscovery(ctx, resolveConfig(), () => aside);
+    const wrapped = ctx.llm?.discoverModels;
+    if (typeof wrapped !== "function") {
+      throw new TypeError("discovery decorator was not installed");
+    }
+
+    await expect(wrapped("llm-pi-ai", { provider: "opencode" })).resolves.toBe(
+      answer
+    );
+    const enriched = await wrapped("llm-pi-ai", { provider: "opencode-go" });
+    expect(enriched).not.toBe(answer);
+    expect(enriched).toEqual([
+      expect.objectContaining({ contextWindow: expect.any(Number) }),
+    ]);
+    // Read per call: once the plane is the claim's again, it is enriched.
+    aside.clear();
+    expect(await wrapped("llm-pi-ai", { provider: "opencode" })).not.toBe(
+      answer
+    );
+    stop?.();
+  });
+
   it("calls the host's method with the service as its receiver", async () => {
     // The real registry is a class whose `discoverModels` reads its own
     // discoveries through `this`, so a wrapper that calls it detached fails

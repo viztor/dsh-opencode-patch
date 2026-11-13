@@ -25,10 +25,12 @@
  *   its own save check included, which a strip that let the raw value through
  *   would not shield. A plane entry another plugin owns is not taken (D27,
  *   `utils/plane-ownership.ts`): pi-ai's row resolving `credentials` in a
- *   realm the plugin's row does not share, or an entry carrying the
- *   `x-opencode-plugin` header. It stays in pi-ai's copy, pi-ai validates
- *   and serves it, it is logged once, and nothing below — a restart, the
- *   reconcile's wait, the handback, the Settings graft — counts it. The user's file keeps every entry: the editor writes the
+ *   realm the plugin's context does not (a group's realm counts as its
+ *   rows'), or an entry carrying the `x-opencode-plugin` header. It stays in
+ *   pi-ai's copy, pi-ai validates and serves it, it is logged once, and
+ *   nothing below — a restart, the reconcile's wait, the handback, the
+ *   Settings graft — counts it; a commit run releases a plane the plugin had
+ *   registered and no longer takes before pi-ai registers it. The user's file keeps every entry: the editor writes the
  *   raw value, never the resolved one. A commit run (`isCommitRun`: the raw
  *   value is the fiber's own raw config or the loader's stored row config, or
  *   the fiber is not ACTIVE, F14) schedules {@link reconcile}; an editor
@@ -111,9 +113,8 @@ import {
 } from "../utils/config-run.ts";
 import { isFunctionLike, isRecord } from "../utils/guards.ts";
 import {
-  credentialsRealmOf,
-  isForeignRealm,
-  type RealmLabel,
+  type ForeignRealm,
+  foreignCredentialsRealm,
   stepAsideMessage,
   steppedAsidePlanes,
   takenPlanes,
@@ -283,20 +284,31 @@ export const installRouteClaim = (
   };
 
   /**
-   * The plugin's own row's `credentials` realm, read once: a change to it is
-   * a change to the plugin's row, which applies the plugin again.
+   * The plugin's own side of a realm comparison: its context, which resolves
+   * `credentials` in whatever realm its row sits in (its own `isolate`, or an
+   * enclosing group's), and its row's options, read only where a context
+   * carries no realm map.
    */
   const ownFiber: unknown = Reflect.get(ctx, "fiber");
   const ownEntry: unknown = isRecord(ownFiber) ? ownFiber.entry : undefined;
-  const ownRealm = credentialsRealmOf(
-    isRecord(ownEntry) ? ownEntry.options : undefined
-  );
-
-  /** A pi-ai row's realm when the plugin does not share it, else `undefined`. */
-  const foreignRealmOf = (fiber: HostFiber): RealmLabel | undefined => {
-    const theirs = credentialsRealmOf(fiber.entry?.options);
-    return isForeignRealm(theirs, ownRealm) ? theirs : undefined;
+  const ownSide = {
+    context: ctx,
+    options: isRecord(ownEntry) ? ownEntry.options : undefined,
   };
+  const rootContext: unknown = Reflect.get(ctx, "root");
+
+  /**
+   * A pi-ai row's realm when the plugin does not resolve credentials there,
+   * else `undefined`: compared by the realm each context RESOLVES, so a
+   * group's realm counts as its rows' (D27). Read per call, since the loader
+   * swaps a row's realm map in place when its `isolate` changes.
+   */
+  const foreignRealmOf = (fiber: HostFiber): ForeignRealm | undefined =>
+    foreignCredentialsRealm(
+      { context: fiber.ctx, options: fiber.entry?.options },
+      ownSide,
+      rootContext
+    );
 
   /**
    * The planes the claim TAKES from a pi-ai row: those its raw config (or a
@@ -783,6 +795,36 @@ export const installRouteClaim = (
   };
 
   /**
+   * On a commit run, release at once the planes the plugin registered that
+   * the run's candidate no longer lets it take (an edit that adds the marker,
+   * D27). pi-ai registers the routes of the config this run resolves as soon
+   * as the run returns, before the scheduled {@link reconcile}: a route the
+   * plugin still held then would be refused as a duplicate and left with no
+   * adapter at all. The reconcile rebuilds from the same candidate after.
+   */
+  const releaseUntaken = (taken: readonly PlaneRoute[]): void => {
+    const { handle } = state;
+    if (handle === undefined) {
+      return;
+    }
+    const takenNames: readonly string[] = taken;
+    const held = [...state.profiles.keys()];
+    const kept = held.filter((route) => takenNames.includes(route));
+    if (kept.length === held.length) {
+      return;
+    }
+    state.facts = undefined;
+    state.entriesKey = undefined;
+    try {
+      // Through the live handle, as every withdrawal is: `replace([])` when
+      // nothing is left, never a release.
+      handle.replace?.(kept);
+    } catch (error) {
+      warn("the plane routes did not release", error);
+    }
+  };
+
+  /**
    * The listener's body, for the run's fiber and the raw value its `next()`
    * answered: the innermost value, the run's raw candidate.
    */
@@ -793,6 +835,9 @@ export const installRouteClaim = (
     const commit = isCommitRun(raw, fiber, ACTIVE);
     // The run's own candidate decides: an edit can add or drop a marker.
     const taken = takenOf(fiber, raw);
+    if (commit) {
+      releaseUntaken(taken);
+    }
     if (taken.length === 0) {
       if (commit) {
         schedule();

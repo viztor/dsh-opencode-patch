@@ -36,6 +36,7 @@ import {
   ownerOf,
   PLANES,
   piAiRestarts,
+  REALM_PLUGIN_PACKAGE,
   recordingFetch,
   type RecordedRequest,
   type RecordingFetch,
@@ -46,8 +47,10 @@ import {
 } from "./support/host.ts";
 import {
   clearCapturedApiKeys,
+  discoverGoConfig,
   getCapturedApiKey,
   OPENCODE_UA,
+  resolveGoApiKey,
   SESSION_HEADER,
 } from "./support/src.ts";
 
@@ -103,6 +106,7 @@ afterEach(async () => {
     clearCapturedApiKeys();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   }
 });
 
@@ -159,6 +163,8 @@ const turn = async (
 
 /** Boot tier B with pi-ai's row in the fixture's realm. */
 const bootRealm = async (options: {
+  /** The process-wide credentials' refs; by default the user's two keys. */
+  readonly userKeys?: Readonly<Record<string, string>>;
   readonly order?: ApplyOrder;
   readonly plugin?: boolean;
   readonly pluginConfig?: Record<string, unknown>;
@@ -178,7 +184,10 @@ const bootRealm = async (options: {
     // The process-wide service holds the user's own keys and never the
     // realm's token: a plugin outside the realm cannot resolve it.
     credentials: fakeCredentials({
-      refs: { OPENCODE_API_KEY: "zen-k", OPENCODE_GO_API_KEY: "go-k" },
+      refs: options.userKeys ?? {
+        OPENCODE_API_KEY: "zen-k",
+        OPENCODE_GO_API_KEY: "go-k",
+      },
     }),
     order: options.order ?? "plugin-first",
     plugin: options.plugin ?? true,
@@ -301,20 +310,58 @@ describe(
       expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
     });
 
-    it("the realm alone is enough: unmarked entries in a realm the plugin does not share stay pi-ai's", async () => {
-      const { logged, restarts, tier } = await bootRealm({
+    it("the realm alone is enough: unmarked entries in a realm the plugin does not share stay pi-ai's, and their turns leave as pi-ai alone sends them, with nothing captured", async () => {
+      const providers = {
+        opencode: plain(TOKEN_REF),
+        "opencode-go": plain(TOKEN_REF),
+      };
+      // The known answer: what pi-ai alone sends for these turns.
+      const alone = await bootRealm({ plugin: false, providers });
+      await waitForPlaneOwner(alone.tier.llm, PLANES, "PiAiAdapter");
+      const baseline = new Map<string, RecordedRequest | undefined>();
+      for (const plane of PLANES) {
+        const { requests } = await turn(alone.tier.llm, plane);
+        expect(requests).toHaveLength(1);
+        baseline.set(plane, requests[0]);
+      }
+      await alone.tier.dispose();
+      tierB = undefined;
+
+      const { logged, realm, restarts, tier } = await bootRealm({
         order: "pi-ai-first",
-        providers: {
-          opencode: plain(TOKEN_REF),
-          "opencode-go": plain(TOKEN_REF),
-        },
+        providers,
       });
       await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
       await settle();
       expect(restarts()).toBe(0);
       expect(steppedAsideLines(logged())).toHaveLength(2);
-      const { requests } = await turn(tier.llm, "opencode");
-      expect(requests[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`.length);
+      for (const plane of PLANES) {
+        const { requests } = await turn(tier.llm, plane);
+        expect(requests).toHaveLength(1);
+        const [sent] = requests;
+        const expected = baseline.get(plane);
+        expect(sent?.url).toBe(expected?.url);
+        expect(sent?.headers.authorization).toBe(`Bearer ${TOKEN}`.length);
+        // No marker on these entries: only the realm says they are another
+        // plugin's, and the fetch patch must hear it too.
+        expect(sent?.headers).not.toHaveProperty("x-opencode-plugin");
+        expect(Object.keys(sent?.headers ?? {}).toSorted()).toEqual(
+          Object.keys(expected?.headers ?? {}).toSorted()
+        );
+        for (const header of [...OURS, "x-session-id"]) {
+          expect(sent?.headers).not.toHaveProperty(header);
+        }
+        expect(sent?.headers["user-agent"]).toBe(
+          expected?.headers["user-agent"]
+        );
+        expect(sent?.headers["user-agent"]).not.toBe(OPENCODE_UA);
+      }
+      expect(realm.calls).toContainEqual(["resolve", TOKEN_REF]);
+      for (const plane of PLANES) {
+        expect(getCapturedApiKey(plane)).toBeUndefined();
+      }
+      expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+      expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
     });
 
     it("a Settings save on a realm plane is judged by pi-ai's own check, not the plugin's", async () => {
@@ -442,6 +489,244 @@ describe(
       const zen = await turn(tierA.llm, "opencode");
       expect(zen.requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
       expect(getCapturedApiKey("opencode")).toBe("zen-k");
+    });
+  }
+);
+
+describe(
+  "host planes · a live edit moves a plane between the plugin and pi-ai (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    /** A Settings save that sets, or drops, the marker on `opencode`. */
+    const markZen = async (tier: TierB, on: boolean): Promise<void> => {
+      await tier.ctx.configEditor.edit(tier.piEntry, (current) => {
+        const providers = { ...(current.providers as Providers) };
+        const { headers: _headers, ...rest } = providers.opencode ?? {};
+        providers.opencode = on ? { ...rest, headers: { ...MARKER } } : rest;
+        return { ...current, providers };
+      });
+      await settle();
+    };
+
+    /** A line pi-ai logs when a route it resolved is held by someone else. */
+    const CONFLICT = /already registered|conflicts with an existing provider/u;
+
+    it.each(APPLY_ORDERS)(
+      "%s: adding the marker to a plane the plugin serves hands it to pi-ai at once, and dropping it takes it back, each save reaching the wire",
+      async (order) => {
+        const { logged, restarts, tier } = await bootRealm({
+          order,
+          providers: {
+            opencode: plain("OPENCODE_API_KEY"),
+            "opencode-go": plain("OPENCODE_GO_API_KEY"),
+          },
+          realm: false,
+        });
+        await waitForPlaneOwner(tier.llm, PLANES);
+        await settle();
+        const before = restarts();
+
+        await markZen(tier, true);
+        expect(ownerOf(tier.llm, "opencode")).toBe("PiAiAdapter");
+        expect(ownerOf(tier.llm, "opencode-go")).toBe("PlaneAdapter");
+        expect(logged().filter((line) => CONFLICT.test(line))).toEqual([]);
+        expect(steppedAsideLines(logged())).toEqual([
+          expect.stringContaining("leaves the route opencode to pi-ai"),
+        ]);
+        const handed = await turn(tier.llm, "opencode");
+        expect(handed.requests).toHaveLength(1);
+        expect(handed.requests[0]?.headers.authorization).toBe(
+          "Bearer zen-k".length
+        );
+        expect(handed.requests[0]?.headers["x-opencode-plugin"]).toBeDefined();
+        for (const header of OURS) {
+          expect(handed.requests[0]?.headers).not.toHaveProperty(header);
+        }
+
+        await markZen(tier, false);
+        expect(ownerOf(tier.llm, "opencode")).toBe("PlaneAdapter");
+        expect(logged().filter((line) => CONFLICT.test(line))).toEqual([]);
+        const taken = await turn(tier.llm, "opencode");
+        expect(taken.requests).toHaveLength(1);
+        expect(taken.requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
+        // Neither save restarts pi-ai: each is a live update of its routes.
+        expect(restarts()).toBe(before);
+      }
+    );
+
+    it("adding the marker to the only plane the plugin serves hands it to pi-ai too", async () => {
+      const { logged, tier } = await bootRealm({
+        providers: { opencode: plain("OPENCODE_API_KEY") },
+        realm: false,
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode"]);
+      await settle();
+      await markZen(tier, true);
+      expect(ownerOf(tier.llm, "opencode")).toBe("PiAiAdapter");
+      expect(logged().filter((line) => CONFLICT.test(line))).toEqual([]);
+      const { requests } = await turn(tier.llm, "opencode");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.headers.authorization).toBe("Bearer zen-k".length);
+    });
+  }
+);
+
+describe(
+  "host planes · the realm is the one each row RESOLVES, a group's included (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    it("the plugin's row inside a group isolated into pi-ai's realm shares it: the plugin serves the planes with the realm's key, and nothing steps aside", async () => {
+      offline();
+      const realm = fakeCredentials({ refs: { [TOKEN_REF]: TOKEN } });
+      let log: ReturnType<typeof logLines> | undefined;
+      const patch = [
+        {
+          insert: [
+            {
+              id: "realm-credentials",
+              isolate: { credentials: REALM },
+              name: REALM_PLUGIN_PACKAGE,
+            },
+          ],
+        },
+        {
+          config: {
+            providers: {
+              opencode: plain(TOKEN_REF),
+              "opencode-go": plain(TOKEN_REF),
+            },
+          },
+          id: "llm-pi-ai",
+          isolate: { credentials: REALM },
+        },
+        {
+          insert: [
+            {
+              // The plugin's row declares no realm of its own: it inherits the
+              // group's, which is pi-ai's.
+              config: [
+                { id: "dsh-opencode-patch", name: "dsh-opencode-patch" },
+              ],
+              id: "realm-group",
+              isolate: { credentials: REALM },
+              name: "cordis:group",
+            },
+          ],
+        },
+      ];
+      tierB = await bootTierB({
+        credentials: fakeCredentials({ refs: {} }),
+        plugin: false,
+        prepare: (root) => {
+          log = logLines(root);
+        },
+        profilePatchYaml: `${JSON.stringify(patch, null, 2)}\n`,
+        realm: { credentials: realm, label: REALM },
+      });
+      await waitForPlaneOwner(tierB.llm, PLANES);
+      await settle();
+      expect(steppedAsideLines(log?.lines() ?? [])).toEqual([]);
+      const { requests } = await turn(tierB.llm, "opencode-go");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`.length);
+      expect(requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
+      expect(realm.calls).toContainEqual(["resolve", TOKEN_REF]);
+    });
+  }
+);
+
+describe(
+  "host planes · the meter never reads another plugin's entry (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    /**
+     * A base the vendor's routes might name, which the meter must not adopt:
+     * on the gateway's host, so the recorder answers it, and on neither of its
+     * families, so the meter would ask it for `/usage` as written.
+     */
+    const VENDOR_BASE = "https://opencode.ai/workspace-fixture/v1";
+
+    /** The usage service the plugin mounts on the root. */
+    const usageOf = (
+      tier: TierB
+    ): { readonly read: (query?: unknown) => Promise<unknown> } =>
+      tier.ctx.get("opencodeGoUsage") as {
+        readonly read: (query?: unknown) => Promise<unknown>;
+      };
+
+    /**
+     * One meter read; what it answers is not under test (the recorder refuses
+     * every key), only what it sent.
+     */
+    const readUsage = async (tier: TierB): Promise<void> => {
+      try {
+        await usageOf(tier).read({ provider: "opencode-go" });
+      } catch {
+        // The 401 the recorder answers, or a missing key.
+      }
+    };
+
+    const usageRequests = (): RecordedRequest[] =>
+      wire.requests.filter((request) => request.url.endsWith("/usage"));
+
+    it("with the realm's token exported and no Go key of the user's own, the meter neither adopts the realm entry's reference nor sends the token", async () => {
+      vi.stubEnv(TOKEN_REF, TOKEN);
+      const { tier } = await bootRealm({
+        userKeys: {},
+        providers: {
+          opencode: { ...marked(), baseURL: VENDOR_BASE },
+          "opencode-go": { ...marked(), baseURL: VENDOR_BASE },
+        },
+      });
+      await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
+      await settle();
+      const pluginCtx = tier.pluginEntry?.fiber?.ctx;
+      expect(discoverGoConfig(pluginCtx)).toEqual({});
+      expect(
+        await resolveGoApiKey(pluginCtx, "opencode-go", "auto", false)
+      ).toBeUndefined();
+      await readUsage(tier);
+      for (const request of usageRequests()) {
+        expect(request.headers.authorization).not.toBe(
+          `Bearer ${TOKEN}`.length
+        );
+      }
+    });
+
+    it("the user's own Go key goes to the Go endpoint, never to a stepped-aside entry's base; an entry of the user's own still names it (the known answer)", async () => {
+      const { tier } = await bootRealm({
+        providers: {
+          opencode: { ...marked(), baseURL: VENDOR_BASE },
+          "opencode-go": { ...marked(), baseURL: VENDOR_BASE },
+        },
+      });
+      await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
+      await settle();
+      await readUsage(tier);
+      const sent = usageRequests();
+      expect(sent.length).toBeGreaterThan(0);
+      for (const request of sent) {
+        expect(request.url).toBe("https://opencode.ai/zen/go/v1/usage");
+        expect(request.headers.authorization).toBe("Bearer go-k".length);
+      }
+      await tier.dispose();
+      tierB = undefined;
+
+      // The same entry, unmarked and outside any realm, is the user's: its
+      // reference and base are read as before.
+      const own = await bootRealm({
+        providers: {
+          "opencode-go": {
+            ...plain("OPENCODE_GO_API_KEY"),
+            baseURL: "https://opencode.ai/zen/v1",
+          },
+        },
+        realm: false,
+      });
+      expect(discoverGoConfig(own.tier.pluginEntry?.fiber?.ctx)).toEqual({
+        baseURL: "https://opencode.ai/zen/v1",
+        keyEnv: "OPENCODE_GO_API_KEY",
+      });
     });
   }
 );

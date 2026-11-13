@@ -196,11 +196,14 @@ export const mergeDiscoveredModels = (
  * and omit its provider-scoped retired rows.
  *
  * The original method keeps ownership of errors, cancellation, and every
- * unclaimed route. The returned disposer restores it.
+ * unclaimed route — a plane pi-ai serves for another plugin included (the
+ * route claim's `steppedAside`, D27), whose answer is pi-ai's alone. The
+ * returned disposer restores it.
  */
 export const decorateModelDiscovery = (
   ctx: CordisContext,
-  config: ResolvedPluginConfig
+  config: ResolvedPluginConfig,
+  steppedAside: () => ReadonlySet<string> = () => new Set()
 ): (() => void) | undefined => {
   if (!config.enrichModels) {
     return undefined;
@@ -226,7 +229,12 @@ export const decorateModelDiscovery = (
           signal,
         ]);
         const provider = resolveDiscoveryProvider(request, config);
-        if (provider === undefined) {
+        if (
+          provider === undefined ||
+          (isRecord(request) &&
+            typeof request.provider === "string" &&
+            steppedAside().has(request.provider))
+        ) {
           return discovered;
         }
         return mergeDiscoveredModels(discovered, provider);

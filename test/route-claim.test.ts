@@ -453,6 +453,56 @@ describe("route-claim · the listener", () => {
     release?.();
     await claim.mounted;
   });
+
+  it("leaves an entry another plugin owns to pi-ai's own save check: an edit to it passes a check the plugin's would refuse, while the same edit on a plane the claim takes is refused (D27)", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = hostModulesForTests();
+    // The plugin's check is refused outright until the modules load, so any
+    // entry it judges is refused: the edit below tells the two checks apart.
+    useTestModules({
+      libraries: async () => {
+        await gate;
+        return real.libraries();
+      },
+      piAi: real.piAi,
+    });
+    const marked = {
+      headers: { "x-opencode-plugin": "vendor/1.0.0" },
+      models: [{ id: "deepseek-v4-pro" }],
+    };
+    const pi = piFiber({ deepseek: {}, opencode: marked, "opencode-go": zen });
+    const host = standIn({ fibers: () => [pi] });
+    const claim = installRouteClaim(host.ctx, config);
+    const listener = host.listeners.get("internal/config");
+    const edited = {
+      providers: {
+        deepseek: {},
+        opencode: { ...marked, models: [{ id: "x" }] },
+        "opencode-go": zen,
+      },
+    };
+    const copy = oldRun(listener, pi, edited) as {
+      providers: Record<string, unknown>;
+    };
+    // Kept for pi-ai, which judges it; the plane the claim takes is stripped.
+    expect(copy.providers.opencode).toEqual(edited.providers.opencode);
+    expect(copy.providers).not.toHaveProperty("opencode-go");
+    // The known answer: the same edit on the taken plane is the plugin's to judge.
+    expect(() =>
+      oldRun(listener, pi, {
+        providers: {
+          deepseek: {},
+          opencode: marked,
+          "opencode-go": { models: [{ id: "x" }] },
+        },
+      })
+    ).toThrow(/provider "opencode-go" cannot be validated yet/u);
+    release?.();
+    await claim.mounted;
+  });
 });
 
 /** A NEW-core fiber's own fields, as the claim reads them. */

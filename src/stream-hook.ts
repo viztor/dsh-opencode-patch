@@ -118,7 +118,8 @@ export const createStreamHook = (
   /**
    * The plane routes pi-ai serves for another plugin (the route claim's
    * `steppedAside`, D27): a turn on one is that plugin's, and is not
-   * decorated, priced or carried into the fetch patch. Read per turn.
+   * decorated or priced; its requests run under a turn marked `foreign`,
+   * which the fetch patch passes through untouched. Read per turn.
    */
   steppedAside: () => ReadonlySet<string> = () => new Set()
 ): StreamHandler => {
@@ -133,8 +134,21 @@ export const createStreamHook = (
       return next();
     }
     const providerKey = String(providerProp);
-    if (!providers.has(providerKey) || steppedAside().has(providerKey)) {
+    if (!providers.has(providerKey)) {
       return next();
+    }
+    if (steppedAside().has(providerKey)) {
+      // Another plugin's turn (D27): not decorated or priced, and its
+      // requests run marked as that plugin's, so the fetch patch does not
+      // claim them by their gateway URL either.
+      const foreign: unknown = next();
+      return isAsyncIterableLike(foreign)
+        ? withStore(
+            foreign,
+            { foreign: true, provider: providerKey, value: "" },
+            als
+          )
+        : foreign;
     }
 
     const sessionProp: unknown = options.sessionId;

@@ -12,7 +12,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  credentialsRealmKeyOf,
   credentialsRealmOf,
+  foreignCredentialsRealm,
   isForeignRealm,
   PLUGIN_MARKER_HEADER,
   pluginMarkerOf,
@@ -57,6 +59,120 @@ describe("plane-ownership · the realm a row resolves credentials in", () => {
   });
 });
 
+describe("plane-ownership · the realm each context RESOLVES (cordis's own key)", () => {
+  /** cordis keys a context's per-service realms by this symbol. */
+  const ISOLATE = Symbol.for("cordis.isolate");
+  const GLOBAL = Symbol("credentials");
+  const TEAM = Symbol("credentials@team");
+  const OTHER = Symbol("credentials@other");
+  /** A realm map; `parent` is the map it inherits from, as the loader builds it. */
+  const realmMap = (
+    parent: object | null,
+    own: Record<string, unknown> = {}
+  ): object => Object.assign(Object.create(parent), own);
+  const rootMap = realmMap(null, { credentials: GLOBAL });
+  const contextOf = (map: object): object => ({ [ISOLATE]: map });
+  const root = contextOf(rootMap);
+  const unisolated = contextOf(realmMap(rootMap));
+  const team = contextOf(realmMap(rootMap, { credentials: TEAM }));
+  const other = contextOf(realmMap(rootMap, { credentials: OTHER }));
+  /** A row inside a group isolated into "team", with no realm of its own. */
+  const inTeamGroup = contextOf(
+    realmMap(realmMap(rootMap, { credentials: TEAM }))
+  );
+
+  it("reads the key a context resolves credentials under, inherited or own, and nothing from a context without a realm map", () => {
+    expect(credentialsRealmKeyOf(team)).toEqual({ key: TEAM });
+    expect(credentialsRealmKeyOf(inTeamGroup)).toEqual({ key: TEAM });
+    expect(credentialsRealmKeyOf(unisolated)).toEqual({ key: GLOBAL });
+    expect(credentialsRealmKeyOf(contextOf(realmMap(null)))).toEqual({
+      key: undefined,
+    });
+    for (const context of [undefined, null, "ctx", {}, { [ISOLATE]: 1 }]) {
+      expect(credentialsRealmKeyOf(context)).toBeUndefined();
+    }
+    const throwing = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error("no realm map here");
+        },
+      }
+    );
+    expect(credentialsRealmKeyOf(throwing)).toBeUndefined();
+  });
+
+  it("is foreign when pi-ai's row is isolated into a realm the plugin's context does not resolve, by key, whatever the rows' own labels say", () => {
+    const teamRow = { isolate: { credentials: "team" } };
+    // Isolated, and the plugin is not in it: foreign, named by the row's label.
+    expect(
+      foreignCredentialsRealm(
+        { context: team, options: teamRow },
+        { context: unisolated, options: {} },
+        root
+      )
+    ).toEqual({ realm: "team" });
+    expect(
+      foreignCredentialsRealm(
+        { context: team, options: teamRow },
+        { context: other, options: { isolate: { credentials: "other" } } },
+        root
+      )
+    ).toEqual({ realm: "team" });
+    // The plugin inherits pi-ai's realm from a group: the same key, so shared.
+    expect(
+      foreignCredentialsRealm(
+        { context: team, options: teamRow },
+        { context: inTeamGroup, options: {} },
+        root
+      )
+    ).toBeUndefined();
+    // pi-ai inherits a realm from a group the plugin is outside of: foreign,
+    // though its row names no realm.
+    expect(
+      foreignCredentialsRealm(
+        { context: inTeamGroup, options: {} },
+        { context: unisolated, options: {} },
+        root
+      )
+    ).toEqual({ realm: undefined });
+    // pi-ai on the process-wide realm is never foreign, wherever the plugin is.
+    expect(
+      foreignCredentialsRealm(
+        { context: unisolated, options: {} },
+        { context: team, options: teamRow },
+        root
+      )
+    ).toBeUndefined();
+    // Nothing has provided credentials anywhere yet: no realm to differ.
+    const bare = contextOf(realmMap(null));
+    expect(
+      foreignCredentialsRealm(
+        { context: contextOf(realmMap(null)), options: {} },
+        { context: bare, options: {} },
+        bare
+      )
+    ).toBeUndefined();
+  });
+
+  it("falls back to the rows' labels when either context carries no realm map", () => {
+    const vendor = { isolate: { credentials: "vendor" } };
+    expect(
+      foreignCredentialsRealm({ options: vendor }, { options: {} }, undefined)
+    ).toEqual({ realm: "vendor" });
+    expect(
+      foreignCredentialsRealm(
+        { context: team, options: vendor },
+        { options: vendor },
+        root
+      )
+    ).toBeUndefined();
+    expect(
+      foreignCredentialsRealm({ options: {} }, { context: team }, root)
+    ).toBeUndefined();
+  });
+});
+
 describe("plane-ownership · the marker", () => {
   it("finds the header in any case, as written", () => {
     expect(pluginMarkerOf(MARKED)).toBe(PLUGIN_MARKER_HEADER);
@@ -89,11 +205,11 @@ describe("plane-ownership · what the claim takes", () => {
   });
 
   it("leaves every declared plane to pi-ai in a foreign realm, the realm named over the marker", () => {
-    expect([...steppedAsidePlanes(raw, "vendor")]).toEqual([
+    expect([...steppedAsidePlanes(raw, { realm: "vendor" })]).toEqual([
       ["opencode", { kind: "realm", realm: "vendor" }],
       ["opencode-go", { kind: "realm", realm: "vendor" }],
     ]);
-    expect(takenPlanes(raw, "vendor")).toEqual([]);
+    expect(takenPlanes(raw, { realm: "vendor" })).toEqual([]);
   });
 
   it("takes every declared plane of a plain row (the known answer), and nothing of a config without planes", () => {
@@ -104,7 +220,7 @@ describe("plane-ownership · what the claim takes", () => {
       "opencode-go",
     ]);
     for (const config of [undefined, null, {}, { providers: null }]) {
-      expect(steppedAsidePlanes(config, "vendor").size).toBe(0);
+      expect(steppedAsidePlanes(config, { realm: "vendor" }).size).toBe(0);
       expect(takenPlanes(config, undefined)).toEqual([]);
     }
     expect(takenPlanes({ providers: { deepseek: {} } }, undefined)).toEqual([]);
@@ -126,6 +242,9 @@ describe("plane-ownership · the line the claim logs", () => {
       stepAsideMessage("opencode-go", { kind: "realm", realm: true }, "row")
     ).toContain(
       'the pi-ai row "row" resolves credentials in a realm private to it'
+    );
+    expect(stepAsideMessage("opencode", { kind: "realm" }, "llm-pi-ai")).toBe(
+      'the pi-ai row "llm-pi-ai" resolves credentials in a realm it inherits from an enclosing group, which this plugin\'s row does not share: dsh-opencode-patch leaves the route opencode to pi-ai'
     );
     expect(
       stepAsideMessage(

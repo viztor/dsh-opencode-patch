@@ -3,8 +3,9 @@
  *
  * Only requests the plugin claims (gateway URL match, or a configured
  * provider on the active turn) are touched; everything else returns through
- * the original `fetch` byte-identical, and so does a claimed request that
- * carries another plugin's `x-opencode-plugin` marker (D27). For claimed requests the patch
+ * the original `fetch` byte-identical, and so does a request of another
+ * plugin's (D27): one issued inside a turn the stream hook marked `foreign`,
+ * or one that carries an `x-opencode-plugin` marker. For claimed requests the patch
  * restores the session header, the CLI User-Agent, and the gateway origin
  * headers, and runs the free-tier core-tool fallback over the body.
  *
@@ -204,6 +205,14 @@ export const patchFetch = (
     init?: RequestInit
   ): Promise<Response> {
     const state = als.getStore();
+    // **A turn another plugin owns goes out as it was sent** (D27): the
+    // stream hook marks a turn on a stepped-aside plane, whichever rule
+    // stepped aside (the realm, which the request cannot show, or the
+    // marker). Before the URL claim, which would otherwise take the request
+    // by its gateway URL alone.
+    if (state?.foreign === true) {
+      return original.call(this, input, init);
+    }
     const url = requestUrlOf(input);
 
     if (!isOpenCodeRequest(url, state, config.providers, config.gatewayUrls)) {

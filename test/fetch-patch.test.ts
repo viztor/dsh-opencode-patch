@@ -88,6 +88,36 @@ describe("patchFetch · another plugin's request (D27)", () => {
     }
   );
 
+  it("passes a request made inside another plugin's turn through untouched, marker or not: the realm is enough (the known answer: the same request outside it is claimed by URL)", async () => {
+    process.env.OPENCODE_GO_API_KEY = "ambient-go-key";
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const seen: unknown[][] = [];
+    const original = (async (...args: unknown[]) => {
+      seen.push(args);
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    const patched = patchFetch(original, als, resolveConfig(), {});
+    const url = "https://opencode.ai/zen/go/v1/chat/completions";
+    const init: RequestInit = {
+      body: JSON.stringify({ messages: [], model: "deepseek-v4-pro" }),
+      headers: { authorization: "Bearer realm-token" },
+      method: "POST",
+    };
+    const foreign = { foreign: true, provider: "opencode-go", value: "" };
+    await als.run(foreign as ActiveTurnState, () => patched(url, init));
+    expect(seen[0]?.[0]).toBe(url);
+    expect(seen[0]?.[1]).toBe(init);
+    expect(getCapturedApiKey("opencode-go")).toBeUndefined();
+    expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+    // Outside the foreign turn the gateway URL is claimed: headers are
+    // written and the key is captured.
+    await patched(url, init);
+    const sent = seen[1]?.[1] as RequestInit | undefined;
+    expect(sent).not.toBe(init);
+    expect(new Headers(sent?.headers).get(SESSION_HEADER)).toBeTruthy();
+    expect(getCapturedApiKey(undefined, "go")).toBe("realm-token");
+  });
+
   it("passes a marked Request through as the same object, and still patches the unmarked one (the known answer)", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const seen: unknown[][] = [];
