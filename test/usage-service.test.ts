@@ -616,7 +616,9 @@ describe("GoUsageService readings", () => {
       model: "deepseek-v4.1-flash",
       sessionId: "s-picked",
     });
-    expect(usage.allowance?.model).toBe("DeepSeek V4.1 Flash");
+    // The catalog's display name for the id, which the vendor renamed from
+    // `DeepSeek V4.1 Flash`; the id the picker sent is unchanged.
+    expect(usage.allowance?.model).toBe("DeepSeek V4.1 Flash 1017");
     // And the session's own model keeps its own name, on its own row.
     expect(usage.session?.activeModelName).not.toBe(usage.allowance?.model);
   });
