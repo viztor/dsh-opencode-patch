@@ -53,6 +53,7 @@ import {
   discoverGoConfig,
   getCapturedApiKey,
   OPENCODE_UA,
+  refreshCatalog,
   resolveGoApiKey,
   SESSION_HEADER,
 } from "./support/src.ts";
@@ -1136,6 +1137,32 @@ describe(
       }
     });
 
+    it("the realm alone keeps the meter off: unmarked entries in a realm the plugin does not share are neither adopted nor replayed, with the realm's token exported", async () => {
+      vi.stubEnv(TOKEN_REF, TOKEN);
+      const { tier } = await bootRealm({
+        userKeys: {},
+        providers: {
+          opencode: plain(TOKEN_REF),
+          "opencode-go": plain(TOKEN_REF),
+        },
+      });
+      await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
+      await settle();
+      const pluginCtx = tier.pluginEntry?.fiber?.ctx;
+      // No marker anywhere: only the row's realm, read off its context the
+      // way a real host isolates it, says these entries are another plugin's.
+      expect(discoverGoConfig(pluginCtx)).toEqual({});
+      expect(
+        await resolveGoApiKey(pluginCtx, "opencode-go", "auto", false)
+      ).toBeUndefined();
+      await readUsage(tier);
+      for (const request of usageRequests()) {
+        expect(request.headers.authorization).not.toBe(
+          `Bearer ${TOKEN}`.length
+        );
+      }
+    });
+
     it("the user's own Go key goes to the Go endpoint, never to a stepped-aside entry's base; an entry of the user's own still names it (the known answer)", async () => {
       const { tier } = await bootRealm({
         providers: {
@@ -1171,5 +1198,98 @@ describe(
         keyEnv: "OPENCODE_GO_API_KEY",
       });
     });
+  }
+);
+
+describe(
+  "host planes · Settings → Models → Fetch on a stepped-aside plane is pi-ai's alone (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    /** Settings → Models → Fetch for one plane, through the host's own `llm`. */
+    const fetchModels = async (
+      tier: TierB,
+      plane: string
+    ): Promise<string[]> => {
+      const models = await tier.llm.discoverModels(
+        tier.piEntry.options.id ?? "llm-pi-ai",
+        { provider: plane }
+      );
+      return models.map((model) => model.id);
+    };
+
+    /**
+     * A live catalog that retires {@link MODEL} on both planes: the plugin's
+     * merge drops a retired id from a plane it serves, so the id says whose
+     * answer Fetch gave.
+     */
+    const retireModel = async (): Promise<void> => {
+      await refreshCatalog(
+        (async () =>
+          Response.json({
+            opencode: { models: { [MODEL]: { status: "deprecated" } } },
+            "opencode-go": { models: { [MODEL]: { status: "deprecated" } } },
+          })) as unknown as typeof fetch,
+        true
+      );
+    };
+
+    it.each(APPLY_ORDERS)(
+      "%s: a realm plane and a marked plane answer pi-ai's own list, a retired id included, while an unmarked plane outside any realm drops it (the known answer)",
+      async (order) => {
+        // pi-ai alone lists the id on both planes, retired or not.
+        const alone = await bootRealm({
+          order,
+          plugin: false,
+          providers: { opencode: marked(), "opencode-go": marked() },
+          realm: false,
+        });
+        await retireModel();
+        const baseline = new Map<string, string[]>();
+        for (const plane of PLANES) {
+          const ids = await fetchModels(alone.tier, plane);
+          expect(ids).toContain(MODEL);
+          baseline.set(plane, ids);
+        }
+        await alone.tier.dispose();
+        tierB = undefined;
+
+        // The marker splits one row outside any realm: the marked plane
+        // answers pi-ai's own list, the unmarked one the plugin's merge.
+        const split = await bootRealm({
+          order,
+          providers: {
+            opencode: { ...marked(), apiKeyEnv: "OPENCODE_API_KEY" },
+            "opencode-go": plain("OPENCODE_GO_API_KEY"),
+          },
+          realm: false,
+        });
+        await waitForPlaneOwner(split.tier.llm, ["opencode"], "PiAiAdapter");
+        await waitForPlaneOwner(split.tier.llm, ["opencode-go"]);
+        await retireModel();
+        expect(await fetchModels(split.tier, "opencode")).toEqual(
+          baseline.get("opencode")
+        );
+        expect(await fetchModels(split.tier, "opencode-go")).toEqual(
+          baseline.get("opencode-go")?.filter((id) => id !== MODEL)
+        );
+        await split.tier.dispose();
+        tierB = undefined;
+
+        // The realm alone steps both planes aside.
+        const { tier } = await bootRealm({
+          order,
+          providers: {
+            opencode: plain(TOKEN_REF),
+            "opencode-go": plain(TOKEN_REF),
+          },
+        });
+        await waitForPlaneOwner(tier.llm, PLANES, "PiAiAdapter");
+        await settle();
+        await retireModel();
+        for (const plane of PLANES) {
+          expect(await fetchModels(tier, plane)).toEqual(baseline.get(plane));
+        }
+      }
+    );
   }
 );
