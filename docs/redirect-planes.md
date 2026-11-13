@@ -10,10 +10,10 @@ A **plane** is one gateway base URL with its own catalog and its own credential.
 
 | Plane | Route id | Base URL | Credential | Models |
 | :-- | :-- | :-- | :-- | --: |
-| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | `OPENCODE_API_KEY` | 87 served / 139 listed |
-| Go (subscription) | `opencode-go` | the `endpoint` family's | `OPENCODE_GO_API_KEY` | 32 served / 39 listed |
+| Zen (pay-as-you-go, free tier) | `opencode` | the `endpoint` family's | `OPENCODE_API_KEY` | 87 served / 132 listed |
+| Go (subscription) | `opencode-go` | the `endpoint` family's | `OPENCODE_GO_API_KEY` | 32 served / 38 listed |
 
-Counts as of 2026-11-12 (the shipped shim, regenerated in #132, refreshed in #156 and again in #159, which added seven Zen models and one Go model and retired `crouton-alpha-free` and `pulse-alpha-free`); the document's 2026-10-09 stamp is for its measurements.
+Counts as of 2026-11-12 (the shipped shim, regenerated in #132, refreshed in #156 and again in #159, which added seven Zen models and one Go model and retired `crouton-alpha-free` and `pulse-alpha-free`); the document's 2026-10-09 stamp is for its measurements. Only the served halves were refreshed in #159: the shim carries no deprecated rows and the registry was not re-read, so the listed halves are the ones #156 recorded, carried forward unchanged rather than inferred from the served side.
 
 **There is no longer one base URL per plane to quote.** The gateway answers on two endpoint families and the `endpoint` setting picks one: `auto`, the default, is an alias of `modern`, the per-protocol inference family (`…/inference/openai/v1` and `…/inference/go/openai/v1` for completions), and `legacy` pins the older `…/zen/v1` and `…/zen/go/v1`. Both are still served and they are entitled separately, which is why the choice is the user's rather than a migration. The dated measurement below was taken on the legacy family.
 
