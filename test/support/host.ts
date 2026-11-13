@@ -1587,6 +1587,17 @@ export interface TierBOptions {
    * order measured on the published binary). Ignored without the plugin row.
    */
   readonly order?: ApplyOrder;
+  /**
+   * Put pi-ai's row in a credentials realm of its own, the shape a vendor's
+   * setup writes (an override of pi-ai's row with `isolate: { credentials:
+   * <label> }`, whose `config` replaces pi-ai's), beside a row of
+   * {@link realmCredentialsPlugin} in the same realm that provides the
+   * `credentials` service there. The plugin's own row stays outside it.
+   */
+  readonly realm?: {
+    readonly label: string;
+    readonly credentials: FakeCredentials;
+  };
 }
 
 /** A booted tier B. */
@@ -1632,16 +1643,58 @@ const blankAmbientKeys = (): (() => void) => {
   };
 };
 
+/** The package {@link realmCredentialsPlugin} is loaded under. */
+export const REALM_PLUGIN_PACKAGE = "realm-credentials-fixture";
+
+/**
+ * A plugin of the test's own that provides `credentials` in whatever realm its
+ * row isolates it into, the way a vendor plugin that owns a realm does. It
+ * answers only what its fake was seeded with.
+ *
+ * @param credentials - the realm's fake.
+ * @returns the module namespace the stub loader hands the loader.
+ */
+export const realmCredentialsPlugin = (
+  credentials: FakeCredentials
+): Readonly<Record<string, unknown>> => ({
+  apply: (ctx: Context) => {
+    ctx.provide("credentials", credentials.service);
+  },
+  name: REALM_PLUGIN_PACKAGE,
+});
+
 /** The profile patch the S0-style boots write, as JSON text (valid YAML). */
 const profilePatchText = (
   providers: Record<string, unknown> | undefined,
-  pluginConfig: Record<string, unknown> | undefined
+  pluginConfig: Record<string, unknown> | undefined,
+  realm: string | undefined
 ): string =>
   `${JSON.stringify(
     [
+      ...(realm === undefined
+        ? []
+        : [
+            {
+              insert: [
+                {
+                  id: "realm-credentials",
+                  isolate: { credentials: realm },
+                  name: REALM_PLUGIN_PACKAGE,
+                },
+              ],
+            },
+          ]),
       ...(providers === undefined
         ? []
-        : [{ config: { providers }, id: "llm-pi-ai" }]),
+        : [
+            {
+              config: { providers },
+              id: "llm-pi-ai",
+              ...(realm === undefined
+                ? {}
+                : { isolate: { credentials: realm } }),
+            },
+          ]),
       ...(pluginConfig === undefined
         ? []
         : [{ config: pluginConfig, id: name }]),
@@ -1697,7 +1750,11 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
     writeFileSync(
       patchPath,
       options.profilePatchYaml ??
-        profilePatchText(options.providers, options.pluginConfig)
+        profilePatchText(
+          options.providers,
+          options.pluginConfig,
+          options.realm?.label
+        )
     );
     const profile: ProfileContext = {
       cwd: home,
@@ -1718,12 +1775,25 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
         root.provide("profileContext", profile);
         root.provide("credentials", credentials.service);
         root.provide("launchEnvironment", launchEnvironment.snapshot);
+        const realmModules: readonly (readonly [string, unknown])[] =
+          options.realm === undefined
+            ? []
+            : [
+                [
+                  REALM_PLUGIN_PACKAGE,
+                  realmCredentialsPlugin(options.realm.credentials),
+                ],
+              ];
         if (options.plugin === false) {
-          root.loader.internal = stubModuleLoader(HOST_MODULES);
+          root.loader.internal = stubModuleLoader(
+            new Map([...HOST_MODULES, ...realmModules])
+          );
         } else {
           const ordered = orderedModules(options.order ?? "plugin-first");
           ordered.watch(root);
-          root.loader.internal = stubModuleLoader(ordered.modules);
+          root.loader.internal = stubModuleLoader(
+            new Map([...ordered.modules, ...realmModules])
+          );
         }
         options.prepare?.(root);
       }

@@ -3,7 +3,9 @@
  *
  * Only requests the plugin claims (gateway URL match, or a configured
  * provider on the active turn) are touched; everything else returns through
- * the original `fetch` byte-identical. For claimed requests the patch
+ * the original `fetch` byte-identical, and so does a request of another
+ * plugin's (D27): one issued inside a turn the stream hook marked `foreign`,
+ * or one that carries an `x-opencode-plugin` marker. For claimed requests the patch
  * restores the session header, the CLI User-Agent, and the gateway origin
  * headers, and runs the free-tier core-tool fallback over the body.
  *
@@ -42,6 +44,7 @@ import {
 } from "./session.ts";
 import { maybeInjectCoreTools } from "./tool-fallback.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
+import { PLUGIN_MARKER_HEADER } from "./utils/plane-ownership.ts";
 import {
   ANTHROPIC_VERSION,
   authHeaderFor,
@@ -202,6 +205,14 @@ export const patchFetch = (
     init?: RequestInit
   ): Promise<Response> {
     const state = als.getStore();
+    // **A turn another plugin owns goes out as it was sent** (D27): the
+    // stream hook marks a turn on a stepped-aside plane, whichever rule
+    // stepped aside (the realm, which the request cannot show, or the
+    // marker). Before the URL claim, which would otherwise take the request
+    // by its gateway URL alone.
+    if (state?.foreign === true) {
+      return original.call(this, input, init);
+    }
     const url = requestUrlOf(input);
 
     if (!isOpenCodeRequest(url, state, config.providers, config.gatewayUrls)) {
@@ -209,6 +220,14 @@ export const patchFetch = (
     }
 
     const headers = new Headers(headerSourceOf(input, init));
+
+    // **Another plugin's request goes out as it was sent** (D27). A route that
+    // plugin wrote through pi-ai carries its marker, and its credential comes
+    // from a realm this plugin does not share: no header of ours, no key fill
+    // and no key capture, so its token is never recorded or replayed.
+    if (headers.has(PLUGIN_MARKER_HEADER)) {
+      return original.call(this, input, init);
+    }
 
     // The body, read once, off whichever half carries it. DSH sends inference as
     // fetch(new Request(url, { body })) — so init.body is undefined, and two

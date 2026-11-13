@@ -649,6 +649,40 @@ describe("decorateModelDiscovery", () => {
     expect(original).toHaveBeenCalledWith("llm-pi-ai", undefined, undefined);
   });
 
+  it("passes pi-ai's answer through untouched on a plane another plugin owns (D27), and complements the same answer on a plane the claim takes (the known answer)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("offline catalog test"))
+    );
+    const answer = [{ id: "deepseek-v4-pro" }];
+    const original = vi.fn().mockResolvedValue(answer);
+    const aside = new Set<string>(["opencode"]);
+    // The claim P3's wrapper reads, with the route claim's D27 accessor.
+    const claim = { ...SERVED, steppedAside: () => aside };
+    const { stop, wrapped } = install(original, claim);
+    const complement = (
+      catalog: readonly { id: string; provider_npm?: string }[]
+    ): string[] => [
+      "deepseek-v4-pro",
+      ...servableIds(catalog).filter((id) => id !== "deepseek-v4-pro"),
+    ];
+    const ids = (rows: unknown): string[] =>
+      (rows as { id: string }[]).map((row) => row.id);
+
+    await expect(wrapped("llm-pi-ai", { provider: "opencode" })).resolves.toBe(
+      answer
+    );
+    const served = await wrapped("llm-pi-ai", { provider: "opencode-go" });
+    expect(served).not.toBe(answer);
+    expect(ids(served)).toEqual(complement(OPENCODE_GO_CATALOG));
+    // Read per call: once the plane is the claim's again, it is complemented.
+    aside.clear();
+    const taken = await wrapped("llm-pi-ai", { provider: "opencode" });
+    expect(taken).not.toBe(answer);
+    expect(ids(taken)).toEqual(complement(OPENCODE_ZEN_CATALOG));
+    stop?.();
+  });
+
   it("calls the host's method with the service as its receiver", async () => {
     // The real registry is a class whose `discoverModels` reads its own
     // discoveries through `this`, so a wrapper that calls it detached fails

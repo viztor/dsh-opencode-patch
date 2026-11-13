@@ -357,13 +357,19 @@ const installFetchPatch = (
   return true;
 };
 
-/** Capture turn state (session id, project, parent) on every streamed turn. */
+/**
+ * Capture turn state (session id, project, parent) on every streamed turn,
+ * except a turn on a plane the route claim left to another plugin (D27).
+ */
 const installStreamHook = (
   ctx: CordisContext,
   config: ResolvedPluginConfig,
-  als: AsyncLocalStorage<ActiveTurnState>
+  als: AsyncLocalStorage<ActiveTurnState>,
+  steppedAside: () => ReadonlySet<string>
 ): void => {
-  ctx.on?.("llm/stream", createStreamHook(ctx, config, als), { prepend: true });
+  ctx.on?.("llm/stream", createStreamHook(ctx, config, als, steppedAside), {
+    prepend: true,
+  });
 };
 
 /**
@@ -429,7 +435,7 @@ export const apply = async (
   installStoreService(ctx);
 
   if (installFetchPatch(ctx, config, als)) {
-    installStreamHook(ctx, config, als);
+    installStreamHook(ctx, config, als, claim.steppedAside);
     installDiscovery(ctx, config, claim);
   }
   await claim.mounted;

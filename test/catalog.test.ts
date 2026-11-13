@@ -89,7 +89,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
   });
 
   it("ships only active, priced models in the bundled Go shim", () => {
-    expect(OPENCODE_GO_CATALOG.length).toBe(31);
+    expect(OPENCODE_GO_CATALOG.length).toBe(32);
     for (const model of OPENCODE_GO_CATALOG) {
       expect(model.id.length).toBeGreaterThan(0);
       expect(model.name.length).toBeGreaterThan(0);
@@ -195,12 +195,12 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // replacing the whole set — so these counts are the cold-start picker, and a
     // silent drop here is a model nobody can pick. Regenerate with
     // `scripts/regenerate-catalog-shim.ts` rather than editing by hand.
-    expect(OPENCODE_ZEN_CATALOG.length).toBe(82);
+    expect(OPENCODE_ZEN_CATALOG.length).toBe(87);
     const freeModels = OPENCODE_ZEN_CATALOG.filter((m) => m.is_free === true);
     // Only the free tiers the registry still lists as active. The count is the
     // `is_free` flag the shim carries, NOT the `-free` suffix: `big-pickle` is
     // flagged and is not suffixed, so a suffix rule would have missed it.
-    expect(freeModels.length).toBe(10);
+    expect(freeModels.length).toBe(12);
 
     const ids = new Set(OPENCODE_ZEN_CATALOG.map((m) => m.id));
     expect(ids.has("beam-free")).toBe(true);
@@ -227,12 +227,13 @@ describe("OpenCode Model Catalog & Enrichment", () => {
    * route for, is carried WITH that field.
    */
   it("prices the same id differently on the two planes, and agrees about free", () => {
-    // **The two planes are not the same catalog.** Sixteen ids are on both, and
-    // two of them are priced differently: `deepseek-v4.1-flash` is $0.30/$1.20
-    // per million on Zen and $0.15/$0.60 on Go, and `deepseek-v4-pro` differs
-    // too. A lookup that does not know the plane answers with the Go price —
-    // the plane-agnostic one searches Go first — so a Zen turn came out at
-    // exactly half of what it cost, and the meter showed the half.
+    // **The two planes are not the same catalog.** Seventeen ids are on both,
+    // and two of them are priced differently: `deepseek-v4.1-flash` is
+    // $0.30/$1.20 per million on Zen and $0.15/$0.60 on Go, and
+    // `deepseek-v4-pro` differs too. A lookup that does not know the plane
+    // answers with the Go price — the plane-agnostic one searches Go first — so
+    // a Zen turn came out at exactly half of what it cost, and the meter showed
+    // the half.
     //
     // This is the shape of the correction: the price and the free flag are the
     // PLANE's, and the plane is the route's.
@@ -272,8 +273,8 @@ describe("OpenCode Model Catalog & Enrichment", () => {
 
     // Every plane we declare a route for is present in the cold-start shim, so
     // the mount has models to serve before the first refresh ever runs.
-    expect(buckets.get("@ai-sdk/openai")?.length).toBe(31);
-    expect(buckets.get("@ai-sdk/anthropic")?.length).toBe(17);
+    expect(buckets.get("@ai-sdk/openai")?.length).toBe(32);
+    expect(buckets.get("@ai-sdk/anthropic")?.length).toBe(18);
 
     // And each of those SDKs maps to a protocol the plane adapter serves, so no
     // carried model names a format with nowhere to go. `@ai-sdk/mistral` is no
@@ -301,8 +302,8 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     expect(byProtocol.has("unserved")).toBe(false);
     const responses = [...(byProtocol.get("openai-responses") ?? [])];
     const anthropic = [...(byProtocol.get("anthropic-messages") ?? [])];
-    expect(responses.length).toBe(33);
-    expect(anthropic.length).toBe(20);
+    expect(responses.length).toBe(34);
+    expect(anthropic.length).toBe(21);
     expect(responses.filter((id) => anthropic.includes(id))).toEqual([]);
     expect(responses).toContain("muse-spark-1.2");
     expect(anthropic).toContain("claude-sonnet-4-5");
@@ -346,7 +347,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
 
     const deepseek = json.data.find((m) => m.id === "deepseek-v4.1-flash");
     expect(deepseek).toBeDefined();
-    expect(deepseek?.name).toBe("DeepSeek V4.1 Flash");
+    expect(deepseek?.name).toBe("DeepSeek V4.1 Flash 1017");
     expect(deepseek?.context_window).toBe(1000000);
 
     const custom = json.data.find((m) => m.id === "custom-gateway-model");
@@ -522,7 +523,7 @@ describe("OpenCode Model Catalog & Enrichment", () => {
     // The catalog, with the gateway's one row enriched inside it.
     expect(json.data.length).toBeGreaterThanOrEqual(OPENCODE_GO_CATALOG.length);
     const row = json.data.find((m) => m.id === "deepseek-v4.1-flash");
-    expect(row?.name).toBe("DeepSeek V4.1 Flash");
+    expect(row?.name).toBe("DeepSeek V4.1 Flash 1017");
     expect(row?.context_window).toBe(1_000_000);
   });
 
@@ -871,7 +872,7 @@ describe("findModelSpec", () => {
     const spec = findModelSpec("deepseek-v4.1-flash");
     assert.ok(spec, "expected the Go shim to carry deepseek-v4.1-flash");
     expect(spec.id).toBe("deepseek-v4.1-flash");
-    expect(spec.name).toBe("DeepSeek V4.1 Flash");
+    expect(spec.name).toBe("DeepSeek V4.1 Flash 1017");
     expect(spec.context_window).toBe(1_000_000);
     expect(spec.cost).toEqual({ cache_read: 0.003, input: 0.15, output: 0.6 });
     expect(spec.is_free).toBeUndefined();

@@ -544,7 +544,15 @@ export interface HostFiber {
   readonly rawConfig?: unknown;
   /** The resolved config's accessor, from cordis 4.0.6-alpha.1. */
   readonly effectiveConfig?: unknown;
-  readonly entry?: { readonly options?: { readonly id?: string } } | undefined;
+  readonly entry?:
+    | {
+        readonly options?: {
+          readonly id?: string;
+          /** The loader's per-service realms (`isolate: { credentials: … }`). */
+          readonly isolate?: unknown;
+        };
+      }
+    | undefined;
   readonly parent?: { readonly fiber?: { readonly state?: number } };
   readonly ctx?: unknown;
   readonly await?: () => Promise<unknown>;

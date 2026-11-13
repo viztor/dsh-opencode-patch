@@ -460,11 +460,24 @@ describe(
           (request) => !request.url.startsWith("https://models.opencode.ai/")
         );
       expect(sent).toHaveLength(1);
-      expect(sent[0]?.model).toBe(gap.id);
+      // The model the request names: the body's `model`, or, on the Google
+      // protocol, the `models/<id>` path segment (the catalog's first gap row
+      // can be a Gemini model, e.g. `gemini-4-carbon`).
+      const url = new URL(sent[0]?.url ?? "https://invalid.example/");
+      const named =
+        sent[0]?.model ??
+        /\/models\/([^/:]+)/u.exec(url.pathname)?.[1] ??
+        undefined;
+      expect(named).toBe(gap.id);
       expect(sent[0]?.url.startsWith("https://opencode.ai/inference/")).toBe(
         true
       );
-      expect(drained.finish?.code).toBe("AUTH");
+      // The finish the characterization measures per protocol: pi's Google
+      // stream reports the recorder's 401 as PI_AI_ERROR, every other one as
+      // AUTH (`CHARACTERIZED_PROFILE`'s Gemini rows).
+      expect(drained.finish?.code).toBe(
+        url.pathname.includes("/google/") ? "PI_AI_ERROR" : "AUTH"
+      );
     });
   }
 );

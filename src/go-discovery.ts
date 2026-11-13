@@ -30,6 +30,11 @@ import {
 import { opencodeDatabasePath } from "./opencode-paths.ts";
 import { readOpencodeCredentials } from "./opencode-store.ts";
 import { isRecord } from "./utils/guards.ts";
+import {
+  foreignCredentialsRealm,
+  pluginMarkerOf,
+  type RealmSide,
+} from "./utils/plane-ownership.ts";
 
 /** Gateway settings found in other entries, if any. */
 export interface DiscoveredGoConfig {
@@ -95,6 +100,27 @@ const readProviderRow = (
   }
 };
 
+/** A property read that a hostile or half-built value cannot throw out of. */
+const readSafely = (value: unknown, key: string): unknown => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A provider row this discovery may read: a record that carries no other
+ * plugin's `x-opencode-plugin` marker (D27). A marked route belongs to the
+ * plugin that wrote it, and so do its key reference, its literal key and its
+ * base.
+ */
+const ownRow = (row: unknown): row is Record<string, unknown> =>
+  isRecord(row) && pluginMarkerOf(row) === undefined;
+
 /**
  * Auto-discover OpenCode Go provider configuration from loaded Cordis
  * entries (e.g. llm-pi-ai), honoring both shapes it ships in: a
@@ -104,6 +130,14 @@ const readProviderRow = (
  * and `opencode` (Zen), or any provider pointing to `opencode.ai`.
  *
  * Later entries win, mirroring composition order.
+ *
+ * **Another plugin's entry is never read** (D27): a row whose credentials
+ * resolve in a realm this context does not resolve (the route claim's own
+ * rule, `utils/plane-ownership.ts`), and a provider row that carries the
+ * `x-opencode-plugin` marker. Its reference names a credential this context
+ * cannot see, or can see only by accident through the environment, and its
+ * base is that plugin's gateway: the meter sends neither the other plugin's
+ * token nor the user's own key there.
  *
  * @param ctx - the plugin context, mock or real.
  * @param targetProvider - optional specific provider route id to prioritize.
@@ -118,6 +152,14 @@ export const discoverGoConfig = (
   if (loader === undefined) {
     return result;
   }
+  const own: RealmSide = {
+    context: ctx,
+    options: readSafely(
+      readSafely(readSafely(ctx, "fiber"), "entry"),
+      "options"
+    ),
+  };
+  const root = readSafely(ctx, "root");
 
   for (const entry of loader.entries()) {
     if (!isRecord(entry)) {
@@ -131,6 +173,15 @@ export const discoverGoConfig = (
     if (!isRecord(config)) {
       continue;
     }
+    if (
+      foreignCredentialsRealm(
+        { context: readSafely(entry, "ctx"), options },
+        own,
+        root
+      ) !== undefined
+    ) {
+      continue;
+    }
 
     // 1. Providers inside a provider registry like llm-pi-ai.
     const providers: unknown = config.providers;
@@ -138,18 +189,18 @@ export const discoverGoConfig = (
       if (
         typeof targetProvider === "string" &&
         targetProvider.length > 0 &&
-        isRecord(providers[targetProvider])
+        ownRow(providers[targetProvider])
       ) {
         readProviderRow(providers[targetProvider], result);
         continue;
       }
-      if (isRecord(providers["opencode-go"])) {
+      if (ownRow(providers["opencode-go"])) {
         readProviderRow(providers["opencode-go"], result);
-      } else if (isRecord(providers.opencode)) {
+      } else if (ownRow(providers.opencode)) {
         readProviderRow(providers.opencode, result);
       } else {
         for (const pRow of Object.values(providers)) {
-          if (isRecord(pRow)) {
+          if (ownRow(pRow)) {
             const bUrl: unknown = pRow.baseURL;
             if (typeof bUrl === "string" && bUrl.includes("opencode.ai")) {
               readProviderRow(pRow, result);
@@ -161,6 +212,9 @@ export const discoverGoConfig = (
     }
 
     // 2. Standalone provider entries like `id: opencode-go` or `id: opencode`.
+    if (!ownRow(config)) {
+      continue;
+    }
     const { id, name } = options;
     if (
       typeof targetProvider === "string" &&

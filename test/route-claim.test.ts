@@ -460,6 +460,56 @@ describe("route-claim · the listener", () => {
     release?.();
     await claim.mounted;
   });
+
+  it("leaves an entry another plugin owns to pi-ai's own save check: an edit to it passes a check the plugin's would refuse, while the same edit on a plane the claim takes is refused (D27)", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = hostModulesForTests();
+    // The plugin's check is refused outright until the modules load, so any
+    // entry it judges is refused: the edit below tells the two checks apart.
+    useTestModules({
+      libraries: async () => {
+        await gate;
+        return real.libraries();
+      },
+      piAi: real.piAi,
+    });
+    const marked = {
+      headers: { "x-opencode-plugin": "vendor/1.0.0" },
+      models: [{ id: "deepseek-v4-pro" }],
+    };
+    const pi = piFiber({ deepseek: {}, opencode: marked, "opencode-go": zen });
+    const host = standIn({ fibers: () => [pi] });
+    const claim = installRouteClaim(host.ctx, config);
+    const listener = host.listeners.get("internal/config");
+    const edited = {
+      providers: {
+        deepseek: {},
+        opencode: { ...marked, models: [{ id: "x" }] },
+        "opencode-go": zen,
+      },
+    };
+    const copy = oldRun(listener, pi, edited) as {
+      providers: Record<string, unknown>;
+    };
+    // Kept for pi-ai, which judges it; the plane the claim takes is stripped.
+    expect(copy.providers.opencode).toEqual(edited.providers.opencode);
+    expect(copy.providers).not.toHaveProperty("opencode-go");
+    // The known answer: the same edit on the taken plane is the plugin's to judge.
+    expect(() =>
+      oldRun(listener, pi, {
+        providers: {
+          deepseek: {},
+          opencode: marked,
+          "opencode-go": { models: [{ id: "x" }] },
+        },
+      })
+    ).toThrow(/provider "opencode-go" cannot be validated yet/u);
+    release?.();
+    await claim.mounted;
+  });
 });
 
 /** A NEW-core fiber's own fields, as the claim reads them. */
@@ -990,6 +1040,74 @@ describe("route-claim · a second pi-ai row", () => {
     expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
   });
 
+  it("a plane the served row takes is the plugin's, whatever a second row that steps aside for it declares; it is stepped aside once that row is gone (D27)", async () => {
+    useTestModules();
+    const served = piFiber();
+    const vendor = piFiber({
+      deepseek: {},
+      opencode: { ...zen, headers: { "x-opencode-plugin": "vendor/1.0.0" } },
+    });
+    vendor.uid = 2;
+    const host = standIn({ fibers: () => [served, vendor] });
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
+    await flush();
+    expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+    // The stream hook and the fetch patch read this: the plugin's own turns
+    // on `opencode` stay decorated.
+    expect([...claim.steppedAside()]).toEqual([]);
+    // The known answer: with the served row gone, the second row's marked
+    // entry is the only `opencode` left, and it is another plugin's.
+    served.uid = null;
+    expect([...claim.steppedAside()]).toEqual(["opencode"]);
+  });
+
+  it.each([
+    [
+      "its realm",
+      {
+        entry: {
+          options: {
+            id: "llm-pi-ai:vendor",
+            isolate: { credentials: "vendor-realm" },
+          },
+        },
+        goEntry: { models: [{ id: "glm-5.1" }] },
+      },
+    ],
+    [
+      "its marker",
+      {
+        entry: { options: { id: "llm-pi-ai:vendor" } },
+        goEntry: {
+          headers: { "x-opencode-plugin": "vendor/1.0.0" },
+          models: [{ id: "glm-5.1" }],
+        },
+      },
+    ],
+  ] as const)(
+    "serves the row whose planes the claim TAKES: a row ahead of it that declares only a plane another plugin owns, by %s, is passed over (D27)",
+    async (_reason, shape) => {
+      useTestModules();
+      const vendor = piFiber({ deepseek: {}, "opencode-go": shape.goEntry });
+      vendor.entry = shape.entry;
+      const own = piFiber();
+      own.uid = 2;
+      const host = standIn({ fibers: () => [vendor, own] });
+      const claim = installRouteClaim(host.ctx, config);
+      await claim.mounted;
+      await flush();
+      const listener = host.listeners.get("internal/config");
+      expect(oldRun(listener, vendor, vendor._config)).toBe(vendor._config);
+      expect(oldRun(listener, own, own._config)).toEqual({
+        providers: { deepseek: {} },
+      });
+      expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
+      expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+      expect([...claim.steppedAside()]).toEqual(["opencode-go"]);
+    }
+  );
+
   it("serves the row that declares the planes, whatever the registry order: a re-enabled row cordis appended last", async () => {
     useTestModules();
     const bare = piFiber({ deepseek: {} });
@@ -1157,6 +1275,69 @@ describe("route-claim · a second pi-ai row", () => {
     expect(claim.piAiNamespace()).toBe("llm-pi-ai:second");
     expect(second.restart).toHaveBeenCalledTimes(1);
   });
+
+  /** Rows ahead of the served one in the registry, and rows behind it. */
+  interface Neighbours {
+    readonly ahead: readonly FakeFiber[];
+    readonly behind: readonly FakeFiber[];
+  }
+
+  it.each([
+    ["alone (the known answer)", (): Neighbours => ({ ahead: [], behind: [] })],
+    [
+      "behind a plane-less row",
+      (): Neighbours => {
+        const bare = piFiber({ deepseek: {} });
+        bare.uid = 2;
+        bare.entry = { options: { id: "llm-pi-ai:bare" } };
+        return { ahead: [bare], behind: [] };
+      },
+    ],
+    [
+      "ahead of a row that declares a plane of its own",
+      (): Neighbours => {
+        const go = piFiber(
+          { deepseek: {}, "opencode-go": { models: [{ id: "glm-5.1" }] } },
+          { deepseek: {}, "opencode-go": {} }
+        );
+        go.uid = 2;
+        go.entry = { options: { id: "llm-pi-ai:go" } };
+        return { ahead: [], behind: [go] };
+      },
+    ],
+  ] as const)(
+    "a save that marks the served row's only plane releases it inside the commit run, %s (D27)",
+    async (_shape, neighbours) => {
+      useTestModules();
+      const served = piFiber();
+      // In both shapes with a second row, the served row, once it declares
+      // nothing the claim takes, is no longer the row `servedRow` answers.
+      const { ahead, behind } = neighbours();
+      const fibers = [...ahead, served, ...behind];
+      const host = standIn({ fibers: () => fibers });
+      const claim = installRouteClaim(host.ctx, config);
+      await claim.mounted;
+      await flush();
+      expect(host.llm.registerAdapter.mock.calls[0]?.[0]).toEqual(["opencode"]);
+      const listener = host.listeners.get("internal/config");
+      // The loader's volatile path stores the row's new raw config first, then
+      // runs `internal/config` with it: a commit run.
+      served._config = {
+        providers: {
+          deepseek: {},
+          opencode: {
+            ...zen,
+            headers: { "x-opencode-plugin": "vendor/1.0.0" },
+          },
+        },
+      };
+      expect(oldRun(listener, served, served._config)).toBe(served._config);
+      // Released before the run returns, so pi-ai's own registration of the
+      // plane, which follows the run at once, meets no duplicate.
+      expect(host.handle.replace).toHaveBeenLastCalledWith([]);
+      expect([...claim.steppedAside()]).toEqual(["opencode"]);
+    }
+  );
 });
 
 describe("route-claim · the live catalog", () => {

@@ -562,4 +562,23 @@ describe("plane-profile · withoutPlaneProviders and the plane readers", () => {
     });
     expect(planeEntriesOf(null)).toEqual({});
   });
+
+  it("strips, reads and finds only the planes it is given (D27: the claim passes the ones it takes)", () => {
+    const raw = deepFreeze({
+      providers: { deepseek: {}, opencode: { z: 1 }, "opencode-go": { g: 1 } },
+    });
+    expect(withoutPlaneProviders(raw, ["opencode"])).toEqual({
+      providers: { deepseek: {}, "opencode-go": { g: 1 } },
+    });
+    expect(withoutPlaneProviders(raw, [])).toEqual(raw);
+    expect(hasPlaneEntries(raw, ["opencode-go"])).toBe(true);
+    expect(hasPlaneEntries(raw, [])).toBe(false);
+    expect(
+      hasPlaneEntries({ providers: { opencode: {} } }, ["opencode-go"])
+    ).toBe(false);
+    expect(planeEntriesOf(raw, ["opencode-go"])).toEqual({
+      "opencode-go": { g: 1 },
+    });
+    expect(planeEntriesOf(raw, [])).toEqual({});
+  });
 });
