@@ -86,7 +86,7 @@ They are different checks, and none stands in for another:
 
 - The **live suite** asks the gateway which endpoint recognises each shipped model, with a hand-written body per protocol. It proves the endpoint answers and what the gateway rejects.
 - The **mock-gateway suite** runs `llm.stream` through the real `LlmRuntime` and the plane adapter, with the plugin's fetch patch, against a local gateway that refuses a request whose shape its endpoint would not accept. It proves the request the plugin builds is one the endpoint accepts, for every characterized model on both planes and both families.
-- The **real-host suites** (`test/host-characterization.test.ts`, `test/host-planes.test.ts`) run the plugin beside `llm-pi-ai` on the real host, in both apply orders, and pin ownership, restarts, the Settings flow, credentials and isolation.
+- The **real-host suites** (`test/host-characterization.test.ts` and `test/host-planes.test.ts`) run the plugin beside `llm-pi-ai` on the real host, in both apply orders, and pin ownership, restarts, the Settings flow, credentials and isolation. `test/host-discovery.test.ts` covers Settings' fetch on tier B in the published binary's order (`plugin-first`), an explicit pi-ai restart that exercises the `NO_DISCOVERY` window a `pi-ai-first` mount would cause, and a stood-down claim on tier A, which mounts pi-ai first; with the claim stood down no restart follows, so the order is immaterial there.
 
 ### How we support API endpoints in different formats
 

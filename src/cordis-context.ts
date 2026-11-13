@@ -67,15 +67,6 @@ export interface CordisContext {
    */
   loader?: LoaderService;
   llm?: {
-    /**
-     * Offer to interrogate provider endpoints on behalf of one settings
-     * namespace. Uniqueness is by namespace, so a second registration under the
-     * same one is a conflict rather than a replacement.
-     */
-    registerModelDiscovery?: (
-      ns: string,
-      discover: (request?: unknown, signal?: AbortSignal) => Promise<unknown>
-    ) => (() => void) | undefined;
     /** Declare routes a plugin can activate through configuration. */
     registerConfigurableProviders?: (
       entries: readonly unknown[]

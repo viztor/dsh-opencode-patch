@@ -150,6 +150,36 @@ export interface RouteClaim {
   >;
   /** The settings namespace pi-ai's row is described under. */
   readonly piAiNamespace: () => string;
+  /**
+   * Whether the claim has engaged, as the plugin observes it: false once it
+   * stood down (the host's modules could not be read) or tore down, and false
+   * once `mounted` has settled while the served pi-ai row still resolves
+   * holding a plane and no restart of that row is in flight. The listener
+   * speaks both cores' `internal/config` call shapes, so on either one the
+   * mount's restart moves the planes, and so does a handover's: a row that
+   * was passed through becomes the served one holding its plane, and is
+   * restarted once it settles. While either restart is in flight (from the
+   * call, through the wait for the row to settle, until the restart settles)
+   * this reads true, as it does before the mount settles: on both cores the
+   * restart unloads the row first and the host answers `NO_DISCOVERY` until
+   * it reloads, so a fetch is the plane's catalog alone there, and
+   * complemented before the unload begins. A restart that throws does not
+   * leave the planes with pi-ai: on cordis 4.0.6-alpha.2 and 4.1.0 it throws
+   * only for a disposed fiber or by rethrowing a failed load, which leaves
+   * the fiber FAILED, and a FAILED row holds nothing to read here (it
+   * recovers through `update()`, which resolves through the listener). What
+   * reads false is a served row whose restart has settled still holding a
+   * plane: a call shape the listener does not speak. It is read with the
+   * same check the reconcile waits on (`heldPlanes` of the live served row:
+   * the planes it resolved holding that the claim takes, so a plane left to
+   * pi-ai under D27 never counts), so the two never disagree; pi-ai serves the planes there and
+   * refuses at save an id it does not list, so reading false only narrows a
+   * fetch to pi's own list. While it reads true with the plane routes still
+   * pi-ai's (before the mount or a handover's restart settles), a plane save
+   * is already judged by the plugin and re-resolves the row without its
+   * planes, so a fetch complemented then assumes the claim engages.
+   */
+  readonly claiming: () => boolean;
   /** Settles once the claim is mounted; never rejects. */
   readonly mounted: Promise<void>;
   /**
@@ -158,6 +188,15 @@ export interface RouteClaim {
    * serves. Read per call, so a turn sees the rows as they are now.
    */
   readonly steppedAside: () => ReadonlySet<PlaneRoute>;
+  /**
+   * Whether the claim would take an entry of `plane` saved on the row it
+   * serves: false only when that row resolves credentials in a realm the
+   * plugin does not share, where every plane entry, declared or not yet, is
+   * pi-ai's (D27). Read per call, from the served row as it is now; true
+   * while no live row exists. It says nothing about whether the claim has
+   * engaged: that is {@link RouteClaim.claiming}.
+   */
+  readonly wouldTake: (plane: PlaneRoute) => boolean;
 }
 
 /** The `llm` service, as the claim calls it. */
@@ -274,6 +313,13 @@ export const installRouteClaim = (
       PlaneProfileLike
     >,
     ready: false,
+    /**
+     * The served row whose restart `restartServed` is carrying (the mount's,
+     * a handover's, or a reconcile's after a realm change, D27), from the
+     * call until it settles: the claim reads engaged throughout, as it does
+     * before the mount settles.
+     */
+    restarting: undefined as HostFiber | undefined,
     scheduled: false,
     /** The fiber the profiles and the handle were built from. */
     served: undefined as HostFiber | undefined,
@@ -359,10 +405,14 @@ export const installRouteClaim = (
       `the plane routes stay pi-ai's: this composition offers no ${missing.join(", ")}`
     );
     return {
+      claiming: () => false,
       committedEntries: () => ({}),
       mounted: Promise.resolve(),
       piAiNamespace: () => PI_AI_RUNTIME,
       steppedAside: () => new Set(),
+      // No row is judged here, so none is in a foreign realm: `claiming`
+      // already keeps every fetch to pi's list with the enrich-only merge.
+      wouldTake: () => true,
     };
   }
 
@@ -537,19 +587,26 @@ export const installRouteClaim = (
     still: (fiber: HostFiber) => boolean
   ): Promise<void> => {
     state.restartAsked.set(fiber, key);
+    state.restarting = fiber;
     try {
-      await fiber.await?.();
-    } catch {
-      // A FAILED pi-ai holds nothing; the check below says so.
-    }
-    if (
-      state.active &&
-      fiber === servedRow() &&
-      fiber.uid !== null &&
-      fiber.state === ACTIVE &&
-      still(fiber)
-    ) {
-      await fiber.restart?.();
+      try {
+        await fiber.await?.();
+      } catch {
+        // A FAILED pi-ai holds nothing; the check below says so.
+      }
+      if (
+        state.active &&
+        fiber === servedRow() &&
+        fiber.uid !== null &&
+        fiber.state === ACTIVE &&
+        still(fiber)
+      ) {
+        await fiber.restart?.();
+      }
+    } finally {
+      if (state.restarting === fiber) {
+        state.restarting = undefined;
+      }
     }
   };
 
@@ -1121,6 +1178,21 @@ export const installRouteClaim = (
   })();
 
   /**
+   * The mount has settled, no restart of the served row is in flight, and
+   * that row still holds a plane the claim takes (a plane it leaves to pi-ai,
+   * D27, is pi-ai's to hold).
+   */
+  const heldByPiAi = (): boolean => {
+    if (!state.ready) {
+      return false;
+    }
+    const pi = livePiAi();
+    return (
+      pi !== undefined && pi !== state.restarting && heldPlanes(pi).length > 0
+    );
+  };
+
+  /**
    * The planes another plugin owns on a live pi-ai row, minus any the served
    * row's planes the claim takes: those are the plugin's whatever a second
    * row declares.
@@ -1145,10 +1217,22 @@ export const installRouteClaim = (
     return out;
   };
 
+  /** See {@link RouteClaim.wouldTake}: a plain entry, judged as the listener would. */
+  const wouldTake = (plane: PlaneRoute): boolean => {
+    const served = servedRow();
+    return (
+      served === undefined ||
+      takenPlanes({ providers: { [plane]: {} } }, foreignRealmOf(served))
+        .length > 0
+    );
+  };
+
   return {
+    claiming: () => state.active && !heldByPiAi(),
     committedEntries: () => (state.active ? state.normalized : {}),
     mounted,
     piAiNamespace: () => livePiAi()?.entry?.options?.id ?? PI_AI_RUNTIME,
     steppedAside,
+    wouldTake,
   };
 };

@@ -45,13 +45,13 @@ import {
 } from "./support/host.ts";
 import {
   apply,
+  complementDiscoveredModels,
   Config,
   type CordisContext,
   decorateModelDiscovery,
   inject,
   inspectPatch,
   installDescribeGraft,
-  mergeDiscoveredModels,
   name,
   type ResolvedPluginConfig,
   resolveConfig,
@@ -229,13 +229,21 @@ const installGraft =
     };
   };
 
+/** A live claim on pi-ai's default row, as the discovery wrapper reads it. */
+const SERVED = {
+  claiming: () => true,
+  piAiNamespace: () => "llm-pi-ai",
+  steppedAside: () => new Set<never>(),
+  wouldTake: () => true,
+};
+
 const SITES: readonly Site[] = [
   {
-    decorated: mergeDiscoveredModels([{ id: "minimax-m3" }], "go"),
+    decorated: complementDiscoveredModels([{ id: "minimax-m3" }], "go"),
     host: (shape) =>
       shaped(shape, { discoverModels: async () => [{ id: "minimax-m3" }] }),
     install: (llm, config = resolveConfig()) =>
-      decorateModelDiscovery(asContext(llm), config),
+      decorateModelDiscovery(asContext(llm), config, SERVED),
     keys: ["discoverModels"],
     name: "discovery",
     probe: (llm) =>

@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { effectiveConfigOf } from "./support/config-shape.ts";
+import { effectiveConfigOf, sameFiber } from "./support/config-shape.ts";
 import {
   adaptersOf,
   APPLY_ORDERS,
@@ -52,6 +52,10 @@ import {
   clearCapturedApiKeys,
   discoverGoConfig,
   getCapturedApiKey,
+  getLiveGoCatalog,
+  getLiveZenCatalog,
+  isDeprecatedModelOn,
+  isServableSdk,
   OPENCODE_UA,
   refreshCatalog,
   resolveGoApiKey,
@@ -1254,7 +1258,9 @@ describe(
         tierB = undefined;
 
         // The marker splits one row outside any realm: the marked plane
-        // answers pi-ai's own list, the unmarked one the plugin's merge.
+        // answers pi-ai's own list, the unmarked one the plugin's complement
+        // (P3): pi's ids without the retired one, then every servable,
+        // non-deprecated catalog id pi does not list.
         const split = await bootRealm({
           order,
           providers: {
@@ -1269,9 +1275,20 @@ describe(
         expect(await fetchModels(split.tier, "opencode")).toEqual(
           baseline.get("opencode")
         );
-        expect(await fetchModels(split.tier, "opencode-go")).toEqual(
-          baseline.get("opencode-go")?.filter((id) => id !== MODEL)
+        const kept = (baseline.get("opencode-go") ?? []).filter(
+          (id) => id !== MODEL
         );
+        expect(await fetchModels(split.tier, "opencode-go")).toEqual([
+          ...kept,
+          ...getLiveGoCatalog()
+            .filter(
+              (spec) =>
+                isServableSdk(spec.provider_npm) &&
+                !isDeprecatedModelOn("go", spec.id) &&
+                !kept.includes(spec.id)
+            )
+            .map((spec) => spec.id),
+        ]);
         await split.tier.dispose();
         tierB = undefined;
 
@@ -1288,6 +1305,210 @@ describe(
         await retireModel();
         for (const plane of PLANES) {
           expect(await fetchModels(tier, plane)).toEqual(baseline.get(plane));
+        }
+      }
+    );
+  }
+);
+
+describe(
+  "host planes · P3's Settings fetch leaves a stepped-aside plane's list to pi-ai, NO_DISCOVERY included (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    /** cordis `FiberState.UNLOADING`: pi-ai's discovery is withdrawn on the way out of it. */
+    const UNLOADING = 5;
+
+    type Settled = { ok: unknown } | { error: unknown };
+    const settledOf = (promise: Promise<unknown>): Promise<Settled> =>
+      promise.then(
+        (ok) => ({ ok }),
+        (error: unknown) => ({ error })
+      );
+
+    /** The host's own `discoverModels`, unwrapped: the prototype's, on `llm`. */
+    const hostDiscover =
+      (llm: HostLlm) =>
+      (ns: string, plane: string): Promise<unknown> => {
+        const own = (
+          Reflect.getPrototypeOf(llm) as {
+            discoverModels: (...args: unknown[]) => Promise<unknown>;
+          }
+        ).discoverModels;
+        return Reflect.apply(own, llm, [
+          ns,
+          { provider: plane },
+        ]) as Promise<unknown>;
+      };
+
+    const idsOf = (rows: unknown): string[] =>
+      (rows as { id: string }[]).map((row) => row.id);
+
+    /** The plane's servable, non-deprecated live catalog ids, in catalog order. */
+    const servable = (plane: string): string[] =>
+      (plane === "opencode" ? getLiveZenCatalog() : getLiveGoCatalog())
+        .filter(
+          (spec) =>
+            isServableSdk(spec.provider_npm) &&
+            !isDeprecatedModelOn(plane === "opencode" ? "zen" : "go", spec.id)
+        )
+        .map((spec) => spec.id);
+
+    /** The two shapes D27 steps aside for, each with the planes it leaves. */
+    const SHAPES = [
+      {
+        aside: ["opencode"],
+        boot: (order: ApplyOrder) =>
+          bootRealm({
+            order,
+            providers: {
+              opencode: { ...marked(), apiKeyEnv: "OPENCODE_API_KEY" },
+              "opencode-go": plain("OPENCODE_GO_API_KEY"),
+            },
+            realm: false,
+          }),
+        name: "a marked plane beside an unmarked one",
+        taken: ["opencode-go"],
+      },
+      {
+        aside: [...PLANES],
+        boot: (order: ApplyOrder) =>
+          bootRealm({
+            order,
+            providers: {
+              opencode: plain(TOKEN_REF),
+              "opencode-go": plain(TOKEN_REF),
+            },
+          }),
+        name: "realm-only planes",
+        taken: [] as string[],
+      },
+      {
+        aside: ["opencode-go"],
+        boot: (order: ApplyOrder) =>
+          bootRealm({
+            order,
+            providers: { "opencode-go": plain(TOKEN_REF) },
+          }),
+        name: "a realm row declaring only opencode-go",
+        taken: [] as string[],
+        undeclared: ["opencode"],
+      },
+      {
+        aside: ["opencode"],
+        boot: (order: ApplyOrder) =>
+          bootRealm({
+            order,
+            providers: { opencode: plain(TOKEN_REF) },
+          }),
+        name: "a realm row declaring only opencode",
+        taken: [] as string[],
+        undeclared: ["opencode-go"],
+      },
+    ] as const;
+
+    const CASES = APPLY_ORDERS.flatMap((order) =>
+      SHAPES.map((shape) => ({ order, shape }))
+    );
+
+    it.each(CASES)(
+      "$order, $shape.name: Fetch on a stepped-aside plane, or on one a realm row has not declared yet, is the host's own answer, never complemented, and its NO_DISCOVERY during a pi-ai restart passes through; a taken plane keeps P3's complement",
+      async ({ order, shape }) => {
+        const { tier } = await shape.boot(order);
+        // A plane route the realm row does not declare is pi-ai's too once
+        // saved there (D27), so pi-ai's save refuses an id it does not list:
+        // the fetch offers exactly pi-ai's list.
+        const passed: readonly string[] = [
+          ...shape.aside,
+          ...("undeclared" in shape ? shape.undeclared : []),
+        ];
+        for (const plane of shape.aside) {
+          await waitForPlaneOwner(tier.llm, [plane], "PiAiAdapter");
+        }
+        for (const plane of shape.taken) {
+          await waitForPlaneOwner(tier.llm, [plane]);
+        }
+        await settle();
+        const ns = tier.piEntry.options.id ?? "llm-pi-ai";
+        const own = hostDiscover(tier.llm);
+
+        let gaps = 0;
+        for (const plane of passed) {
+          const control = await own(ns, plane);
+          gaps += servable(plane).filter(
+            (id) => !idsOf(control).includes(id)
+          ).length;
+          expect(
+            await tier.llm.discoverModels(ns, { provider: plane }),
+            plane
+          ).toStrictEqual(control);
+        }
+        // Non-vacuous: on the stepped-aside planes P3's complement would have
+        // appended catalog ids pi-ai does not list (Zen has some on every
+        // cell; the newest cell's pi lists every Go catalog model).
+        expect(gaps).toBeGreaterThan(0);
+        for (const plane of shape.taken) {
+          // The known answer: a plane the claim takes is P3's complement.
+          const pi = idsOf(await own(ns, plane));
+          expect(
+            idsOf(await tier.llm.discoverModels(ns, { provider: plane })),
+            plane
+          ).toEqual([
+            ...pi,
+            ...servable(plane).filter((id) => !pi.includes(id)),
+          ]);
+        }
+
+        // The restart window: pi-ai's discovery is withdrawn, and the host
+        // answers NO_DISCOVERY. A stepped-aside plane gets exactly that; a
+        // taken plane gets its catalog alone (F21).
+        let calls:
+          | {
+              readonly plane: string;
+              readonly control: Promise<Settled>;
+              readonly wrapped: Promise<Settled>;
+            }[]
+          | undefined;
+        const off = tier.ctx.on("internal/status", (fiber, old) => {
+          if (
+            !sameFiber(fiber, tier.piFiber) ||
+            (old as number) !== UNLOADING ||
+            calls !== undefined
+          ) {
+            return;
+          }
+          // Read synchronously, on the transition out of UNLOADING.
+          calls = [...passed, ...shape.taken].map((plane) => ({
+            control: settledOf(own(ns, plane)),
+            plane,
+            wrapped: settledOf(
+              tier.llm.discoverModels(ns, {
+                provider: plane,
+              }) as unknown as Promise<unknown>
+            ),
+          }));
+        });
+        try {
+          await tier.piFiber.restart();
+        } finally {
+          off();
+        }
+        expect(calls, "the restart passed through UNLOADING").toBeDefined();
+        for (const call of calls ?? []) {
+          // The window was hit: the host's own method answers NO_DISCOVERY.
+          expect(await call.control, call.plane).toMatchObject({
+            error: { code: "NO_DISCOVERY" },
+          });
+          const wrapped = await call.wrapped;
+          if (passed.includes(call.plane)) {
+            expect(wrapped, call.plane).toMatchObject({
+              error: { code: "NO_DISCOVERY" },
+            });
+          } else {
+            expect(wrapped, call.plane).toHaveProperty("ok");
+            expect(idsOf((wrapped as { ok: unknown }).ok), call.plane).toEqual(
+              servable(call.plane)
+            );
+          }
         }
       }
     );

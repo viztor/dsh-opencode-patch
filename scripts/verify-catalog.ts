@@ -1,5 +1,5 @@
 /**
- * Verify the catalog, the picker's join, and the routing table against each other.
+ * Verify the catalog, the declared list, and the routing table against each other.
  *
  * This exists because the failures it catches are all INVISIBLE from the outside: a
  * model that is dropped is not filtered, not deprecated and not erroring — it is
@@ -12,8 +12,9 @@
  * 1. **Shim freshness** — the bundled `catalog-data.ts` must match the live registry.
  * 2. **Dead rows** — no offered model may answer `400 Model is unavailable` or
  *    `410 ModelDeprecated` (needs `--probe`; otherwise skipped).
- * 3. **The picker's join** — every servable model must reach `listModels(parentRoute)`,
- *    which is `listProviders() × listModels(id)` and is where 55 models went missing.
+ * 3. **The declared list** — the composer's source (`planeProfileFor`) publishes
+ *    exactly the ids a plane declares: Settings' fetch offers the catalog (D3),
+ *    the composer never widens.
  * 4. **Routing** — every servable model must resolve, on its own plane's route,
  *    to a protocol and a base on that plane (`planeModelFor`, D13).
  * 5. **Free-tier tools** — every free model must get the core-tool fallback.
@@ -37,10 +38,10 @@ import {
   MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
 } from "../src/models-catalog.ts";
-import { mergeDiscoveredModels } from "../src/models-discovery.ts";
 import { openCodeSessionIdFor } from "../src/session.ts";
 import { isCoreToolModel } from "../src/tool-fallback.ts";
 import { planeModelFor } from "../src/utils/plane-model.ts";
+import { planeProfileFor } from "../src/utils/plane-profile.ts";
 import { isServableSdk, protocolForSdk } from "../src/utils/protocols.ts";
 
 const PROBE = process.argv.includes("--probe");
@@ -172,21 +173,46 @@ for (const [route, catalog, plane] of [
   ["opencode", getLiveZenCatalog(), "zen"],
   ["opencode-go", getLiveGoCatalog(), "go"],
 ] as const) {
-  // A deployment declares some ids; the picker must publish exactly those. An
-  // earlier revision merged the whole catalog in, which silently overrode every
-  // `models:` array. This asserts the opposite: declared in, declared out.
+  // A deployment declares some ids; the composer must publish exactly those.
+  // An earlier revision merged the whole catalog in, which silently overrode
+  // every `models:` array. This asserts the opposite: declared in, declared
+  // out. The composer's list is the plane profile's provider, built here with
+  // a stub that hands back the models it is given; Settings' fetch is a
+  // different surface, and offers the catalog on purpose (D3).
   const declared = catalog
     .filter((m) => isServableSdk(m.provider_npm))
     .slice(0, 3)
     .map((m) => ({ id: m.id, name: m.name }));
-  const listed = mergeDiscoveredModels(declared, plane);
-  const listedIds = new Set(listed.map((m) => m.id));
+  const { profile } = planeProfileFor({
+    buildProvider: ({ models }) => ({ getModels: () => models }),
+    catalog,
+    endpoint: "auto",
+    entry: { models: declared },
+    familyApi: OPENCODE_FAMILY_API[plane],
+    piModels: [],
+    resolveRetryPolicy: () => ({}),
+    route,
+  });
+  const provider = profile.piProvider as
+    | { getModels?: () => readonly { id?: unknown }[] }
+    | undefined;
+  if (typeof provider?.getModels !== "function") {
+    fail(
+      `${route}: the plane profile did not build: ${profile.catalogError ?? "no provider"}`
+    );
+    continue;
+  }
+  const listedIds = new Set(provider.getModels().map((m) => String(m.id)));
   const declaredIds = declared.map((m) => m.id);
   const added = [...listedIds].filter((id) => !declaredIds.includes(id));
+  // Declared OUT too: an empty provider would otherwise pass as "nothing added".
+  const missing = declaredIds.filter((id) => !listedIds.has(id));
   if (added.length > 0) {
     fail(
       `${route}: ${added.length} undeclared models were added: ${added.slice(0, 5).join(", ")}`
     );
+  } else if (missing.length > 0) {
+    fail(`${route}: declared models were not published: ${missing.join(", ")}`);
   } else {
     ok(
       `${route}: exactly the ${declaredIds.length} declared model(s), nothing added`
@@ -264,5 +290,7 @@ if (failures.length > 0) {
   console.log(`FAILED: ${failures.length} check(s)`);
   process.exitCode = 1;
 } else {
-  console.log("PASS: catalog, join, routing and free-tier tools agree");
+  console.log(
+    "PASS: catalog, declared list, routing and free-tier tools agree"
+  );
 }

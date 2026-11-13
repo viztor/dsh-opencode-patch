@@ -18,6 +18,7 @@ import {
   clearSessionUsageStore,
   findModelSpecOn,
   getSessionUsage,
+  inspectPatch,
 } from "./support/src.ts";
 import {
   collectUnknown,
@@ -46,24 +47,36 @@ const withScope = <T extends object>(ctx: T): T =>
   });
 
 describe("apply (plugin lifecycle)", () => {
-  it("registers model discovery for both OpenCode routes by default", () => {
-    const registered: string[] = [];
-    const ctx = {
+  it("installs the Settings discovery wrapper in the llm scope by default, and none with enrichModels off", () => {
+    const original = async () => [];
+    const llm = { discoverModels: original };
+    const ctx = withScope({
       effect: () => {},
-      llm: {
-        registerModelDiscovery: (ns: string) => {
-          registered.push(ns);
-        },
-      },
+      llm,
       on: () => {},
-    } as unknown as CordisContext;
+    }) as unknown as CordisContext;
 
-    void apply(withScope(ctx));
-    // The component's own namespace plus one registration per gateway route,
-    // so DSH's picker can enumerate Go and Zen independently.
-    expect(registered).toContain("dsh-opencode-patch");
-    expect(registered).toContain("opencode-go");
-    expect(registered).toContain("opencode");
+    void apply(ctx);
+    const installed = Reflect.getOwnPropertyDescriptor(
+      llm,
+      "discoverModels"
+    )?.value;
+    expect(installed).not.toBe(original);
+    expect(inspectPatch(installed, "discoverModels")?.[0]).toMatchObject({
+      id: "dsh-opencode-patch/model-discovery",
+      live: true,
+    });
+
+    const offLlm = { discoverModels: original };
+    const off = withScope({
+      effect: () => {},
+      llm: offLlm,
+      on: () => {},
+    }) as unknown as CordisContext;
+    void apply(off, { enrichModels: false });
+    expect(
+      Reflect.getOwnPropertyDescriptor(offLlm, "discoverModels")?.value
+    ).toBe(original);
   });
 
   it("registers the usage service only while the meter is on", () => {
@@ -225,110 +238,24 @@ describe("apply (plugin lifecycle)", () => {
     expect(warned.join(" ")).toContain("neither ctx.plugin nor ctx.provide");
   });
 
-  it("answers discovery from the LATEST activation's settings after a reload", async () => {
-    // The host refuses a namespace that is still held, the way cordis does. The
-    // earlier shape re-registered on every apply, swallowed that refusal, and so
-    // kept answering with the first activation's settings for the process's life.
-    const discover = new Map<string, () => Promise<unknown>>();
-    const ctx = {
-      effect: () => {},
-      llm: {
-        registerModelDiscovery: (ns: string, fn: () => Promise<unknown>) => {
-          if (discover.has(ns)) {
-            throw new Error(`DUPLICATE_DISCOVERY: ${ns}`);
-          }
-          discover.set(ns, fn);
-          return () => discover.delete(ns);
-        },
-      },
-      on: () => {},
-    } as unknown as CordisContext;
-    const contextOf = async (id: string): Promise<number | undefined> => {
-      const rows = (await discover.get("opencode")!()) as {
-        id: string;
-        contextWindow: number;
-      }[];
-      return rows.find((row) => row.id === id)?.contextWindow;
-    };
-
-    void apply(withScope(ctx), { enrichModels: true });
-    // The catalog's own window: the row carries no override of its own (D19).
-    const catalogWindow = findModelSpecOn(
-      "zen",
-      "claude-sonnet-4-5"
-    )?.context_window;
-    expect(catalogWindow).toBeGreaterThan(0);
-    expect(await contextOf("claude-sonnet-4-5")).toBe(catalogWindow);
-
-    // Turning the feature off on a reload empties the answer rather than
-    // leaving the old catalog published.
-    void apply(withScope(ctx), { enrichModels: false });
-    expect(await discover.get("opencode")!()).toEqual([]);
-
-    // And on again: the second reload is answered too, not only the first.
-    void apply(withScope(ctx), { enrichModels: true });
-    expect(await contextOf("claude-sonnet-4-5")).toBeGreaterThan(0);
-    expect([...discover.keys()].toSorted()).toEqual(
-      ["dsh-opencode-patch", "opencode", "opencode-go"].toSorted()
-    );
-  });
-
-  it("registers each discovery namespace on its own, and says which one failed", () => {
-    // One `try` around all three meant a refusal of the first skipped the rest.
-    const registered: string[] = [];
-    const warn = vi.fn();
-    const ctx = {
-      effect: () => {},
-      llm: {
-        registerModelDiscovery: (ns: string) => {
-          if (ns === "dsh-opencode-patch") {
-            throw new Error("refused");
-          }
-          registered.push(ns);
-        },
-      },
-      logger: { info: () => {}, warn },
-      on: () => {},
-    } as unknown as CordisContext;
-
-    void apply(withScope(ctx));
-    expect(registered.toSorted()).toEqual(["opencode", "opencode-go"]);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("model discovery for dsh-opencode-patch"),
-      expect.any(Error)
-    );
-  });
-
-  it("registers no model discovery when enrichModels is off", () => {
-    const registered: string[] = [];
-    const ctx = {
-      effect: () => {},
-      llm: {
-        registerModelDiscovery: (ns: string) => {
-          registered.push(ns);
-        },
-      },
-      on: () => {},
-    } as unknown as CordisContext;
-
-    void apply(withScope(ctx), { enrichModels: false });
-    expect(registered).toEqual([]);
-  });
-
-  it("survives a host whose llm service has no model discovery", () => {
+  it("survives a host whose llm service has no discoverModels", () => {
     // Discovery is optional: an older host must still get the header patch
-    // and the stream hook rather than failing to mount.
+    // and the stream hook rather than failing to mount. The llm scope runs
+    // (`withScope`), so the discovery installer reads this service.
     let streamHandler: unknown;
-    const ctx = {
+    const llm = {};
+    const ctx = withScope({
       effect: () => {},
-      llm: {},
+      llm,
       on: (_event: string, handler: unknown) => {
         streamHandler = handler;
       },
-    } as unknown as CordisContext;
+    }) as unknown as CordisContext;
 
     expect(() => apply(ctx)).not.toThrow();
     expect(typeof streamHandler).toBe("function");
+    // Nothing was installed on a service with no method to wrap.
+    expect(Reflect.ownKeys(llm)).toEqual([]);
   });
 
   it("patches globalThis.fetch and restores it on disposer call", () => {
