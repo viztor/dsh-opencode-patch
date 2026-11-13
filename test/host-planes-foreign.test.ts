@@ -18,6 +18,8 @@
  *
  * @module test/host-planes-foreign.test
  */
+import { readFileSync } from "node:fs";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { effectiveConfigOf } from "./support/config-shape.ts";
@@ -33,6 +35,7 @@ import {
   logLines,
   modelsPageRows,
   mountTierA,
+  offlineAuthResponse,
   ownerOf,
   PLANES,
   piAiRestarts,
@@ -803,6 +806,112 @@ describe(
       expect(requests[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`.length);
       expect(requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
       expect(realm.calls).toContainEqual(["resolve", TOKEN_REF]);
+    });
+  }
+);
+
+describe(
+  "host planes · the purge never rewrites another plugin's entry (tier B, D27)",
+  { timeout: 30_000 },
+  () => {
+    /** An id the registry below retires on both planes; pi's catalog has never heard of it. */
+    const RETIRED = "retired-fixture-free";
+
+    /** Answer the catalog read with `RETIRED` deprecated, and record the rest. */
+    const retiringRegistry = (): void => {
+      wire = recordingFetch({
+        respond: (request) =>
+          request.url.startsWith("https://models.opencode.ai/")
+            ? Response.json({
+                opencode: { models: { [RETIRED]: { status: "deprecated" } } },
+                "opencode-go": {
+                  models: { [RETIRED]: { status: "deprecated" } },
+                },
+              })
+            : offlineAuthResponse(),
+      });
+      vi.stubGlobal("fetch", wire.fetch);
+    };
+
+    /** A plane entry declaring the retired id beside a live one. */
+    const declaring = (
+      entry: Record<string, unknown>
+    ): Record<string, unknown> => ({
+      ...entry,
+      api: "openai-completions",
+      models: [{ id: MODEL }, { id: RETIRED }],
+    });
+
+    const purge = async (tier: TierB): Promise<unknown> =>
+      (
+        tier.ctx.get("opencodeModelPurge") as {
+          readonly purge: () => Promise<unknown>;
+        }
+      ).purge();
+
+    it("a realm row with a marked entry that declares a retired id is not touched: the purge refuses and the profile is byte-identical", async () => {
+      const { tier } = await bootRealm({
+        providers: { opencode: declaring(marked()) },
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+      await settle();
+      retiringRegistry();
+      const before = readFileSync(tier.profile.patchPath, "utf8");
+      await expect(purge(tier)).rejects.toMatchObject({
+        code: "opencode/purge-unavailable",
+      });
+      expect(readFileSync(tier.profile.patchPath, "utf8")).toBe(before);
+    });
+
+    it("the realm alone keeps unmarked entries out of the purge", async () => {
+      const { tier } = await bootRealm({
+        providers: { opencode: declaring(plain(TOKEN_REF)) },
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+      await settle();
+      retiringRegistry();
+      const before = readFileSync(tier.profile.patchPath, "utf8");
+      await expect(purge(tier)).rejects.toMatchObject({
+        code: "opencode/purge-unavailable",
+      });
+      expect(readFileSync(tier.profile.patchPath, "utf8")).toBe(before);
+    });
+
+    it("the marker splits one row: the unmarked plane is purged, the marked one beside it keeps the retired id", async () => {
+      const { tier } = await bootRealm({
+        providers: {
+          opencode: declaring({ ...marked(), apiKeyEnv: "OPENCODE_API_KEY" }),
+          "opencode-go": declaring(plain("OPENCODE_GO_API_KEY")),
+        },
+        realm: false,
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode-go"]);
+      await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+      await settle();
+      retiringRegistry();
+      await expect(purge(tier)).resolves.toMatchObject({
+        removed: [{ id: RETIRED, provider: "opencode-go" }],
+      });
+      const after = (tier.piEntry.options.config as { providers: Providers })
+        .providers;
+      expect(after.opencode?.models).toEqual([{ id: MODEL }, { id: RETIRED }]);
+      expect(after["opencode-go"]?.models).toEqual([{ id: MODEL }]);
+    });
+
+    it("the same entry, unmarked and outside any realm, is the user's and is purged (the known answer)", async () => {
+      const { tier } = await bootRealm({
+        providers: { opencode: declaring(plain("OPENCODE_API_KEY")) },
+        realm: false,
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode"]);
+      await settle();
+      retiringRegistry();
+      await expect(purge(tier)).resolves.toMatchObject({
+        removed: [{ id: RETIRED, provider: "opencode" }],
+      });
+      const after = (tier.piEntry.options.config as { providers: Providers })
+        .providers;
+      expect(after.opencode?.models).toEqual([{ id: MODEL }]);
     });
   }
 );
