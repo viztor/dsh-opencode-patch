@@ -161,13 +161,13 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 
 | models.dev `provider.npm` | models | protocol | served from |
 | :-- | --: | :-- | :-- |
-| _(absent)_ | 25 | OpenAI Chat Completions | the route you configured |
-| `@ai-sdk/openai` | 31 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
-| `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
+| _(absent)_ | 27 | OpenAI Chat Completions | the route you configured |
+| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 9 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _(a dialect this plugin does not serve)_ | **not offered** |
 
-Counts are the **82** active `opencode` models in `models.opencode.ai` as of 2026-11-04 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 82 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
+Counts are the **87** active `opencode` models in `models.opencode.ai` as of 2026-11-12 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 87 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 
 The patch **keeps those two routes out of both the model picker and _Settings → Models_**. Three properties hold today, and one does not yet:
 

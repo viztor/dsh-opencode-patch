@@ -159,13 +159,13 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 
 | models.dev `provider.npm` | 模型数 | 协议 | 服务自 |
 | :-- | --: | :-- | :-- |
-| _（缺失）_ | 24 | OpenAI Chat Completions | 你配置的路由 |
-| `@ai-sdk/openai` | 31 | OpenAI Responses | `opencode-responses` |
-| `@ai-sdk/anthropic` | 17 | Anthropic Messages | `opencode-anthropic` |
-| `@ai-sdk/google` | 8 | Google Generative AI | `opencode-google` |
+| _（缺失）_ | 27 | OpenAI Chat Completions | 你配置的路由 |
+| `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
+| `@ai-sdk/anthropic` | 18 | Anthropic Messages | `opencode-anthropic` |
+| `@ai-sdk/google` | 9 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _（本插件不服务的方言）_ | **不提供** |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 82 个**在用**模型，统计于 2026-11-04 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 82 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
+数量为 `models.opencode.ai` 中 `opencode` 的 87 个**在用**模型，统计于 2026-11-12 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 87 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
