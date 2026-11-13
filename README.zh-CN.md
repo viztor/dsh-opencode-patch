@@ -33,7 +33,7 @@
 
 ---
 
-`dsh-opencode-patch` 是一个 DeepSeek Harness 宿主插件，让 **OpenCode Zen 与 Go** 模型在 DSH 内持续可用。无需遭遇网络拒绝、Cloudflare 挑战、权益不匹配或隐形限制，即可接入 `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3-contributor-free`、`qwen3.8-flash` 以及 OpenCode 目录中的其余模型。
+`dsh-opencode-patch` 是一个 DeepSeek Harness 宿主插件，让 **OpenCode Zen 与 Go** 模型在 DSH 内持续可用。无需遭遇网络拒绝、Cloudflare 挑战、权益不匹配或隐形限制，即可接入 `claude-sonnet-4-5`、`gpt-5.4`、`gemini-3.8-flash`、`deepseek-v4.1-flash`、`muse-spark-1.3`、`qwen3.8-flash` 以及 OpenCode 目录中的其余模型。
 
 **默认状态。** 把 DSH 直接指向 OpenCode、不装任何插件，模型是**完全不能用**的——不是某一种形状不能用，而是全部：
 
@@ -162,10 +162,10 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | _（缺失）_ | 27 | OpenAI Chat Completions | 你配置的路由 |
 | `@ai-sdk/openai` | 32 | OpenAI Responses | `opencode-responses` |
 | `@ai-sdk/anthropic` | 18 | Anthropic Messages | `opencode-anthropic` |
-| `@ai-sdk/google` | 9 | Google Generative AI | `opencode-google` |
+| `@ai-sdk/google` | 10 | Google Generative AI | `opencode-google` |
 | `@ai-sdk/mistral` | 1 | _（本插件不服务的方言）_ | **不提供** |
 
-数量为 `models.opencode.ai` 中 `opencode` 的 87 个**在用**模型，统计于 2026-11-12 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 87 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
+数量为 `models.opencode.ai` 中 `opencode` 的 88 个**在用**模型，统计于 2026-11-13 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 88 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
 
 插件把这两条内部路由同时挡在模型选择器和 _Settings → Models_ 之外。**三条性质今天就成立，还有一条尚未成立：**
 
@@ -182,8 +182,8 @@ opencode-responses:
   headers:
     authorization: Bearer unused # 由 fetch 补丁换成你的 key
   models:
-    - id: muse-spark-1.3-contributor-free
-      name: Muse Spark 1.3 Free
+    - id: muse-spark-1.3
+      name: Muse Spark 1.3
       contextWindow: 1048576
       maxTokens: 131072
       input: [text, image]

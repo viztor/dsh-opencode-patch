@@ -1129,6 +1129,23 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }],
   },
   {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0.075,
+      input: 1.5,
+      output: 7.5,
+    },
+    id: "gemini-4-hydrogen",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 65_536,
+    name: "Gemini 4 Hydrogen",
+    provider_npm: "@ai-sdk/google",
+    reasoning: true,
+    reasoning_options: [
+      { type: "effort", values: ["low", "medium", "high", "xhigh"] },
+    ],
+  },
+  {
     context_window: 204_800,
     cost: {
       cache_read: 0.2,
