@@ -20,10 +20,15 @@
  *   the served row is sticky while it is live and declares a plane, else the
  *   first live row that declares one, else the first live row); another
  *   pi-ai row keeps its planes and serves them itself, and is reported once —
- *   it returns a fresh copy without the two plane keys, so pi-ai resolves and
- *   registers every other route and never sees the planes (F11, F12) — its
- *   own save check included, which a strip that let the raw value through
- *   would not shield. The user's file keeps every entry: the editor writes the
+ *   it returns a fresh copy without the plane keys it TAKES, so pi-ai resolves
+ *   and registers every other route and never sees those planes (F11, F12) —
+ *   its own save check included, which a strip that let the raw value through
+ *   would not shield. A plane entry another plugin owns is not taken (D27,
+ *   `utils/plane-ownership.ts`): pi-ai's row resolving `credentials` in a
+ *   realm the plugin's row does not share, or an entry carrying the
+ *   `x-opencode-plugin` header. It stays in pi-ai's copy, pi-ai validates
+ *   and serves it, it is logged once, and nothing below — a restart, the
+ *   reconcile's wait, the handback, the Settings graft — counts it. The user's file keeps every entry: the editor writes the
  *   raw value, never the resolved one. A commit run (`isCommitRun`: the raw
  *   value is the fiber's own raw config or the loader's stored row config, or
  *   the fiber is not ACTIVE, F14) schedules {@link reconcile}; an editor
@@ -106,7 +111,14 @@ import {
 } from "../utils/config-run.ts";
 import { isFunctionLike, isRecord } from "../utils/guards.ts";
 import {
-  hasPlaneEntries,
+  credentialsRealmOf,
+  isForeignRealm,
+  type RealmLabel,
+  stepAsideMessage,
+  steppedAsidePlanes,
+  takenPlanes,
+} from "../utils/plane-ownership.ts";
+import {
   planeEntriesOf,
   planeProfileFor,
   withoutPlaneProviders,
@@ -135,6 +147,12 @@ export interface RouteClaim {
   readonly piAiNamespace: () => string;
   /** Settles once the claim is mounted; never rejects. */
   readonly mounted: Promise<void>;
+  /**
+   * The plane routes pi-ai serves for another plugin (D27): declared by a
+   * live pi-ai row the claim steps aside for, and not taken by the row it
+   * serves. Read per call, so a turn sees the rows as they are now.
+   */
+  readonly steppedAside: () => ReadonlySet<PlaneRoute>;
 }
 
 /** The `llm` service, as the claim calls it. */
@@ -171,29 +189,39 @@ const resolvedPlanes = (fiber: HostFiber): PlaneRoute[] => {
   }
 };
 
-/** Whether a fiber resolved without a plane its raw config declares. */
-const lacksDeclaredPlane = (fiber: HostFiber): boolean => {
-  const declared = planeEntriesOf(rawConfigOf(fiber));
+/**
+ * Whether a fiber resolved without a plane the claim takes from it: the
+ * planes it leaves to pi-ai (D27) are never stripped, so they never count.
+ */
+const lacksTakenPlane = (
+  fiber: HostFiber,
+  taken: readonly PlaneRoute[]
+): boolean => {
   const held = resolvedPlanes(fiber);
-  return PLANE_ROUTES.some(
-    (plane) => Object.hasOwn(declared, plane) && !held.includes(plane)
-  );
+  return taken.some((plane) => !held.includes(plane));
 };
 
 /**
- * Restart pi-ai, once it settles, if it is serving without a plane its raw
- * config declares — a pi-ai that was LOADING when the claim went inert
- * resolved through the still-active listener, and nobody else would ever
- * restart it. One that resolved after the claim went inert holds its planes
- * and is left alone.
+ * Restart pi-ai, once it settles, if it is serving without a plane the claim
+ * took from it — a pi-ai that was LOADING when the claim went inert resolved
+ * through the still-active listener, and nobody else would ever restart it.
+ * One that resolved after the claim went inert holds its planes and is left
+ * alone.
  */
-const restartOnceSettled = async (pi: HostFiber): Promise<void> => {
+const restartOnceSettled = async (
+  pi: HostFiber,
+  takenOf: (fiber: HostFiber) => readonly PlaneRoute[]
+): Promise<void> => {
   try {
     await pi.await?.();
   } catch {
     // A FAILED pi-ai is read as such below.
   }
-  if (pi.uid !== null && pi.state === ACTIVE && lacksDeclaredPlane(pi)) {
+  if (
+    pi.uid !== null &&
+    pi.state === ACTIVE &&
+    lacksTakenPlane(pi, takenOf(pi))
+  ) {
     await pi.restart?.();
   }
 };
@@ -244,12 +272,47 @@ export const installRouteClaim = (
     scheduled: false,
     /** The fiber the profiles and the handle were built from. */
     served: undefined as HostFiber | undefined,
+    /** The stepped-aside entries already reported, per row (`<plane>:<reason>`). */
+    reportedAside: new WeakMap<HostFiber, Set<string>>(),
     /** Rows serving a plane themselves that were already reported. */
     warnedHolders: new WeakSet<HostFiber>(),
     warnedUnavailable: false,
   };
   const warn = (message: string, ...rest: unknown[]): void => {
     ctx.logger?.warn?.(`${LOG} ${message}`, ...rest);
+  };
+
+  /**
+   * The plugin's own row's `credentials` realm, read once: a change to it is
+   * a change to the plugin's row, which applies the plugin again.
+   */
+  const ownFiber: unknown = Reflect.get(ctx, "fiber");
+  const ownEntry: unknown = isRecord(ownFiber) ? ownFiber.entry : undefined;
+  const ownRealm = credentialsRealmOf(
+    isRecord(ownEntry) ? ownEntry.options : undefined
+  );
+
+  /** A pi-ai row's realm when the plugin does not share it, else `undefined`. */
+  const foreignRealmOf = (fiber: HostFiber): RealmLabel | undefined => {
+    const theirs = credentialsRealmOf(fiber.entry?.options);
+    return isForeignRealm(theirs, ownRealm) ? theirs : undefined;
+  };
+
+  /**
+   * The planes the claim TAKES from a pi-ai row: those its raw config (or a
+   * run's candidate) declares, minus the ones another plugin owns (D27).
+   * Everything that strips, restarts, validates, builds or hands back reads
+   * this, never the declared set.
+   */
+  const takenOf = (
+    fiber: HostFiber,
+    raw: unknown = rawConfigOf(fiber)
+  ): PlaneRoute[] => takenPlanes(raw, foreignRealmOf(fiber));
+
+  /** The taken planes a fiber's RESOLVED config still holds. */
+  const heldPlanes = (fiber: HostFiber): PlaneRoute[] => {
+    const taken = takenOf(fiber);
+    return resolvedPlanes(fiber).filter((plane) => taken.includes(plane));
   };
 
   const missing = ["on", "inject", "effect"].filter(
@@ -263,6 +326,7 @@ export const installRouteClaim = (
       committedEntries: () => ({}),
       mounted: Promise.resolve(),
       piAiNamespace: () => PI_AI_RUNTIME,
+      steppedAside: () => new Set(),
     };
   }
 
@@ -271,8 +335,9 @@ export const installRouteClaim = (
   /**
    * The pi-ai fiber the claim serves. Sticky: the row already served stays
    * served while it is not disposed and its raw config still declares a
-   * plane. Otherwise the first row not disposed, whatever its state, whose
-   * raw config DECLARES a plane — else the first row not disposed. Chosen by
+   * plane the claim takes. Otherwise the first row not disposed, whatever its
+   * state, whose raw config DECLARES a plane the claim takes (a plane another
+   * plugin owns is not one, D27) — else the first row not disposed. Chosen by
    * declaration, not by registry order alone, because cordis appends a
    * re-enabled row's new fiber to the end of the registry: by order, a
    * plane-less row ahead of it would be served and the planes never claimed.
@@ -288,11 +353,11 @@ export const installRouteClaim = (
     if (
       current !== undefined &&
       live.includes(current) &&
-      hasPlaneEntries(rawConfigOf(current))
+      takenOf(current).length > 0
     ) {
       return current;
     }
-    return live.find((fiber) => hasPlaneEntries(rawConfigOf(fiber))) ?? live[0];
+    return live.find((fiber) => takenOf(fiber).length > 0) ?? live[0];
   };
 
   /** The served pi-ai fiber while it is not FAILED: a FAILED one has nothing to claim. */
@@ -307,7 +372,7 @@ export const installRouteClaim = (
    * profiles (D3's default list, D16's protocol, D17's metadata).
    */
   const rebuild = (pi: HostFiber, modules: HostModules): void => {
-    const entries = planeEntriesOf(rawConfigOf(pi));
+    const entries = planeEntriesOf(rawConfigOf(pi), takenOf(pi));
     const key = `${catalogGeneration()}:${JSON.stringify(entries)}`;
     if (key === state.entriesKey && state.adapter !== undefined) {
       return;
@@ -442,7 +507,7 @@ export const installRouteClaim = (
       fiber === servedRow() &&
       fiber.uid !== null &&
       fiber.state === ACTIVE &&
-      resolvedPlanes(fiber).length > 0
+      heldPlanes(fiber).length > 0
     ) {
       await fiber.restart?.();
     }
@@ -482,7 +547,7 @@ export const installRouteClaim = (
     } catch (error) {
       warn("the plane routes did not release", error);
     }
-    if (served === undefined || resolvedPlanes(served).length === 0) {
+    if (served === undefined || heldPlanes(served).length === 0) {
       return false;
     }
     void (async () => {
@@ -505,7 +570,7 @@ export const installRouteClaim = (
       ) {
         continue;
       }
-      const held = resolvedPlanes(fiber);
+      const held = heldPlanes(fiber);
       if (held.length > 0) {
         state.warnedHolders.add(fiber);
         warn(
@@ -515,10 +580,39 @@ export const installRouteClaim = (
     }
   };
 
+  /**
+   * Say once per entry that a plane is left to pi-ai, and why (D27): each
+   * live row's stepped-aside entries, keyed by plane and reason, so a row
+   * whose reason changes says so again.
+   */
+  const reportSteppedAside = (): void => {
+    for (const fiber of piAiFibers(ctx)) {
+      if (fiber.uid === null) {
+        continue;
+      }
+      const seen = state.reportedAside.get(fiber) ?? new Set<string>();
+      state.reportedAside.set(fiber, seen);
+      const aside = steppedAsidePlanes(
+        rawConfigOf(fiber),
+        foreignRealmOf(fiber)
+      );
+      for (const [plane, reason] of aside) {
+        const key = `${plane}:${reason.kind}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        ctx.logger?.info?.(
+          `${LOG} ${stepAsideMessage(plane, reason, fiber.entry?.options?.id ?? PI_AI_RUNTIME)}`
+        );
+      }
+    }
+  };
+
   /** Restart pi-ai so it takes the planes back, reporting a failure. */
   const restartToHandBack = async (pi: HostFiber): Promise<void> => {
     try {
-      await restartOnceSettled(pi);
+      await restartOnceSettled(pi, takenOf);
     } catch (error) {
       warn("pi-ai did not restart to take the plane routes back", error);
     }
@@ -550,6 +644,7 @@ export const installRouteClaim = (
     if (!state.active || !state.ready || state.llm === undefined) {
       return;
     }
+    reportSteppedAside();
     const served = servedRow();
     if (served !== state.served && handOver(served)) {
       // The new served row's restart brings us back through the registry.
@@ -565,7 +660,7 @@ export const installRouteClaim = (
       register();
       return;
     }
-    if (resolvedPlanes(pi).length > 0) {
+    if (heldPlanes(pi).length > 0) {
       // pi-ai still holds a plane it resolved before the listener existed;
       // the mount's or the handover's restart moves it, and its registry
       // change brings us back.
@@ -621,10 +716,18 @@ export const installRouteClaim = (
     });
   };
 
-  /** Validate an editor candidate's changed plane entries, strictly. */
-  const validate = (fiber: HostFiber, raw: unknown): void => {
+  /**
+   * Validate an editor candidate's changed plane entries, strictly: only the
+   * ones the claim takes, since an entry it leaves to pi-ai reaches pi-ai's
+   * own save check (D27).
+   */
+  const validate = (
+    fiber: HostFiber,
+    raw: unknown,
+    taken: readonly PlaneRoute[]
+  ): void => {
     const previous = planeEntriesOf(rawConfigOf(fiber));
-    const candidate = planeEntriesOf(raw);
+    const candidate = planeEntriesOf(raw, taken);
     for (const plane of PLANE_ROUTES) {
       if (
         !Object.hasOwn(candidate, plane) ||
@@ -688,18 +791,20 @@ export const installRouteClaim = (
       return raw;
     }
     const commit = isCommitRun(raw, fiber, ACTIVE);
-    if (!hasPlaneEntries(raw)) {
+    // The run's own candidate decides: an edit can add or drop a marker.
+    const taken = takenOf(fiber, raw);
+    if (taken.length === 0) {
       if (commit) {
         schedule();
       }
       return raw;
     }
-    const copy = withoutPlaneProviders(raw);
+    const copy = withoutPlaneProviders(raw, taken);
     if (commit) {
       schedule();
       return copy;
     }
-    validate(fiber, raw);
+    validate(fiber, raw, taken);
     return copy;
   };
 
@@ -757,7 +862,7 @@ export const installRouteClaim = (
     if (
       pi === undefined ||
       pi.parent?.fiber?.state === UNLOADING ||
-      !hasPlaneEntries(rawConfigOf(pi))
+      takenOf(pi).length === 0
     ) {
       return undefined;
     }
@@ -765,7 +870,7 @@ export const installRouteClaim = (
     // while it was active, so it is restarted once it settles.
     return (async () => {
       try {
-        await restartOnceSettled(pi);
+        await restartOnceSettled(pi, takenOf);
         const llm: unknown = ctx.get?.("llm");
         const listed: unknown =
           isRecord(llm) && isFunctionLike(llm.listProviders)
@@ -776,8 +881,7 @@ export const installRouteClaim = (
             isRecord(row) ? row.id : undefined
           )
         );
-        const declared = Object.keys(planeEntriesOf(rawConfigOf(pi)));
-        const lost = declared.filter((plane) => !ids.has(plane));
+        const lost = takenOf(pi).filter((plane) => !ids.has(plane));
         if (lost.length > 0) {
           warn(
             `pi-ai did not take back ${lost.join(", ")}: their entries may hold ids its catalog cannot serve`
@@ -846,7 +950,7 @@ export const installRouteClaim = (
       state.validationModules = state.modules;
       const served = servedRow();
       state.served = served;
-      if (served !== undefined && resolvedPlanes(served).length > 0) {
+      if (served !== undefined && heldPlanes(served).length > 0) {
         if (state.modules === undefined) {
           // Nothing could serve the planes: stand down without a restart, so
           // pi-ai keeps them and restarts zero times rather than twice. The
@@ -865,9 +969,35 @@ export const installRouteClaim = (
     }
   })();
 
+  /**
+   * The planes another plugin owns on a live pi-ai row, minus any the served
+   * row's planes the claim takes: those are the plugin's whatever a second
+   * row declares.
+   */
+  const steppedAside = (): ReadonlySet<PlaneRoute> => {
+    const out = new Set<PlaneRoute>();
+    for (const fiber of piAiFibers(ctx)) {
+      if (fiber.uid === null) {
+        continue;
+      }
+      for (const plane of steppedAsidePlanes(
+        rawConfigOf(fiber),
+        foreignRealmOf(fiber)
+      ).keys()) {
+        out.add(plane);
+      }
+    }
+    const served = state.active ? servedRow() : undefined;
+    for (const plane of served === undefined ? [] : takenOf(served)) {
+      out.delete(plane);
+    }
+    return out;
+  };
+
   return {
     committedEntries: () => (state.active ? state.normalized : {}),
     mounted,
     piAiNamespace: () => livePiAi()?.entry?.options?.id ?? PI_AI_RUNTIME,
+    steppedAside,
   };
 };

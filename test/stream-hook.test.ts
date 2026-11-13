@@ -168,6 +168,45 @@ describe("stream-hook · the pass-through guards", () => {
   });
 });
 
+describe("stream-hook · a plane another plugin owns (D27)", () => {
+  /**
+   * The route claim hands the hook the planes pi-ai serves for another plugin;
+   * a turn on one is that plugin's, so it reaches `next()` and comes back as
+   * it went, with no turn state, no price and no debug line. The read is per
+   * turn: the same hook decorates the route again once it is not stepped
+   * aside.
+   */
+  it("hands a stepped-aside plane's turn through untouched, and decorates it once it is the plugin's again", async () => {
+    const { createStreamHook, resolveConfig } =
+      await import("./support/src.ts");
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    const info = vi.fn();
+    const aside = new Set(["opencode"]);
+    const hook = createStreamHook(
+      { logger: { info } } as never,
+      resolveConfig({ debug: true, usageEnabled: false } as never),
+      new AsyncLocalStorage(),
+      () => aside
+    );
+    const downstream = createMockStream("chunk");
+    const next = vi.fn(() => downstream);
+    expect(hook({ model: "m", provider: "opencode" }, next)).toBe(downstream);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(info).not.toHaveBeenCalled();
+    // The known answer: the other plane, and then this one, are decorated.
+    const other = createMockStream("chunk");
+    expect(hook({ model: "m", provider: "opencode-go" }, () => other)).not.toBe(
+      other
+    );
+    aside.clear();
+    const again = createMockStream("chunk");
+    expect(hook({ model: "m", provider: "opencode" }, () => again)).not.toBe(
+      again
+    );
+    expect(info).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("stream-hook · the debug gate", () => {
   /**
    * Naming `debugFile` writes the file; `debug` governs the console alone. The

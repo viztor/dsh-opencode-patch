@@ -114,7 +114,13 @@ export const createStreamHook = (
     };
   },
   config: ResolvedPluginConfig,
-  als: AsyncLocalStorage<ActiveTurnState>
+  als: AsyncLocalStorage<ActiveTurnState>,
+  /**
+   * The plane routes pi-ai serves for another plugin (the route claim's
+   * `steppedAside`, D27): a turn on one is that plugin's, and is not
+   * decorated, priced or carried into the fetch patch. Read per turn.
+   */
+  steppedAside: () => ReadonlySet<string> = () => new Set()
 ): StreamHandler => {
   const { debug, debugFile, providers } = config;
 
@@ -127,7 +133,7 @@ export const createStreamHook = (
       return next();
     }
     const providerKey = String(providerProp);
-    if (!providers.has(providerKey)) {
+    if (!providers.has(providerKey) || steppedAside().has(providerKey)) {
       return next();
     }
 

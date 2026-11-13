@@ -430,6 +430,21 @@ export type {
   PlanePiModel,
 } from "../../src/utils/plane-model.ts";
 
+// utils/plane-ownership.ts
+export {
+  credentialsRealmOf,
+  isForeignRealm,
+  PLUGIN_MARKER_HEADER,
+  pluginMarkerOf,
+  stepAsideMessage,
+  steppedAsidePlanes,
+  takenPlanes,
+} from "../../src/utils/plane-ownership.ts";
+export type {
+  RealmLabel,
+  StepAsideReason,
+} from "../../src/utils/plane-ownership.ts";
+
 // utils/plane-profile.ts
 export {
   hasPlaneEntries,
