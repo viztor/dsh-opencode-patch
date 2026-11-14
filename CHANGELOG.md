@@ -6,6 +6,19 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.10.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.2...v1.10.0) (2026-11-14)
+
+
+### Features
+
+* Settings offers the catalog's models pi does not list ([#115](https://github.com/viztor/dsh-opencode-patch/issues/115)) ([2f474b2](https://github.com/viztor/dsh-opencode-patch/commit/2f474b21efe5470aad5ac6006a0b7039b38c80ab))
+* the plugin owns the opencode and opencode-go routes ([#113](https://github.com/viztor/dsh-opencode-patch/issues/113)) ([c7820b4](https://github.com/viztor/dsh-opencode-patch/commit/c7820b4e8c5fbdf47bbee336f14ad7ea13f25a82))
+
+
+### Fixes
+
+* disabling or reloading the plugin restores the host methods it wrapped ([#112](https://github.com/viztor/dsh-opencode-patch/issues/112)) ([1b4ebf0](https://github.com/viztor/dsh-opencode-patch/commit/1b4ebf00cff1f83e4fe25f5b47153540a5ff68d1))
+
 ## [1.9.2](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.1...v1.9.2) (2026-11-12)
 
 
