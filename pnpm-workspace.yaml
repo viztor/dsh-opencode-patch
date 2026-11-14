@@ -6,7 +6,7 @@ allowBuilds:
   protobufjs: false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
-  vite-plus: 1.4.0
+  vite-plus: 1.5.0
 # pnpm refuses any version published inside the last 24h (its default
 # `minimumReleaseAge`), and the pi seam this repo follows rides fresh cuts:
 # the 0.2.2-rc.2 cluster the rc lockfile installs was hours old when it was
