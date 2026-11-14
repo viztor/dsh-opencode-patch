@@ -324,12 +324,13 @@ describe("keyed probes · the cells", () => {
   });
 
   it("every live suite reads a key only through E2E.keyFor at its own tier: the keyed probes at `probes`, the full keyed suites at `full`, the keyless matrix never", () => {
-    // The live files are not loaded offline, and ci.yml passes both secrets
-    // on a `probes` pull request, so a full suite that read a key straight
-    // from the environment would spend it on every such pull request, and
-    // keyed probes armed at `full` would never probe one: both stay green
-    // everywhere else. `E2E.keyFor` (test/support/e2e-env.ts) is the one
-    // reader, and it arms a key through `armedKey` at the tier it is asked for.
+    // The live files are not loaded offline, and ci.yml arms both keys on any
+    // tier but `none` (the sign-in step mints them), so a full suite that read
+    // a key straight from the environment would spend it on every such pull
+    // request, and keyed probes armed at `full` would never probe one: both
+    // stay green everywhere else. `E2E.keyFor` (test/support/e2e-env.ts) is
+    // the one reader, and it arms a key through `armedKey` at the tier it is
+    // asked for.
     const NEED: Readonly<Record<string, "full" | "probes">> = {
       "dispatch-levels.e2e.ts": "full",
       "keyed-probes.e2e.ts": "probes",
@@ -1188,6 +1189,13 @@ describe("keyed probes · what a plane decides", () => {
 const expression = (inner: string): string =>
   ["$", "{{ ", inner, " }}"].join("");
 
+/**
+ * A shell `${inner}` expansion, as a workflow spells it, without a literal
+ * `${` in a regular string (`no-template-curly-in-string` reads that one as a
+ * mistyped template literal).
+ */
+const expansion = (inner: string): string => ["$", "{", inner, "}"].join("");
+
 describe("keyed probes · the CI wiring", () => {
   const ci = readFileSync(
     new URL("../.github/workflows/ci.yml", import.meta.url),
@@ -1328,23 +1336,56 @@ describe("keyed probes · the CI wiring", () => {
     );
   });
 
-  it("the test step names the tier and passes the keys only when it is not `none`", () => {
+  it("the sign-in step mints the key from the runner's OIDC identity, and only when a tier spends one", () => {
+    // The job must be allowed to ask for an OIDC token; without `id-token`
+    // the runner sets no request URL and the exchange can never run.
+    expect(job).toMatch(
+      /\n {4}permissions:\n {6}contents: read\n {6}id-token: write\n {4}steps:/u
+    );
+    const signIn =
+      steps.find((step) =>
+        step.includes("name: Sign in to OpenCode Console")
+      ) ?? "";
+    expect(signIn).not.toBe("");
+    // One sign-in, at the tiers that spend a key, and not at `none`.
+    expect(signIn).toMatch(/^\s*if: steps\.tier\.outputs\.keyed != 'none'$/mu);
+    for (const line of [
+      "https://opencode.ai/console/auth/oauth/token",
+      "grant_type=urn:ietf:params:oauth:grant-type:token-exchange",
+      "subject_token_type=urn:ietf:params:oauth:token-type:jwt",
+      "client_id=",
+      "subject_token=",
+      "&audience=$AUDIENCE",
+      "::add-mask::",
+      "OPENCODE_API_KEY=$token",
+      "OPENCODE_GO_API_KEY=$token",
+      "$GITHUB_ENV",
+      // A fork is issued no OIDC request URL: the step must leave the suite
+      // keyless rather than fail on a request it cannot make.
+      expansion("ACTIONS_ID_TOKEN_REQUEST_URL:-"),
+    ]) {
+      expect(signIn, line).toContain(line);
+    }
+    // No stored key is referenced anywhere in the job: the token is minted per
+    // run, so nothing long-lived sits in this public repository.
+    for (const step of steps) {
+      expect(step).not.toContain("secrets.OPENCODE");
+    }
+  });
+
+  it("the test step names the tier and the record directory, and no key: the sign-in step owns them", () => {
     // Unset means `full`, so a step that dropped the tier line would arm the
     // full keyed suites on every pull request that arms the probes.
     for (const line of [
       `OPENCODE_E2E_KEYED: ${expression("steps.tier.outputs.keyed")}`,
-      `OPENCODE_API_KEY: ${expression("steps.tier.outputs.keyed != 'none' && secrets.OPENCODE_API_KEY || ''")}`,
-      `OPENCODE_GO_API_KEY: ${expression("steps.tier.outputs.keyed != 'none' && secrets.OPENCODE_GO_API_KEY || ''")}`,
       "OPENCODE_E2E_RECORD_DIR",
     ]) {
       expect(testStep, line).toContain(line);
     }
-    // And no other step of the job sees a key.
-    for (const step of steps) {
-      if (step !== testStep) {
-        expect(step).not.toContain("secrets.OPENCODE");
-      }
-    }
+    // The keys arrive through GITHUB_ENV from the sign-in step, not here: a
+    // step-level env entry would shadow the minted token with a stale one.
+    expect(testStep).not.toContain("OPENCODE_API_KEY");
+    expect(testStep).not.toContain("OPENCODE_GO_API_KEY");
   });
 });
 

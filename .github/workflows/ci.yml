@@ -468,14 +468,16 @@ jobs:
   # - `full`: adds the full keyed suites (protocol-routing, opencode-live,
   #   dispatch-levels). Nightly and on dispatch.
   #
-  # The keys are passed only when the tier is not `none`, and the tier is
-  # always set explicitly: unset means `full` (so a local run with keys arms
-  # everything), and a dropped env line would arm the full suites on every
-  # pull request that arms the probes. Secrets are not exposed to fork or Dependabot PRs, and every
-  # credentialed case skips when its key is absent, so this stays green there
-  # while still checking that the endpoints answer. Add OPENCODE_API_KEY (Zen)
-  # and OPENCODE_GO_API_KEY (Go plan) under Settings → Secrets → Actions to arm
-  # the keyed cases.
+  # The keys are armed only when the tier is not `none`, by the sign-in step:
+  # GitHub mints a short-lived OIDC token for the Console's audience, the
+  # Console exchanges it for an access token, and only that token reaches the
+  # suite's environment. Nothing long-lived is stored in this repository or in
+  # Actions secrets. A fork or Dependabot pull request is issued neither an
+  # OIDC endpoint nor secrets, so the step exits with a notice and the keyed
+  # cases skip exactly as they do when the tier is `none`, while the keyless
+  # cases still check that the endpoints answer. The Console CI token's client
+  # id is public by design: the exchange binds it to the audience and the
+  # GitHub OIDC subject, so the id alone grants nothing.
   #
   # Both probe suites write a dated table of what each URL shape answered
   # (docs/redirect-planes.md §13); the job appends them to the run summary and
@@ -484,6 +486,9 @@ jobs:
     name: e2e · live gateway
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -534,13 +539,37 @@ jobs:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Sign in to OpenCode Console
+        if: steps.tier.outputs.keyed != 'none'
+        env:
+          AUDIENCE: https://opencode.ai/console
+          CLIENT_ID: sk_baf57eb6-1b63-4eb7-a538-737dc3aea54d
+        run: |
+          # A fork or Dependabot pull request is issued no OIDC endpoint; leave
+          # the suite keyless, as its keyed cases already expect.
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::notice::no OIDC identity for this run; the keyed cases will skip"
+            exit 0
+          fi
+          oidc=$(curl -sSf --oauth2-bearer "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
+          token=$(curl -sSf https://opencode.ai/console/auth/oauth/token \
+            -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+            -d subject_token_type=urn:ietf:params:oauth:token-type:jwt \
+            -d client_id="$CLIENT_ID" \
+            -d subject_token="$oidc" | jq -r .access_token)
+          echo "::add-mask::$token"
+          # One workspace credential serves both planes; the suite reads the two
+          # names it always has, and only this step arms them.
+          {
+            echo "OPENCODE_API_KEY=$token"
+            echo "OPENCODE_GO_API_KEY=$token"
+          } >> "$GITHUB_ENV"
       - run: pnpm run test:e2e
         env:
           OPENCODE_E2E: "1"
           OPENCODE_E2E_KEYED: ${{ steps.tier.outputs.keyed }}
           OPENCODE_E2E_RECORD_DIR: ${{ runner.temp }}/endpoint-families
-          OPENCODE_API_KEY: ${{ steps.tier.outputs.keyed != 'none' && secrets.OPENCODE_API_KEY || '' }}
-          OPENCODE_GO_API_KEY: ${{ steps.tier.outputs.keyed != 'none' && secrets.OPENCODE_GO_API_KEY || '' }}
       - name: publish the endpoint-family record to the run summary
         if: always()
         env:
