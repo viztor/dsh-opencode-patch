@@ -125,8 +125,9 @@ describe("opencode-store-service: the inspection seam", () => {
   });
 
   it("ignores an injected resolver that is not a function", async () => {
-    // `mountByProvide` passes its `options` through untouched, so a composition
-    // that hands over something else must not turn into a crash at call time.
+    // `installRemoteService` hands the Service its activation's options as
+    // given (a view of the latest live activation's), so a composition that
+    // hands over something else must not turn into a crash at call time.
     const service = new OpencodeStoreService(new Context(), {
       resolveStorePath: "not a function",
     });
