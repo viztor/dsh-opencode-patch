@@ -56,10 +56,19 @@
  * completions cell (`keyedVariantCells`, lessons L4, L5 and L10): the probe
  * identity beside a minted `x-opencode-request`, `x-opencode-project` as a
  * folder name and as a 40-hex digest, and a paid completions model that
- * reasons, with no `reasoning_effort` and with `"none"`. Every 429 either case
- * meets has its `Retry-After` noted (lesson L9). All of it is recorded —
- * the variants table and the `Retry-After` line follow the keyed table in
- * `keyed.md` — and none of it is asserted: P6 and P-R3 act on what it shows.
+ * reasons, with no `reasoning_effort` and with `"none"`. It also sends the
+ * console study's rows: a raw (non-`ses_`) session id (OC9), the
+ * session-only header set (OC8) and the harness's User-Agent (OC6), and three
+ * rows on a free completions model sent with NO key — the probe identity, a
+ * raw session id, the harness's User-Agent — which are the only keyless
+ * requests inside the keyed tier. Every keyed 429 either case meets has its
+ * `Retry-After` noted (lesson L9); a keyless free row's 429 is not a keyed
+ * one, and the free tier's usage cap is not a rate limit (L3), so neither is
+ * noted. All of it is recorded — the variants table and the `Retry-After`
+ * line follow the keyed table in `keyed.md` — and none of it is asserted: the
+ * lessons' rows feed P6 (L4, L5) and the L10 follow-up, and the console
+ * study's rows an owner's OC6 decision, the session derivation's OC9 and P6's
+ * OC8.
  *
  * Armed by the `probes` tier (`OPENCODE_E2E_KEYED`, unset meaning `full`):
  * CI runs it on pull requests that touch `src/host/**`, the modules that
@@ -104,6 +113,7 @@ import {
 } from "../support/endpoint-record.ts";
 import {
   excerpt,
+  freeCompletionsModel,
   isArmed,
   KEYED_VARIANTS,
   keyedCell,
@@ -213,10 +223,10 @@ describe.skipIf(
   };
   const recorded: RecordedProbe[] = [];
   const variants: RecordedVariant[] = [];
-  /** Every keyed 429 and its `Retry-After` (lesson L9), matrix and variants alike. */
+  /** Every keyed rate-limit 429 and its `Retry-After` (lesson L9), matrix and variants alike. */
   const retryAfters: { cell: string; value: string | null }[] = [];
 
-  /** {@link sendWithRetry}, noting the `Retry-After` of every 429 it met. */
+  /** {@link sendWithRetry}, noting the `Retry-After` of every rate-limit 429 it met (`retryAfterOf` leaves out the usage cap). */
   const sendNoting = async (
     cell: MatrixCell,
     name: string
@@ -343,7 +353,7 @@ describe.skipIf(
   );
 
   it.for(["opencode", "opencode-go"] as const)(
-    "%s: records the header and reasoning variants on the default completions cell (L4, L5, L10)",
+    "%s: records the header, reasoning and console-study variants on the default completions cell (L4, L5, L10, OC6, OC8, OC9)",
     {
       timeout:
         KEYED_VARIANTS.length * 2 * (PROBE_TIMEOUT_MS + RETRY_AFTER_MS) +
@@ -363,11 +373,17 @@ describe.skipIf(
       )?.model;
       const variantCells = keyedVariantCells(
         plane,
-        { reasoning: reasoningCompletionsModel(slices[plane]), representative },
+        {
+          free: freeCompletionsModel(slices[plane]),
+          reasoning: reasoningCompletionsModel(slices[plane]),
+          representative,
+        },
         key
       );
-      // Recorded, never asserted: the variants measure what P6 and P-R3
-      // decide, and no answer here says anything about the default family.
+      // Recorded, never asserted: the lessons' rows feed P6 (L4, L5) and the
+      // L10 follow-up, the console study's rows an owner's OC6 decision, the
+      // session derivation's OC9 and P6's OC8, and no answer here says
+      // anything about the default family.
       const rows: KeyedRow[] = [];
       for (const cell of variantCells) {
         const name = `${plane} ${cell.variant.id}`;
@@ -378,7 +394,12 @@ describe.skipIf(
           verdict: "no-model",
         };
         if (cell.body !== undefined) {
-          const attempts = await sendNoting(cell, name);
+          // A keyless free row's 429 is not a keyed one: it stays off the
+          // `Retry-After` line (L9), which is about keyed 429s.
+          const attempts =
+            cell.variant.keyed === false
+              ? await sendWithRetry(cell)
+              : await sendNoting(cell, name);
           const answer = attempts.at(-1);
           const verdict = keyedVerdictOf(attempts);
           row = {

@@ -215,7 +215,7 @@ describe("endpoint record · the table", () => {
   });
 });
 
-describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13)", () => {
+describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13, OC6, OC8, OC9)", () => {
   it("prints the System One family on one line, a shape it did not reach as not sent", () => {
     expect(
       systemOneLine([
@@ -276,9 +276,19 @@ describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13
     expect(lines[6]).toBe(
       "| `opencode` | `x-opencode-project: <folder name>` | L5 | — | not sent |"
     );
-    expect(lines.at(-1)).toBe(
+    // `reasoning-none` is no longer the last variant: the console study's
+    // rows follow it.
+    expect(
+      lines.find((line) =>
+        line.startsWith('| `opencode-go` | `reasoning_effort: "none"` |')
+      )
+    ).toBe(
       '| `opencode-go` | `reasoning_effort: "none"` | L10 | — | no-model |'
     );
+    // A keyless row says so in its label.
+    expect(
+      lines.find((line) => line.startsWith("| `opencode` | a free model"))
+    ).toContain("no key");
     expect(
       VARIANT_ROWS.map(([plane, variant]) => `${plane} ${variant.id}`)
     ).toEqual(
@@ -290,7 +300,7 @@ describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13
 
   it("prints every keyed 429's Retry-After, absent included, with nothing that could break the line", () => {
     expect(retryAfterLine([])).toBe(
-      "`Retry-After` on a keyed 429: no 429 was answered."
+      "`Retry-After` on a keyed 429: no keyed 429 was answered."
     );
     expect(
       retryAfterLine([

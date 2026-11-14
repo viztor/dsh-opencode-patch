@@ -416,6 +416,18 @@ export {
 } from "../../src/utils/config-run.ts";
 export type { ConfigRun } from "../../src/utils/config-run.ts";
 
+// utils/gateway-refusal.ts
+export {
+  classifyGatewayRefusal,
+  FREE_TIER_CODE,
+  GATEWAY_REFUSAL_CODES,
+  leadingStatusOf,
+  MODEL_UNAVAILABLE_CODE,
+  reclassifyFinish,
+  reclassifyRefusals,
+  refusalTypeOf,
+} from "../../src/utils/gateway-refusal.ts";
+
 // utils/guards.ts
 export {
   getAsyncIterator,

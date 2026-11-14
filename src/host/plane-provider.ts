@@ -6,14 +6,21 @@
  * protocol per model, validates efforts against each model, projects replay
  * state and normalizes failures. What the plugin adds is only what pi-ai's own
  * profiles cannot say: a model pi's catalog does not describe, the endpoint
- * family, and the Off/On names of a toggle model. So the subclass overrides
- * three methods and no stream:
+ * family, the Off/On names of a toggle model, and the gateway's refusals by
+ * their own class. So the subclass overrides four methods:
  *
  * - `listModels` answers the declared ids when `super` answers nothing or the
  *   key is missing (F18): a plane lists its models whether or not a key
  *   resolves, and dispatch still fails loudly (D21);
  * - `resolveModel` and `prepareCall` relabel a toggle model's `high` as "On"
- *   (D1). Ids, validation and the stream are pi-ai's.
+ *   (D1). Ids and validation are pi-ai's;
+ * - `prepareCall` and `stream` finish a gateway refusal with its own class
+ *   (`src/utils/gateway-refusal.ts`), keeping the gateway's words, and its
+ *   status except on Google-protocol models, whose failure text carries
+ *   none (L2, D26): the
+ *   host's classifier reads a 403 as AUTH, and the conversation replaces an
+ *   AUTH failure's message with "API key is invalid". Every other chunk is
+ *   pi-ai's, passed through as the same object.
  *
  * pi-ai exports neither its credential store nor its auth context (F19), so
  * both are restated here over the same seams, keyed by pi-ai's exported
@@ -29,7 +36,12 @@ import {
   readLaunchEnvironment,
 } from "../cordis-context.ts";
 import { resolveOpencodeStoreKey } from "../go-discovery.ts";
-import { isFunctionLike, isRecord } from "../utils/guards.ts";
+import { reclassifyRefusals } from "../utils/gateway-refusal.ts";
+import {
+  isAsyncIterableLike,
+  isFunctionLike,
+  isRecord,
+} from "../utils/guards.ts";
 import type { PlaneProviderBuilder } from "../utils/plane-profile.ts";
 import { PROTOCOLS } from "../utils/protocols.ts";
 
@@ -65,6 +77,7 @@ interface PiAiAdapterLike {
     model: string,
     signal?: AbortSignal
   ): Promise<unknown>;
+  stream(options: unknown): AsyncIterable<unknown>;
 }
 /* oxlint-enable typescript/method-signature-style */
 
@@ -196,15 +209,31 @@ export const createPlaneAdapter = (inputs: PlaneAdapterInputs): object => {
       signal?: AbortSignal
     ): Promise<unknown> {
       const prepared = await super.prepareCall(provider, model, signal);
-      return isRecord(prepared)
-        ? {
-            ...prepared,
-            model: relabelEfforts(
-              prepared.model,
-              inputs.effortNames(provider, model)
-            ),
-          }
-        : prepared;
+      if (!isRecord(prepared)) {
+        return prepared;
+      }
+      const { stream } = prepared;
+      return {
+        ...prepared,
+        model: relabelEfforts(
+          prepared.model,
+          inputs.effortNames(provider, model)
+        ),
+        ...(isFunctionLike(stream)
+          ? {
+              stream: (options: unknown): unknown => {
+                const chunks = Reflect.apply(stream, prepared, [options]);
+                return isAsyncIterableLike(chunks)
+                  ? reclassifyRefusals(chunks)
+                  : chunks;
+              },
+            }
+          : {}),
+      };
+    }
+
+    override stream(options: unknown): AsyncIterable<unknown> {
+      return reclassifyRefusals(super.stream(options));
     }
   }
   // A bundler may rename a class it emits; the probe and the tests read this.

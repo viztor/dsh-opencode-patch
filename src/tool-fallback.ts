@@ -7,6 +7,15 @@
  * to carry both schemas — and only when they are actually missing, so a body
  * that already declares them passes through byte-identical.
  *
+ * Two rules from the community plugins' measurements (L7):
+ *
+ * - a `read` or `bash` whose schema has no `properties` counts as missing: it
+ *   is an empty shell the gateway does not accept as the tool, so it is
+ *   replaced by the full schema, never kept beside it;
+ * - a chat-completions body that brought no tools of its own also gets
+ *   `tool_choice: "none"`, so the model is not offered tools the turn never
+ *   asked for. Responses is never given one: it accepts only `auto` there.
+ *
  * @module dsh-opencode-patch/tool-fallback
  */
 
@@ -128,29 +137,54 @@ export const DUMMY_BASH_TOOL_FUNCTION = {
   },
 } as const;
 
-const toolNames = (
-  tools: unknown[]
-): { hasBash: boolean; hasRead: boolean; isOpenAiFormat: boolean } => {
+/** Whether a tool schema declares at least one parameter. */
+const hasProperties = (parameters: unknown): boolean =>
+  isRecord(parameters) &&
+  isRecord(parameters.properties) &&
+  Object.keys(parameters.properties).length > 0;
+
+/**
+ * The tools a body keeps, which gate tools they already declare, and their
+ * dialect. A gate tool counts as declared only when its schema has
+ * properties (`tool.parameters` in the flat Responses shape,
+ * `tool.function.parameters` in the OpenAI one); an empty shell is dropped so
+ * the full schema replaces it. Every other entry is kept in order, unreadable
+ * ones included.
+ */
+const readGateTools = (
+  tools: readonly unknown[]
+): {
+  hasBash: boolean;
+  hasRead: boolean;
+  isOpenAiFormat: boolean;
+  kept: unknown[];
+} => {
   let hasBash = false;
   let hasRead = false;
   let isOpenAiFormat = false;
-  for (const tool of tools) {
+  const kept = tools.filter((tool) => {
     if (!isRecord(tool)) {
-      continue;
+      return true;
     }
-    let toolName: unknown = tool.name;
+    let { name: toolName, parameters }: Record<string, unknown> = tool;
     if (typeof toolName !== "string" && isRecord(tool.function)) {
-      toolName = tool.function.name;
+      ({ name: toolName, parameters } = tool.function);
       isOpenAiFormat = true;
+    }
+    if (toolName !== "read" && toolName !== "bash") {
+      return true;
+    }
+    if (!hasProperties(parameters)) {
+      return false;
     }
     if (toolName === "read") {
       hasRead = true;
-    }
-    if (toolName === "bash") {
+    } else {
       hasBash = true;
     }
-  }
-  return { hasBash, hasRead, isOpenAiFormat };
+    return true;
+  });
+  return { hasBash, hasRead, isOpenAiFormat, kept };
 };
 
 /**
@@ -211,6 +245,10 @@ export const isCoreToolModel = (
 
 /**
  * Inject `read` + `bash` schemas into a free-tier completions body.
+ *
+ * A declared `read`/`bash` without `properties` is replaced, never duplicated;
+ * a chat-completions body that had no tools of its own also gets
+ * `tool_choice: "none"`, and a `/responses` body never gets a `tool_choice`.
  *
  * @param url - request URL (supports `/responses` and `/chat/completions`).
  * @param body - the outgoing request body.
@@ -273,17 +311,16 @@ export const maybeInjectCoreTools = (
     return body;
   }
   const toolsProp: unknown = parsed.tools;
-  let tools: unknown[];
-  if (toolsProp === undefined) {
-    tools = [];
-  } else if (isUnknownArray(toolsProp)) {
-    tools = [...toolsProp];
-  } else {
-    // A malformed `tools` value cannot be merged with — replace it, the same
-    // as an absent one, so the request leaves with schemas the gateway accepts.
-    tools = [];
-  }
-  const { hasBash, hasRead, isOpenAiFormat } = toolNames(tools);
+  // A malformed `tools` value cannot be merged with — replace it, the same
+  // as an absent one, so the request leaves with schemas the gateway accepts.
+  const declared = isUnknownArray(toolsProp) ? toolsProp : [];
+  const hadNoTools = declared.length === 0;
+  const {
+    hasBash,
+    hasRead,
+    isOpenAiFormat,
+    kept: tools,
+  } = readGateTools(declared);
   const useOpenAi = isOpenAiFormat || isCompletions;
   const readTool = useOpenAi ? DUMMY_READ_TOOL_FUNCTION : DUMMY_READ_TOOL;
   const bashTool = useOpenAi ? DUMMY_BASH_TOOL_FUNCTION : DUMMY_BASH_TOOL;
@@ -295,6 +332,14 @@ export const maybeInjectCoreTools = (
     tools.push(bashTool);
   }
   parsed.tools = tools;
+  // The injected tools are the gateway's admission ticket, not the turn's: a
+  // completions body that asked for no tools must not be offered them, and a
+  // `tool_choice` it carried with no tools to choose from is replaced.
+  // Responses accepts only `auto`, so it is never given one: its URL names no
+  // `/completions`, which `isCompletions` already reads.
+  if (hadNoTools && isCompletions) {
+    parsed.tool_choice = "none";
+  }
   const newBodyStr = JSON.stringify(parsed);
   headers.set("content-length", Buffer.byteLength(newBodyStr).toString());
   return newBodyStr;

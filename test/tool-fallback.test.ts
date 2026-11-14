@@ -40,6 +40,14 @@ import {
 import { parseJsonBody, toolNamesOf } from "./test-helpers.ts";
 
 const RESPONSES_URL = `https://opencode.ai/zen/v1${RESPONSES_PATH}`;
+const COMPLETIONS_URL =
+  "https://opencode.ai/inference/openai/v1/chat/completions";
+
+/** A schema with one parameter: what makes a declared gate tool count. */
+const SCHEMA = {
+  properties: { q: { type: "string" } },
+  type: "object",
+} as const;
 
 /**
  * A free-tier model from the shipped Zen catalog, picked by its free flag
@@ -359,6 +367,7 @@ describe("maybeInjectCoreTools: injection", () => {
     const declared = {
       description: "the caller's own bash",
       name: "bash",
+      parameters: SCHEMA,
       type: "function",
     };
     const body = JSON.stringify({ model: FREE_MODEL, tools: [declared] });
@@ -380,8 +389,8 @@ describe("maybeInjectCoreTools: injection", () => {
     const body = JSON.stringify({
       model: FREE_MODEL,
       tools: [
-        { function: { name: "read" }, type: "function" },
-        { function: { name: "bash" }, type: "function" },
+        { function: { name: "read", parameters: SCHEMA }, type: "function" },
+        { function: { name: "bash", parameters: SCHEMA }, type: "function" },
       ],
     });
 
@@ -396,15 +405,19 @@ describe("maybeInjectCoreTools: injection", () => {
     expect(parseJsonBody(bodyText(out))).toEqual({
       model: FREE_MODEL,
       tools: [
-        { function: { name: "read" }, type: "function" },
-        { function: { name: "bash" }, type: "function" },
+        { function: { name: "read", parameters: SCHEMA }, type: "function" },
+        { function: { name: "bash", parameters: SCHEMA }, type: "function" },
       ],
     });
   });
 
   it("emits the OpenAI dialect when any entry uses it", () => {
     const headers = new Headers();
-    const responsesShaped = { name: "read", type: "function" };
+    const responsesShaped = {
+      name: "read",
+      parameters: SCHEMA,
+      type: "function",
+    };
     const openAiShaped = { function: { name: "web" }, type: "function" };
     const body = JSON.stringify({
       model: FREE_MODEL,
@@ -466,7 +479,7 @@ describe("maybeInjectCoreTools: injection", () => {
 
   it("skips tool entries it cannot read instead of dropping them", () => {
     const headers = new Headers();
-    const declaredRead = { name: "read" };
+    const declaredRead = { name: "read", parameters: SCHEMA };
     const body = JSON.stringify({
       model: FREE_MODEL,
       tools: [null, "bash", 7, declaredRead],
@@ -474,14 +487,209 @@ describe("maybeInjectCoreTools: injection", () => {
 
     const out = maybeInjectCoreTools(RESPONSES_URL, body, headers, options());
 
-    // Only an object with a name counts as declared, so the bare string
-    // "bash" does not stop a `bash` from being added. Entries the module
+    // Only an object with a name and a schema counts as declared, so the
+    // bare string "bash" does not stop a `bash` from being added. Entries the module
     // cannot read are carried through untouched: silently dropping a caller's
     // tool changes what the model is allowed to call.
     expect(parseJsonBody(bodyText(out))).toEqual({
       model: FREE_MODEL,
       tools: [null, "bash", 7, declaredRead, DUMMY_BASH_TOOL],
     });
+  });
+});
+
+describe("maybeInjectCoreTools: tool_choice and empty schemas (L7)", () => {
+  const grepTool = {
+    function: { name: "grep", parameters: SCHEMA },
+    type: "function",
+  };
+  const messages = [{ content: "hi", role: "user" }];
+
+  it("a free completions body with no tools of its own gets read, bash and tool_choice none", () => {
+    for (const raw of [
+      JSON.stringify({ messages, model: FREE_MODEL }),
+      JSON.stringify({ messages, model: FREE_MODEL, tools: [] }),
+    ]) {
+      const headers = new Headers();
+      const out = bodyText(
+        maybeInjectCoreTools(COMPLETIONS_URL, raw, headers, options())
+      );
+      expect(parseJsonBody(out)).toEqual({
+        messages,
+        model: FREE_MODEL,
+        tool_choice: "none",
+        tools: [DUMMY_READ_TOOL_FUNCTION, DUMMY_BASH_TOOL_FUNCTION],
+      });
+      expect(headers.get("content-length")).toBe(
+        String(Buffer.byteLength(out))
+      );
+    }
+  });
+
+  it("never sets tool_choice on Responses, nor on a completions body that brought tools of its own", () => {
+    const responses = parseJsonBody(
+      bodyText(
+        maybeInjectCoreTools(
+          RESPONSES_URL,
+          JSON.stringify({ input: "hi", model: FREE_MODEL }),
+          new Headers(),
+          options()
+        )
+      )
+    ) as Record<string, unknown>;
+    expect(responses.tools).toEqual([DUMMY_READ_TOOL, DUMMY_BASH_TOOL]);
+    expect("tool_choice" in responses).toBe(false);
+    const chosen = parseJsonBody(
+      bodyText(
+        maybeInjectCoreTools(
+          COMPLETIONS_URL,
+          JSON.stringify({
+            messages,
+            model: FREE_MODEL,
+            tool_choice: "auto",
+            tools: [grepTool],
+          }),
+          new Headers(),
+          options()
+        )
+      )
+    ) as Record<string, unknown>;
+    expect(chosen.tool_choice).toBe("auto");
+    expect(chosen.tools).toEqual([
+      grepTool,
+      DUMMY_READ_TOOL_FUNCTION,
+      DUMMY_BASH_TOOL_FUNCTION,
+    ]);
+    const unchosen = parseJsonBody(
+      bodyText(
+        maybeInjectCoreTools(
+          COMPLETIONS_URL,
+          JSON.stringify({ messages, model: FREE_MODEL, tools: [grepTool] }),
+          new Headers(),
+          options()
+        )
+      )
+    ) as Record<string, unknown>;
+    expect("tool_choice" in unchosen).toBe(false);
+  });
+
+  it("an empty-schema read or bash counts as missing and is replaced, never duplicated, in either dialect", () => {
+    const shellRead = {
+      function: {
+        name: "read",
+        parameters: { properties: {}, type: "object" },
+      },
+      type: "function",
+    };
+    const completions = parseJsonBody(
+      bodyText(
+        maybeInjectCoreTools(
+          COMPLETIONS_URL,
+          JSON.stringify({
+            messages,
+            model: FREE_MODEL,
+            tools: [shellRead, grepTool],
+          }),
+          new Headers(),
+          options()
+        )
+      )
+    ) as Record<string, unknown>;
+    expect(completions.tools).toEqual([
+      grepTool,
+      DUMMY_READ_TOOL_FUNCTION,
+      DUMMY_BASH_TOOL_FUNCTION,
+    ]);
+    // The request brought tools, so no tool_choice is set.
+    expect("tool_choice" in completions).toBe(false);
+    const responses = parseJsonBody(
+      bodyText(
+        maybeInjectCoreTools(
+          RESPONSES_URL,
+          JSON.stringify({
+            model: FREE_MODEL,
+            tools: [{ name: "bash", type: "function" }],
+          }),
+          new Headers(),
+          options()
+        )
+      )
+    ) as Record<string, unknown>;
+    expect(responses.tools).toEqual([DUMMY_READ_TOOL, DUMMY_BASH_TOOL]);
+    // A body whose read and bash both carry properties is left as it came.
+    const full = JSON.stringify({
+      model: FREE_MODEL,
+      tools: [DUMMY_READ_TOOL, DUMMY_BASH_TOOL],
+    });
+    expect(
+      maybeInjectCoreTools(RESPONSES_URL, full, new Headers(), options())
+    ).toBe(full);
+  });
+});
+
+describe("maybeInjectCoreTools: L7's edges on chat completions", () => {
+  const messages = [{ content: "hi", role: "user" }];
+
+  /** The completions body the injector answers for `fields`. */
+  const injected = (fields: Record<string, unknown>): Record<string, unknown> =>
+    parseJsonBody(
+      bodyText(
+        maybeInjectCoreTools(
+          COMPLETIONS_URL,
+          JSON.stringify({ messages, model: FREE_MODEL, ...fields }),
+          new Headers(),
+          options()
+        )
+      )
+    ) as Record<string, unknown>;
+
+  it("a malformed tools value counts as no tools: replaced by read and bash, with tool_choice none", () => {
+    for (const tools of ["read", null, { name: "read" }]) {
+      expect(injected({ tools }), JSON.stringify(tools)).toEqual({
+        messages,
+        model: FREE_MODEL,
+        tool_choice: "none",
+        tools: [DUMMY_READ_TOOL_FUNCTION, DUMMY_BASH_TOOL_FUNCTION],
+      });
+    }
+  });
+
+  it("replaces a toolless body's own tool_choice with none: it had no tools to choose from", () => {
+    for (const choice of ["required", "auto"]) {
+      expect(injected({ tool_choice: choice }).tool_choice, choice).toBe(
+        "none"
+      );
+    }
+  });
+
+  it("a gate tool whose parameters declare no properties is an empty shell, replaced", () => {
+    const shellBash = {
+      function: { name: "bash", parameters: { type: "object" } },
+      type: "function",
+    };
+    const grepTool = {
+      function: { name: "grep", parameters: SCHEMA },
+      type: "function",
+    };
+    expect(injected({ tools: [grepTool, shellBash] }).tools).toEqual([
+      grepTool,
+      DUMMY_READ_TOOL_FUNCTION,
+      DUMMY_BASH_TOOL_FUNCTION,
+    ]);
+  });
+
+  it("keeps no tool_choice when the only tools the turn declared were empty shells: it declared tools", () => {
+    const out = injected({
+      tools: [
+        { function: { name: "read" }, type: "function" },
+        { function: { name: "bash", parameters: {} }, type: "function" },
+      ],
+    });
+    expect(out.tools).toEqual([
+      DUMMY_READ_TOOL_FUNCTION,
+      DUMMY_BASH_TOOL_FUNCTION,
+    ]);
+    expect("tool_choice" in out).toBe(false);
   });
 });
 
