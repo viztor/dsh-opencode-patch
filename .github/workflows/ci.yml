@@ -603,10 +603,14 @@ jobs:
   #   opencode-live. Every pull request that does not
   #   touch the scope below, and a push to main.
   # - `probes`: adds the minimal keyed probes (keyed-probes.e2e.ts), one
-  #   request of a few tokens per plane × protocol × URL shape, plus six
-  #   recorded variants of each plane's default completions cell (request
-  #   id, project, reasoning effort; KEYED_VARIANTS) and every 429's
-  #   Retry-After. A pull request
+  #   request of a few tokens per plane × protocol × URL shape, plus the
+  #   recorded variants of each plane's default completions cell
+  #   (KEYED_VARIANTS: the lessons' request-id, project and
+  #   reasoning-effort rows, and the console study's raw-session,
+  #   session-only and harness-User-Agent rows, three of them on a free
+  #   model sent with no key) and every keyed rate-limit 429's
+  #   Retry-After (the keyless free rows and the free tier's usage cap
+  #   left out). A pull request
   #   that touches src/host/**; src/utils/protocols.ts, which decides the
   #   legacy URLs the probes send and the protocol each probe model speaks;
   #   src/utils/plane-model.ts, which decides the family the plugin

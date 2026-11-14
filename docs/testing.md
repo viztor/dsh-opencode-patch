@@ -39,7 +39,7 @@ Properties the unit and mock suites keep by construction rather than by care:
 
 ### Mock: the wiring, without a vendor
 
-`test/mock/` boots the plugin against a gateway that answers like the real one, including its refusals (`403 FreeTierError`, `400 ModelProtocolUnsupported`, `401 AuthError`), over a loopback socket. This is the layer that catches a wrong header, a wrong path or a wrong protocol — the questions no unit test can ask because they are about the seam. `protocol-endpoints.mock.ts` also holds the converse: every base and every request either `endpoint` setting can dispatch must reach an endpoint of the mock, and no root-family request may, so a case that checks headers rather than the status cannot pass on a request the mock never served.
+`test/mock/` boots the plugin against a gateway that answers like the real one, including its refusals (`403 FreeTierError`, `400 ModelProtocolUnsupported`, `401 AuthError`), over a loopback socket. A plane turn the gateway refuses finishes with the refusal's own code and the gateway's words, and its status except on Google-protocol models, whose failure text carries none (`plane-refusals.mock.ts`). This is the layer that catches a wrong header, a wrong path or a wrong protocol — the questions no unit test can ask because they are about the seam. `protocol-endpoints.mock.ts` also holds the converse: every base and every request either `endpoint` setting can dispatch must reach an endpoint of the mock, and no root-family request may, so a case that checks headers rather than the status cannot pass on a request the mock never served.
 
 ### E2E: the vendor's own answer
 

@@ -24,6 +24,12 @@
  * one bundle (the `0.2.2-rc.2` bridge reads a leading HTTP status first, and
  * a pin on the older branch's source broke on it while the order held).
  *
+ * The AUTH reading this first case pins is pi-ai's OWN route's. On the planes
+ * the plugin serves, the gateway's typed refusals finish with their own codes
+ * instead (`FREE_TIER`, `MODEL_UNAVAILABLE`), because the conversation drops
+ * an AUTH failure's message for "API key is invalid";
+ * `test/mock/plane-refusals.mock.ts` pins that.
+ *
  * It binds a loopback port and nothing else, like the sibling header suite,
  * so it runs in the mock suite on every push.
  *
@@ -286,10 +292,10 @@ describe("refusal classification over a real socket", () => {
     expect(invalid.code).toBe("INVALID_REQUEST");
     expect(invalid.message).toContain("not on the free tier");
     // Order IS the contract: AUTH is asked first, so the same words at 403
-    // are AUTH. That reading is accepted now — the pass-through means a
-    // free-tier refusal surfaces as AUTH carrying the gateway's own words,
-    // which is the honest answer to a request the gateway refused outside the
-    // credential.
+    // are AUTH on pi-ai's own route. The conversation shows an AUTH failure
+    // as "API key is invalid" and drops these words, which is why the planes
+    // finish the gateway's typed refusals with their own codes
+    // (`plane-refusals.mock.ts`).
     const refused = await classified(403);
     expect(refused.code).toBe("AUTH");
     expect(refused.message).toContain("not on the free tier");

@@ -19,6 +19,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readdirSync, readFileSync } from "node:fs";
 
+import { attributionHeaders } from "@deepseek-ai/dsh-llm";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { handleGatewayRequest } from "./mock/opencode-gateway.ts";
@@ -29,6 +30,9 @@ import {
   credentialHeaders,
   excerpt,
   FLIP_EVIDENCE,
+  freeCompletionsModel,
+  freeTurnBody,
+  harnessUserAgent,
   isArmed,
   KEYED_VARIANTS,
   keyedBody,
@@ -40,6 +44,7 @@ import {
   pluginIdentityHeaders,
   PROBE_IDENTITY,
   PROBE_PROJECTS,
+  PROBE_RAW_SESSION_ID,
   PROBE_REQUEST_ID,
   PROBE_SESSION_ID,
   reasoningCompletionsModel,
@@ -60,6 +65,7 @@ import {
   CONFIG_DEFAULTS,
   isOpenCodeMessageId,
   isOpenCodeSessionId,
+  maybeInjectCoreTools,
   newOpenCodeMessageId,
   OPENCODE_GO_CATALOG,
   OPENCODE_PATCH_USER_AGENT,
@@ -543,6 +549,13 @@ describe("keyed probes · reading an answer", () => {
     [401, "Insufficient account funds", "account"],
     [402, "", "account"],
     [429, "", "rate-limited"],
+    // The free tier's usage cap is the gate's decision, not a rate limit
+    // (L3): a paid keyed cell never meets it, a keyless free row can.
+    [
+      429,
+      '{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached"}}',
+      "free-usage-limited",
+    ],
     [500, "", "other"],
     [502, "", "other"],
     [500, '{"error":{"message":"internal error"}}', "other"],
@@ -680,6 +693,16 @@ describe("keyed probes · what a plane decides", () => {
     [
       "default cells all rate-limited",
       plane(["rate-limited", "rate-limited", "rate-limited", "rate-limited"]),
+      "skip",
+    ],
+    [
+      "default cells all free-usage-limited",
+      plane([
+        "free-usage-limited",
+        "free-usage-limited",
+        "free-usage-limited",
+        "free-usage-limited",
+      ]),
       "skip",
     ],
     [
@@ -1552,7 +1575,7 @@ describe("the e2e-host job · its pull-request scope", () => {
   });
 });
 
-describe("keyed probes · the variants on the default completions cell (L4, L5, L9, L10)", () => {
+describe("keyed probes · the variants on the default completions cell (L4, L5, L9, L10, OC6, OC8, OC9)", () => {
   const models = { reasoning: "zen-think", representative: "zen-chat" };
 
   it("each variant is the default completions cell, keyed, changed by its own header or body field and nothing else", () => {
@@ -1564,6 +1587,12 @@ describe("keyed probes · the variants on the default completions cell (L4, L5, 
       "project-digest",
       "reasoning-default",
       "reasoning-none",
+      "session-raw",
+      "session-only",
+      "ua-harness",
+      "free-baseline",
+      "session-raw-free",
+      "ua-harness-free",
     ]);
     const [baseline, request, folder, digest, reasoning, none] = cells;
     // The baseline is exactly the matrix's keyed modern completions cell.
@@ -1637,7 +1666,13 @@ describe("keyed probes · the variants on the default completions cell (L4, L5, 
       cells
         .filter((cell) => cell.body === undefined)
         .map((cell) => cell.variant.id)
-    ).toEqual(["reasoning-default", "reasoning-none"]);
+    ).toEqual([
+      "reasoning-default",
+      "reasoning-none",
+      "free-baseline",
+      "session-raw-free",
+      "ua-harness-free",
+    ]);
     expect(cells[0]?.url).toBe(
       "https://opencode.ai/inference/go/openai/v1/chat/completions"
     );
@@ -1679,7 +1714,215 @@ describe("keyed probes · the variants on the default completions cell (L4, L5, 
       "L5",
       "L10",
       "L10",
+      "OC9",
+      "OC8",
+      "OC6",
+      "OC6, OC9",
+      "OC9",
+      "OC6",
     ]);
+    for (const variant of KEYED_VARIANTS) {
+      expect(variant.label, variant.id).not.toContain("|");
+    }
+  });
+
+  /** The cells by variant id. */
+  const byId = <C extends { variant: { id: string } }>(
+    cells: readonly C[]
+  ): Record<string, C | undefined> =>
+    Object.fromEntries(cells.map((cell) => [cell.variant.id, cell]));
+
+  /** A header bag without the named headers. */
+  const omitting = (
+    headers: Readonly<Record<string, string>> | undefined,
+    ...names: string[]
+  ): Record<string, string> =>
+    Object.fromEntries(
+      Object.entries(headers ?? {}).filter(([name]) => !names.includes(name))
+    );
+
+  it("the console study's rows (OC6, OC8, OC9) each differ from their baseline in exactly what they measure, and none carries the vendor's marker", () => {
+    const cells = keyedVariantCells(
+      "opencode",
+      { free: "zen-free", ...models },
+      "sk-probe"
+    );
+    const row = byId(cells);
+    const { baseline } = row;
+    const raw = row["session-raw"];
+    const only = row["session-only"];
+    const ua = row["ua-harness"];
+    // The host's own conversation id: `session-` and a v4 UUID
+    // (dsh-api-session-controller's `createMinted`), never a `ses_` id.
+    expect(PROBE_RAW_SESSION_ID).toMatch(
+      /^session-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+    );
+    expect(isOpenCodeSessionId(PROBE_RAW_SESSION_ID)).toBe(false);
+    // Its tail sits outside the band the gateway admits for a `ses_` id
+    // (0xFC0..0xFFE), as a random id's almost always does, so a pass cannot
+    // come from a crafted in-band tail.
+    expect(Number.parseInt(PROBE_RAW_SESSION_ID.slice(-3), 16)).toBeLessThan(
+      0xf_c0
+    );
+    const sessions = ["x-opencode-session", "x-opencode-session-id"];
+    expect(omitting(raw?.headers, ...sessions)).toEqual(
+      omitting(baseline?.headers, ...sessions)
+    );
+    for (const name of sessions) {
+      expect(raw?.headers[name], name).toBe(PROBE_RAW_SESSION_ID);
+    }
+    expect(Object.keys(only?.headers ?? {}).toSorted()).toEqual([
+      "authorization",
+      "content-type",
+      "user-agent",
+      "x-opencode-session",
+    ]);
+    // Names and values: the baseline's headers, less the three it omits.
+    expect(only?.headers).toEqual(
+      omitting(
+        baseline?.headers,
+        "x-opencode-client",
+        "x-opencode-project",
+        "x-opencode-session-id"
+      )
+    );
+    expect(omitting(ua?.headers, "user-agent")).toEqual(
+      omitting(baseline?.headers, "user-agent")
+    );
+    expect(ua?.headers["user-agent"]).toBe(attributionHeaders()["user-agent"]);
+    expect(harnessUserAgent()).toMatch(/^deepseek-harness\//u);
+    expect(harnessUserAgent()).not.toBe(OPENCODE_UA);
+    for (const cell of [raw, only, ua]) {
+      expect(cell?.body).toEqual(baseline?.body);
+    }
+    for (const cell of cells) {
+      expect(cell.headers, cell.variant.id).not.toHaveProperty(
+        "x-opencode-plugin"
+      );
+    }
+  });
+
+  it("the free rows send what the plugin's free turn sends with no key, and the offline gateway serves the free baseline", () => {
+    const cells = keyedVariantCells(
+      "opencode",
+      { free: "zen-free", ...models },
+      "sk-probe"
+    );
+    const row = byId(cells);
+    const free = row["free-baseline"];
+    for (const name of CREDENTIAL_HEADERS) {
+      expect(free?.headers, name).not.toHaveProperty(name);
+    }
+    expect(omitting(free?.headers, "content-type")).toEqual(PROBE_IDENTITY);
+    // The body is what the plugin's own injector makes of a toolless turn.
+    const injected = maybeInjectCoreTools(
+      "https://opencode.ai/inference/openai/v1/chat/completions",
+      JSON.stringify({
+        ...keyedBody("openai-completions", "zen-free"),
+        stream: true,
+      }),
+      new Headers(),
+      { enabled: true, modelMarker: "*" }
+    );
+    if (typeof injected !== "string") {
+      throw new TypeError("the injector returned no rewritten body");
+    }
+    expect(free?.body).toEqual(JSON.parse(injected));
+    expect(free?.body).toEqual(freeTurnBody("zen-free"));
+    expect(free?.body).toMatchObject({ stream: true, tool_choice: "none" });
+    const raw = row["session-raw-free"];
+    const ua = row["ua-harness-free"];
+    const sessions = ["x-opencode-session", "x-opencode-session-id"];
+    expect(omitting(raw?.headers, ...sessions)).toEqual(
+      omitting(free?.headers, ...sessions)
+    );
+    expect(raw?.headers["x-opencode-session-id"]).toBe(PROBE_RAW_SESSION_ID);
+    expect(omitting(ua?.headers, "user-agent")).toEqual(
+      omitting(free?.headers, "user-agent")
+    );
+    expect(ua?.headers["user-agent"]).toBe(harnessUserAgent());
+    for (const cell of [raw, ua]) {
+      expect(cell?.body).toEqual(free?.body);
+    }
+
+    // The free baseline on the shipped catalog's own free model: served.
+    const model = freeCompletionsModel(OPENCODE_ZEN_CATALOG);
+    if (model === undefined) {
+      throw new Error("the bundled Zen catalog has no free completions model");
+    }
+    const shipped = byId(
+      keyedVariantCells(
+        "opencode",
+        { free: model, ...models },
+        "sk-probe-0123456789abcdef"
+      )
+    )["free-baseline"];
+    if (shipped === undefined) {
+      throw new Error("no free baseline");
+    }
+    const url = new URL(shipped.url);
+    const { reply } = handleGatewayRequest({
+      bodyText: JSON.stringify(shipped.body),
+      headers: shipped.headers,
+      method: shipped.method,
+      url: `${url.pathname}${url.search}`,
+    });
+    expect(
+      keyedVerdictOf([{ bodyText: reply.body, status: reply.status }])
+    ).toBe("served");
+  });
+
+  it("a keyless free row's answers read as a keyed cell's, known answers included (§13 says how)", () => {
+    // The free tier refused the session: a `FreeTierError` on a keyless row.
+    expect(
+      keyedVerdictOf([
+        {
+          bodyText:
+            '{"error":{"message":"OpenCode\'s free tier can only be used from within OpenCode","type":"FreeTierError"}}',
+          status: 403,
+        },
+      ])
+    ).toBe("session-refused");
+    // L8's keyless 401 for an id the gateway reads as malformed: no key was
+    // sent, so §13 reads this row's `auth-refused` as the key gate answering,
+    // not as a refused key.
+    expect(
+      keyedVerdictOf([
+        {
+          bodyText:
+            '{"error":{"message":"Invalid API key","type":"AuthError"}}',
+          status: 401,
+        },
+      ])
+    ).toBe("auth-refused");
+    // The free tier's usage cap, the answer run 43542273415's free probe got:
+    // the gate refusing the caller, never retried and never a rate limit
+    // (L3), so the row measured nothing about OC6, OC9 or L7.
+    expect(
+      keyedVerdictOf([
+        {
+          bodyText:
+            '{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached"}}',
+          retryAfter: "3600",
+          status: 429,
+        },
+      ])
+    ).toBe("free-usage-limited");
+  });
+
+  it("the free model is the first free, current completions model", () => {
+    expect(
+      freeCompletionsModel(
+        [
+          spec("paid"),
+          { ...spec("resp-free", "@ai-sdk/openai"), is_free: true },
+          { ...spec("retired-free"), is_free: true },
+          { ...spec("chat-free"), is_free: true },
+        ],
+        (id) => id === "retired-free"
+      )
+    ).toBe("chat-free");
+    expect(freeCompletionsModel([spec("paid")])).toBeUndefined();
   });
 
   it("the offline gateway serves the baseline with the plugin's identity", () => {
@@ -1712,13 +1955,25 @@ describe("keyed probes · the variants on the default completions cell (L4, L5, 
     ).toBe("served");
   });
 
-  it("reads every 429's Retry-After, and names one that carried none (L9)", () => {
+  it("reads every rate-limit 429's Retry-After, leaves out the usage cap, and names one that carried none (L9)", () => {
     expect(
       retryAfterOf([
         { bodyText: "", retryAfter: "30", status: 429 },
         { bodyText: "", status: 429 },
       ])
     ).toEqual(["30", null]);
+    // The free tier's usage cap is not a rate limit (L3): it finishes a turn
+    // as FREE_TIER, which nothing retries, so its delay is not L9's question.
+    expect(
+      retryAfterOf([
+        {
+          bodyText: '{"error":{"type":"FreeUsageLimitError"}}',
+          retryAfter: "3600",
+          status: 429,
+        },
+        { bodyText: "", retryAfter: "5", status: 429 },
+      ])
+    ).toEqual(["5"]);
     expect(
       retryAfterOf([
         undefined,
