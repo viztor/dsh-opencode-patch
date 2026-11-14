@@ -18,7 +18,7 @@
  *   two spellings.
  *
  * The list is `SCOPED_TARGETS` (`scripts/scoped-targets.ts`), which
- * `scripts/check.ts` holds in step with release.yml's verify step.
+ * `test/package-checks.test.ts` holds in step with release.yml's verify step.
  *
  * Usage: node --experimental-strip-types scripts/publish-scoped.ts
  *        PUBLISH_DRY_RUN=1 node --experimental-strip-types scripts/publish-scoped.ts

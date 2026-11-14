@@ -268,7 +268,7 @@ Built, and the opt-in reader it prepared for:
 
 The opt-in reader was parked on a dependency question: OpenCode 2.0 keeps its credentials in a database rather than a JSON file, so reading it needs SQLite, and adding a driver to a plugin this small is a decision rather than a detail.
 
-That decision is now measured rather than open. `node:sqlite` is a built-in on the Node this host runs (26.x), exporting `DatabaseSync`, `StatementSync` and `backup`, so the reader can open `~/.local/share/opencode/opencode.db` with no new dependency at all. The constraint it inherits is the bundle rule: `node:sqlite` is a host-only import, so the reader lives on the host side and the client never reaches it — which is what `scripts/check.ts` enforces rather than what anyone has to remember.
+That decision is now measured rather than open. `node:sqlite` is a built-in on the Node this host runs (26.x), exporting `DatabaseSync`, `StatementSync` and `backup`, so the reader can open `~/.local/share/opencode/opencode.db` with no new dependency at all. The constraint it inherits is the bundle rule: `node:sqlite` is a host-only import, so the reader lives on the host side and the client never reaches it — which `test/architecture.test.ts`'s client-bundle block ("the client bundle reaches nothing host-only") enforces by walking the entry's import graph, so the unit suite fails the build rather than anyone having to remember.
 
 **And the path is not a constant, which is the part worth knowing before writing it.** Two files in `~/dev/opencode` decide it, and neither branches on the operating system:
 

@@ -50,6 +50,13 @@ import { join } from "node:path";
 /** The two harness distribution channels, by their npm dist-tags' role. */
 export type Channel = "alpha" | "rc";
 
+/**
+ * The dist-tags a record may name. The nightly bump proposal reads this list:
+ * a channel whose newest build moved under any other tag is a reviewed change
+ * (`range`), since writing the tag would fail this type.
+ */
+export const RECORD_TAGS = ["alpha", "latest", "next"] as const;
+
 export interface ChannelRecord {
   /** `@deepseek-ai/cordis`, the floor of the bridge's `~` range. */
   readonly cordis: string;
@@ -61,7 +68,7 @@ export interface ChannelRecord {
    * drift report reads the newest build on the record's line under any tag
    * (`channelBuild` in `scripts/host-drift.ts`), this one included.
    */
-  readonly distTag: "alpha" | "latest" | "next";
+  readonly distTag: (typeof RECORD_TAGS)[number];
   /** The `@deepseek-ai/dsh-*` cluster's version. */
   readonly dsh: string;
   /**

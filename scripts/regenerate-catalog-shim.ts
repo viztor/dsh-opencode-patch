@@ -19,14 +19,20 @@
  * ```
  *
  * Without `--write` it only reports what would change, so it is safe to run in CI
- * or by hand to answer "is the shim stale?".
+ * or by hand to answer "is the shim stale?". Stale is decided by the one rule
+ * the generators share (`generator-kit.ts`) over everything the file exports:
+ * both catalogs, the plane endpoints and the family endpoints
+ * (`catalog-shim.ts`, the pure half). With `--write`, a current shim is left
+ * untouched.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 
 import {
+  OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
+  OPENCODE_PLANE_API,
   OPENCODE_ZEN_CATALOG,
 } from "../src/catalog-data.ts";
 import {
@@ -35,149 +41,26 @@ import {
   MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
 } from "../src/models-catalog.ts";
+import {
+  render,
+  renderFamilyApi,
+  renderPlaneApi,
+  shimData,
+  shimStale,
+  splice,
+  spliceObject,
+} from "./catalog-shim.ts";
+import { generatorArgs, outcome, readSource } from "./generator-kit.ts";
 
 const TARGET = new URL("../src/catalog-data.ts", import.meta.url);
-const argv = process.argv.slice(2);
-const shouldWrite = argv.includes("--write");
-const fromIndex = argv.indexOf("--from");
-const fromPath = fromIndex === -1 ? undefined : argv[fromIndex + 1];
+const { from: fromPath, write } = generatorArgs(process.argv.slice(2));
 
-/** The payload, from a local file when given one — the offline path. */
-const readPayload = async (): Promise<string> => {
-  if (fromPath !== undefined) {
-    return readFileSync(fromPath, "utf8");
-  }
-  const response = await fetch(MODELS_OPENCODE_URL, {
-    signal: AbortSignal.timeout(MODELS_DEV_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `models.opencode.ai answered ${response.status} ${response.statusText}`
-    );
-  }
-  return response.text();
-};
-
-/** Thousands separators, matching how the file already reads. */
-const numeral = (value: number): string =>
-  String(value).replaceAll(/\B(?=(\d{3})+(?!\d))/gu, "_");
-
-/**
- * One catalog entry, keys sorted so a regeneration produces a minimal diff.
- *
- * Sorting is the whole reason this is a generator and not a hand-edit: the file
- * is formatted by `vp fmt`, which does not sort object keys, so a hand-added key
- * lands wherever it was typed and the next run moves it.
- */
-const literal = (spec: CatalogModelSpec): string => {
-  const lines = Object.keys(spec)
-    .toSorted()
-    .map((key) => {
-      const value: unknown = (spec as unknown as Record<string, unknown>)[key];
-      if (key === "cost" && value !== undefined && value !== null) {
-        const rate = value as Record<string, number>;
-        const inner = Object.keys(rate)
-          .toSorted()
-          .map((name) => `      ${name}: ${rate[name]}`)
-          .join(",\n");
-        return `cost: {\n${inner},\n    },`;
-      }
-      if (Array.isArray(value)) {
-        return `${key}: [${value.map((v) => JSON.stringify(v)).join(", ")}],`;
-      }
-      if (typeof value === "number") {
-        return `${key}: ${numeral(value)},`;
-      }
-      return `${key}: ${JSON.stringify(value)},`;
-    });
-  return `  {\n${lines.map((line) => `    ${line}`).join("\n")}\n  }`;
-};
-
-/** The array literal for one provider, ready to splice into the file. */
-const render = (specs: readonly CatalogModelSpec[]): string =>
-  `[\n${specs.map((spec) => `${literal(spec)},`).join("\n")}\n]`;
-
-/** The models one provider contributes, sorted deterministically by id. */
-const forProvider = (
-  parsed: ReturnType<typeof parseModelsDevCatalog>,
-  provider: "go" | "zen"
-): CatalogModelSpec[] =>
-  parsed[provider].toSorted((a, b) => a.id.localeCompare(b.id));
-
-/**
- * Replace one exported object literal, by its `export const NAME` anchor.
- *
- * `splice` is array-shaped: it looks for `[` and ends at `];`. The plane export
- * is an object, so it needs its own opener and terminator - and using the array
- * one on it would have thrown rather than half-written the file.
- */
-const spliceObject = (source: string, name: string, body: string): string => {
-  const anchorName = `export const ${name}: `;
-  const start = source.indexOf(anchorName);
-  if (start === -1) {
-    throw new Error(`could not find ${name} in ${basename(TARGET.pathname)}`);
-  }
-  const open = source.indexOf("{", start + anchorName.length);
-  const close = source.indexOf("\n};", open);
-  if (open === -1 || close === -1) {
-    throw new Error(`${name} is not an object literal`);
-  }
-  // `close` is the newline before `};`, so the literal ends two characters on.
-  return `${source.slice(0, open)}${body}${source.slice(close + 2)}`;
-};
-
-/** Replace one exported array literal, by its `export const NAME` anchor. */
-const splice = (source: string, name: string, body: string): string => {
-  const anchor = `export const ${name}: readonly CatalogModelSpec[] = `;
-  const start = source.indexOf(anchor);
-  if (start === -1) {
-    throw new Error(`could not find ${name} in ${basename(TARGET.pathname)}`);
-  }
-  const open = source.indexOf("[", start + anchor.length);
-  const close = source.indexOf("\n];", open);
-  if (open === -1 || close === -1) {
-    throw new Error(`${name} is not an array literal`);
-  }
-  // `close` is the newline before `];`, so the literal ends two characters on.
-  return `${source.slice(0, open)}${body}${source.slice(close + 2)}`;
-};
-
-/**
- * The plane-level export: the endpoint each plane's provider declares.
- *
- * The client consumes exactly this field (`models-dev.ts:107` lifts `item.api`
- * into `settings.baseURL`), so the shim carries the same value and the mount
- * reads it instead of hard-coding a family.
- */
-const renderPlaneApi = (
-  parsed: ReturnType<typeof parseModelsDevCatalog>
-): string =>
-  `{
-  go: ${JSON.stringify(parsed.api.go)},
-  zen: ${JSON.stringify(parsed.api.zen)},
-}`;
-
-/**
- * The endpoint each wire family declares, per plane, keyed by its SDK package.
- *
- * The provider-level `api` is only the default family's address: anthropic and
- * google are served at their own paths and the catalog records that per model.
- * Emitting it keeps the mount reading DATA, so a vendor move is a regeneration.
- */
-const renderFamilyApi = (
-  parsed: ReturnType<typeof parseModelsDevCatalog>
-): string =>
-  `{
-  go: ${JSON.stringify(parsed.familyApi.go)},
-  zen: ${JSON.stringify(parsed.familyApi.zen)},
-}`;
-
-const payload = await readPayload();
-const parsed = parseModelsDevCatalog(JSON.parse(payload));
-const go = forProvider(parsed, "go");
-const zen = forProvider(parsed, "zen");
-const planeApi = renderPlaneApi(parsed);
-const familyApi = renderFamilyApi(parsed);
+const payload = await readSource({
+  from: fromPath,
+  timeoutMs: MODELS_DEV_TIMEOUT_MS,
+  url: MODELS_OPENCODE_URL,
+});
+const next = shimData(parseModelsDevCatalog(JSON.parse(payload)));
 
 /** What the shim holds now, for the report. */
 const report = (
@@ -203,46 +86,43 @@ const report = (
 console.log(
   `source: ${fromPath ?? MODELS_OPENCODE_URL} (${payload.length} bytes${fromPath === undefined ? "" : ", local"})`
 );
-report("opencode-go", OPENCODE_GO_CATALOG, go);
-report("opencode  ", OPENCODE_ZEN_CATALOG, zen);
+report("opencode-go", OPENCODE_GO_CATALOG, next.go);
+report("opencode  ", OPENCODE_ZEN_CATALOG, next.zen);
 
-/**
- * Canonical form for comparison: object keys sorted at every depth.
- *
- * Needed because the parser builds `cost` in its own insertion order while the
- * renderer emits sorted keys, so a plain `JSON.stringify` compares equal data as
- * different and reports the shim stale forever. Order is the renderer's business,
- * not the data's.
- */
-const canonical = (value: unknown): string => {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonical).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .toSorted()
-      .map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-};
+const decided = outcome({
+  stale: shimStale(
+    {
+      familyApi: OPENCODE_FAMILY_API,
+      go: OPENCODE_GO_CATALOG,
+      planeApi: OPENCODE_PLANE_API,
+      zen: OPENCODE_ZEN_CATALOG,
+    },
+    next
+  ),
+  write,
+});
 
-const changed =
-  canonical(go) !== canonical(OPENCODE_GO_CATALOG) ||
-  canonical(zen) !== canonical(OPENCODE_ZEN_CATALOG);
-
-if (!shouldWrite) {
-  console.log(
-    changed ? "\nshim is STALE — re-run with --write" : "\nshim is current"
+if (decided.action === "write") {
+  let source = readFileSync(TARGET, "utf8");
+  source = splice(source, "OPENCODE_GO_CATALOG", render(next.go));
+  source = splice(source, "OPENCODE_ZEN_CATALOG", render(next.zen));
+  source = spliceObject(
+    source,
+    "OPENCODE_PLANE_API",
+    renderPlaneApi(next.planeApi)
   );
-  process.exit(changed ? 1 : 0);
+  source = spliceObject(
+    source,
+    "OPENCODE_FAMILY_API",
+    renderFamilyApi(next.familyApi)
+  );
+  writeFileSync(TARGET, source);
+  console.log(`\nwrote ${basename(TARGET.pathname)}`);
+} else {
+  console.log(
+    decided.action === "report-stale"
+      ? "\nshim is STALE — re-run with --write"
+      : "\nshim is current"
+  );
 }
-
-let source = readFileSync(TARGET, "utf8");
-source = splice(source, "OPENCODE_GO_CATALOG", render(go));
-source = splice(source, "OPENCODE_ZEN_CATALOG", render(zen));
-source = spliceObject(source, "OPENCODE_PLANE_API", planeApi);
-source = spliceObject(source, "OPENCODE_FAMILY_API", familyApi);
-writeFileSync(TARGET, source);
-console.log(`\nwrote ${basename(TARGET.pathname)}`);
+process.exitCode = decided.exit;

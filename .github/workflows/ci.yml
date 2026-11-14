@@ -6,6 +6,16 @@ on:
     tags-ignore: ["v*.*.*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      # What the e2e job's keyed tier arms on this dispatch: `full` (a human
+      # dispatch, the default) or `none`, which the nightly bump proposal
+      # passes when it dispatches the floor cells on its branch, so that run
+      # spends no key on suites the bump does not touch.
+      keyed:
+        description: "keyed e2e tier: full, or none"
+        type: choice
+        options: [full, none]
+        default: full
   # Nightly, so a vendor-side change is caught here rather than by a user's
   # meter. The e2e suite is the only thing that talks to OpenCode, and the
   # bundled catalog is the only thing that tracks models.dev — both are exactly
@@ -22,31 +32,28 @@ concurrency:
 
 jobs:
   check:
+    # The name is the ONE required status check on `main`, and this job is
+    # what it gates: the format, lint and types, the build, the bundle gate,
+    # and the default install's unit suite with the coverage ratchet. The
+    # `test` matrix below is not required, so a unit run that only happened
+    # there could fail without blocking a merge. Renaming the job would leave
+    # the required check unreported and block every merge.
     name: check · test · build · gate
     runs-on: ubuntu-latest
-    # A hung test otherwise burns the six-hour default. Everything here is
+    # A hung step otherwise burns the six-hour default. Everything here is
     # offline and fast; twenty minutes is generous, not tight.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No `version:` input: pnpm/action-setup refuses to run when it is given
-      # both that and a `packageManager` field, and package.json pins the pnpm
-      # version exactly, in `packageManager`. One source of truth, and the
-      # action reads it.
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - run: pnpm run check
-      # The unit and mock suites run in the `test` job below, once per harness
-      # channel; coverage, further down, is the alpha (default) install's.
       - run: pnpm run build
       - run: node --experimental-strip-types scripts/check.ts
-      # Coverage as its own step, not folded into `test`: the ratchet only means
-      # something if it can fail a build. Uploaded so a PR can be diffed against
-      # `main` rather than only against the threshold.
+      # The default install's (alpha, newest pi) one unit run, with the
+      # coverage ratchet, which only means something if it can fail a build.
+      # The report is uploaded so a pull request can be diffed against `main`
+      # rather than only against the threshold. The `test` matrix's
+      # alpha·newest cell is the same install, so it runs no unit suite.
       - run: pnpm run test:coverage
       - name: upload coverage report
         if: always()
@@ -92,15 +99,20 @@ jobs:
       DSH_PI: ${{ matrix.pi }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: switch to the ${{ matrix.channel }} install
         run: node --experimental-strip-types scripts/use-channel.ts "$DSH_CHANNEL" ${{ matrix.pi == 'floor' && '--floor' || '' }}
-      - run: pnpm run test
+      # Explicit, not inherited: the client-bundle tests read lib/, which
+      # otherwise exists only because the `prepare` lifecycle fired during
+      # the install, and any `--ignore-scripts` hardening would turn that
+      # into an unrelated failure.
+      - run: pnpm run build
+      # One unit run per install. The default install (alpha, newest pi) runs
+      # it in the required `check` job, with the coverage ratchet; every other
+      # cell runs it here.
+      - name: unit suite (every install but the default)
+        if: matrix.channel != 'alpha' || matrix.pi != 'newest'
+        run: pnpm run test
       # The zen/go compatibility matrix, offline: `test/mock/` boots a Vite
       # server that answers the gateway's endpoints in their own wire formats
       # and refuses a request whose shape its endpoint does not accept.
@@ -124,22 +136,171 @@ jobs:
   # tree, so a newer patch inside a range is not drift) and prints one warning
   # per field it compares that moved past `test/support/host-versions.ts`. It
   # REPORTS and never gates, so it exits 0 whatever it finds: a channel moving
-  # is the harness's release, not a regression. P-T3 turns the report into a
-  # proposed bump pull request; the bump follows CONTRIBUTING's release step 3.
+  # is the harness's release, not a regression.
+  #
+  # The nightly run then PROPOSES the bump (`scripts/propose-host-bump.ts`):
+  # the data CONTRIBUTING's release step 3 lists (the record, alpha's exact
+  # pins, both lockfiles and the README pair's "today" sentences), as a pull
+  # request from `chore/host-bump`, whose own CI is the run that checks it
+  # (both channels, and the e2e-host npm cells). A bump that moves `piFloor`
+  # or a cordis-family field also dispatches ci.yml on the branch, which adds
+  # the floor cells a pull request does not run. It never edits a measured
+  # table: a row the new host turns red is the reviewed part of that pull
+  # request, named in its body. It proposes nothing from a partial read, waits
+  # a night for a cut younger than pnpm's one-day release-age window rather
+  # than lifting the window, and opens a cut that starts a new prerelease tuple
+  # as a peer-range change for review, never as data.
   host-drift:
-    name: harness channels · drift report
+    name: harness channels · drift report and bump proposal
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Two installs (the root and the rc relock) on the proposal path.
+    timeout-minutes: 30
+    # Write access is used by the nightly proposal alone. `actions: write` is
+    # what `gh workflow run` needs to dispatch the floor cells on the branch.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          # Keep no credential in git's config, for the reason the catalog
+          # job's checkout gives: the push below names its own token, and a
+          # persisted GITHUB_TOKEN would be sent ahead of it, landing the
+          # proposal's CI in action_required.
+          persist-credentials: false
+      - uses: ./.github/actions/setup
       - run: node --experimental-strip-types scripts/report-host-drift.ts
+      # Two steps, so no token is in this step's environment while the
+      # proposer resolves and installs a harness cut nobody has reviewed yet
+      # (its `pnpm install`, the relock, the `prepare` build and the
+      # formatter): this one writes the proposal, the next pushes it. Both
+      # run in one job, so this is not an isolation boundary on its own: it
+      # holds because the install runs none of the cut's code (no dependency
+      # build script runs unless something approves it: in the pinned pnpm,
+      # an `allowBuilds` entry, a `build` permission or the allow-all in
+      # pnpm-workspace.yaml, a PNPM_CONFIG_* variable, or a CLI flag in this
+      # step or the scripts it runs, the proposer and the rc relock; none
+      # does, and test/host-drift.test.ts names each of those and the older
+      # spellings pnpm 12 ignores), so any build approval is a change to this
+      # step.
+      - name: plan and write the bump (nightly only)
+        id: plan
+        if: github.event_name == 'schedule'
+        run: |
+          out="$RUNNER_TEMP/host-bump"
+          # Exits 0 whenever nothing can be proposed (current, waiting or a
+          # partial read, each printed), and 1 only when a step it ran
+          # failed, after putting back every tracked file it wrote.
+          node --experimental-strip-types scripts/propose-host-bump.ts --write --out "$out"
+          if [ ! -f "$out/title" ]; then
+            exit 0
+          fi
+          # A read loop, not `mapfile`: bash 4 has `mapfile`, and the unit
+          # suite runs this step with whatever bash a contributor has
+          # (macOS ships 3.2).
+          files=()
+          while IFS= read -r file; do files+=("$file"); done < "$out/files"
+          # The sources the repository formats; the lockfiles are pnpm's.
+          formatted=()
+          for file in "${files[@]}"; do
+            case "$file" in
+              *.ts | package.json) formatted+=("$file") ;;
+            esac
+          done
+          if [ "${#formatted[@]}" -gt 0 ]; then
+            pnpm exec vp fmt --write "${formatted[@]}"
+          fi
+          echo "proposed=true" >> "$GITHUB_OUTPUT"
+      # An open proposal is the reviewer's: the re-measure, a README sentence
+      # both channels share and a range plan's peer clause are commits made
+      # on its branch, and the record on main stays behind until it merges,
+      # so every night plans the same bump again. The same target (the
+      # marker line the body ends with, every proposed record in full; the
+      # title names only each record's headline value) is therefore left
+      # alone; a newer target rebuilds the branch only while every commit on
+      # it is the nightly's own, and is otherwise named in a warning for the
+      # reviewer.
+      - name: push and propose the bump (nightly only)
+        if: github.event_name == 'schedule' && steps.plan.outputs.proposed == 'true'
+        env:
+          # PAT, not GITHUB_TOKEN, for the push and the pull request, for the
+          # reason the catalog refresh gives: a branch pushed as
+          # github-actions[bot] gets no CI until a human approves the run.
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # The dispatch is GITHUB_TOKEN's: workflow_dispatch is one of the
+          # events it may trigger, under this job's `actions: write`.
+          DISPATCH_TOKEN: ${{ github.token }}
+          BOT_NAME: github-actions[bot]
+          BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          out="$RUNNER_TEMP/host-bump"
+          title="$(cat "$out/title")"
+          target="$(cat "$out/target")"
+          # Whether a bump pull request is open is ASKED, never assumed, as
+          # in the catalog refresh: an API error must not pass for "none".
+          # Only this repository's own branch counts: `head=<owner>:<branch>`
+          # is the API's owner filter, which `gh pr list --head` lacks, so a
+          # fork's pull request from a branch of the same name is never read
+          # as the proposal. One line per pull request, `<number> <title>`.
+          if ! open="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:chore/host-bump" --jq '.[] | "\(.number) \(.title)"')"; then
+            echo "::error::could not ask whether a bump pull request is open; nothing was pushed"
+            exit 1
+          fi
+          if [ "$(grep -c . <<<"$open" || true)" -gt 1 ]; then
+            echo "::error::more than one open pull request proposes chore/host-bump; nothing was pushed"
+            exit 1
+          fi
+          number="${open%% *}"
+          if [ -n "$open" ]; then
+            # The target is the body's marker line, read by number; a body
+            # edited on the web carries CRLF line ends.
+            if ! body="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq .body)"; then
+              echo "::error::could not read the open bump pull request's body; nothing was pushed"
+              exit 1
+            fi
+            if tr -d '\r' <<<"$body" | grep -qxF -- "$target"; then
+              echo "the open bump pull request already proposes this target, left alone (no push, no edit, no dispatch): $title"
+              exit 0
+            fi
+            # The commits on the branch that main does not have, by author
+            # AND committer: an amend, a rebase or a fixup squash keeps the
+            # nightly as the author and records the reviewer as committer,
+            # while the nightly's own commits carry the bot as both.
+            if ! identities="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_REF_NAME}...chore/host-bump" --jq '.commits[] | .commit.author.email, .commit.committer.email')"; then
+              echo "::error::could not read the open bump pull request's commits; nothing was pushed"
+              exit 1
+            fi
+            foreign="$(grep -vxF "$BOT_EMAIL" <<<"$identities" || true)"
+            if [ -n "$foreign" ]; then
+              echo "::warning::the open bump pull request carries commits the nightly did not make, so it is left alone; the registry has moved on to: $title"
+              exit 0
+            fi
+          fi
+          # A read loop, not `mapfile` (bash 4), as in the plan step.
+          files=()
+          while IFS= read -r file; do files+=("$file"); done < "$out/files"
+          git config user.name "$BOT_NAME"
+          git config user.email "$BOT_EMAIL"
+          git checkout -B chore/host-bump
+          git add -- "${files[@]}"
+          git commit -m "$title"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" chore/host-bump
+          if [ -n "$open" ]; then
+            # By number: a branch name could also name a fork's pull request.
+            gh pr edit "$number" --title "$title" --body-file "$out/body.md"
+            echo "the open bump pull request, which only the nightly had touched, now proposes the newer target: $title"
+          elif ! gh pr create --head chore/host-bump --title "$title" --body-file "$out/body.md"; then
+            echo "::error::could not open the bump pull request (gh's output is above): chore/host-bump is pushed and proposed by no pull request"
+            exit 1
+          fi
+          # A pull request runs only the default installs; the floor cells run
+          # on dispatch, with the keyed tier off: the keyed suites test
+          # nothing a bump changes, and the nightly run arms them anyway.
+          if [ -f "$out/dispatch" ]; then
+            GH_TOKEN="$DISPATCH_TOKEN" gh workflow run ci.yml --ref chore/host-bump -f keyed=none
+          fi
 
   # `engines.node` promises >=24 and every other job runs 26, so the floor was a
   # claim nothing exercised. The suites that depend on the engine (node:sqlite,
@@ -152,12 +313,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: ./.github/actions/setup
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # The client-bundle tests read lib/: built here, not inherited from the
+      # install's `prepare` lifecycle.
+      - run: pnpm run build
       # Shuffled here, and in order in the main job: the two runs together show a
       # case that passes only because of what an earlier case left behind. The
       # seed is printed, so a failure reproduces with `--sequence.seed=<n>`.
@@ -239,12 +400,7 @@ jobs:
           # to approve it (the 2026-11-06 and 2026-11-12 refreshes did). No
           # other step here needs a git credential.
           persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: which checks does this pull request gate? (pull requests)
         id: scope
         if: github.event_name == 'pull_request'
@@ -466,7 +622,8 @@ jobs:
   #   a turn and a probe share, so test/keyed-probes.test.ts holds the
   #   probe's identity to the real fetch patch offline.
   # - `full`: adds the full keyed suites (protocol-routing, opencode-live,
-  #   dispatch-levels). Nightly and on dispatch.
+  #   dispatch-levels). Nightly and on a dispatch, unless the dispatch's
+  #   `keyed` input is `none` (the bump proposal's floor-cell dispatch).
   #
   # The keys are armed only when the tier is not `none`, by the sign-in step:
   # GitHub mints a short-lived OIDC token for the Console's audience, the
@@ -498,10 +655,16 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          # The dispatch's `keyed` input: empty on every other event.
+          KEYED_INPUT: ${{ inputs.keyed }}
         run: |
           set -euo pipefail
           case "$EVENT" in
-            schedule|workflow_dispatch) tier=full ;;
+            schedule) tier=full ;;
+            # A human dispatch arms everything; the bump proposal's dispatch
+            # passes `none`. A value the input does not offer reaches the
+            # suite's tier reader, which fails the run rather than guess.
+            workflow_dispatch) tier="${KEYED_INPUT:-full}" ;;
             pull_request)
               # Its own command, so a diff that cannot be computed fails the
               # step rather than reading as "nothing changed".
@@ -512,6 +675,7 @@ jobs:
               # version in the user agent the probes carry (identity.ts), the
               # anthropic-version every Messages probe sends
               # (request-shape.ts), and the probes' own inputs, CI arming
+              # (this workflow and the setup action it installs through)
               # and the environment reader that arms a key (e2e-env.ts)
               # included. Left out, and covered by the offline suite and the
               # nightly `full` run: the generated catalog (catalog-data.ts)
@@ -523,7 +687,7 @@ jobs:
               # it. grep reads a here-string, not a pipe: under
               # pipefail, `grep -q` exiting on an early match could kill the
               # writer with SIGPIPE on a long path list and read as a miss.
-              if grep -Eq '^(src/host/|src/utils/protocols\.ts$|src/utils/plane-model\.ts$|src/identity\.ts$|src/utils/request-shape\.ts$|test/e2e/keyed-probes\.e2e\.ts$|test/support/keyed-probes\.ts$|test/support/keyless-matrix\.ts$|test/support/e2e-env\.ts$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
+              if grep -Eq '^(src/host/|src/utils/protocols\.ts$|src/utils/plane-model\.ts$|src/identity\.ts$|src/utils/request-shape\.ts$|test/e2e/keyed-probes\.e2e\.ts$|test/support/keyed-probes\.ts$|test/support/keyless-matrix\.ts$|test/support/e2e-env\.ts$|\.github/workflows/ci\.yml$|\.github/actions/)' <<<"$changed"; then
                 tier=probes
               else
                 tier=none
@@ -533,12 +697,7 @@ jobs:
           esac
           echo "keyed tier: $tier"
           echo "keyed=$tier" >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: Sign in to OpenCode Console
         if: steps.tier.outputs.keyed != 'none'
         env:
@@ -658,7 +817,9 @@ jobs:
           changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           # The job's own definition and runner config are in scope: a pull
           # request that breaks the install, the override or the e2e config
-          # must run the job it breaks. That includes vite.config.ts: it holds
+          # must run the job it breaks. That includes the composite setup
+          # action (.github/actions/), which holds the install now, and
+          # vite.config.ts: it holds
           # the pack config that builds lib/index.mjs (the only test that
           # loads that bundle into a real host is this one, and its externals
           # keep cordis and schemastery the host's copies) and the test
@@ -688,21 +849,14 @@ jobs:
           # reader its gate, prefix and cell come through (support/e2e-env.ts).
           # test/keyed-probes.test.ts compiles this pattern and checks it.
           # A here-string, not a pipe: see the e2e job's tier step.
-          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|test/support/e2e-env\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
+          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|test/support/e2e-env\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|\.github/actions/|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "no host-seam path changed; the host binary e2e does not run for this pull request"
           fi
       - if: steps.scope.outputs.run == 'true'
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 26
-          cache: pnpm
-      - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile
+        uses: ./.github/actions/setup
       - name: the ${{ matrix.channel }} channel's record
         id: versions
         if: steps.scope.outputs.run == 'true'

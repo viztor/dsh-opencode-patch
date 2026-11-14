@@ -2,9 +2,9 @@
  * The scoped aliases `scripts/publish-scoped.ts` publishes the package under.
  *
  * Release.yml's verify step polls the same names on its `pending="…"` line, and
- * `scripts/check.ts` fails when the two lists disagree. The list lives apart
- * from `publish-scoped.ts` because that script publishes at import time, so the
- * check and its test could not read the list from there.
+ * `test/package-checks.test.ts` fails when the two lists disagree. The list
+ * lives apart from `publish-scoped.ts` because that script publishes at import
+ * time, so the test could not read the list from there.
  *
  * `@viztor/dsh-opencode` is DEPRECATED and still published: a thin wrapper that
  * re-exports the canonical package, kept so an existing install keeps resolving.

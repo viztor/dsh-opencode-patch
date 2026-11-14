@@ -11,6 +11,9 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # A run takes about a minute; bounded so a hung API call cannot hold a
+    # runner for GitHub's six hours.
+    timeout-minutes: 10
     steps:
       # Scans conventional commits (feat:/fix:) since the last tag, opens a
       # version-bump + changelog PR; merging it creates the tag + GitHub

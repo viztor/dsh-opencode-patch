@@ -8,6 +8,8 @@
 #   scripts/capture-ui.sh 'http://127.0.0.1:3080/?token=...'
 #
 # Requires `agent-browser` (npm i -g agent-browser && agent-browser install).
+# `agent-browser` and the Node it spawns must be on PATH, for the machine's own
+# architecture; this script sets no PATH of its own.
 set -euo pipefail
 
 URL="${1:-}"
@@ -18,10 +20,6 @@ fi
 
 OUT="$(cd "$(dirname "$0")/.." && pwd)/docs"
 mkdir -p "$OUT"
-
-# The managed Node is x64 while this machine is arm64; agent-browser spawns Node
-# internally, so the arm64 one from Homebrew has to win on PATH.
-export PATH="/opt/homebrew/bin:$PATH"
 
 echo "opening DSH…"
 agent-browser open "$URL"

@@ -9,7 +9,10 @@
  *
  * Checks, in order:
  *
- * 1. **Shim freshness** — the bundled `catalog-data.ts` must match the live registry.
+ * 1. **Shim freshness** — the bundled `catalog-data.ts` must match the live
+ *    registry, by the rule the generator itself uses (`shimStale`: every export,
+ *    compared as data). A registry that could not be read FAILS: it is not the
+ *    same as current. `--offline` skips this check out loud.
  * 2. **Dead rows** — no offered model may answer `400 Model is unavailable` or
  *    `410 ModelDeprecated` (needs `--probe`; otherwise skipped).
  * 3. **The declared list** — the composer's source (`planeProfileFor`) publishes
@@ -24,17 +27,29 @@
  * ```sh
  * node --experimental-strip-types scripts/verify-catalog.ts
  * node --experimental-strip-types scripts/verify-catalog.ts --probe
+ * node --experimental-strip-types scripts/verify-catalog.ts --from <payload>
+ * node --experimental-strip-types scripts/verify-catalog.ts --offline
  * ```
+ *
+ * `--from` reads the registry from a local copy; `--offline` skips check 1.
+ * Either way nothing else is fetched: checks 3-5 read the shipped shim, and
+ * its background refresh is handed a fetch that refuses.
  *
  * Exit code is 1 when any check fails, so it can gate a release.
  *
  * @module scripts/verify-catalog
  */
 
-import { OPENCODE_FAMILY_API } from "../src/catalog-data.ts";
 import {
-  getLiveGoCatalog,
-  getLiveZenCatalog,
+  OPENCODE_FAMILY_API,
+  OPENCODE_GO_CATALOG,
+  OPENCODE_PLANE_API,
+  OPENCODE_ZEN_CATALOG,
+} from "../src/catalog-data.ts";
+import {
+  getLiveGoCatalog as liveGoCatalog,
+  getLiveZenCatalog as liveZenCatalog,
+  MODELS_DEV_TIMEOUT_MS,
   MODELS_OPENCODE_URL,
   parseModelsDevCatalog,
 } from "../src/models-catalog.ts";
@@ -43,8 +58,27 @@ import { isCoreToolModel } from "../src/tool-fallback.ts";
 import { planeModelFor } from "../src/utils/plane-model.ts";
 import { planeProfileFor } from "../src/utils/plane-profile.ts";
 import { isServableSdk, protocolForSdk } from "../src/utils/protocols.ts";
+import { shimData, shimStale } from "./catalog-shim.ts";
+import { generatorArgs, readSource } from "./generator-kit.ts";
 
 const PROBE = process.argv.includes("--probe");
+const OFFLINE = process.argv.includes("--offline");
+const { from } = generatorArgs(process.argv.slice(2));
+
+/**
+ * The live catalogs, as the plugin reads them. Each read may start a
+ * background refresh; on a run told to stay off the network (`--offline`, or
+ * a local `--from`) that refresh is handed a fetch that refuses, so the shim is
+ * what every check reads and nothing leaves the machine.
+ */
+const catalogFetch: typeof fetch =
+  OFFLINE || from !== undefined
+    ? async () => {
+        throw new Error("verify-catalog: no network on this run");
+      }
+    : globalThis.fetch;
+const getLiveGoCatalog = () => liveGoCatalog(catalogFetch);
+const getLiveZenCatalog = () => liveZenCatalog(catalogFetch);
 const failures: string[] = [];
 
 const fail = (message: string): void => {
@@ -58,34 +92,42 @@ const ok = (message: string): void => {
 
 // ── 1. Shim freshness ───────────────────────────────────────────────────────
 console.log("\n1. shim freshness");
-try {
-  const response = await fetch(MODELS_OPENCODE_URL, {
-    signal: AbortSignal.timeout(30_000),
-  });
-  const live = parseModelsDevCatalog(await response.json());
-  for (const [plane, shipped, fresh] of [
-    ["zen", getLiveZenCatalog(), live.zen],
-    ["go", getLiveGoCatalog(), live.go],
-  ] as const) {
-    const shippedIds = new Set(shipped.map((m) => m.id));
-    // The shim and the live parse come from the same parser over the same
-    // registry, so the comparison is raw against raw: a difference is
-    // staleness, full stop. What the registry should have flagged but did
-    // not is the probe's business, not this check's.
-    const freshIds = new Set(fresh.map((m) => m.id));
-    const missing = [...freshIds].filter((id) => !shippedIds.has(id));
-    const extra = [...shippedIds].filter((id) => !freshIds.has(id));
-    if (missing.length > 0 || extra.length > 0) {
+if (OFFLINE) {
+  console.log("  skip  registry not asked (--offline)");
+} else {
+  let payload: string | undefined;
+  try {
+    payload = await readSource({
+      from,
+      timeoutMs: MODELS_DEV_TIMEOUT_MS,
+      url: MODELS_OPENCODE_URL,
+    });
+  } catch (error) {
+    fail(
+      `registry not read, which is not the same as current (${String(error).slice(0, 80)}); pass --offline to skip this check`
+    );
+  }
+  if (payload !== undefined) {
+    // The generator's own rule, over everything the shim exports: a
+    // difference in any catalog row, plane endpoint or family endpoint is
+    // staleness, and order is not.
+    const live = shimData(parseModelsDevCatalog(JSON.parse(payload)));
+    const shipped = {
+      familyApi: OPENCODE_FAMILY_API,
+      go: OPENCODE_GO_CATALOG,
+      planeApi: OPENCODE_PLANE_API,
+      zen: OPENCODE_ZEN_CATALOG,
+    };
+    if (shimStale(shipped, live)) {
       fail(
-        `${plane} shim is stale: ${missing.length} missing, ${extra.length} extra ` +
-          `(run scripts/regenerate-catalog-shim.ts --write)`
+        `shim is stale against ${from ?? MODELS_OPENCODE_URL} (run scripts/regenerate-catalog-shim.ts --write)`
       );
     } else {
-      ok(`${plane}: ${shippedIds.size} models match the registry`);
+      ok(
+        `zen: ${shipped.zen.length} and go: ${shipped.go.length} models, and both planes' endpoints, match the registry`
+      );
     }
   }
-} catch (error) {
-  console.log(`  skip  registry unreachable (${String(error).slice(0, 60)})`);
 }
 
 // ── 2. Dead rows ────────────────────────────────────────────────────────────
