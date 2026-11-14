@@ -476,8 +476,11 @@ jobs:
   # OIDC endpoint nor secrets, so the step exits with a notice and the keyed
   # cases skip exactly as they do when the tier is `none`, while the keyless
   # cases still check that the endpoints answer. The Console CI token's client
-  # id is public by design: the exchange binds it to the audience and the
-  # GitHub OIDC subject, so the id alone grants nothing.
+  # id is public by design (the exchange binds it to the audience and the
+  # GitHub OIDC subject, so the id alone grants nothing) and it lives in the
+  # `OPENCODE_CONSOLE_CLIENT_ID` repository variable, not here: its `sk_` shape
+  # is indistinguishable from a Checkout.com secret key to a scanner, and a
+  # literal in this file raised a false-positive secret-scanning alert.
   #
   # Both probe suites write a dated table of what each URL shape answered
   # (docs/redirect-planes.md §13); the job appends them to the run summary and
@@ -543,7 +546,7 @@ jobs:
         if: steps.tier.outputs.keyed != 'none'
         env:
           AUDIENCE: https://opencode.ai/console
-          CLIENT_ID: sk_baf57eb6-1b63-4eb7-a538-737dc3aea54d
+          CLIENT_ID: ${{ vars.OPENCODE_CONSOLE_CLIENT_ID }}
         run: |
           # A fork or Dependabot pull request is issued no OIDC endpoint; leave
           # the suite keyless, as its keyed cases already expect.

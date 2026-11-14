@@ -1371,6 +1371,13 @@ describe("keyed probes · the CI wiring", () => {
     for (const step of steps) {
       expect(step).not.toContain("secrets.OPENCODE");
     }
+    // The client id is an identifier, not a credential, and it is read from a
+    // repository variable: a literal here would be a `sk_`-shaped string that a
+    // secret scanner reads as a Checkout.com production key (it once did).
+    expect(signIn).toContain(
+      `CLIENT_ID: ${expression("vars.OPENCODE_CONSOLE_CLIENT_ID")}`
+    );
+    expect(job).not.toMatch(/\bsk_[0-9a-f]{8}-/u);
   });
 
   it("the test step names the tier and the record directory, and no key: the sign-in step owns them", () => {
