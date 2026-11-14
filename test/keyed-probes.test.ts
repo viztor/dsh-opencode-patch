@@ -70,6 +70,7 @@ import {
   SESSION_HEADER,
 } from "./support/src.ts";
 import { blankCommentLines } from "./support/strip-comments.ts";
+import { execute, loadWorkflow } from "./support/workflows.ts";
 
 const spec = (id: string, provider_npm?: string): CatalogModelSpec => ({
   context_window: 1000,
@@ -1228,6 +1229,8 @@ describe("keyed probes · the CI wiring", () => {
       "test/support/keyless-matrix.ts",
       "test/support/e2e-env.ts",
       ".github/workflows/ci.yml",
+      // The install the job runs through.
+      ".github/actions/setup/action.yml",
     ]) {
       expect(armed.test(path), path).toBe(true);
     }
@@ -1245,13 +1248,18 @@ describe("keyed probes · the CI wiring", () => {
       "test/keyed-probes.test.ts",
       "test/support/keyed-probes.ts.bak",
       "x/src/host/a.ts",
+      ".github/dependabot.yml",
     ]) {
       expect(armed.test(path), path).toBe(false);
     }
   });
 
-  it("a match arms `probes` and a miss `none`; schedule and dispatch arm `full`", () => {
-    expect(tierStep).toContain("schedule|workflow_dispatch) tier=full");
+  it("the tier step's text: a match arms `probes` and a miss `none`; schedule arms `full`, a dispatch its `keyed` input (`full` when empty)", () => {
+    expect(tierStep).toContain("schedule) tier=full ;;");
+    expect(tierStep).toContain(
+      ['workflow_dispatch) tier="$', '{KEYED_INPUT:-full}" ;;'].join("")
+    );
+    expect(tierStep).toContain(`KEYED_INPUT: ${expression("inputs.keyed")}`);
     // The arms in order: the grep, then `probes`, then `else`, then `none`.
     // grep reads a here-string: piped, `grep -q` exiting on an early match
     // can kill the writer with SIGPIPE, which pipefail reads as a miss.
@@ -1261,11 +1269,70 @@ describe("keyed probes · the CI wiring", () => {
     expect(tierStep).not.toMatch(/\|\s*grep/u);
   });
 
+  it("the tier step, executed: schedule arms `full`, a dispatch its `keyed` input (`full` when empty), a push `none`, a pull request `probes` on a match and `none` on a miss", () => {
+    const parsed = (loadWorkflow("ci.yml").jobs.e2e?.steps ?? []).find(
+      (step) => step.id === "tier"
+    );
+    // The env the step reads is the three lines CI sets on every event (an
+    // input or a base ref that does not apply is empty, never unset).
+    expect(Object.keys(parsed?.env ?? {}).toSorted()).toStrictEqual([
+      "BASE_REF",
+      "EVENT",
+      "KEYED_INPUT",
+    ]);
+    /** The step run for one event, with `git diff` answering `changed`. */
+    const tierFor = (
+      event: string,
+      { changed = [], keyed = "" }: { changed?: string[]; keyed?: string } = {}
+    ) => {
+      const result = execute(parsed?.run ?? "", gitAnswering(changed), {
+        BASE_REF: event === "pull_request" ? "main" : "",
+        EVENT: event,
+        KEYED_INPUT: event === "workflow_dispatch" ? keyed : "",
+      });
+      expect(result.status, `${event} ${result.stderr}`).toBe(0);
+      return result;
+    };
+    const tier = (...args: Parameters<typeof tierFor>): string =>
+      tierFor(...args).output;
+    expect(tier("schedule")).toBe("keyed=full\n");
+    // The nightly bump's floor-cell dispatch passes `none`: it spends no key.
+    expect(tier("workflow_dispatch", { keyed: "none" })).toBe("keyed=none\n");
+    expect(tier("workflow_dispatch", { keyed: "" })).toBe("keyed=full\n");
+    expect(tier("workflow_dispatch", { keyed: "full" })).toBe("keyed=full\n");
+    expect(tier("push")).toBe("keyed=none\n");
+    const matched = tierFor("pull_request", {
+      changed: ["README.md", "src/host/route-claim.ts"],
+    });
+    expect(matched.output).toBe("keyed=probes\n");
+    // Known answer: the diff it read is the pull request's own.
+    expect(matched.calls).toBe("git diff --name-only origin/main...HEAD\n");
+    expect(tier("pull_request", { changed: ["README.md"] })).toBe(
+      "keyed=none\n"
+    );
+    // Only a pull request asks git.
+    expect(tierFor("schedule").calls).toBe("");
+    // A diff that cannot be computed fails the step: it never arms `none`.
+    const failed = execute(parsed?.run ?? "", GIT_FAILS, {
+      BASE_REF: "main",
+      EVENT: "pull_request",
+      KEYED_INPUT: "",
+    });
+    expect(failed.calls).toBe("git diff --name-only origin/main...HEAD\n");
+    expect(failed.status).not.toBe(0);
+    expect(failed.output).toBe("");
+  });
+
   it("every event the job runs on but schedule, dispatch and a pull request arms `none`: a push to main spends no key", () => {
     const arms = [...tierStep.matchAll(/^\s+([^\s()]+)\)/gmu)].map(
       (match) => match[1]
     );
-    expect(arms).toEqual(["schedule|workflow_dispatch", "pull_request", "*"]);
+    expect(arms).toEqual([
+      "schedule",
+      "workflow_dispatch",
+      "pull_request",
+      "*",
+    ]);
     expect(tierStep).toMatch(/\n\s+\*\) tier=none ;;\n\s+esac/u);
   });
 
@@ -1348,6 +1415,24 @@ describe("keyed probes · the CI wiring", () => {
   });
 });
 
+/** `git` as a function: records its call and prints `changed`, one per line. */
+const gitAnswering = (changed: readonly string[]): string =>
+  [
+    "git() {",
+    '  echo "git $*" >> "$CALLS"',
+    `  printf '%s\\n' ${changed.map((path) => JSON.stringify(path)).join(" ")}`,
+    "}",
+  ].join("\n");
+
+/** `git` as a function that fails, as a diff against an unfetched base does. */
+const GIT_FAILS = [
+  "git() {",
+  '  echo "git $*" >> "$CALLS"',
+  '  echo "fatal: bad revision" >&2',
+  "  return 128",
+  "}",
+].join("\n");
+
 describe("the e2e-host job · its pull-request scope", () => {
   const ci = readFileSync(
     new URL("../.github/workflows/ci.yml", import.meta.url),
@@ -1375,6 +1460,7 @@ describe("the e2e-host job · its pull-request scope", () => {
       "test/support/e2e-env.ts",
       "scripts/host-drift.ts",
       ".github/workflows/ci.yml",
+      ".github/actions/setup/action.yml",
       "vitest.e2e.config.ts",
       "vite.config.ts",
     ]) {
@@ -1388,9 +1474,40 @@ describe("the e2e-host job · its pull-request scope", () => {
       "test/support/e2e-env.ts.bak",
       "test/e2e-env.test.ts",
       "patches/pi.patch",
+      ".github/dependabot.yml",
     ]) {
       expect(runs.test(path), path).toBe(false);
     }
+  });
+
+  it("the scope step, executed: anything but a pull request runs, a pull request runs on a match and not on a miss, and a diff that cannot be computed fails the step", () => {
+    const parsed = (loadWorkflow("ci.yml").jobs["e2e-host"]?.steps ?? []).find(
+      (step) => step.id === "scope"
+    );
+    expect(parsed?.run).toBeDefined();
+    const scopeFor = (event: string, prelude: string) =>
+      execute(parsed?.run ?? "", prelude, {
+        BASE_REF: event === "pull_request" ? "main" : "",
+        EVENT: event,
+      });
+    const nightly = scopeFor("schedule", gitAnswering([]));
+    expect(nightly.status, nightly.stderr).toBe(0);
+    expect(nightly.output).toBe("run=true\n");
+    expect(nightly.calls).toBe("");
+    const matched = scopeFor(
+      "pull_request",
+      gitAnswering(["README.md", "src/host/route-claim.ts"])
+    );
+    expect(matched.status, matched.stderr).toBe(0);
+    expect(matched.output).toBe("run=true\n");
+    expect(matched.calls).toBe("git diff --name-only origin/main...HEAD\n");
+    const missed = scopeFor("pull_request", gitAnswering(["README.md"]));
+    expect(missed.status, missed.stderr).toBe(0);
+    expect(missed.output).toBe("run=false\n");
+    const failed = scopeFor("pull_request", GIT_FAILS);
+    expect(failed.calls).toBe("git diff --name-only origin/main...HEAD\n");
+    expect(failed.status).not.toBe(0);
+    expect(failed.output).toBe("");
   });
 });
 

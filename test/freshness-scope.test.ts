@@ -42,6 +42,11 @@ import {
   type SourceReader,
 } from "../scripts/freshness-scope.ts";
 import { GENERATED_TABLES } from "../scripts/vendor-version.ts";
+import {
+  evaluateIf,
+  execute,
+  inheritedWithoutGit,
+} from "./support/workflows.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -98,6 +103,10 @@ describe("freshness scope · the walk reads the real generators", () => {
     expect(inputs).toContain("scripts/regenerate-catalog-shim.ts");
     expect(inputs).toContain("src/models-catalog.ts");
     expect(inputs).toContain("src/utils/guards.ts");
+    // The shared generator helpers and the shim's pure half: a change to the
+    // one staleness rule gates both generators.
+    expect(inputs).toContain("scripts/generator-kit.ts");
+    expect(inputs).toContain("scripts/catalog-shim.ts");
     // `src/config.ts` is loaded (`DEFAULT_GATEWAY_URLS`), so a settings change
     // gates this check; `src/session-cost.ts` is reached only through
     // `import type`, which loads nothing, so it does not.
@@ -118,12 +127,15 @@ describe("freshness scope · the walk reads the real generators", () => {
     const inputs = inputsOf("limits:shim", read);
     expect(inputs).toContain("scripts/generate-go-limits.ts");
     expect(inputs).toContain("src/go-limits.ts");
-    // The generator's source holds `import type … from "./go-limits.ts"`, but
+    expect(inputs).toContain("scripts/generator-kit.ts");
+    expect(inputs).toContain("scripts/go-limits-render.ts");
+    expect(inputs).not.toContain("scripts/catalog-shim.ts");
+    // The renderer's source holds `import type … from "./go-limits.ts"`, but
     // as template text: the line it writes into the file it emits, not an
-    // import of the generator. The premise is checked first, so the second
+    // import of the renderer. The premise is checked first, so the second
     // assertion has something to miss. (The line is also type-only; the
     // known-tree case below separates template text from that on its own.)
-    const source = read("scripts/generate-go-limits.ts") ?? "";
+    const source = read("scripts/go-limits-render.ts") ?? "";
     expect(source).toMatch(
       /^import type \{[^}]*\} from "\.\/go-limits\.ts";$/mu
     );
@@ -436,70 +448,6 @@ describe("freshness scope · the decision", () => {
   });
 });
 
-/** A GitHub Actions `if:` expression, evaluated over the few names the job uses. */
-const evaluate = (
-  expression: string,
-  names: Readonly<Record<string, string>>
-): boolean | string => {
-  const tokens =
-    expression.match(/'[^']*'|==|!=|&&|\|\||[()!]|[A-Za-z_][\w.-]*/gu) ?? [];
-  const consumed = tokens.join("");
-  if (consumed !== expression.replaceAll(/\s+/gu, "")) {
-    throw new Error(`unparsed text in: ${expression}`);
-  }
-  let at = 0;
-  const truthy = (value: boolean | string): boolean =>
-    typeof value === "boolean" ? value : value !== "";
-  const primary = (): boolean | string => {
-    const token = tokens[at];
-    at += 1;
-    if (token === "(") {
-      const value = or();
-      const closing = tokens[at];
-      at += 1;
-      if (closing !== ")") throw new Error(`unbalanced: ${expression}`);
-      return value;
-    }
-    if (token === "!") return !truthy(primary());
-    if (token?.startsWith("'")) return token.slice(1, -1);
-    if (token !== undefined && Object.hasOwn(names, token)) {
-      return names[token] ?? "";
-    }
-    throw new Error(`unknown name ${token} in: ${expression}`);
-  };
-  const comparison = (): boolean | string => {
-    const left = primary();
-    const op = tokens[at];
-    if (op === "==" || op === "!=") {
-      at += 1;
-      const right = primary();
-      return op === "==" ? left === right : left !== right;
-    }
-    return left;
-  };
-  const and = (): boolean | string => {
-    let value = comparison();
-    while (tokens[at] === "&&") {
-      at += 1;
-      const right = comparison();
-      value = truthy(value) && truthy(right);
-    }
-    return value;
-  };
-  const or = (): boolean | string => {
-    let value = and();
-    while (tokens[at] === "||") {
-      at += 1;
-      const right = and();
-      value = truthy(value) || truthy(right);
-    }
-    return value;
-  };
-  const result = or();
-  if (at !== tokens.length) throw new Error(`trailing tokens: ${expression}`);
-  return truthy(result);
-};
-
 describe("freshness scope · the CI wiring, parsed", () => {
   interface Step {
     readonly id?: string;
@@ -543,7 +491,7 @@ describe("freshness scope · the CI wiring, parsed", () => {
   ): boolean =>
     step.if === undefined
       ? true
-      : evaluate(step.if, {
+      : evaluateIf(step.if, {
           "github.event_name": event,
           ...Object.fromEntries(
             ["catalog", "limits", "cli"].map((key) => [
@@ -585,71 +533,6 @@ describe("freshness scope · the CI wiring, parsed", () => {
     expect(scopeStep?.run).toContain("scripts/freshness-scope.ts");
     expect(Object.keys(keys).toSorted()).toStrictEqual([...CHECKS].toSorted());
   });
-
-  /**
-   * The test process's environment without any `GIT_*` variable. A git hook,
-   * or `git rebase --exec` in a linked worktree, exports an absolute `GIT_DIR`
-   * and `GIT_INDEX_FILE`, which git honours before the working directory: a
-   * child that inherited them would commit, branch and configure the
-   * repository they name instead of the one it runs in. `GIT_CONFIG_PARAMETERS`
-   * goes too, since it carries `-c` settings such as signing.
-   */
-  const inheritedWithoutGit = (): NodeJS.ProcessEnv =>
-    Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))
-    );
-
-  /**
-   * One step's `run` text, executed the way the runner executes it (`bash -e`,
-   * GitHub's default shell, which has no pipefail), in the repository, with a
-   * shell function named in `prelude` standing in for a command the step calls.
-   * It runs in the repository unless `cwd` names another directory, and
-   * inherits no `GIT_*` variable (`inheritedWithoutGit`).
-   */
-  const execute = (
-    run: string,
-    prelude: string,
-    env: Readonly<Record<string, string>> = {},
-    cwd: string = ROOT
-  ): {
-    status: number | null;
-    stdout: string;
-    stderr: string;
-    output: string;
-    calls: string;
-  } => {
-    const temp = mkdtempSync(join(tmpdir(), "ci-step-"));
-    try {
-      const result = spawnSync("bash", ["-e", "-c", `${prelude}\n${run}`], {
-        cwd,
-        encoding: "utf8",
-        env: {
-          ...inheritedWithoutGit(),
-          ...env,
-          CALLS: join(temp, "calls"),
-          GITHUB_OUTPUT: join(temp, "github-output"),
-          PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ""}`,
-          RUNNER_TEMP: temp,
-        },
-      });
-      const readOr = (path: string): string => {
-        try {
-          return readFileSync(path, "utf8");
-        } catch {
-          return "";
-        }
-      };
-      return {
-        calls: readOr(join(temp, "calls")),
-        output: readOr(join(temp, "github-output")),
-        status: result.status,
-        stderr: result.stderr,
-        stdout: result.stdout,
-      };
-    } finally {
-      rmSync(temp, { force: true, recursive: true });
-    }
-  };
 
   /** `pnpm` as a function that records its arguments and fails, naming a cause. */
   const FAILING_PNPM =
@@ -1276,12 +1159,12 @@ describe("freshness scope · the CI wiring, parsed", () => {
 
   it("the evaluator answers the cases it is trusted with", () => {
     expect(
-      evaluate("a == 'x' && (b == 'y' || !c)", { a: "x", b: "z", c: "" })
+      evaluateIf("a == 'x' && (b == 'y' || !c)", { a: "x", b: "z", c: "" })
     ).toBe(true);
-    expect(evaluate("a != 'x'", { a: "x" })).toBe(false);
-    expect(() => evaluate("steps.scop.outputs.catalog == 'gate'", {})).toThrow(
-      /unknown name/u
-    );
+    expect(evaluateIf("a != 'x'", { a: "x" })).toBe(false);
+    expect(() =>
+      evaluateIf("steps.scop.outputs.catalog == 'gate'", {})
+    ).toThrow(/unknown name/u);
   });
 });
 
@@ -1308,13 +1191,14 @@ describe("cli:version · the offline copy scan (`--copies`)", () => {
   const runIn = (
     pin: string,
     copy: string,
-    args: readonly string[]
+    args: readonly string[],
+    extra = ""
   ): { status: number | null; stdout: string; stderr: string } => {
     const root = mkdtempSync(join(tmpdir(), "cli-version-"));
     try {
       for (const [path, text] of Object.entries({
         "README.md": "# fixture\n",
-        "docs/x.md": `User-Agent: opencode/${copy}\n`,
+        "docs/x.md": `User-Agent: opencode/${copy}\n${extra}`,
         [PIN_FILE]: `export const OPENCODE_CLI_VERSION = "${pin}";\n`,
         ...Object.fromEntries(
           GENERATED_OUTPUTS.map((output) => [
@@ -1371,6 +1255,29 @@ describe("cli:version · the offline copy scan (`--copies`)", () => {
     for (const output of GENERATED_OUTPUTS) {
       expect(run.stderr).not.toContain(output);
     }
+  });
+
+  it("cli:version --copies fails on a 2.x-form User-Agent no constant pins, and still passes on this repository", () => {
+    // Assembled, never spelled: this file is in the real scan's path.
+    const ua = [
+      "opencode",
+      "dev",
+      ["0.0.0", "dev", "202611092046"].join("-"),
+      "cli",
+    ].join("/");
+    const run = runIn(
+      "0.0.1",
+      "0.0.1",
+      ["--copies"],
+      `The 2.x client says ${ua}.\n`
+    );
+    expect(run.status).toBe(1);
+    const [first] = run.stderr.split("\n");
+    expect(first).toMatch(/^error: /u);
+    expect(first).toContain("no constant pins");
+    expect(run.stderr).toContain("docs/x.md");
+    // The control: the same tree without the 2.x literal passes.
+    expect(runIn("0.0.1", "0.0.1", ["--copies"]).status).toBe(0);
   });
 
   it("passes when the copies agree, without asking the registry, and skips the generated tables", () => {

@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import setup, { engineRefusal, floorMajorOf } from "./support/node-engine.ts";
+import { type Job, loadYaml, workflowFiles } from "./support/workflows.ts";
 
 describe("node-engine guard", () => {
   it("reads a single >= floor and nothing else", () => {
@@ -48,16 +49,40 @@ describe("node-engine guard", () => {
     }).not.toThrow();
   });
 
-  it("names the Node CI runs in .node-version, at or above the floor", () => {
+  it("names the Node CI runs in .node-version, which the setup action reads", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8")
+    ) as { engines: { node: string } };
     const pinned = Number(
       readFileSync(new URL("../.node-version", import.meta.url), "utf8").trim()
     );
-    const ci = readFileSync(
-      new URL("../.github/workflows/ci.yml", import.meta.url),
+    expect(engineRefusal(`${pinned}.0.0`, pkg.engines.node)).toBeUndefined();
+    // One source: the setup action reads the file, and no job restates it.
+    const action = readFileSync(
+      new URL("../.github/actions/setup/action.yml", import.meta.url),
       "utf8"
     );
-    expect(engineRefusal(`${pinned}.0.0`, ">=24")).toBeUndefined();
-    expect(ci).toContain(`node-version: ${pinned}`);
+    expect(action).toContain("cat .node-version");
+    // The one job that passes its own Node is the engines floor's, at the
+    // floor `engines.node` declares, so raising one without the other fails.
+    const passed = workflowFiles()
+      .filter((file) => file.startsWith(".github/workflows/"))
+      .flatMap((file) =>
+        Object.entries(
+          (loadYaml(file) as { jobs: Record<string, Job> }).jobs
+        ).flatMap(([name, job]) =>
+          (job.steps ?? [])
+            .filter(
+              (step) =>
+                step.uses === "./.github/actions/setup" &&
+                step.with?.["node-version"] !== undefined
+            )
+            .map((step) => [name, step.with?.["node-version"]])
+        )
+      );
+    expect(passed).toStrictEqual([
+      ["engine-floor", floorMajorOf(pkg.engines.node)],
+    ]);
   });
 });
 

@@ -17,7 +17,9 @@
  * source, served as `text/plain`), and CI checks it for drift: a pull request
  * that changes this generator (or a module it loads) fails on a stale table;
  * any other pull request, and a push to main, warns, and the nightly run
- * proposes the refresh.
+ * proposes the refresh. "Stale" is the rule the generators share
+ * (`generator-kit.ts`): the shipped `GO_MODEL_LIMITS` and the page's figures
+ * differ in data, never in bytes.
  *
  * **That URL is gone.** Measured 2026-10-12: it answers 404, the docs live under
  * `/v2/docs/console/go/` now, and the new page serves HTML - the allowance figures
@@ -63,41 +65,59 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { OPENCODE_GO_CATALOG } from "../src/catalog-data.ts";
+import { GO_MODEL_LIMITS } from "../src/go-limits-data.ts";
 import {
   GO_LIMITS_DOC_TIMEOUT_MS,
   GO_LIMITS_DOC_URL,
   parseGoLimitsDoc,
 } from "../src/go-limits.ts";
+import { generatorArgs, outcome, readSource, stale } from "./generator-kit.ts";
 import { GO_LIMITS_DOC_MOVED_TO, htmlToDoc } from "./go-limits-html.ts";
+import { renderGoLimits } from "./go-limits-render.ts";
 
 const TARGET = new URL("../src/go-limits-data.ts", import.meta.url);
-const argv = process.argv.slice(2);
-const shouldWrite = argv.includes("--write");
-const fromIndex = argv.indexOf("--from");
-const fromPath = fromIndex === -1 ? undefined : argv[fromIndex + 1];
+const { from: fromPath, write } = generatorArgs(process.argv.slice(2));
+
+const causeOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * The markdown URL is gone; measured 2026-10-12, the docs moved under
+ * `/v2/docs/console/` and the new page serves HTML. Read the page instead of
+ * failing: the figures are the same figures, in a table.
+ */
+const readMovedDoc = async (primary: string): Promise<string> => {
+  try {
+    return htmlToDoc(
+      await readSource({
+        timeoutMs: GO_LIMITS_DOC_TIMEOUT_MS,
+        url: GO_LIMITS_DOC_MOVED_TO,
+      })
+    );
+  } catch (error) {
+    throw new Error(
+      `go.md: ${primary}; the moved page ${GO_LIMITS_DOC_MOVED_TO}: ${causeOf(error)}`,
+      { cause: error }
+    );
+  }
+};
 
 const readDoc = async (): Promise<string> => {
   if (fromPath !== undefined) {
-    return readFileSync(fromPath, "utf8");
+    return readSource({
+      from: fromPath,
+      timeoutMs: GO_LIMITS_DOC_TIMEOUT_MS,
+      url: GO_LIMITS_DOC_URL,
+    });
   }
-  const response = await fetch(GO_LIMITS_DOC_URL, {
-    signal: AbortSignal.timeout(GO_LIMITS_DOC_TIMEOUT_MS),
-  });
-  if (response.ok) {
-    return response.text();
+  try {
+    return await readSource({
+      timeoutMs: GO_LIMITS_DOC_TIMEOUT_MS,
+      url: GO_LIMITS_DOC_URL,
+    });
+  } catch (error) {
+    return readMovedDoc(causeOf(error));
   }
-  // The markdown URL is gone; measured 2026-10-12, the docs moved under
-  // `/v2/docs/console/` and the new page serves HTML. Read the page instead of
-  // failing: the figures are the same figures, in a table.
-  const moved = await fetch(GO_LIMITS_DOC_MOVED_TO, {
-    signal: AbortSignal.timeout(GO_LIMITS_DOC_TIMEOUT_MS),
-  });
-  if (!moved.ok) {
-    throw new Error(
-      `go.md answered ${response.status} ${response.statusText} and the moved page ${GO_LIMITS_DOC_MOVED_TO} answered ${moved.status}`
-    );
-  }
-  return htmlToDoc(await moved.text());
 };
 
 /** Catalog ids, so a doc label can be resolved to the id the gateway uses. */
@@ -117,17 +137,6 @@ const resolveId = (slug: string): string | undefined => {
   const folded = slug.replaceAll(".", "-");
   return catalogIds.has(folded) ? folded : undefined;
 };
-
-/**
- * A model id as an object key, quoted only when it has to be.
- *
- * `vp fmt` strips the quotes from any key that is a valid identifier, so a
- * uniformly-quoted generator produces a file that differs from its own
- * output by whitespace alone — and a staleness check that compares bytes
- * then reports drift that is not there.
- */
-const jsKey = (id: string): string =>
-  /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(id) ? id : JSON.stringify(id);
 
 const doc = await readDoc();
 const { limits, unmapped } = parseGoLimitsDoc(doc);
@@ -156,82 +165,44 @@ for (const [slug, allowance] of limits) {
   }
 }
 
-/**
- * A number as TypeScript source.
- *
- * A model the vendor's page does not list has no published allowance, which the
- * table records as `NaN`. The bare `NaN` identifier is a lint error, so the
- * literal is written as `Number.NaN`; it stays `NaN` at runtime, which is the
- * point - a model with no figure must not read as `$0`.
- *
- * @param value - the allowance.
- * @returns the literal to emit.
- */
-const numberLiteral = (value: number): string =>
-  Number.isNaN(value) ? "Number.NaN" : String(value);
+const rows = Object.fromEntries(resolved);
+const file = renderGoLimits(rows);
 
-const body = [...resolved.keys()]
-  .toSorted()
-  .map((id) => {
-    const row = resolved.get(id) as {
-      go: number;
-      goPlus: number;
-      name: string;
-    };
-    // One field per line, which is what `vp fmt` produces for an object
-    // this size. A compact single line reads better until the formatter
-    // reflows it — and then the file no longer matches what this script
-    // emits, so the next run reports STALE for a difference that is only
-    // whitespace.
-    return [
-      `  ${jsKey(id)}: {`,
-      `    go: ${numberLiteral(row.go)},`,
-      `    goPlus: ${numberLiteral(row.goPlus)},`,
-      `    name: ${JSON.stringify(row.name)},`,
-      "  },",
-    ].join("\n");
-  })
-  .join("\n");
+// The shipped table is imported, as `src/` imports it: a missing file breaks
+// the build long before it breaks this, and the file is committed.
+const onDisk = readFileSync(TARGET, "utf8");
 
-const file = `/**
- * GENERATED by \`scripts/generate-go-limits.ts\` — do not edit by hand.
- *
- * The Go plan's monthly allowance per model, in whole US dollars, for both tiers:
- * \`go\` is the $10/month plan, \`goPlus\` the $40/month one. Source of truth is
- * OpenCode's own Go documentation; \`pnpm run limits:shim\` reports staleness and
- * \`--write\` rewrites this file.
- *
- * ${resolved.size} models.
- */
-
-import type { ModelAllowance } from "./go-limits.ts";
-
-export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
-${body}
-};
-`;
-
-/** The file as it stands, or `""` when it does not exist yet. */
-const readCurrent = (): string => {
-  try {
-    return readFileSync(TARGET, "utf8");
-  } catch {
-    return "";
-  }
-};
-
-const current = readCurrent();
-if (current === file) {
+// The one staleness rule the generators share: the table's DATA against what
+// the page says, so a formatter's reflow or a reordered key is never drift,
+// and a current table is left untouched by `--write`.
+//
+// With `--write`, a table whose data is current is still rewritten when its
+// TEXT is not what the renderer makes of that data (`outcome`'s `rewrite`): a
+// template change is applied by the generator, never by hand. That compares
+// bytes safely only because the renderer's text is already what the
+// formatter produces, which `test/generators.test.ts` holds by
+// round-tripping the shipped table.
+const decided = outcome({
+  stale: stale(GO_MODEL_LIMITS, rows),
+  textCurrent: onDisk === file,
+  write,
+});
+if (decided.action === "rewrite") {
+  writeFileSync(TARGET, file);
+  console.log(
+    `rewrote src/go-limits-data.ts: its data is current (${resolved.size} models), its text was not the renderer's`
+  );
+} else if (decided.action === "current") {
   console.log(`go-limits-data.ts is up to date (${resolved.size} models)`);
-} else if (shouldWrite) {
+} else if (decided.action === "write") {
   writeFileSync(TARGET, file);
   console.log(`wrote ${resolved.size} models to src/go-limits-data.ts`);
 } else {
   console.error(
     "go-limits-data.ts is STALE — run: pnpm run limits:shim -- --write"
   );
-  process.exitCode = 1;
 }
+process.exitCode = decided.exit;
 
 if (unmatched.length > 0) {
   console.log(
