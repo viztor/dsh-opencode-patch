@@ -167,6 +167,10 @@ export {
   rewrapOnAdaptersUpdated,
 } from "../../src/host/patch-method.ts";
 
+// host/remote.ts
+export { installRemoteService } from "../../src/host/remote.ts";
+export type { RemoteContract } from "../../src/host/remote.ts";
+
 // identity.ts
 export {
   inject,

@@ -452,7 +452,8 @@ export class GoUsageService extends TypertRemoteService {
    *
    * Both plugins mount a remote service under `opencodeGoUsage`, and the Typert
    * gateway resolves the ROOT-context one — this instance, because
-   * `installUsageService` mounts it on the root on purpose. That page calls
+   * `installRemoteService` (`src/host/remote.ts`) mounts it on the root, while
+   * a live activation holds it, on purpose. That page calls
    * `readAccount(ref)` against the namespace, so a namespace offering only
    * `read` fails it with `active Service "opencodeGoUsage" has no callable
    * method "readAccount"` while the meter itself keeps working.

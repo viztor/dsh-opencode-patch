@@ -168,7 +168,9 @@ try {
       logger: { info: () => {}, warn: () => {} },
     };
     m.apply(ctx, m.Config({}));
-    if (!calls.includes("GoUsageService")) throw new Error("GoUsageService was not registered");
+    for (const service of ["GoUsageService", "ModelPurgeService", "OpencodeStoreService"]) {
+      if (!calls.includes(service)) throw new Error(service + " was not registered");
+    }
     if (!calls.includes("llm/stream")) throw new Error("llm/stream was not registered");
     process.stdout.write("ok");
   `;

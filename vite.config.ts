@@ -328,6 +328,14 @@ export default defineConfig({
           functions: 100,
           lines: 99,
         },
+        // The one installer for the remote services (P5): every branch is
+        // driven, on a real context or a stand-in composition, so 100.
+        "src/host/remote.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         "src/host/describe-graft.ts": {
           statements: 100,
           branches: 94,
@@ -349,25 +357,31 @@ export default defineConfig({
         // 100 / 98.02 / 100 / 100: the uncovered set is the same, but the
         // debug gate that names `debugFile` as the switch for both halves (D24)
         // removed reachable branches from the composition, so the same
-        // unreachable ones are a larger share of lifecycle.ts. What is left
-        // uncovered no composition reaches, and is named here rather than
-        // driven through a stand-in:
-        // - lifecycle.ts: `root.plugin()` throwing for the usage, purge and
-        //   store services (L172-173, L258-261, L283-284), `ctx.get` throwing
-        //   (L213), a usage binding whose namespace is not a string (L233), the
-        //   debug hook's `debugFile ?? ""` behind its own guard (L335), an
-        //   `llm` scope that is not a record or has no `effect` (L380-381, L385);
-        // - stream-hook.ts: `headerValueFor` answering `undefined` for a
-        //   non-empty session id (L150, L155), which it never does;
-        // - fetch-patch.ts: the report's "present" for a request key or a
-        //   captured key (L331, L333), since either one fills the wire and no
-        //   report follows, and a session header that is null after the patch
-        //   set it (L475).
+        // unreachable ones are a larger share of lifecycle.ts. P5 moved the
+        // three services' mounts to `host/remote.ts` (held at 100 by its own
+        // floor above, its throwing `plugin`, throwing `get` and non-string
+        // binding namespace covered there by `test/remote-service.test.ts`'s
+        // stand-in compositions), which left lifecycle.ts at 98.07 / 85.71 /
+        // 100 / 97.95: the same unreachable branches in a smaller file. What
+        // is left uncovered no composition reaches, and is named here, by
+        // expression rather than line, rather than driven through a stand-in:
+        // - lifecycle.ts: the debug hook's `config.debugFile ?? ""` behind its
+        //   own guard, and in `installDiscovery` an `llm` scope that is not a
+        //   record or has no `effect`;
+        // - stream-hook.ts: the two `headerValueFor(…) ??
+        //   fallbackSessionId(…)` fallbacks for a non-empty string or numeric
+        //   session id, since `headerValueFor` never answers `undefined` there;
+        // - fetch-patch.ts: the no-credential report's `requestKey ===
+        //   undefined ? "none" : "present"` and `captured === undefined ?
+        //   "none" : "present"` arms, since either key fills the wire and no
+        //   report follows, and the debug entry's `session:
+        //   headers.get(SESSION_HEADER) ?? null` after the patch set the
+        //   header.
         "src/lifecycle.ts": {
-          statements: 92.5,
-          branches: 91.5,
+          statements: 98,
+          branches: 85.5,
           functions: 100,
-          lines: 92.5,
+          lines: 97.5,
         },
         "src/stream-hook.ts": {
           statements: 100,
