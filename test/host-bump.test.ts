@@ -371,6 +371,99 @@ describe("host bump · pi, the cordis peer and the dist-tag", () => {
     }
   });
 
+  it("each README value is decided against the paragraph as it was: a floor that catches up to the old pi is written once, never rewritten again as pi", () => {
+    // Both bridges raise their pi floor to the pi the records hold today
+    // while a newer pi publishes. piFloor's new value is pi's OLD one, and
+    // pi is decided after piFloor, so a rewrite that reads the paragraph as
+    // already edited moves the floor it just wrote on to the new pi.
+    const raised = {
+      pi: "1.6.0",
+      piFloor: CHANNELS.alpha.pi,
+      piRange: `^${CHANNELS.alpha.pi}`,
+    };
+    expect(CHANNELS.rc.pi).toBe(CHANNELS.alpha.pi);
+    const plans = (["alpha", "rc"] as const).map((channel): BumpPlan => ({
+      channel,
+      from: CHANNELS[channel],
+      kind: "range",
+      moved: ["piRange", "piFloor", "pi"],
+      needsFloorCells: true,
+      notes: [],
+      to: { ...CHANNELS[channel], ...raised },
+    }));
+    const readmes = (
+      [
+        ["README.md", "**Support policy.**"],
+        ["README.zh-CN.md", "**支持策略。**"],
+      ] as const
+    ).map(([file, marker]) => ({ file, marker, text: read(file) }));
+    const texts = {
+      manifest: read("package.json"),
+      readmes,
+      records: read("test/support/host-versions.ts"),
+    };
+    // Known answer: the paragraphs name the floor and the range, and not the
+    // resolved pi, so the old pi is nothing the rewrite may touch.
+    for (const { file, text } of readmes) {
+      expect(text, file).toContain(`\`${CHANNELS.alpha.piFloor}\``);
+      expect(text, file).toContain(`\`${CHANNELS.alpha.piRange}\``);
+      expect(text, file).not.toContain(`\`${CHANNELS.alpha.pi}\``);
+      expect(text, file).not.toContain(`\`${raised.pi}\``);
+    }
+    // What the edit should be: the policy paragraph and the one after it,
+    // each value replaced once, from the text as it was.
+    const expected = readmes.map((readme) => {
+      const lines = readme.text.split("\n");
+      const policy = lines.findIndex((line) => line.startsWith(readme.marker));
+      const next = lines.findIndex(
+        (line, index) => index > policy && line !== ""
+      );
+      for (const index of [policy, next]) {
+        lines[index] = (lines[index] ?? "")
+          .replaceAll(`\`${CHANNELS.alpha.piRange}\``, `\`${raised.piRange}\``)
+          .replaceAll(`\`${CHANNELS.alpha.piFloor}\``, `\`${raised.piFloor}\``);
+      }
+      return { ...readme, text: lines.join("\n") };
+    });
+    for (const order of [plans, plans.toReversed()]) {
+      const edited = applyBumpTexts(texts, order, CHANNELS);
+      expect(edited.readmes).toStrictEqual(expected);
+      for (const { text } of edited.readmes) {
+        expect(text).not.toContain(`\`${raised.pi}\``);
+      }
+      expect(edited.unresolved).toStrictEqual({ alpha: [], rc: [] });
+    }
+    // One plan's own edit, the same rule: decided against the text it was
+    // given, so pi (absent from it) is never written.
+    const [alphaPlan] = plans as [BumpPlan, BumpPlan];
+    const single = withReadmePolicy(
+      `**Support policy.** pi \`${CHANNELS.alpha.piFloor}\`.\n`,
+      "**Support policy.**",
+      alphaPlan.from,
+      alphaPlan.to,
+      { now: CHANNELS.rc, proposed: { ...CHANNELS.rc, ...raised } }
+    );
+    expect(single).toStrictEqual({
+      text: `**Support policy.** pi \`${raised.piFloor}\`.\n`,
+      unresolved: [],
+    });
+  });
+
+  it("two fields of one move that name one value with different new values are both left for review", () => {
+    const marker = "**Support policy.**";
+    const from = { ...CHANNELS.alpha, piFloor: "1.3.0", pi: "1.3.0" };
+    const to = { ...from, piFloor: "1.4.0", pi: "1.5.0" };
+    const text = `${marker} pi \`1.3.0\`.\n`;
+    // Known answer: the same two fields moved to ONE value are rewritten.
+    const same = { ...from, piFloor: "1.4.0", pi: "1.4.0" };
+    expect(
+      withReadmePolicy(text, marker, from, same, { now: same, proposed: same })
+    ).toStrictEqual({ text: `${marker} pi \`1.4.0\`.\n`, unresolved: [] });
+    expect(
+      withReadmePolicy(text, marker, from, to, { now: to, proposed: to })
+    ).toStrictEqual({ text, unresolved: ["piFloor", "pi"] });
+  });
+
   it("pi is one value in both lockfiles: a pi move carries every record, or is held", () => {
     const view = withPi(registryOf(CHANNELS), NEXT_PI);
     const settled = plan("rc", view);
