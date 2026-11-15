@@ -1,14 +1,12 @@
 /**
  * The nightly host-drift report: the rules (`scripts/host-drift.ts`) with
- * known answers, the CLI (`scripts/report-host-drift.ts`) run against a
- * loopback registry, and the workflow step that runs it, parsed.
+ * known answers, and the workflow step that runs it, parsed. The CLI
+ * (`scripts/report-host-drift.ts`) against a loopback registry binds a socket,
+ * so it is the mock suite's (`test/mock/host-drift-cli.mock.ts`).
  *
  * @module test/host-drift
  */
-import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 
 import semver from "semver";
@@ -20,192 +18,20 @@ import {
   floorOf,
   hostDrift,
   newestIn,
-  type Packument,
   REGISTRY_PACKAGES,
   type RegistryView,
 } from "../scripts/host-drift.ts";
+import {
+  ALPHA_NEXT,
+  NEXT_ALPHA,
+  PATCHED,
+  registryOf,
+  versions,
+  withCut,
+} from "./support/host-drift-fixture.ts";
 import { type Channel, CHANNELS } from "./support/host-versions.ts";
 
 const ROOT = join(import.meta.dirname, "..");
-
-/** Run a command to completion without blocking the loopback server. */
-const run = async (
-  file: string,
-  args: readonly string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv }
-): Promise<{ stderr: string; stdout: string }> =>
-  new Promise((resolve, reject) => {
-    execFile(file, args, options, (error, stdout, stderr) => {
-      if (error === null) {
-        resolve({ stderr, stdout });
-      } else {
-        reject(new Error(`${error.message}\n${stderr}`));
-      }
-    });
-  });
-
-const versions = (...list: string[]): Packument => ({
-  versions: Object.fromEntries(list.map((version) => [version, {}])),
-});
-
-/**
- * The ranges a channel's published cluster declares for the cordis family:
- * each member's `~` range opens at the record's version, as the harness's own
- * workspace versions do at the tag.
- */
-const declaredBy = (
-  record: DriftRecord
-): Record<"appBoot" | "bridge" | "cordis" | "dsh", Packument["versions"]> => ({
-  appBoot: {
-    [record.dsh]: {
-      peerDependencies: {
-        "@deepseek-ai/cordis-plugin-group": `~${record.group}`,
-      },
-    },
-  },
-  bridge: {
-    [record.dsh]: {
-      dependencies: {
-        [REGISTRY_PACKAGES.pi]: record.piRange,
-        "@deepseek-ai/schemastery": `~${record.schemastery}`,
-      },
-      peerDependencies: {
-        [REGISTRY_PACKAGES.cordis]: `~${record.cordis}`,
-        "@deepseek-ai/cordis-plugin-loader": `~${record.loader}`,
-      },
-    },
-  },
-  cordis: {
-    [record.cordis]: {
-      dependencies: { "@deepseek-ai/cosmokit": `~${record.cosmokit}` },
-    },
-  },
-  dsh: {
-    [record.dsh]: {
-      dependencies: {
-        "@deepseek-ai/cordis-plugin-include": `~${record.include}`,
-        "@deepseek-ai/cordis-plugin-timer": `~${record.timer}`,
-      },
-    },
-  },
-});
-
-/**
- * The registry exactly as the records describe it: each channel's dsh under
- * its dist-tag, its cluster at that version declaring the record's ranges,
- * cordis at the record's version declaring cosmokit's, and every recorded pi
- * published.
- */
-const registryOf = (
-  records: Readonly<Record<string, DriftRecord>>
-): RegistryView => {
-  const all = Object.values(records);
-  const merged = (role: keyof ReturnType<typeof declaredBy>): Packument => ({
-    versions: Object.assign(
-      {},
-      ...all.map((record) => declaredBy(record)[role])
-    ),
-  });
-  return {
-    appBoot: merged("appBoot"),
-    bridge: merged("bridge"),
-    cordis: merged("cordis"),
-    dsh: {
-      "dist-tags": Object.fromEntries(
-        all.map((record) => [record.distTag, record.dsh])
-      ),
-      ...merged("dsh"),
-    },
-    pi: versions(
-      ...all.flatMap((record) => [record.pi, record.piFloor]),
-      // Never the newest 1.x: a prerelease and the next major.
-      "1.99.0-beta.1",
-      "2.0.0"
-    ),
-  };
-};
-
-/**
- * The next prerelease of a recorded version (`4.0.6-alpha.2` to
- * `4.0.6-alpha.3`), read off the record so the fixtures below keep their
- * meaning across a channel bump instead of going stale with it.
- */
-const nextPrerelease = (version: string): string => {
-  const next = semver.inc(version, "prerelease");
-  if (next === null) {
-    throw new Error(`no next prerelease for ${version}`);
-  }
-  return next;
-};
-
-/** The alpha channel's next cut: dsh and every cordis-family floor moved. */
-const NEXT_ALPHA: DriftRecord = {
-  ...CHANNELS.alpha,
-  cordis: nextPrerelease(CHANNELS.alpha.cordis),
-  cosmokit: nextPrerelease(CHANNELS.alpha.cosmokit),
-  dsh: nextPrerelease(CHANNELS.alpha.dsh),
-  group: nextPrerelease(CHANNELS.alpha.group),
-  include: nextPrerelease(CHANNELS.alpha.include),
-  loader: nextPrerelease(CHANNELS.alpha.loader),
-  schemastery: nextPrerelease(CHANNELS.alpha.schemastery),
-  timer: nextPrerelease(CHANNELS.alpha.timer),
-};
-
-/**
- * `view` with the cluster published at `version` too, declaring exactly the
- * ranges `record`'s cluster does: dsh, the app boot and the bridge.
- */
-const withCut = (
-  view: RegistryView,
-  record: DriftRecord,
-  version: string
-): RegistryView => {
-  const same = declaredBy({ ...record, dsh: version });
-  return {
-    ...view,
-    appBoot: { versions: { ...view.appBoot.versions, ...same.appBoot } },
-    bridge: { versions: { ...view.bridge.versions, ...same.bridge } },
-    dsh: { ...view.dsh, versions: { ...view.dsh.versions, ...same.dsh } },
-  };
-};
-
-/**
- * The registry with a newer patch inside every `~` range the recorded
- * clusters declare (each family member at the next prerelease, and cordis's
- * next patch declaring the next cosmokit), while the clusters themselves
- * still declare the recorded floors.
- */
-const PATCHED: RegistryView = (() => {
-  const base = registryOf(CHANNELS);
-  return {
-    ...base,
-    cordis: {
-      versions: {
-        ...base.cordis.versions,
-        ...declaredBy(NEXT_ALPHA).cordis,
-      },
-    },
-  };
-})();
-
-/** The next alpha cut: dsh moved, and its cluster's ranges open one later. */
-const ALPHA_NEXT: RegistryView = (() => {
-  const declared = declaredBy(NEXT_ALPHA);
-  return {
-    ...PATCHED,
-    appBoot: {
-      versions: { ...PATCHED.appBoot.versions, ...declared.appBoot },
-    },
-    bridge: { versions: { ...PATCHED.bridge.versions, ...declared.bridge } },
-    dsh: {
-      "dist-tags": {
-        alpha: NEXT_ALPHA.dsh,
-        [CHANNELS.rc.distTag]: CHANNELS.rc.dsh,
-      },
-      versions: { ...PATCHED.dsh.versions, ...declared.dsh },
-    },
-  };
-})();
 
 describe("host drift · the rules", () => {
   it("resolves a range as npm does: the newest admitted, a prerelease only on its own tuple", () => {
@@ -545,95 +371,6 @@ describe("host drift · the rules", () => {
       `rc: @deepseek-ai/dsh@${CHANNELS.rc.dsh} is not published; @deepseek-ai/cordis-plugin-timer was not compared`,
       `rc: @deepseek-ai/dsh-app-boot@${CHANNELS.rc.dsh} is not published; @deepseek-ai/cordis-plugin-group was not compared`,
     ]);
-  });
-});
-
-/** A loopback registry serving `packuments` by name, recording each request. */
-const serve = async (
-  packuments: Readonly<Record<string, Packument>> | number
-): Promise<{ asked: string[]; server: Server; url: string }> => {
-  const asked: string[] = [];
-  const server = createServer((request, response) => {
-    const name = decodeURIComponent((request.url ?? "").slice(1));
-    asked.push(name);
-    const body = typeof packuments === "number" ? undefined : packuments[name];
-    if (body === undefined) {
-      response.writeHead(typeof packuments === "number" ? packuments : 404);
-      response.end();
-      return;
-    }
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(body));
-  });
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const { port } = server.address() as AddressInfo;
-  return { asked, server, url: `http://127.0.0.1:${port}` };
-};
-
-const report = async (url: string) =>
-  run(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--disable-warning=ExperimentalWarning",
-      join(ROOT, "scripts", "report-host-drift.ts"),
-      "--registry",
-      url,
-    ],
-    { cwd: ROOT, env: { ...process.env, DSH_CHANNEL: "" } }
-  );
-
-describe("host drift · the CLI", () => {
-  const byName = (view: RegistryView): Record<string, Packument> =>
-    Object.fromEntries(
-      Object.entries(REGISTRY_PACKAGES).map(([role, name]) => [
-        name,
-        view[role as keyof RegistryView],
-      ])
-    );
-
-  it("prints one warning per drift and exits 0, having asked for every package", async () => {
-    const { asked, server, url } = await serve(byName(ALPHA_NEXT));
-    try {
-      const { stdout, stderr } = await report(url);
-      expect(stderr).toBe("");
-      const warnings = stdout.split("\n").filter((line) => line !== "");
-      expect(warnings).toStrictEqual(
-        hostDrift(CHANNELS, ALPHA_NEXT).map((line) => `::warning::${line}`)
-      );
-      expect(warnings.length).toBeGreaterThan(0);
-      expect(asked.toSorted()).toStrictEqual(
-        Object.values(REGISTRY_PACKAGES).toSorted()
-      );
-    } finally {
-      server.close();
-    }
-  });
-
-  it("says current when nothing moved", async () => {
-    const { server, url } = await serve(byName(registryOf(CHANNELS)));
-    try {
-      const { stdout } = await report(url);
-      expect(stdout).toBe(
-        `current: alpha dsh@${CHANNELS.alpha.dsh}, pi ${CHANNELS.alpha.pi}; rc dsh@${CHANNELS.rc.dsh}, pi ${CHANNELS.rc.pi}\n`
-      );
-    } finally {
-      server.close();
-    }
-  });
-
-  it("warns, and still exits 0, when the registry refuses", async () => {
-    const { server, url } = await serve(503);
-    try {
-      const { stdout } = await report(url);
-      expect(stdout).toMatch(
-        /^::warning::host drift not checked: the registry answered 503 for @/u
-      );
-    } finally {
-      server.close();
-    }
   });
 });
 

@@ -16,77 +16,69 @@
  * **Why a real `Context` and not an object literal.** Their plugins use
  * `new Context()` because `@deepseek-ai/cordis` is a peer dependency in every one
  * of their 312 packages. It is one here too now, so this test can mount the
- * plugin the way the Loader does — `ctx.plugin({ inject, apply })` — which means
+ * plugin the way the Loader does — `ctx.plugin({ apply, Config, inject, name })`
+ * with the row config — which means
  * cordis itself decides whether the plugin activates. A missing or wrong
  * declaration then fails HERE, in the suite, instead of throwing in a deployment
  * as `cannot get property "loader" without inject`.
  *
  * @module test/composition.test
  */
-import { Context } from "@deepseek-ai/cordis";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { type CordisContext, apply, inject } from "./support/src.ts";
+import { disposeMounted, mountPlugin, until } from "./support/composition.ts";
+import { inject, inspectPatch } from "./support/src.ts";
 
-/** The one service the plugin declares, shaped as the plugin reads it. */
+afterEach(async () => {
+  await disposeMounted();
+});
+
+/** The `llm` service, shaped as the plugin reads it, with its own discovery. */
 const llmService = () => ({
+  discoverModels: async (): Promise<unknown> => [],
   listModels: async () => [],
   listProviders: () => [],
   registerAdapter: () => () => {},
-  registerModelDiscovery: () => {},
 });
 
-/**
- * Mount the plugin the way the Loader does.
- *
- * `inject` is the plugin's OWN declaration, so cordis keeps it inactive until
- * `llm` exists — exactly the ordering a real host provides and a hand-built
- * context could not.
- */
-const mount = async (
-  options: {
-    readonly withLlm?: boolean;
-    readonly config?: Record<string, unknown>;
-  } = {}
-) => {
-  const ctx = new Context();
-  if (options.withLlm !== false) {
-    ctx.provide("llm", llmService() as never);
-  }
-  let activated = false;
-  const fiber = ctx.plugin({
-    inject,
-    apply: (scope: unknown) => {
-      activated = true;
-      apply(scope as CordisContext, options.config ?? {});
-    },
-  });
-  await fiber.await?.();
-  await new Promise((resolve) => {
-    setTimeout(resolve, 10);
-  });
-  return { activated, ctx };
-};
+/** Mount the plugin with an `llm` service, the composition's usual shape. */
+const mount = (config: Record<string, unknown> = {}) =>
+  mountPlugin({ config, llm: llmService() });
 
 describe("composition · a real cordis Context", () => {
-  it("activates only once its declared service is provided", async () => {
-    // The reason `inject` is a declaration and not a convention: without `llm`
-    // cordis must NOT run the plugin, because everything the plugin installs
-    // decorates that service.
-    const without = await mount({ withLlm: false });
-    expect(without.activated, "activated without its declared `llm`").toBe(
-      false
+  it("activates without `llm`, and what needs `llm` waits in a child scope until it is provided", async () => {
+    // The root declares nothing (`inject` is []), so its `internal/config`
+    // listener is in place before `llm` — and before pi-ai — exists. What does
+    // need `llm` is reached through `ctx.inject`, and runs only once cordis
+    // provides it.
+    expect(inject).toEqual([]);
+    const service = llmService();
+    const original = service.discoverModels;
+    const without = await mountPlugin();
+    expect(without.activated(), "the root waits for nothing").toBe(true);
+    without.ctx.provide("llm", service as never);
+    const wrapped = (): unknown =>
+      Reflect.getOwnPropertyDescriptor(service, "discoverModels")?.value;
+    await until(
+      () => wrapped() !== original,
+      "the llm scope wraps Settings' discovery"
     );
-
-    const withService = await mount();
-    expect(withService.activated).toBe(true);
+    // The `llm` scope ran: Settings' discovery is wrapped on the service.
+    const installed = wrapped();
+    expect(installed).not.toBe(original);
+    expect(inspectPatch(installed, "discoverModels")).toEqual([
+      expect.objectContaining({
+        id: "dsh-opencode-patch/model-discovery",
+        live: true,
+      }),
+    ]);
   });
 
   it("leaves the purge service reachable through ctx.get", async () => {
     // The exact failure that shipped: the service mounted, the namespace was
     // never contributed, and the row said "unavailable" forever. Here the
     // question is the consumer's, through the same access path the host uses.
-    const { ctx } = await mount({ config: { usageEnabled: false } });
+    const { ctx } = await mount({ usageEnabled: false });
     const purge = ctx.get("opencodeModelPurge") as
       | { purge?: unknown }
       | undefined;
@@ -99,17 +91,17 @@ describe("composition · a real cordis Context", () => {
     // "check this machine" button resolves the namespace at click time, and a
     // service that mounted under the wrong name answers `undefined` there — which
     // the card can only report as "this host mounted no inspection service".
-    const { ctx } = await mount({ config: { usageEnabled: false } });
+    const { ctx } = await mount({ usageEnabled: false });
     const store = ctx.get("opencodeStore") as { inspect?: unknown } | undefined;
     expect(store, "the inspection service must be reachable").toBeDefined();
     expect(typeof store?.inspect).toBe("function");
   });
 
   it("leaves the usage service reachable only while the meter is on", async () => {
-    const off = await mount({ config: { usageEnabled: false } });
+    const off = await mount({ usageEnabled: false });
     expect(off.ctx.get("opencodeGoUsage")).toBeUndefined();
 
-    const on = await mount({ config: { usageEnabled: true } });
+    const on = await mount({ usageEnabled: true });
     const usage = on.ctx.get("opencodeGoUsage") as
       | { read?: unknown }
       | undefined;
@@ -121,8 +113,8 @@ describe("composition · a real cordis Context", () => {
     // A composition without the settings service is a real deployment: the
     // card's purge row reports unavailability rather than the plugin failing to
     // load. Proven by mounting, not by reading a branch.
-    const { activated, ctx } = await mount({ config: { usageEnabled: false } });
-    expect(activated).toBe(true);
+    const { activated, ctx } = await mount({ usageEnabled: false });
+    expect(activated()).toBe(true);
     expect(ctx.get("opencodeModelPurge")).toBeDefined();
   });
 });

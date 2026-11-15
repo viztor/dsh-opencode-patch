@@ -258,17 +258,10 @@ export const ANTHROPIC_VERSION = "2023-06-01";
 /**
  * Whether a provider route is OpenCode Zen rather than Go.
  *
- * Both routes share the `opencode` prefix, so the distinguishing signal is
- * **the route's own suffix**, not the letters "go" anywhere in it.
- *
- * That distinction is not pedantry: `opencode-google` is the ZEN google route,
- * and the "go" inside "google" is not the Go plane. A substring test read it as
- * Go — a Zen route answered with the Go plane's rules, which is how the meter
- * drew the Go gauge for a Zen model and a 401 on it was filed as a missing Go
- * credential instead of a Zen one.
- *
- * The rule the rest of the plugin already uses: Go is `opencode-go` or
- * `opencode-go-*`, and everything else that names OpenCode is Zen.
+ * The Go plane is `opencode-go` and any `opencode-go-*` relay route — the rule
+ * `catalogPlaneForRoute` encodes. Everything else in the opencode family is
+ * Zen pay-as-you-go, including a route named `opencode-google`, which starts
+ * with `opencode-go` but not with `opencode-go-`.
  */
 export const isZenProvider = (provider?: string): boolean => {
   if (typeof provider !== "string") {

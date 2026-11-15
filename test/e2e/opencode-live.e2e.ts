@@ -8,7 +8,9 @@
  * both shapes are asserted against the live service rather than our idea of it.
  *
  * Opt-in via `OPENCODE_E2E=1`, and each credentialed block skips when its key is
- * absent — so forks and key-less runs stay green instead of failing on a 401.
+ * absent — so forks and key-less runs stay green instead of failing on a 401 —
+ * or when `OPENCODE_E2E_KEYED` names a tier below `full` (unset is `full`; CI
+ * runs `full` nightly and on dispatch).
  *
  *   OPENCODE_E2E=1 OPENCODE_API_KEY=… OPENCODE_GO_API_KEY=… pnpm run test:e2e
  *
@@ -19,6 +21,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { e2e } from "../support/e2e-env.ts";
 import {
   type GoUsage,
   OPENCODE_ZEN_CATALOG,
@@ -28,16 +31,18 @@ import {
   parseGoUsage,
 } from "../support/src.ts";
 
-const LIVE = process.env.OPENCODE_E2E === "1";
+/** The process's own live-suite environment, read once at import. */
+const E2E = e2e();
+
+const LIVE = E2E.live;
 
 /** Bases are overridable so the suite can be pointed at a mirror or a local stub. */
-const ZEN_BASE =
-  process.env.OPENCODE_ZEN_BASE_URL ?? "https://opencode.ai/zen/v1";
-const GO_BASE =
-  process.env.OPENCODE_GO_BASE_URL ?? "https://opencode.ai/zen/go/v1";
+const ZEN_BASE = E2E.baseOverride.zen ?? "https://opencode.ai/zen/v1";
+const GO_BASE = E2E.baseOverride.go ?? "https://opencode.ai/zen/go/v1";
 
-const ZEN_KEY = process.env.OPENCODE_API_KEY;
-const GO_KEY = process.env.OPENCODE_GO_API_KEY;
+/** What may spend a key: the keyed blocks here run on the `full` tier only. */
+const ZEN_KEY = E2E.keyFor("opencode", "full");
+const GO_KEY = E2E.keyFor("opencode-go", "full");
 
 /** Generous: these cross the public internet from CI. */
 const TIMEOUT_MS = 30_000;

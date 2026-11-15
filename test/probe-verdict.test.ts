@@ -17,10 +17,13 @@ import { describe, expect, it } from "vitest";
 import {
   accessDisabled,
   freeTierClosed,
+  freeUsageCapped,
+  freeWalkCappedReason,
+  freeWalkGap,
   gatewayBusy,
-  retiredAtTheGateway,
+  modelGone,
   usableAsSubject,
-} from "./e2e/verdict.ts";
+} from "./support/live-probe.ts";
 
 describe("the free tier's refusal", () => {
   it("is read from the body, whatever status carries it", () => {
@@ -39,6 +42,15 @@ describe("the free tier's refusal", () => {
     expect(
       freeTierClosed({ status: 403, summary: '{"type":"AuthError"}' })
     ).toBe(false);
+  });
+
+  it("includes the tier's usage cap, which is the same gate and not a busy gateway (L3)", () => {
+    const capped = {
+      status: 429,
+      summary: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+    };
+    expect(freeTierClosed(capped)).toBe(true);
+    expect(gatewayBusy(capped)).toBe(false);
   });
 });
 
@@ -68,16 +80,16 @@ describe("an account-level refusal", () => {
 
 describe("a retirement", () => {
   it("is a 410, or the vendor's word for it under another status", () => {
-    expect(retiredAtTheGateway({ status: 410, summary: "" })).toBe(true);
+    expect(modelGone({ status: 410, summary: "" })).toBe(true);
     expect(
-      retiredAtTheGateway({
+      modelGone({
         status: 200,
         summary: '{"type":"ModelDeprecated"}',
       })
     ).toBe(true);
     // The registry can still list a retired model as active — that is exactly
     // the case this rule exists for (`gemini-3-flash` was listed and refused).
-    expect(retiredAtTheGateway({ status: 200, summary: "ok" })).toBe(false);
+    expect(modelGone({ status: 200, summary: "ok" })).toBe(false);
   });
 
   it("is an upstream's withdrawal too, but only when a 400 says so", () => {
@@ -87,17 +99,17 @@ describe("a retirement", () => {
       status: 400,
       summary: "Upstream request failed: Model is unavailable",
     };
-    expect(retiredAtTheGateway(withdrawn)).toBe(true);
+    expect(modelGone(withdrawn)).toBe(true);
     expect(usableAsSubject(withdrawn)).toBe(false);
     // A 400 for any other reason is the request's fault, and a case about the
     // route has to see it rather than walk past it.
     const malformed = { status: 400, summary: "Invalid request body" };
-    expect(retiredAtTheGateway(malformed)).toBe(false);
+    expect(modelGone(malformed)).toBe(false);
     expect(usableAsSubject(malformed)).toBe(true);
     // The words under another status are not this shape.
-    expect(
-      retiredAtTheGateway({ status: 500, summary: "Model is unavailable" })
-    ).toBe(false);
+    expect(modelGone({ status: 500, summary: "Model is unavailable" })).toBe(
+      false
+    );
   });
 });
 
@@ -107,6 +119,54 @@ describe("the busy gateway", () => {
     // the account, so it must not be reported as either.
     expect(gatewayBusy({ status: 429, summary: "" })).toBe(true);
     expect(gatewayBusy({ status: 403, summary: "FreeTierError" })).toBe(false);
+  });
+});
+
+describe("why a walk of free candidates found no completion", () => {
+  const capped = {
+    status: 429,
+    summary: '{"type":"error","error":{"type":"FreeUsageLimitError"}}',
+  };
+  const gated = { status: 403, summary: '{"type":"FreeTierError"}' };
+  const busy = { status: 429, summary: "" };
+  const retired = { status: 410, summary: "" };
+
+  it("is the usage cap when any candidate met it and none was busy", () => {
+    // A walk that met the cap measured the account it spends from: reporting
+    // that as "the tier needs a session token" names a cause it cannot tell
+    // apart from the cap. The rule is ANY, not every: one capped candidate in
+    // a mixed walk (beside a gated and a withdrawn one) still reads as capped.
+    expect(freeUsageCapped(capped)).toBe(true);
+    expect(freeUsageCapped(gated)).toBe(false);
+    expect(freeWalkGap([capped, capped])).toBe("capped");
+    expect(freeWalkGap([gated, capped, retired])).toBe("capped");
+  });
+
+  it("still names a session gate the capped walk observed", () => {
+    // The skip reports the cap, but a mixed walk's FreeTierError is the signal
+    // this case exists to surface, so the reason carries it rather than
+    // dropping it.
+    expect(freeWalkCappedReason([capped, capped])).toBe(
+      "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier"
+    );
+    expect(freeWalkCappedReason([gated, capped, retired])).toBe(
+      "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier; 1 candidate also answered 403 FreeTierError (the session gate)"
+    );
+    expect(freeWalkCappedReason([gated, capped, gated])).toContain(
+      "; 2 candidates also answered 403 FreeTierError"
+    );
+  });
+
+  it("is a busy gateway first, whatever else answered", () => {
+    expect(freeWalkGap([capped, busy])).toBe("busy");
+    expect(freeWalkGap([gated, busy, retired])).toBe("busy");
+  });
+
+  it("is a closed tier when each was gated, withdrawn or never answered", () => {
+    expect(freeWalkGap([gated, retired, { status: 0, summary: "" }])).toBe(
+      "closed"
+    );
+    expect(freeWalkGap([])).toBe("closed");
   });
 });
 

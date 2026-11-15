@@ -23,8 +23,15 @@ export const LEGACY_NAME = "dsh-opencode";
 /** Pre-rename npm package; rows using it get a rename notice. */
 export const LEGACY_PKG = "@viztor/dsh-opencode";
 
-/** Host injections: the plugin needs the `llm` stream lifecycle. */
-export const inject = ["llm"];
+/**
+ * Host injections: none at the root.
+ *
+ * `llm` and `settings` are reached through `ctx.inject` child scopes, so the
+ * `internal/config` listener that keeps pi-ai off the plane routes, and the
+ * stream and fetch hooks, attach before `llm` exists — which is what lets the
+ * plugin claim the planes whichever of it and pi-ai applies first.
+ */
+export const inject: string[] = [];
 
 /**
  * The OpenCode CLI version this plugin claims to be.

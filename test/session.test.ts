@@ -21,7 +21,6 @@ import {
   newOpenCodeMessageId,
   openCodeSessionIdFor,
   readSessionMetaResolver,
-  sessionIdForRequest,
   withStore,
 } from "./support/src.ts";
 import { SESSION_RE, createMockStoreStream } from "./test-helpers.ts";
@@ -213,6 +212,17 @@ describe("withStore", () => {
 });
 
 /**
+ * The vendor's own MINT (`packages/opencode/src/id/id.ts`), restated: six bytes
+ * of `~(ms * 0x1000 + counter)` as hex, then fourteen base62. Built here rather
+ * than captured from a client, so no id in this file is one a real session sent.
+ */
+const vendorMint = (ms: number, counter: number, suffix: string): string => {
+  const mask = 2n ** 48n;
+  const time = (BigInt(ms) * 4096n + BigInt(counter)) % mask;
+  return `ses_${(mask - 1n - time).toString(16).padStart(12, "0")}${suffix}`;
+};
+
+/**
  * The vendor PARSES these ids back, so our encoding has to survive their own
  * reader. These cases run that reader — `timestamp()` from
  * `packages/opencode/src/id/id.ts` — against ids we minted. This is the
@@ -328,7 +338,9 @@ describe("session: a session id the gateway will accept", () => {
   it("accepts what the derivation produces and what the client sends", () => {
     // Measured: the client's own ids are ses_ + 12 hex + 14 base62.
     expect(isOpenCodeSessionId(openCodeSessionIdFor("abc"))).toBe(true);
-    expect(isOpenCodeSessionId("ses_ed62aae61ffeA6UwzEFN9YNKk8")).toBe(true);
+    expect(isOpenCodeSessionId(vendorMint(Date.now(), 1, "A".repeat(14)))).toBe(
+      true
+    );
   });
 
   it("lands in the admitted band by construction, not by clamping", () => {
@@ -433,72 +445,12 @@ describe("newOpenCodeMessageId: the value x-opencode-request carries", () => {
       "msg_",
       "msg_short",
       "msg_ZZZZZZZZZZZZaaaaaaaaaaaaaa",
-      "ses_ed62aae61ffeA6UwzEFN9YNKk8",
+      openCodeSessionIdFor("not-a-message"),
       "",
     ]) {
       expect(isOpenCodeMessageId(bad), bad).toBe(false);
     }
     expect(isOpenCodeMessageId(42)).toBe(false);
-  });
-});
-
-describe("session · which id a request carries", () => {
-  const VALID = `ses_0123456789ab${"A".repeat(14)}`;
-  const PINNED = `ses_abcdef012345${"B".repeat(14)}`;
-  // The "absent" case, named so it reads as a value rather than lint noise.
-  const ABSENT = undefined;
-  // A DETERMINISTIC digest: the point of injecting it is that the rule can be
-  // exercised without arranging a crypto module or depending on a real hash.
-  const digest = (value: string) => {
-    const bytes = new Uint8Array(32);
-    for (let i = 0; i < value.length; i += 1) {
-      bytes[i % 32] = (bytes[i % 32] ?? 0) + (value.codePointAt(i) ?? 0);
-    }
-    return {
-      bytes,
-      hex: [...bytes].map((b) => b.toString(16).padStart(2, "0")).join(""),
-    };
-  };
-
-  it("prefers the turn's own id above everything", () => {
-    // The only source with certainty: it is the conversation actually running.
-    expect(sessionIdForRequest(VALID, PINNED, PINNED, digest)).toBe(VALID);
-  });
-
-  it("ignores an empty turn id and falls through", () => {
-    expect(sessionIdForRequest("", PINNED, ABSENT, digest)).toBe(PINNED);
-  });
-
-  it("honours a pinned header only when the gateway would accept it", () => {
-    expect(sessionIdForRequest(ABSENT, PINNED, ABSENT, digest)).toBe(PINNED);
-    // `ses_dsh_default` starts with `ses_` and is not a session id; sending it
-    // earns a 401 that reads like a credential fault.
-    const derived = sessionIdForRequest(
-      ABSENT,
-      "ses_dsh_default",
-      ABSENT,
-      digest
-    );
-    expect(derived).not.toBe("ses_dsh_default");
-    expect(isOpenCodeSessionId(derived)).toBe(true);
-  });
-
-  it("prefers a valid pinned header over the environment", () => {
-    expect(sessionIdForRequest(ABSENT, PINNED, VALID, digest)).toBe(PINNED);
-  });
-
-  it("uses a valid pinned env id, and derives when it is not one", () => {
-    expect(sessionIdForRequest(ABSENT, ABSENT, VALID, digest)).toBe(VALID);
-    for (const bad of [undefined, null, "", "ses_dsh_default", 42]) {
-      const derived = sessionIdForRequest(ABSENT, ABSENT, bad, digest);
-      expect(isOpenCodeSessionId(derived), String(bad)).toBe(true);
-    }
-  });
-
-  it("derives the same default every time, so a conversation stays stable", () => {
-    expect(sessionIdForRequest(ABSENT, ABSENT, ABSENT, digest)).toBe(
-      sessionIdForRequest(ABSENT, ABSENT, ABSENT, digest)
-    );
   });
 });
 

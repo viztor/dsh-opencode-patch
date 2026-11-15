@@ -383,11 +383,13 @@ opencode   : 86 -> 86   + muse-spark-1.2, muse-spark-1.2-contributor-free, exo-f
                         - ll-alpha-free, claude-sonnet-4, step-5-preview-free, muse-spark-1.3-contributor-free
 ```
 
-Verified after: **0 offered models are measured dead**, and the generator reports `shim is current`. The SDK split moved with it — Zen is now 31 `@ai-sdk/openai` / 17 `@ai-sdk/anthropic` / 29 no-SDK / 1 Mistral / 8 Google — and `README.md`, `docs/redirect-planes.md` and `docs/protocol-routing-and-merge.md` were updated to match, because `catalog.test.ts` holds all three tables to the catalog.
+Verified after: **0 offered models are measured dead**, and the generator reports `shim is current`. The SDK split moved with it — Zen is now 31 `@ai-sdk/openai` / 17 `@ai-sdk/anthropic` / 29 no-SDK / 1 Mistral / 8 Google — and `README.md`, `docs/redirect-planes.md` and `docs/protocol-routing-and-merge.md` were updated to match, because `catalog-docs.test.ts` holds all three tables to the catalog.
 
 Fixture ids that pointed at now-dead models were retargeted to served ones: `step-5-preview-free` → `space-bunny-free` (or `cat-jam-free` where both planes are needed), `muse-spark-1.3-contributor-free` → `muse-spark-1.2-contributor-free` (still `@ai-sdk/openai`, still free, still answers `403`).
 
 ## 3.10 The picker and the protocol-routed models — the fix was withdrawn
+
+> **Superseded by P-R1 (D13).** There is one route per plane now, and no `internalRouteFor`: the plane adapter serves every protocol a plane carries on the plane's own route, and lists exactly the declared ids. The invariants this section describes are held by `test/mock/plane-dispatch.mock.ts` (every declared id dispatches on its protocol's path) and the declared-listing cases in `test/host-planes-credentials.test.ts` ("lists every declared id on both planes, keyless or not"); `test/picker-integration.test.ts` went with the hidden routes. The section is kept as the record of why a route's list is not ours to widen, which still holds.
 
 `buildModelCatalog` (the composer's list) is `listProviders()` × `listModels(id)`, read from the host's own `@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js`. The internal protocol routes are hidden from `listProviders`, and each carries only its own protocol's models, because `registerResponsesProvider` builds every route with `sdksForProtocol(protocol).flatMap(sdk => modelsForSdk(sdk, catalog))`.
 
@@ -405,6 +407,8 @@ The rule that replaced it: **a route's list is not ours to widen.** `listModels`
 
 ## 3.11 The provider list was wrong in both directions — FIXED
 
+> **Superseded by P-R1 (D19).** There are no mounted routes, no Google bridge and no `SELF_MOUNTED_ROUTES` any more. `DEFAULT_PROVIDERS` is the two planes, and `providers` always includes both, whatever the row says (`src/config.ts`); `test/config.test.ts` ("always claims both planes, whatever the row lists") and `test/deleted-settings.test.ts` ("the shipped row claims exactly the two planes") hold that. The section is kept as the record of the drift.
+
 `DEFAULT_PROVIDERS` exists to cover every route this layer mounts; an unclaimed route gets no session header, no origin headers and no key injection, silently and only on the requests that reach it. It was wrong twice:
 
 - **missing `opencode-google`**, which the Google bridge mounts rather than the wrapper (`SELF_MOUNTED_ROUTES` excludes it from the mount loop, which is why it was easy to miss). It matters because a deployment that declares a Google-protocol model gets it dispatched to this route, and an unclaimed route would send it without the gateway headers.
@@ -417,7 +421,7 @@ The row's `providers` list REPLACES the code default, so the two drifting apart 
 Most of this document exists because four separate bugs had the same invisible shape: a model that is dropped is not filtered, not deprecated and not erroring — it is simply absent. Each was found with a hand-written script that was then thrown away. That script is now kept:
 
 ```sh
-pnpm run catalog:verify        # offline: shim, join, routing, free-tier tools
+pnpm run catalog:verify        # offline: shim, declared list, routing, free-tier tools
 pnpm run catalog:verify:probe  # adds a live probe of every offered model
 ```
 
@@ -425,7 +429,7 @@ It checks, and exits non-zero on any failure:
 
 1. **Shim freshness** — the bundled `catalog-data.ts` equals the live registry exactly (both come from the same parser over the same payload). What the registry should have flagged but did not is the probe's business, not this check's.
 2. **Dead rows** (`--probe`) — no offered model answers `400 Model is unavailable` or `410 ModelDeprecated`.
-3. **The picker's join** — every servable model reaches the parent route's list.
+3. **The declared list** — the composer's source (`planeProfileFor`) publishes exactly the ids a plane declares: nothing added and nothing missing. Settings' fetch offers the catalog; the composer never widens.
 4. **Routing** — every servable model resolves to a route this plugin mounts.
 5. **Free-tier tools** — every free model gets the core-tool fallback.
 

@@ -30,6 +30,11 @@ import {
 import { opencodeDatabasePath } from "./opencode-paths.ts";
 import { readOpencodeCredentials } from "./opencode-store.ts";
 import { isRecord } from "./utils/guards.ts";
+import {
+  foreignCredentialsRealm,
+  pluginMarkerOf,
+  type RealmSide,
+} from "./utils/plane-ownership.ts";
 
 /** Gateway settings found in other entries, if any. */
 export interface DiscoveredGoConfig {
@@ -95,6 +100,27 @@ const readProviderRow = (
   }
 };
 
+/** A property read that a hostile or half-built value cannot throw out of. */
+const readSafely = (value: unknown, key: string): unknown => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A provider row this discovery may read: a record that carries no other
+ * plugin's `x-opencode-plugin` marker (D27). A marked route belongs to the
+ * plugin that wrote it, and so do its key reference, its literal key and its
+ * base.
+ */
+const ownRow = (row: unknown): row is Record<string, unknown> =>
+  isRecord(row) && pluginMarkerOf(row) === undefined;
+
 /**
  * Auto-discover OpenCode Go provider configuration from loaded Cordis
  * entries (e.g. llm-pi-ai), honoring both shapes it ships in: a
@@ -104,6 +130,14 @@ const readProviderRow = (
  * and `opencode` (Zen), or any provider pointing to `opencode.ai`.
  *
  * Later entries win, mirroring composition order.
+ *
+ * **Another plugin's entry is never read** (D27): a row whose credentials
+ * resolve in a realm this context does not resolve (the route claim's own
+ * rule, `utils/plane-ownership.ts`), and a provider row that carries the
+ * `x-opencode-plugin` marker. Its reference names a credential this context
+ * cannot see, or can see only by accident through the environment, and its
+ * base is that plugin's gateway: the meter sends neither the other plugin's
+ * token nor the user's own key there.
  *
  * @param ctx - the plugin context, mock or real.
  * @param targetProvider - optional specific provider route id to prioritize.
@@ -118,6 +152,14 @@ export const discoverGoConfig = (
   if (loader === undefined) {
     return result;
   }
+  const own: RealmSide = {
+    context: ctx,
+    options: readSafely(
+      readSafely(readSafely(ctx, "fiber"), "entry"),
+      "options"
+    ),
+  };
+  const root = readSafely(ctx, "root");
 
   for (const entry of loader.entries()) {
     if (!isRecord(entry)) {
@@ -131,6 +173,15 @@ export const discoverGoConfig = (
     if (!isRecord(config)) {
       continue;
     }
+    if (
+      foreignCredentialsRealm(
+        { context: readSafely(entry, "ctx"), options },
+        own,
+        root
+      ) !== undefined
+    ) {
+      continue;
+    }
 
     // 1. Providers inside a provider registry like llm-pi-ai.
     const providers: unknown = config.providers;
@@ -138,18 +189,18 @@ export const discoverGoConfig = (
       if (
         typeof targetProvider === "string" &&
         targetProvider.length > 0 &&
-        isRecord(providers[targetProvider])
+        ownRow(providers[targetProvider])
       ) {
         readProviderRow(providers[targetProvider], result);
         continue;
       }
-      if (isRecord(providers["opencode-go"])) {
+      if (ownRow(providers["opencode-go"])) {
         readProviderRow(providers["opencode-go"], result);
-      } else if (isRecord(providers.opencode)) {
+      } else if (ownRow(providers.opencode)) {
         readProviderRow(providers.opencode, result);
       } else {
         for (const pRow of Object.values(providers)) {
-          if (isRecord(pRow)) {
+          if (ownRow(pRow)) {
             const bUrl: unknown = pRow.baseURL;
             if (typeof bUrl === "string" && bUrl.includes("opencode.ai")) {
               readProviderRow(pRow, result);
@@ -161,6 +212,9 @@ export const discoverGoConfig = (
     }
 
     // 2. Standalone provider entries like `id: opencode-go` or `id: opencode`.
+    if (!ownRow(config)) {
+      continue;
+    }
     const { id, name } = options;
     if (
       typeof targetProvider === "string" &&
@@ -283,9 +337,12 @@ type KeySourceStep =
  * then credentials/env, then any captured key. `request` promotes both captured
  * steps above the declared sources; `configured` does the reverse.
  *
- * Tier safety is orthogonal and applies to all three: a step that returns a key
- * for the wrong tier is never consulted, because the Go endpoint rejects a Zen
- * key outright.
+ * The captured steps read only keys filed under the Go plane, in all three
+ * policies — but a key is filed by the plane its request went to, not by what
+ * it is entitled to. Nothing here can tell a Zen key from a Go key: a Go entry
+ * without `apiKeyEnv` sends pi's `OPENCODE_API_KEY` on its turns (D20), that
+ * bearer is filed as a Go key, and `auto` then sends it to the Go usage
+ * endpoint, which refuses it. Naming the reference on the Go entry is the fix.
  *
  * The store is appended to all three, and to none of them in the middle: the
  * policy orders the sources the user declared, and the installation's store is
@@ -532,118 +589,4 @@ export const resolveZenCreditInfo = async (
 
   const zenKey = await resolveRef(ctx, "OPENCODE_API_KEY");
   return { isConfigured: zenKey !== undefined };
-};
-
-/** One model entry as the operator declared it in a provider row. */
-export interface DeclaredModel {
-  readonly id: string;
-  readonly name?: string;
-}
-
-/**
- * The models a provider row DECLARES, read from the loader's configuration.
- *
- * **Credential-free, which is the point.** `ctx.llm.listModels(route)` resolves
- * the route's credential first and answers `[]` when it cannot, so at boot — the
- * ordinary case — a route that declares nineteen models reads as declaring none.
- * Measured consequences, both from the same cause:
- *
- *   - no internal route was mounted for the plane;
- *   - the composer's picker offered none of that route's models at all.
- *
- * The declaration itself needs no credential: it is the `models:` array the
- * operator wrote, in the loader entry's config — the same shape
- * {@link discoverGoConfig} already walks.
- *
- * `ctx.get` first, because `ctx.loader` throws without the name in `inject`; the
- * property is the guarded fallback for a context that serves only that.
- *
- * @param ctx - the host context.
- * @param route - the provider route id (`opencode`, `opencode-go`, ...).
- * @returns the declared entries, or `undefined` when the loader holds no row for
- *   that route — "cannot read" and "declares nothing" must stay distinguishable.
- */
-export const declaredProviderModels = (
-  ctx: unknown,
-  route: string
-): readonly DeclaredModel[] | undefined => {
-  if (!isRecord(ctx)) {
-    return undefined;
-  }
-  let loader: unknown;
-  const { get } = ctx as { get?: unknown };
-  if (typeof get === "function") {
-    try {
-      loader = Reflect.apply(get, ctx, ["loader"]);
-    } catch {
-      loader = undefined;
-    }
-  }
-  if (loader === undefined) {
-    try {
-      const { loader: viaProperty } = ctx as { loader?: unknown };
-      loader = viaProperty;
-    } catch {
-      return undefined;
-    }
-  }
-  if (!isRecord(loader) || typeof loader.entries !== "function") {
-    return undefined;
-  }
-  let entries: unknown;
-  try {
-    entries = Reflect.apply(loader.entries, loader, []);
-  } catch {
-    return undefined;
-  }
-  // **An ITERABLE, not an array.** The host's `loader.entries()` is a
-  // generator (`cordis-plugin-loader/lib/index.js`: `*entries() { for (const
-  // entry of Object.values(this.store)) yield entry; … }`), so an
-  // `Array.isArray` guard rejected it and this reader answered `undefined` for
-  // a loader that was working perfectly — measured as the routes still not
-  // mounting after the first version of this fix.
-  if (entries === null || typeof entries !== "object") {
-    return undefined;
-  }
-  if (
-    typeof (entries as { [Symbol.iterator]?: unknown })[Symbol.iterator] !==
-    "function"
-  ) {
-    return undefined;
-  }
-  const declared: DeclaredModel[] = [];
-  let found = false;
-  for (const entry of entries as Iterable<unknown>) {
-    if (!isRecord(entry) || !isRecord(entry.options)) {
-      continue;
-    }
-    const config: unknown = entry.options.config;
-    if (!isRecord(config) || !isRecord(config.providers)) {
-      continue;
-    }
-    const provider: unknown = config.providers[route];
-    if (!isRecord(provider)) {
-      continue;
-    }
-    found = true;
-    const models: unknown = provider.models;
-    if (!Array.isArray(models)) {
-      continue;
-    }
-    for (const model of models) {
-      if (!isRecord(model) || typeof model.id !== "string") {
-        continue;
-      }
-      if (model.id.length === 0) {
-        continue;
-      }
-      declared.push({
-        id: model.id,
-        ...(typeof model.name === "string" && model.name.length > 0
-          ? { name: model.name }
-          : {}),
-      });
-    }
-  }
-  return found ? declared : undefined;
 };

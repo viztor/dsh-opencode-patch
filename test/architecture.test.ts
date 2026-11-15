@@ -165,7 +165,9 @@ describe("architecture · a property read is a declared dependency", () => {
     "on",
     "plugin",
     "provide",
+    "registry",
     "root",
+    "waterfall",
   ]);
 
   /**
@@ -174,7 +176,7 @@ describe("architecture · a property read is a declared dependency", () => {
    * Every read there is optional (`ctx.remote === undefined`,
    * `ctx.slots?.inject?.(…)`), which is the pattern the host half must use for
    * its optional services and does. They are not `inject` declarations because
-   * the host plugin declares only `llm` — see the next test.
+   * the host plugin declares nothing at its root — see the next test.
    */
   const CLIENT_OPTIONAL = new Set([
     "configForms",
@@ -184,8 +186,12 @@ describe("architecture · a property read is a declared dependency", () => {
     "slots",
   ]);
 
-  /** The one service the plugin DECLARES, so reading it as a property is right. */
-  const DECLARED = new Set(["llm"]);
+  /**
+   * The services the plugin DECLARES at its root, so reading one as a property
+   * is right: none. `llm` and `settings` are reached through `ctx.inject`
+   * child scopes, as `scope.llm`.
+   */
+  const DECLARED = new Set<string>();
 
   /** Every `ctx.<name>` in a file, excluding `ctx.get("name")`. */
   const serviceReads = (file: string): string[] => {
@@ -213,7 +219,7 @@ describe("architecture · a property read is a declared dependency", () => {
 
   const sourceFiles = (): string[] => filesUnder(SRC);
 
-  it("reads no host service as a property except the declared `llm`", () => {
+  it("reads no host service as a property: the root declares none", () => {
     // Cordis THROWS `cannot get property "X" without inject` for an undeclared
     // name, and its `inject` form has no required/optional split: a declared
     // service is REQUIRED, so declaring the optional ones would stop the plugin
@@ -233,9 +239,9 @@ describe("architecture · a property read is a declared dependency", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("declares `llm`, the one service the plugin cannot work without", async () => {
+  it("declares no service at the root, so its config listener attaches before `llm` exists", async () => {
     const { inject } = await import("./support/src.ts");
-    expect(inject).toContain("llm");
+    expect(inject).toEqual([]);
   });
 });
 
@@ -564,7 +570,8 @@ describe("architecture · the host bundle mutates no registry it does not own", 
   it("walks a graph that actually contains the host modules", () => {
     const graph = runtimeGraph(ENTRY);
     expect(graph.has("stream-hook.ts")).toBe(true);
-    expect(graph.has("responses-provider.ts")).toBe(true);
+    expect(graph.has("host/route-claim.ts")).toBe(true);
+    expect(graph.has("host/plane-provider.ts")).toBe(true);
     expect(graph.has("settings-page.tsx")).toBe(false);
     expect(REGISTRY_WRITE.test('llm.adapters.delete("opencode")')).toBe(true);
     expect(REGISTRY_WRITE.test('llm.adapters?.delete("opencode")')).toBe(true);
@@ -646,8 +653,8 @@ describe("architecture · host methods are wrapped only through patchMethod", ()
       // A prototype swap shadows a method without leaving an own property.
       "Reflect.setPrototypeOf(llm, proto);",
       "Object.setPrototypeOf(adapter, proto);",
-      // The receiver reached through a property path, as decoratePlaneAdapters
-      // reaches the adapter.
+      // The receiver reached through a property path, as the plane-adapter
+      // decoration P-R1 deleted reached the adapter.
       "Object.assign(registration?.adapter, { modelOf: wrapped });",
       'Object.defineProperty(this.llm, "listModels", { value: wrapped });',
     ].join("\n");
@@ -925,5 +932,157 @@ describe("architecture · every test reaches src through one door", () => {
       ];
     });
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("architecture · the unit run binds no socket", () => {
+  const TEST_DIR = import.meta.dirname;
+
+  /** A module whose only use in a test is a server or a raw socket. */
+  const SOCKET_MODULE = /^(?:node:)?(?:dgram|http|http2|https|net|tls)$/u;
+
+  /** A call that binds or serves: a server, the mock gateway, a listen. */
+  const SOCKET_CALL =
+    /\b(?:createServer|startMockGateway)\s*\(|\.listen\s*\(/gu;
+
+  /**
+   * Every socket use in one file's comment-blanked source: a runtime import
+   * of a socket module (a type-only one is erased, so it binds nothing) and a
+   * call that binds, each as `file:line why`.
+   */
+  const socketUsesIn = (file: string, raw: string): string[] => {
+    const source = stripComments(raw);
+    const imports = runtimeImportsOf(source)
+      .filter((specifier) => SOCKET_MODULE.test(specifier))
+      .map((specifier) => `${file} imports ${specifier}`);
+    const calls = [...source.matchAll(SOCKET_CALL)].map((match) => {
+      const line = source.slice(0, match.index).split("\n").length;
+      return `${file}:${String(line)} ${match[0].trim()}`;
+    });
+    return [...imports, ...calls];
+  };
+
+  /**
+   * The files the unit run loads from `test/`: every unit test file and,
+   * transitively, every module inside `test/` one of them imports at runtime
+   * (a support module, a helper, a mock module a unit case borrows a pure
+   * half from). This file is left out: its planted rows are its subject.
+   */
+  const unitGraph = (): Map<string, string> => {
+    const seen = new Map<string, string>();
+    const visit = (file: string): void => {
+      if (seen.has(file) || !existsSync(join(TEST_DIR, file))) {
+        return;
+      }
+      const raw = readFileSync(join(TEST_DIR, file), "utf8");
+      seen.set(file, raw);
+      for (const specifier of runtimeImportsOf(stripComments(raw))) {
+        if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
+          continue;
+        }
+        const target = posix.normalize(
+          posix.join(posix.dirname(file), specifier)
+        );
+        if (!target.startsWith("../")) {
+          visit(target);
+        }
+      }
+    };
+    for (const file of filesUnder(TEST_DIR)) {
+      if (/\.test\.tsx?$/u.test(file) && file !== "architecture.test.ts") {
+        visit(file);
+      }
+    }
+    return seen;
+  };
+
+  it("walks a graph that reaches the support modules and the borrowed mock half", () => {
+    const files = [...unitGraph().keys()];
+    expect(files).toContain("support/host.ts");
+    expect(files).toContain("support/catalogs.ts");
+    // `keyed-probes.test.ts` borrows the gateway's pure request handler, so
+    // the walk crosses into `mock/` and the gate reads what it loads there.
+    expect(files).toContain("mock/opencode-gateway.ts");
+    expect(files).not.toContain("architecture.test.ts");
+  });
+
+  it("no unit test, nor any test module it loads, imports a socket module or binds one", () => {
+    // The offline guard admits loopback, so it cannot hold this; a case that
+    // needs a socket belongs to the mock suite (`test/mock/*.mock.ts`).
+    const offenders = [...unitGraph()].flatMap(([file, raw]) =>
+      socketUsesIn(file, raw)
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags a planted use of each kind, in code but not in a comment, so a pass means something", () => {
+    const planted = [
+      'import { createServer } from "node:http";',
+      'import net from "node:net";',
+      'import type { IncomingMessage } from "node:http";',
+      "// createServer(() => {}).listen(0);",
+      "const server = createServer(handler);",
+      'server.listen(0, "127.0.0.1");',
+      "const gateway = await startMockGateway();",
+    ].join("\n");
+    expect(socketUsesIn("planted.ts", planted)).toEqual([
+      "planted.ts imports node:http",
+      "planted.ts imports node:net",
+      "planted.ts:5 createServer(",
+      "planted.ts:6 .listen(",
+      "planted.ts:7 startMockGateway(",
+    ]);
+  });
+});
+
+describe("architecture · the coverage floors name files that exist", () => {
+  it("every per-file threshold key in vite.config.ts is a source file", () => {
+    // A floor on a file that moved or was deleted is a floor on nothing: the
+    // threshold silently stops measuring. Read from the config's text, which is
+    // what the coverage run reads.
+    const config = readFileSync(
+      join(import.meta.dirname, "..", "vite.config.ts"),
+      "utf8"
+    );
+    const keys = [...config.matchAll(/^\s*"(src\/[^"]+)":\s*\{/gmu)].map(
+      (match) => match[1] ?? ""
+    );
+    expect(keys.length, "the config must name per-file floors").toBeGreaterThan(
+      0
+    );
+    const ROOT = join(import.meta.dirname, "..");
+    expect(keys.filter((key) => !existsSync(join(ROOT, key)))).toEqual([]);
+    // The pattern reads a planted key, so an empty answer above means something.
+    expect(
+      [...plantedFloor().matchAll(/^\s*"(src\/[^"]+)":\s*\{/gmu)].map(
+        (match) => match[1]
+      )
+    ).toEqual(["src/x.ts"]);
+  });
+});
+
+/** A config fragment with one per-file floor, for the pattern's known answer. */
+const plantedFloor = (): string =>
+  ["thresholds: {", '  "src/x.ts": {', "    lines: 100,", "  },", "}"].join(
+    "\n"
+  );
+
+describe("architecture · the modules the plane routes replaced are gone", () => {
+  it("no hidden-route mount, protocol table, Gemini bridge, pi model builder or replay translator is left in src", () => {
+    // P-R1 (D13): the plugin serves each plane through its own adapter, so
+    // the modules that mounted pi-ai a second time under hidden routes, and
+    // the translators that kept a Gemini replay across two provider labels,
+    // have nothing left to do. Their survivors live in `utils/protocols.ts`.
+    const ROOT = join(import.meta.dirname, "..");
+    const replaced = [
+      "src/responses-provider.ts",
+      "src/responses-routes.ts",
+      "src/google-bridge.ts",
+      "src/pi-provider.ts",
+      "src/utils/google-replay.ts",
+    ];
+    expect(replaced.filter((file) => existsSync(join(ROOT, file)))).toEqual([]);
+    // The check reads the tree: the module that took their place is there.
+    expect(existsSync(join(ROOT, "src/utils/protocols.ts"))).toBe(true);
   });
 });

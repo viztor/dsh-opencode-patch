@@ -88,7 +88,7 @@ The report was `400 ModelProtocolUnsupported` from a session, and it is reproduc
 
 All three were listed on the same route, which declares `api: openai-completions`. The last two do not speak that protocol, so choosing either one cannot work — and the routing this plugin exists to do is what would have moved them to a route that does.
 
-**It cannot, because those routes are not registered.** Measured against a real deployment's config: `opencode-responses` is present, `opencode-anthropic` and `opencode-google` are not. The plugin registers model discovery for `opencode` and `opencode-go` only, so the two routes the extra protocols need are the deployment's to write — which is the thing the core model says a user should never have to do.
+**It cannot, because those routes are not registered.** Measured against a real deployment's config: `opencode-responses` is present, `opencode-anthropic` and `opencode-google` are not. At the time the plugin registered model discovery for `opencode` and `opencode-go` only (P3 removed those registrations; Settings' fetch now goes through pi-ai's namespace and the plugin's wrapper), so the two routes the extra protocols needed were the deployment's to write — which is the thing the core model says a user should never have to do.
 
 So the fix belongs here rather than in anyone's profile: the routes for the other protocols have to come from the plugin, the way the completions route already does. Until they do, a model that names an SDK other than completions is offered on a route that cannot serve it, and the answer is the `400` above.
 
@@ -228,7 +228,7 @@ Worth keeping separate because the conclusions differ: the first is fixed by not
 
 ## Every count in the documentation, checked against the data
 
-Two were missed while chasing the catalog's changes — Go's total and its no-SDK row — so the sweep was finished properly: every number stated in any document, compared against `catalog-data.ts`, and every live count in the docs agreed with the shim of that day. The counts are deliberately not restated here, because the shim has been regenerated since and a number in this paragraph is one no test reads: the current ones are the dated tables in [`redirect-planes.md`](./redirect-planes.md) §1 and §2, which `test/catalog.test.ts` reads back against the shipped shim.
+Two were missed while chasing the catalog's changes — Go's total and its no-SDK row — so the sweep was finished properly: every number stated in any document, compared against `catalog-data.ts`, and every live count in the docs agreed with the shim of that day. The counts are deliberately not restated here, because the shim has been regenerated since and a number in this paragraph is one no test reads: the current ones are the dated tables in [`redirect-planes.md`](./redirect-planes.md) §1 and §2, which `test/catalog-docs.test.ts` reads back against the shipped shim.
 
 Two numbers that look stale are not, and they are worth naming so the next sweep does not "fix" them: `0 of 31` appears once, inside this file, as a quotation of the mistake; and `16 of 17` is a recorded test result from the round that narrowed the header test, not a count of anything current.
 
@@ -318,13 +318,13 @@ So the class has one member left standing rather than a pattern, which is the po
 
 ## Why one document's counts never drifted, and the others' did
 
-`protocol-routing-and-merge.md` states five counts — 28, 30, 18, 8 and 1 of 85 — and every one is correct, which is not luck. The document says why in its own words: _"a count written into prose does not regenerate with the data it counts"_, and it names the test that holds them. `catalog.test.ts` asserts the table against the shipped catalog, so a count that drifts fails the suite rather than sitting in a file.
+`protocol-routing-and-merge.md` states five counts — 28, 30, 18, 8 and 1 of 85 — and every one is correct, which is not luck. The document says why in its own words: _"a count written into prose does not regenerate with the data it counts"_, and it names the test that holds them. `catalog-docs.test.ts` asserts the table against the shipped catalog, so a count that drifts fails the suite rather than sitting in a file.
 
 That is the difference between the counts that were wrong this session and this one. The ones that drifted — Go 31, the Zen total in the plane table, the duplicated 12 and 13, the Chinese README's Google line — were all prose that nothing checked. The fix in each case was to correct it; the fix that would have prevented all of them is the one this document already applies, and it is worth copying rather than rediscovering: put the number where a test can reach it.
 
 ## The prose totals are still unguarded, and the attempt to guard them is recorded
 
-`catalog.test.ts` already parses and asserts the tables in three documents — the README's routing table, `protocol-routing-and-merge.md`'s "N of M" pairs, and `redirect-planes.md`'s per-SDK matrix. Every count this repository has had to correct lived outside them, in a sentence: the README's total, the Chinese README's copy of it, and the plane table's "85 served / 120 listed". The mechanism that would have caught all three exists and is not pointed at them.
+`catalog-docs.test.ts` already parses and asserts the tables in three documents — the README's routing table, `protocol-routing-and-merge.md`'s "N of M" pairs, and `redirect-planes.md`'s per-SDK matrix. Every count this repository has had to correct lived outside them, in a sentence: the README's total, the Chinese README's copy of it, and the plane table's "85 served / 120 listed". The mechanism that would have caught all three exists and is not pointed at them.
 
 An attempt to add that case was made and reverted. The regex had to allow for the number being emphasised (`**85** active`), the escaping survived one round of edits and not the second, and the file ended up with no tests running at all. Reverted rather than left half-working, which is this session's rule and the reason the tree is green.
 
@@ -471,20 +471,22 @@ It died without a closing message, so the four questions it was given were answe
 
 Still open from that subagent's brief: the exact AI SDK wire body on 1.19.5's default path (`max_tokens` versus `max_completion_tokens`, `stream_options`, `store`, `prompt_cache_key`, `strict`) — the pinned AI SDK versions are not in this checkout and the earlier comparison flagged its own answer as read from a different version.
 
-## The mount's base URL should be data, and what it takes to make it so
+## The mount's base URL was a constant, and how it became data
 
-`src/pi-provider.ts` hard-codes the family in `BASE_FOR_PROTOCOL` — `https://opencode.ai/zen/v1` and `…/zen/go/v1`. That is the value the **1.19-era** catalogs declare (`models.dev`'s `opencode.api` and `opencode-go.api`), so it is right for the generation this plugin emulates; what is wrong is that it is a constant rather than a fact the shim carries.
+_Superseded by P-R1 (D13, D26); kept as the reasoning that led there._ The base is data now: the generated shim carries the catalog's own addresses (`OPENCODE_PLANE_API` and the per-SDK `OPENCODE_FAMILY_API` in `src/catalog-data.ts`, which is what steps 1 and 2 below became), and `baseUrlFor` in `src/utils/plane-model.ts` reads the endpoint family table over them. That table is the only base source; pi's own catalog base is never read, so a pi that reshapes its catalog moves no turn.
 
-The client resolves the same value from the catalog at runtime — `models-dev.ts:107` lifts `provider.api` into `settings.baseURL` — so a deployment whose catalog moves to the newer family gets the newer endpoint without a code change. The plugin cannot, and its shim has no place to put one: `src/catalog-data.ts` exports only the retired set and the two model arrays.
+What it replaced: `src/pi-provider.ts`, deleted by P-R1, hard-coded the family in `BASE_FOR_PROTOCOL` — `https://opencode.ai/zen/v1` and `…/zen/go/v1`. That was the value the **1.19-era** catalogs declare (`models.dev`'s `opencode.api` and `opencode-go.api`), so it was right for the generation this plugin emulates; what was wrong is that it was a constant rather than a fact the shim carried.
 
-To make it data, four things together:
+The client resolves the same value from the catalog at runtime — `models-dev.ts:107` lifts `provider.api` into `settings.baseURL` — so a deployment whose catalog moves to the newer family gets the newer endpoint without a code change. The plugin could not, and its shim had no place to put one: `src/catalog-data.ts` then exported only the retired set and the two model arrays.
 
-1. the generator reads `api` from each provider entry of `models.dev` and emits a third export, e.g. `OPENCODE_PLANE_API: Readonly<Record<Plane, string>>`;
+The plan to make it data had four steps, taken together:
+
+1. the generator reads `api` from each provider entry of `models.dev` and emits a third export, `OPENCODE_PLANE_API: Readonly<Record<Plane, string>>`;
 2. the shim is regenerated, so the file carries the value rather than a person;
-3. `pi-provider.ts` reads that export in `BASE_FOR_PROTOCOL` instead of the literal map;
+3. the provider module reads that export instead of the literal map;
 4. tests assert the constant agrees with the data.
 
-Steps 1 and 2 alone change nothing, and step 3 without 1 or 2 moves a constant. They belong in one piece.
+Steps 1 and 2 alone changed nothing, and step 3 without 1 or 2 would have moved a constant. Steps 1 and 2 shipped; P-R1 took steps 3 and 4 into the plane model, whose family table reads the generated exports.
 
 ## `x-opencode-request` is sent again — minted, because the message id is not reachable from here
 
@@ -552,7 +554,7 @@ It could not have been wired, and the reason is read from the host's llm runtime
 2. **Only the owner moves its routes.** A registration's routes change through its own `handle.replace`, the method `registerAdapter` returns on its handle (`:421-428`). Nothing else is an API for it.
 3. **The owner's disposer deletes what it still believes it holds.** On dispose, the registration deletes every route in its `owned` set and emits `llm/adapters-updated` (`registerAdapter`'s disposer, `:411-416`). An entry deleted from outside leaves pi-ai's registration believing it still owns the route, so its next dispose or restart deletes OUR entry — the plane then answers `NO_ADAPTER` — and its next `replace` registers over us. This failure mode is read from the host's disposer and has not been run. S0's handback failed for a different reason: the prototype released its registration while its own config listener was still live (see the plan's spike record), which is why P-R1 calls its handle and then makes its listener inert in one synchronous section, with no await between them, and restarts pi-ai only after both (the plan's Teardown).
 
-What the plugin does instead (D13, landing in P-R1 as `src/host/route-claim.ts`): keep pi-ai from claiming `opencode` / `opencode-go` in the first place, through the config waterfall — a prepended `internal/config` listener strips the two plane keys from a copy of the config pi-ai reads — and register its own adapter under the same ids through the ordinary `registerAdapter`. On teardown it releases its own handle and restarts pi-ai, which hands the routes back. It never deletes another plugin's registration; `test/architecture.test.ts` fails the build on a direct `adapters.delete` / `set` / `clear` call (optional chaining included) anywhere in `lifecycle.ts`'s static import graph.
+What the plugin does instead (D13, landing in P-R1 as `src/host/route-claim.ts`): keep pi-ai from claiming `opencode` / `opencode-go` in the first place, through the config waterfall — an `internal/config` listener (prepended as first designed; appended since the claim speaks both cordis cores' call shapes, inner to the schema, the loader's interpolate and pi-ai's own listener) strips the plane keys it takes from a copy of the config pi-ai reads (an entry another plugin owns stays pi-ai's, D27) — and register its own adapter under those ids through the ordinary `registerAdapter`. On teardown it releases its own handle and, when it took a plane, restarts pi-ai, which hands the routes back. It never deletes another plugin's registration; `test/architecture.test.ts` fails the build on a direct `adapters.delete` / `set` / `clear` call (optional chaining included) anywhere in `lifecycle.ts`'s static import graph.
 
 ## A placeholder in a string has no spelling this linter accepts
 

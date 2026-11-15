@@ -13,6 +13,15 @@
  * it validates the next config, persists it atomically under the profile's file
  * lock, and lets the Loader reconcile the change. Nothing here writes YAML.
  *
+ * **Another plugin's entry is never rewritten** (D27): a plane entry carrying
+ * the `x-opencode-plugin` marker, and every plane entry of a row whose
+ * credentials resolve in a realm this service's context does not (the route
+ * claim's own rule, `utils/plane-ownership.ts`). Such an entry is served by
+ * pi-ai for the plugin that wrote it, which judges its models by its own
+ * workspace, not by this plugin's catalog; a row of it may also sit in a home
+ * patch the editor refuses to write. A reference to a route only such entries
+ * declare is left alone for the same reason.
+ *
  * @module dsh-opencode-patch/purge-service
  */
 
@@ -32,6 +41,11 @@ import {
   type PurgedModel,
 } from "./purge-contract.ts";
 import { isRecord } from "./utils/guards.ts";
+import {
+  foreignCredentialsRealm,
+  pluginMarkerOf,
+  type RealmSide,
+} from "./utils/plane-ownership.ts";
 
 /** A provider route the plugin knows how to read a plane from. */
 const PLANES: readonly { route: string; plane: "go" | "zen" }[] = [
@@ -85,14 +99,70 @@ const idOf = (model: unknown): string | undefined => {
  *
  * A route this plugin does not own answers `false`: another vendor's model ids
  * are not ours to retire, and guessing would delete references we cannot check.
+ * That includes a plane route only another plugin's entries declare (D27).
  *
- * @param route - the provider route, as the profile spells it.
- * @param id - the model id.
- * @returns whether our catalog has retired it.
+ * @param foreign - the plane routes only another plugin's entries declare.
+ * @returns the judge for one `(route, id)` reference.
  */
-const isRetiredOnOwnedRoute = (route: string, id: string): boolean => {
-  const plane = PLANES.find((candidate) => candidate.route === route)?.plane;
-  return plane !== undefined && isDeprecatedModelOn(plane, id);
+const isRetiredOnOwnedRoute =
+  (foreign: ReadonlySet<string>) =>
+  (route: string, id: string): boolean => {
+    const plane = PLANES.find((candidate) => candidate.route === route)?.plane;
+    return (
+      plane !== undefined &&
+      !foreign.has(route) &&
+      isDeprecatedModelOn(plane, id)
+    );
+  };
+
+/** A property read that a hostile or half-built value cannot throw out of. */
+const readSafely = (value: unknown, key: string): unknown => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
+};
+
+/** An editor entry's provider dict, when its options carry one. */
+const providersOf = (entry: unknown): Record<string, unknown> | undefined => {
+  const options = readSafely(entry, "options");
+  const config = isRecord(options) ? options.config : undefined;
+  const providers = isRecord(config) ? config.providers : undefined;
+  return isRecord(providers) ? providers : undefined;
+};
+
+/**
+ * The plane routes an entry declares, split by whether this plugin may
+ * rewrite them: another plugin owns every route of a row in a realm `own`
+ * does not resolve, and a route carrying the marker (D27).
+ */
+const planeRoutesOf = (
+  entry: unknown,
+  own: RealmSide,
+  root: unknown
+): { readonly owned: string[]; readonly foreign: string[] } => {
+  const providers = providersOf(entry);
+  const declared = PLANES.map(({ route }) => route).filter((route) =>
+    isRecord(providers?.[route])
+  );
+  const realm = foreignCredentialsRealm(
+    {
+      context: readSafely(entry, "ctx"),
+      options: readSafely(entry, "options"),
+    },
+    own,
+    root
+  );
+  const isForeign = (route: string): boolean =>
+    realm !== undefined || pluginMarkerOf(providers?.[route]) !== undefined;
+  return {
+    foreign: declared.filter((route) => isForeign(route)),
+    owned: declared.filter((route) => !isForeign(route)),
+  };
 };
 
 /**
@@ -198,26 +268,40 @@ export class ModelPurgeService extends TypertRemoteService {
     // that never happened.
     const catalogRead = didCatalogRefreshSucceed();
 
-    const entries = editor.entries().filter((entry) => {
-      const config = isRecord(entry) ? entry.options : undefined;
-      const options = isRecord(config) ? config : undefined;
-      const raw = isRecord(options?.config) ? options.config : undefined;
-      const providers = isRecord(raw?.providers) ? raw.providers : undefined;
-      return (
-        providers !== undefined &&
-        PLANES.some(({ route }) => isRecord(providers[route]))
-      );
-    });
-    if (entries.length === 0) {
+    // The service's own context decides the realm: it resolves `credentials`
+    // in the process-wide realm, where the user's own rows do.
+    const own: RealmSide = { context: this.ctx };
+    const root = readSafely(this.ctx, "root");
+    const ownedRoutes = new Map<unknown, readonly string[]>();
+    const declaredOwned = new Set<string>();
+    const declaredForeign = new Set<string>();
+    for (const entry of editor.entries()) {
+      const { owned, foreign } = planeRoutesOf(entry, own, root);
+      if (owned.length > 0) {
+        ownedRoutes.set(entry, owned);
+      }
+      for (const route of owned) {
+        declaredOwned.add(route);
+      }
+      for (const route of foreign) {
+        declaredForeign.add(route);
+      }
+    }
+    if (ownedRoutes.size === 0) {
       throw new RemoteError(
         PURGE_UNAVAILABLE,
-        "No profile entry declares an opencode provider, so there is nothing to purge",
+        declaredForeign.size === 0
+          ? "No profile entry declares an opencode provider, so there is nothing to purge"
+          : "Every opencode provider in the profile is another plugin's, so there is nothing to purge",
         { configured: false, retainPrevious: false, retryable: false }
       );
     }
+    const isRetired = isRetiredOnOwnedRoute(
+      new Set([...declaredForeign].filter((route) => !declaredOwned.has(route)))
+    );
 
     const removed: PurgedModel[] = [];
-    for (const entry of entries) {
+    for (const [entry, routes] of ownedRoutes) {
       // Collected per entry, then appended. NOT a fix for anything: an `edit`
       // that throws propagates out of `purge()` before the return, so the report
       // can never describe a rejected edit either way (checked, so this comment
@@ -230,6 +314,9 @@ export class ModelPurgeService extends TypertRemoteService {
           ? { ...current.providers }
           : {};
         for (const { route, plane } of PLANES) {
+          if (!routes.includes(route)) {
+            continue;
+          }
           const declared = modelsOf(providers[route]);
           if (declared === undefined) {
             continue;
@@ -269,17 +356,14 @@ export class ModelPurgeService extends TypertRemoteService {
       // Decided before the write so an entry with nothing to strip is not
       // rewritten at all: an unconditional edit would mark every entry dirty on
       // every click.
-      if (
-        stripRetiredReferences(config, isRetiredOnOwnedRoute).removed.length ===
-        0
-      ) {
+      if (stripRetiredReferences(config, isRetired).removed.length === 0) {
         continue;
       }
       const entryRemoved: PurgedModel[] = [];
       await editor.edit(entry, (current) => {
         const { next, removed: gone } = stripRetiredReferences(
           current,
-          isRetiredOnOwnedRoute
+          isRetired
         );
         entryRemoved.push(...gone);
         return next;

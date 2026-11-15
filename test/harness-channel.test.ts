@@ -383,8 +383,9 @@ describe("harness channel alignment · declarations", () => {
   });
 
   it("declares no pi range narrower than the union of the channels' ranges, and pi at runtime not at all", () => {
-    // The bridge brings pi; the plugin declares none at runtime (the Google
-    // bridge loads the host's copy). The suite imports pi directly, so it is a
+    // The bridge brings pi; the plugin declares none at runtime (the plane
+    // adapter is built from the host's own pi, found by
+    // src/host/host-modules.ts). The suite imports pi directly, so it is a
     // devDependency, at the union of both channels' ranges, which is what
     // lets each channel's lockfile pin the version that channel resolves.
     const declared = manifest();

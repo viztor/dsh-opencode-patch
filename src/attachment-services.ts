@@ -16,7 +16,7 @@ const optionalService = (ctx: unknown, name: string) => {
             () => () => {
               if (current === service) current = undefined;
             },
-            "google bridge: optional attachment service",
+            "plane adapter: optional attachment service",
           ]);
         }
       },

@@ -6,6 +6,7 @@
  * `status: "deprecated"` id and drops it from the active set — so these tests
  * seed the module through the parser rather than inventing a second list.
  */
+import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,7 +14,6 @@ import {
   parseModelsDevCatalog,
   stripRetiredReferences,
 } from "./support/src.ts";
-import { createMockContext } from "./test-helpers.ts";
 
 /** A registry reply with one retired id per plane and one live id beside it. */
 const registry = () => ({
@@ -66,12 +66,14 @@ const editorWith = (models: {
   return { edit, entries: () => [entry], entry };
 };
 
-/** A Cordis-shaped context: the Remote base needs `reflect`, the service `get`. */
-const ctxWith = (editor: unknown) =>
-  ({
-    ...(createMockContext() as object),
-    get: (name: string) => (name === "configEditor" ? editor : undefined),
-  }) as never;
+/** A real cordis context, holding the config editor when there is one. */
+const ctxWith = (editor: unknown): Context => {
+  const ctx = new Context();
+  if (editor !== undefined) {
+    ctx.provide("configEditor" as never, editor as never);
+  }
+  return ctx;
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -514,6 +516,130 @@ describe("purge: references that are not provider declarations", () => {
     // unconditional edit would mark every entry dirty on every click.
     expect(edit).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(untouched.options.config)).toBe(before);
+  });
+});
+
+describe("purge: an entry another plugin owns is left to it (D27)", () => {
+  /** An editor whose `edit` applies the change to the entry it is handed. */
+  const applyingEditor = (entries: readonly unknown[]) => {
+    const edit = vi.fn(
+      async (
+        entry: unknown,
+        change: (current: Record<string, unknown>) => Record<string, unknown>
+      ) => {
+        const holder = entry as {
+          options: { config: Record<string, unknown> };
+        };
+        holder.options.config = change(holder.options.config);
+      }
+    );
+    return { edit, entries: () => entries };
+  };
+
+  const MARKER = { "x-opencode-plugin": "vendor/1.0.0" } as const;
+
+  it("rewrites the unmarked plane and never the marked one beside it, nor a row in a realm the plugin does not share, nor a reference to a route only they declare", async () => {
+    parseModelsDevCatalog(registry());
+    answersRegistry();
+    // The user's own row: a marked `opencode` beside an unmarked `opencode-go`.
+    const split = {
+      options: {
+        config: {
+          providers: {
+            opencode: {
+              headers: { ...MARKER },
+              models: [{ id: "fledge-alpha-free" }, { id: "live-a" }],
+            },
+            "opencode-go": {
+              models: [{ id: "step-5-preview-free" }, { id: "live-b" }],
+            },
+          },
+        },
+        id: "llm-pi-ai",
+      },
+    };
+    // A second pi-ai row whose credentials resolve in another plugin's realm.
+    const realmRow = {
+      options: {
+        config: {
+          providers: {
+            opencode: { models: [{ id: "fledge-alpha-free" }] },
+          },
+        },
+        id: "llm-pi-ai:vendor",
+        isolate: { credentials: "vendor-realm" },
+      },
+    };
+    // References on both routes: `opencode` is declared only by entries the
+    // plugin leaves alone, so its references are not the plugin's to judge.
+    const subagent = {
+      options: {
+        config: {
+          allowedModels: [
+            { model: "fledge-alpha-free", provider: "opencode" },
+            { model: "step-5-preview-free", provider: "opencode-go" },
+          ],
+        },
+        id: "subagent",
+      },
+    };
+    const realmBefore = structuredClone(realmRow.options.config);
+    const editor = applyingEditor([split, realmRow, subagent]);
+
+    const result = await new ModelPurgeService(ctxWith(editor)).purge();
+
+    expect(result.removed).toEqual([
+      { id: "step-5-preview-free", provider: "opencode-go" },
+      { id: "step-5-preview-free", provider: "opencode-go", site: "subagent" },
+    ]);
+    expect(split.options.config.providers.opencode.models).toEqual([
+      { id: "fledge-alpha-free" },
+      { id: "live-a" },
+    ]);
+    expect(split.options.config.providers["opencode-go"].models).toEqual([
+      { id: "live-b" },
+    ]);
+    expect(realmRow.options.config).toEqual(realmBefore);
+    expect(editor.edit.mock.calls.map(([entry]) => entry)).not.toContain(
+      realmRow
+    );
+    expect(subagent.options.config.allowedModels).toEqual([
+      { model: "fledge-alpha-free", provider: "opencode" },
+    ]);
+  });
+
+  it("refuses, writing nothing, when every plane entry is another plugin's", async () => {
+    parseModelsDevCatalog(registry());
+    answersRegistry();
+    const marked = {
+      options: {
+        config: {
+          providers: {
+            opencode: {
+              headers: { "X-OpenCode-Plugin": "vendor/1.0.0" },
+              models: [{ id: "fledge-alpha-free" }],
+            },
+          },
+        },
+        id: "llm-pi-ai",
+      },
+    };
+    const realmRow = {
+      options: {
+        config: {
+          providers: {
+            "opencode-go": { models: [{ id: "step-5-preview-free" }] },
+          },
+        },
+        id: "llm-pi-ai:vendor",
+        isolate: { credentials: true },
+      },
+    };
+    const editor = applyingEditor([marked, realmRow]);
+    await expect(
+      new ModelPurgeService(ctxWith(editor)).purge()
+    ).rejects.toMatchObject({ code: "opencode/purge-unavailable" });
+    expect(editor.edit).not.toHaveBeenCalled();
   });
 });
 

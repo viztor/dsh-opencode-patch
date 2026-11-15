@@ -1,5 +1,7 @@
 # OpenCode Implementation Parity & Architecture Specification
 
+> **Historical: this document does not describe the current tree.** Its routing rows — `internalRouteFor`, the mounted `opencode-responses`/`opencode-anthropic`/`opencode-google` child routes, `maxContextWindow`, `decorateModelInfo`/`decoratePlaneAdapters`, `src/responses-routes.ts`, `src/responses-provider.ts`, `src/google-bridge.ts` — were superseded by P-R1, which serves both planes on their own routes through the plugin's plane adapter; read [protocol-routing-and-merge.md](./protocol-routing-and-merge.md) and [redirect-planes.md](./redirect-planes.md) instead. Its login rows (`console-auth.ts`, `login-flow.ts`, `token-store.ts`, the OAuth precedence) describe `v2` work that is not in `main`; [credentials.md](./credentials.md) says what is. Kept as record, not as specification.
+
 This document defines the complete architectural parity plan between `dsh-opencode-patch` and the official OpenCode CLI engine (`opencode`). It details how the DeepSeek Harness (DSH) integration achieves full protocol, credential, session, and catalog fidelity, and establishes the contracts for data model separation and domain boundaries.
 
 ---

@@ -16,7 +16,6 @@ import {
   DEFAULT_KEY_SOURCE,
   ENDPOINT_FAMILIES,
   KEY_SOURCE_POLICIES,
-  type ModelOverrideConfig,
   type PluginConfig,
   isOpenCodeRequest,
   resolveConfig,
@@ -30,16 +29,7 @@ afterEach(() => {
 describe("resolveConfig", () => {
   it("fills default providers, toggles, and debug flags", () => {
     const resolved = resolveConfig({});
-    expect([...resolved.providers]).toEqual([
-      "opencode",
-      "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
-    ]);
+    expect([...resolved.providers]).toEqual(["opencode", "opencode-go"]);
     expect(resolved.debug).toBe(false);
     expect(resolved.debugFile).toBeUndefined();
     expect(resolved.injectUserAgent).toBe(true);
@@ -89,79 +79,6 @@ describe("resolveConfig", () => {
     expect(resolved.enrichModels).toBe(true);
   });
 
-  it("resolves and validates maxContextWindow when specified", () => {
-    expect(resolveConfig({}).maxContextWindow).toBeUndefined();
-    expect(resolveConfig({ maxContextWindow: 262_144 }).maxContextWindow).toBe(
-      262_144
-    );
-    expect(
-      resolveConfig({ maxContextWindow: "131072" as unknown as number })
-        .maxContextWindow
-    ).toBe(131_072);
-    expect(
-      resolveConfig({ maxContextWindow: -100 }).maxContextWindow
-    ).toBeUndefined();
-    expect(
-      resolveConfig({ maxContextWindow: 0 }).maxContextWindow
-    ).toBeUndefined();
-    expect(
-      resolveConfig({ maxContextWindow: "invalid" as unknown as number })
-        .maxContextWindow
-    ).toBeUndefined();
-  });
-
-  it("resolves and validates modelOverrides when specified", () => {
-    expect(resolveConfig({}).modelOverrides).toEqual({});
-    const overrides = {
-      "gpt-5.4": {
-        contextWindow: 131_072,
-        cost: { cache_read: 0.1, input: 1.5, output: 8 },
-        inputModalities: ["text" as const, "image" as const],
-        maxTokens: 32_000,
-        name: "GPT-5.4 Custom",
-        reasoningEfforts: ["none", "high"],
-      },
-    };
-    const resolved = resolveConfig({ modelOverrides: overrides });
-    expect(resolved.modelOverrides["gpt-5.4"]).toEqual(overrides["gpt-5.4"]);
-
-    // Test alias keys and edge cases
-    const aliasOverrides = {
-      "gemini-3.8-flash": {
-        context_window: 262_144,
-        cost: { cache_write: 0.2, input: 0.5, output: 2 },
-        efforts: ["minimal", "medium"],
-        max_output_tokens: 16_384,
-        modalities: ["text", "image"],
-      },
-      "invalid-entry": null,
-    };
-    const resolvedAliases = resolveConfig({
-      modelOverrides: aliasOverrides as unknown as Record<
-        string,
-        ModelOverrideConfig
-      >,
-    });
-    expect(resolvedAliases.modelOverrides["gemini-3.8-flash"]).toEqual({
-      contextWindow: 262_144,
-      cost: { cache_write: 0.2, input: 0.5, output: 2 },
-      inputModalities: ["text", "image"],
-      maxTokens: 16_384,
-      reasoningEfforts: ["minimal", "medium"],
-    });
-    expect(resolvedAliases.modelOverrides["invalid-entry"]).toBeUndefined();
-
-    // Invalid non-record input yields empty record
-    expect(
-      resolveConfig({
-        modelOverrides: "invalid" as unknown as Record<
-          string,
-          ModelOverrideConfig
-        >,
-      }).modelOverrides
-    ).toEqual({});
-  });
-
   it("preserves custom providers and configuration overrides", () => {
     const resolved = resolveConfig({
       debug: true,
@@ -172,7 +89,10 @@ describe("resolveConfig", () => {
       providers: ["custom-opencode", "opencode-dev"],
       userAgent: "my-custom-ua/1.0",
     });
+    // The planes are always claimed (D19): a custom list adds to them.
     expect([...resolved.providers]).toEqual([
+      "opencode",
+      "opencode-go",
       "custom-opencode",
       "opencode-dev",
     ]);
@@ -188,22 +108,10 @@ describe("resolveConfig", () => {
     expect([...resolveConfig({ providers: [] }).providers]).toEqual([
       "opencode",
       "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
     ]);
     expect([...resolveConfig({ providers: [""] }).providers]).toEqual([
       "opencode",
       "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
     ]);
   });
 
@@ -226,16 +134,7 @@ describe("resolveConfig", () => {
     expect(defaults.injectProject).toBe(true);
     expect(defaults.freeModelMarker).toBe("free");
     expect(defaults.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
-    expect([...defaults.providers]).toEqual([
-      "opencode",
-      "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
-    ]);
+    expect([...defaults.providers]).toEqual(["opencode", "opencode-go"]);
 
     const custom = resolveConfig({
       freeModelMarker: "  preview  ",
@@ -250,7 +149,11 @@ describe("resolveConfig", () => {
     expect(custom.injectProject).toBe(false);
     expect(custom.freeModelMarker).toBe("preview");
     expect(custom.sessionIdEnv).toBe("MY_SESSION");
-    expect([...custom.providers]).toEqual(["go-relay"]);
+    expect([...custom.providers]).toEqual([
+      "opencode",
+      "opencode-go",
+      "go-relay",
+    ]);
 
     // Blank strings and empty lists fall back instead of disabling the knob.
     const blank = resolveConfig({
@@ -268,16 +171,7 @@ describe("resolveConfig", () => {
     expect(blank.injectProject).toBe(true);
     expect(blank.freeModelMarker).toBe("free");
     expect(blank.sessionIdEnv).toBe("OPENCODE_SESSION_ID");
-    expect([...blank.providers]).toEqual([
-      "opencode",
-      "opencode-go",
-      "opencode-responses",
-      "opencode-anthropic",
-      "opencode-google",
-      "opencode-go-responses",
-      "opencode-go-anthropic",
-      "opencode-go-google",
-    ]);
+    expect([...blank.providers]).toEqual(["opencode", "opencode-go"]);
   });
 });
 
@@ -294,6 +188,42 @@ describe("Config schema", () => {
     expect(result).not.toBeInstanceOf(Promise);
     expect((result as { issues?: unknown }).issues).toBeUndefined();
     expect(resolveConfig(stale)).not.toHaveProperty("internalRoutes");
+  });
+
+  it("accepts a stale row carrying modelOverrides, maxContextWindow and modelRoutes, and ignores them", () => {
+    // Removed in 1.x (D19): what a catalog row and the user's own model row
+    // already say. A deployment upgrading from 1.4 still carries them, and the
+    // host validates the row before the plugin loads, so an issue here would
+    // stop the plugin rather than retire three keys.
+    const stale = {
+      maxContextWindow: 1,
+      modelOverrides: {},
+      modelRoutes: {},
+    } as unknown as PluginConfig;
+    expect(() => Config(stale)).not.toThrow();
+    const result = Config["~standard"].validate(stale);
+    expect(result).not.toBeInstanceOf(Promise);
+    expect((result as { issues?: unknown }).issues).toBeUndefined();
+    const resolved = resolveConfig(stale);
+    expect(resolved).not.toHaveProperty("maxContextWindow");
+    expect(resolved).not.toHaveProperty("modelOverrides");
+    expect(resolved).not.toHaveProperty("modelRoutes");
+    // The read is real: a live key resolves beside the stale ones.
+    expect(resolved.endpoint).toBe("auto");
+  });
+
+  it("always claims both planes, whatever the row lists", () => {
+    // `providers` names the routes whose turns the plugin decorates; the two
+    // planes are the plugin's own routes, so a row cannot opt them out.
+    expect([...resolveConfig({ providers: ["x"] }).providers]).toEqual([
+      "opencode",
+      "opencode-go",
+      "x",
+    ]);
+    expect([
+      ...resolveConfig({ providers: ["opencode-go", "x", "opencode"] })
+        .providers,
+    ]).toEqual(["opencode", "opencode-go", "x"]);
   });
 
   it("validates an empty row to the documented defaults", () => {
@@ -316,9 +246,6 @@ describe("Config schema", () => {
         "injectProject",
         "injectUserAgent",
         "keySource",
-        "maxContextWindow",
-        "modelOverrides",
-        "modelRoutes",
         "originClient",
         "providers",
         "readOpencodeStore",
@@ -342,16 +269,7 @@ describe("Config schema", () => {
       injectUserAgent: true,
       keySource: "auto",
       originClient: "cli",
-      providers: new Set([
-        "opencode",
-        "opencode-go",
-        "opencode-responses",
-        "opencode-anthropic",
-        "opencode-google",
-        "opencode-go-responses",
-        "opencode-go-anthropic",
-        "opencode-go-google",
-      ]),
+      providers: new Set(["opencode", "opencode-go"]),
       readOpencodeStore: false,
       sessionIdEnv: "OPENCODE_SESSION_ID",
       usageBaseURL: "https://opencode.ai/zen/go/v1",
@@ -410,16 +328,7 @@ describe("Config schema", () => {
 });
 
 describe("isOpenCodeRequest (endpoint differentiation)", () => {
-  const providers = new Set([
-    "opencode",
-    "opencode-go",
-    "opencode-responses",
-    "opencode-anthropic",
-    "opencode-google",
-    "opencode-go-responses",
-    "opencode-go-anthropic",
-    "opencode-go-google",
-  ]);
+  const providers = new Set(["opencode", "opencode-go"]);
 
   it("identifies opencode.ai/zen endpoints", () => {
     expect(
@@ -520,55 +429,5 @@ describe("isOpenCodeRequest (endpoint differentiation)", () => {
         providers
       )
     ).toBe(false);
-  });
-});
-
-describe("config · modelRoutes", () => {
-  it("reads api and baseURL, accepting the snake_case spelling too", () => {
-    // A deployment may write `base_url`; both spellings name the same thing, and
-    // the camelCase one wins when both are present.
-    // `base_url` is the spelling a deployment may write; the TYPE names only
-    // the camelCase one, so the raw config is widened here and nowhere else.
-    const raw = {
-      modelRoutes: {
-        "claude-sonnet-4-5": { api: "anthropic", baseURL: "https://a.example" },
-        "gpt-5.4": { base_url: "https://b.example" },
-        both: {
-          baseURL: "https://camel.example",
-          base_url: "https://snake.example",
-        },
-      },
-    };
-    const config = resolveConfig(raw as never);
-    expect(config.modelRoutes["claude-sonnet-4-5"]).toEqual({
-      api: "anthropic",
-      baseURL: "https://a.example",
-    });
-    expect(config.modelRoutes["gpt-5.4"]).toEqual({
-      baseURL: "https://b.example",
-    });
-    expect(config.modelRoutes.both).toEqual({
-      baseURL: "https://camel.example",
-    });
-  });
-
-  it("drops an entry with no route rather than repairing it", () => {
-    // A typo must not silently pin a model to an endpoint nobody meant.
-    const config = resolveConfig({
-      modelRoutes: {
-        empty: {},
-        "wrong-case": { API: "anthropic" },
-        wrongType: { api: 42, baseURL: 7 },
-        notAnObject: "https://nope.example",
-        good: { api: "anthropic" },
-      } as never,
-    });
-    expect(Object.keys(config.modelRoutes)).toEqual(["good"]);
-  });
-
-  it("answers no overrides for a value that is not an object", () => {
-    for (const modelRoutes of [undefined, null, "routes", 42, []]) {
-      expect(resolveConfig({ modelRoutes } as never).modelRoutes).toEqual({});
-    }
   });
 });

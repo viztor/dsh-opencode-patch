@@ -1,9 +1,9 @@
 /**
  * The one way this plugin wraps a method on a host object.
  *
- * Every instance patch in `src/` goes through {@link patchMethod}: the listing,
- * discovery and model-info wrappers on the `llm` service and the plane adapters'
- * `resolveModel`, `prepareCall` and `modelOf` (all in `models-discovery.ts`).
+ * Every instance patch in `src/` goes through {@link patchMethod}; today two
+ * sites: model discovery (`models-discovery.ts`) and the `settings.describe`
+ * graft (`host/describe-graft.ts`).
  * Wrapping an INSTANCE is enough because the host resolves a service method per
  * call (F20: the gateway reads it with `Reflect.get` at dispatch), so a wrapper
  * set on the instance is what every later caller runs.
@@ -323,21 +323,16 @@ export const inspectPatch = (
  * Install now, and again after every `llm/adapters-updated`, for a site that
  * has to follow the adapter registry rather than the registry it saw first.
  *
- * Wired to no site yet: on the plane-adapter decoration it would wrap pi-ai's
- * shared adapter in the plugin-first order too, and flip the host
- * characterization's `[KNOWN_DEFECT]` rows.
+ * No site uses it today: no site wraps a shared adapter.
  *
  * Two things the first caller has to know. The listener reinstalls on EVERY
  * registry change while it is live, the caller's own included, so a caller that
  * also registers adapters disposes this BEFORE it releases them: the release
  * emits `llm/adapters-updated` synchronously, and a live listener would
- * reinstall the site once per registration the release withdraws (today each
- * Google bridge handle and the mounted pi-ai's adapter handle; its
- * configurable-provider registration is answered locally by the mount's facade
- * and emits nothing). The fetch-patch cleanup in `lifecycle.ts` releases the
- * hidden routes first, so order it there when this is wired. And `install` runs synchronously inside the host's per-listener
- * `try`/`catch` in `LlmRuntime.emitAdaptersUpdated`, so a throw from a
- * reinstall is logged by the host, not propagated to the plugin.
+ * reinstall the site once per registration the release withdraws. And
+ * `install` runs synchronously inside the host's per-listener `try`/`catch` in
+ * `LlmRuntime.emitAdaptersUpdated`, so a throw from a reinstall is logged by
+ * the host, not propagated to the plugin.
  *
  * @param ctx - the context whose (global) registry events to follow.
  * @param install - one install; answers its disposer, or `undefined`.

@@ -3,11 +3,11 @@
  * not produced yet.
  *
  * Every case here is a divergence between the two planes — a model free on one
- * and paid on the other, priced differently, served by a different SDK. The
- * real catalogue disagrees about the PRICES today (two models), and agrees
- * about everything else, so a test built on the real catalogue cannot tell a
- * plane-aware lookup from a plane-blind one: both pass. That is the gap this
- * file closes, using `test/support/catalogs.ts` to build the row.
+ * and paid on the other, priced differently, served by a different SDK. Which
+ * of those the real catalogue disagrees about is the vendor's to change, and
+ * where it agrees, a test built on it cannot tell a plane-aware lookup from a
+ * plane-blind one: both pass. That is the gap this file closes, using
+ * `test/support/catalogs.ts` to build the row.
  *
  * @module test/plane-divergence.test
  */
@@ -45,8 +45,8 @@ describe("the free flag is the plane's row", () => {
 
 describe("a turn is priced from the plane's own rate", () => {
   it("prices the same id differently when the planes' rates differ", () => {
-    // The shape `deepseek-v4.1-flash` has in the real catalogue: $0.30 output
-    // on Zen, $0.15 on Go. The cost is per MILLION tokens, so one million
+    // A shared id priced at a different rate on each plane (here Zen's input
+    // rate is twice Go's). The cost is per MILLION tokens, so one million
     // input tokens is the rate itself.
     const rows = divergent("acme-flash", {
       go: { input: 0.15, output: 0.6 },

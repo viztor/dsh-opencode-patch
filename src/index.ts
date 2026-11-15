@@ -17,8 +17,6 @@ export { inject, name } from "./identity.ts";
 export { apply } from "./lifecycle.ts";
 export {
   Config,
-  type ModelOverrideConfig,
-  type ModelRouteConfig,
   type PluginConfig,
   type ResolvedPluginConfig,
 } from "./config.ts";

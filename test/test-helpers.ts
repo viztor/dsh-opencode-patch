@@ -26,7 +26,12 @@ export const createMockStoreStream = async function* createMockStoreStream(
   yield als.getStore()?.value;
 };
 
-export const isRecord = (value: unknown): value is Record<string, unknown> => {
+/**
+ * The oracle's own object guard. Not exported: a test takes `isRecord` from the
+ * door, and this file cannot, because the jsdom tests import it and must not
+ * load the host graph the door re-exports.
+ */
+const isRecord = (value: unknown): value is Record<string, unknown> => {
   if (value === null || value === undefined) {
     return false;
   }
@@ -60,6 +65,14 @@ export const toolNamesOf = (body: unknown): string[] | undefined => {
     }
   }
   return names;
+};
+
+/** The URL a `fetch` input names, whichever of its three shapes it is. */
+export const urlOf = (input: RequestInfo | URL): string => {
+  if (typeof input === "string") {
+    return input;
+  }
+  return input instanceof URL ? input.href : input.url;
 };
 
 export const parseJsonBody = (body: unknown): unknown => {
@@ -141,13 +154,7 @@ export const createCaptureFetch = (text = "ok") => {
     input: RequestInfo | URL,
     init?: RequestInit
   ): Promise<Response> => {
-    if (typeof input === "string") {
-      capture.url = input;
-    } else if (input instanceof URL) {
-      capture.url = input.toString();
-    } else {
-      capture.url = input.url;
-    }
+    capture.url = urlOf(input);
     capture.init = init;
     return Promise.resolve(new Response(text));
   };
@@ -156,23 +163,6 @@ export const createCaptureFetch = (text = "ok") => {
 
 export const headerOf = (init: RequestInit | undefined, field: string) =>
   new Headers(init?.headers).get(field);
-
-/** No-op disposer: tests register remotes but never tear them down. */
-const disposeNoop = (): void => {
-  // intentionally empty — nothing to dispose in a test process
-};
-
-/**
- * Minimal Cordis-shaped context for services that only need `reflect.provide`
- * to register a remote. Cast is deliberate: the real context is host-owned and
- * unavailable to the test process.
- */
-export const createMockContext = () =>
-  ({
-    // Faithful to Cordis: `provide` returns the disposer that unregisters
-    // the contribution.
-    reflect: { provide: () => disposeNoop },
-  }) as never;
 
 /* ------------------------------------------------ React element tree helpers */
 

@@ -1,0 +1,325 @@
+/**
+ * Sending one raw request to the gateway, the way the live suites do.
+ *
+ * The live protocol-routing suite writes its probes by hand: a path, an auth
+ * convention and a body per protocol, with the headers the plugin injects.
+ * That is what makes a probe an exact oracle for the vendor, and it is also
+ * what the live adapter blocks need to CONFIRM that the vendor withdrew a
+ * model before they skip it: a turn through the plane adapter that answers
+ * "Model is unavailable" says nothing on its own, because the gateway gives
+ * the same answer for an id the plugin sent to the wrong place
+ * (`docs/upstream-findings.md` §3.8). So the tables and the send live here,
+ * shared by `test/e2e/protocol-routing.e2e.ts` and
+ * `test/e2e/dispatch-levels.e2e.ts`.
+ *
+ * It also holds how an answer is READ — the rules that decide whether a live
+ * case skips, walks on or fails ({@link accessDisabled}, {@link modelGone},
+ * {@link freeTierClosed}, {@link gatewayBusy}, {@link freeWalkGap},
+ * {@link usableAsSubject}) — beside the send, so one module owns the vendor's
+ * refusal shapes and a predicate that lives in a closure is never the only
+ * copy: `test/probe-verdict.test.ts` and `test/live-probe.test.ts` exercise
+ * them offline.
+ *
+ * Network only when {@link sendProbe} is called; nothing here runs on import.
+ *
+ * @module test/support/live-probe
+ */
+import { OPENCODE_UA, openCodeSessionIdFor } from "./src.ts";
+
+/**
+ * The path each protocol uses against an OVERRIDDEN base, which is read as a
+ * legacy-family base (`…/zen/v1`): one base for every protocol.
+ */
+export const PATH_FOR: Readonly<Record<string, string>> = {
+  "anthropic-messages": "/messages",
+  // The Gemini path carries the MODEL in the URL, not the body, so the probe
+  // substitutes the `{model}` placeholder the same way the wire does.
+  "google-generative-ai": "/models/{model}:streamGenerateContent?alt=sse",
+  "openai-completions": "/chat/completions",
+  "openai-responses": "/responses",
+};
+
+/**
+ * The path each protocol appends to the base the plugin's model names: pi's
+ * Anthropic client appends `/v1/messages` to a base without `/v1`, the others
+ * append their own path to a base that carries its version.
+ */
+export const PLUGIN_PATH_FOR: Readonly<Record<string, string>> = {
+  "anthropic-messages": "/v1/messages",
+  "google-generative-ai": "/models/{model}:streamGenerateContent?alt=sse",
+  "openai-completions": "/chat/completions",
+  "openai-responses": "/responses",
+};
+
+/**
+ * Each endpoint's OWN auth convention.
+ *
+ * `/messages` is the Anthropic Messages shape, which reads `x-api-key` and
+ * ignores `Authorization`. Sending the Bearer form there answers
+ * `401 Missing API key` — the header is simply not read — so a probe that used
+ * one convention everywhere would conclude the model was unreachable.
+ */
+export const AUTH_FOR: Readonly<
+  Record<string, (key: string) => Record<string, string>>
+> = {
+  "anthropic-messages": (key) => ({
+    "anthropic-version": "2023-06-01",
+    "x-api-key": key,
+  }),
+  "google-generative-ai": (key) => ({ "x-goog-api-key": key }),
+  "openai-completions": (key) => ({ authorization: `Bearer ${key}` }),
+  "openai-responses": (key) => ({ authorization: `Bearer ${key}` }),
+};
+
+/** A body shaped for the protocol, so the gateway judges the MODEL, not the JSON. */
+export const BODY_FOR: Readonly<Record<string, Record<string, unknown>>> = {
+  "anthropic-messages": {
+    max_tokens: 1,
+    messages: [{ content: "hi", role: "user" }],
+  },
+  // An empty `messages` array is itself a 400, which would make every
+  // completions probe uninformative — the gateway would reject the body before
+  // it ever looked at the model.
+  "openai-completions": {
+    max_tokens: 8,
+    messages: [{ content: "hi", role: "user" }],
+    stream: false,
+  },
+  "google-generative-ai": {
+    // Measured: without `role` the upstream refuses with "Please use a valid
+    // role: user, model" — the gateway forwards it, which is itself proof the
+    // path and the x-goog-api-key convention are accepted.
+    contents: [{ parts: [{ text: "hi" }], role: "user" }],
+    generationConfig: { maxOutputTokens: 8 },
+  },
+  "openai-responses": { input: "hi", max_output_tokens: 16 },
+};
+
+/**
+ * Headers the plugin injects, so a probe looks like the traffic we actually
+ * send: a turn's user agent is `OPENCODE_UA`, which the fetch patch stamps —
+ * `OPENCODE_PATCH_USER_AGENT` signs only the plugin's own requests — and a
+ * session id derived the plugin's own way, so it is in the band the gateway
+ * admits by construction rather than a hand-written value it refuses.
+ */
+export const PLUGIN_HEADERS: Readonly<Record<string, string>> = {
+  "content-type": "application/json",
+  "user-agent": OPENCODE_UA,
+  "x-opencode-client": "cli",
+  "x-opencode-project": "global",
+  "x-opencode-session": openCodeSessionIdFor("protocol-routing"),
+};
+
+export interface Probe {
+  readonly status: number;
+  readonly summary: string;
+}
+
+/**
+ * Send one protocol-shaped request to `url` and read the answer.
+ *
+ * The body is the protocol's own (`BODY_FOR`), with the model in the body
+ * unless the protocol's path carries it; the credential header is the
+ * protocol's own (`AUTH_FOR`), and no key sends none.
+ *
+ * @param input.url - the full URL, path included.
+ * @param input.protocol - the protocol the body and the auth header follow.
+ * @param input.model - the model id.
+ * @param input.key - the credential, or `undefined` for a keyless probe.
+ * @param input.timeoutMs - the request's own timeout.
+ * @returns the status and a summary; status `0` when nothing answered.
+ */
+export const sendProbe = async (input: {
+  readonly url: string;
+  readonly protocol: string;
+  readonly model: string;
+  readonly key?: string | undefined;
+  readonly timeoutMs: number;
+}): Promise<Probe> => {
+  const { key, model, protocol } = input;
+  const template = PATH_FOR[protocol];
+  if (template === undefined) {
+    throw new Error(`no live path is known for protocol ${protocol}`);
+  }
+  // A protocol whose path carries the model does not also want it in the body:
+  // the Gemini endpoints reject unknown fields rather than ignoring them.
+  const payload = template.includes("{model}")
+    ? BODY_FOR[protocol]
+    : { ...BODY_FOR[protocol], model };
+  const auth =
+    key === undefined || key.length === 0
+      ? {}
+      : (AUTH_FOR[protocol]?.(key) ?? {});
+  let response: Response;
+  try {
+    response = await fetch(input.url, {
+      body: JSON.stringify(payload),
+      headers: { ...PLUGIN_HEADERS, ...auth },
+      method: "POST",
+      signal: AbortSignal.timeout(input.timeoutMs),
+    });
+  } catch (error) {
+    // Status 0 means "the gateway did not answer" — neither agreement nor
+    // refusal. Measured while writing this: under rate limiting the gateway
+    // answers 429 at first and then holds the connection open without a
+    // response until the client gives up, so a timeout here is the gateway being
+    // busy rather than this plugin being wrong. Reporting it as a status is what
+    // lets the case SKIP instead of failing on an answer nobody received.
+    return {
+      status: 0,
+      summary: `no answer: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+  const body = await response.text();
+  return {
+    status: response.status,
+    summary: `${response.status} ${body.slice(0, 200)}`,
+  };
+};
+
+/**
+ * Whether the gateway answered that it no longer serves the MODEL at all.
+ *
+ * `400 Upstream request failed: Model is unavailable`, `410` and an error of
+ * type `ModelDeprecated` are the gateway speaking about the model rather than
+ * the route: the catalog can still list an id the upstream has withdrawn
+ * (measured 2026-10-26 on `nemotron-3-ultra-free`, answered identically on two
+ * runs a minute apart, and 2026-11-02 on `gemini-3-flash`, answered
+ * `{"type":"ModelDeprecated"}` while the registry still listed it). Such a
+ * candidate is skipped like any other the gateway left nothing to assert
+ * about, never asserted on.
+ */
+export const modelGone = (result: Probe): boolean =>
+  result.status === 410 ||
+  result.summary.includes("ModelDeprecated") ||
+  (result.status === 400 && result.summary.includes("Model is unavailable"));
+
+/**
+ * Whether the gateway's answer makes routing UNOBSERVABLE, so the case skips.
+ *
+ * Two shapes qualify, and both are the gateway speaking about the ACCOUNT
+ * rather than about the route:
+ *
+ * - `403 Model access is disabled` — the account has no paid access, so every
+ *   endpoint answers alike and nothing about routing can be seen.
+ * - `429` — the account is rate limited. Measured while writing this: the
+ *   gateway answers `429 Upstream request failed` on the first calls, and then
+ *   HOLDS THE CONNECTION open without a response for a minute, which is what
+ *   turned a routing case into a timeout rather than a skip. Every endpoint
+ *   would answer alike here too, so the same reasoning applies.
+ *
+ * A skip is the honest answer in both: it says the routing was not verified,
+ * which is not the same as saying it was verified and passed.
+ */
+export const accessDisabled = (result: Probe): boolean =>
+  result.status === 402 ||
+  result.summary.includes("Insufficient account funds") ||
+  (result.status === 403 &&
+    result.summary.includes("Model access is disabled")) ||
+  result.status === 429 ||
+  // No answer at all is the third shape of "cannot tell": the gateway is busy,
+  // so nothing about the route was observed either way.
+  result.status === 0;
+
+/**
+ * Whether the free tier's usage cap answered: `429 FreeUsageLimitError`, the
+ * gate refusing the caller's usage of the tier. It is one way the tier is
+ * closed ({@link freeTierClosed}), but a different fact from the session
+ * gate: it measures the account a run spends from, not whether the tier
+ * serves this plugin, so a walk that met the cap reports the cap
+ * ({@link freeWalkGap}).
+ *
+ * @param result - the probe's answer.
+ * @returns whether the answer names the usage cap.
+ */
+export const freeUsageCapped = (result: Probe): boolean =>
+  result.summary.includes("FreeUsageLimitError");
+
+/**
+ * Whether the gateway is refusing the FREE TIER rather than the route.
+ *
+ * Measured: the deployment's key answers `403 FreeTierError` on every endpoint,
+ * with and without an org id, and the literal `public` answers the same — while
+ * a real client, whose captured request carries a session token, is served.
+ *
+ * Read that as a statement about the CLIENT, not the credential: the gateway's
+ * message is "OpenCode's free tier can only be used from within OpenCode", and
+ * presenting as that client is what this plugin does. So a refusal here is not
+ * the plugin's failure to route — it is a gate this repository cannot open.
+ *
+ * @param result - the probe's answer.
+ * @returns whether the free tier closed the request.
+ */
+export const freeTierClosed = (result: Probe): boolean =>
+  result.summary.includes("FreeTierError") ||
+  // The tier's usage cap, `429 FreeUsageLimitError`, is the same gate
+  // refusing for the caller's usage: closed, not busy (lesson L3).
+  freeUsageCapped(result);
+
+/**
+ * The gateway is busy: it answered, but not about the route. A 429 naming the
+ * free tier's usage cap is not busy: it is the tier closing
+ * ({@link freeTierClosed}).
+ */
+export const gatewayBusy = (result: Probe): boolean =>
+  result.status === 429 && !freeUsageCapped(result);
+
+/** Why a walk of free candidates ended without a completion. */
+export type FreeWalkGap = "busy" | "capped" | "closed";
+
+/**
+ * Why no free candidate answered with a completion, from every answer the
+ * walk read: `busy` when the gateway was loaded for any of them
+ * ({@link gatewayBusy}), which says nothing about the tier; else `capped`
+ * when any met the usage cap ({@link freeUsageCapped}), which measures the
+ * account, not the tier; else `closed` — each was gated, withdrawn or
+ * refused for the account, which is worth reporting rather than skipping.
+ *
+ * @param answers - every candidate's answer, in the order sent.
+ * @returns why the walk found no completion.
+ */
+export const freeWalkGap = (answers: readonly Probe[]): FreeWalkGap => {
+  if (answers.some(gatewayBusy)) {
+    return "busy";
+  }
+  return answers.some(freeUsageCapped) ? "capped" : "closed";
+};
+
+/**
+ * The skip reason of a walk whose gap is `capped` ({@link freeWalkGap}). The
+ * rule reads ANY capped answer as the cap, so a mixed walk may also have met
+ * the session gate (`403 FreeTierError`); the reason then says how many
+ * candidates did, so the gate this case exists to surface is still printed.
+ *
+ * @param answers - every candidate's answer, in the order sent.
+ * @returns the reason the walk skips with.
+ */
+export const freeWalkCappedReason = (answers: readonly Probe[]): string => {
+  const reason =
+    "the free tier's usage cap (429 FreeUsageLimitError) answered, which measures the account, not the tier";
+  const gated = answers.filter(
+    (answer) =>
+      answer.summary.includes("FreeTierError") && !freeUsageCapped(answer)
+  ).length;
+  if (gated === 0) {
+    return reason;
+  }
+  const candidates = gated === 1 ? "1 candidate" : `${gated} candidates`;
+  return `${reason}; ${candidates} also answered 403 FreeTierError (the session gate)`;
+};
+
+/**
+ * Whether a candidate model may be USED as a case's subject.
+ *
+ * The rule the pickers apply: a candidate that answered is a subject, except
+ * when the answer was about the account (a refusal) or about the model's
+ * retirement. Both are vendor-side facts, and a case built on either fails for
+ * a reason that is not its own.
+ *
+ * @param result - the probe's answer for this candidate.
+ * @returns whether the case may proceed with this model.
+ */
+export const usableAsSubject = (result: Probe): boolean =>
+  !accessDisabled(result) && !modelGone(result) && result.status !== 0;

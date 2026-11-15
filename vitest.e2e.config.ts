@@ -24,8 +24,9 @@ export default defineConfig({
     // These cross the public internet from CI, where 5s is far too tight.
     hookTimeout: 30_000,
     testTimeout: 30_000,
-    // One file at a time: the live gateway rate-limits, and the header suite
-    // binds a socket.
+    // One file at a time: the live gateway rate-limits, and the host-binary
+    // file boots a dsh server of its own. (The suites that bind a loopback
+    // socket are the mock suite's, `vitest.mock.config.ts`.)
     fileParallelism: false,
   },
 });

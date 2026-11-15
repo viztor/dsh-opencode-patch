@@ -17,27 +17,28 @@
  *
  * A fiber is recognised structurally: its own context names it
  * (`fiber.ctx.fiber === fiber`), which neither a config value nor another
- * fiber's context does. Pure: every function is one of its arguments, so
- * `test/config-shape.test.ts` drives both shapes with known answers, the OLD
- * one included, which no supported host runs any more.
+ * fiber's context does. The fiber predicate and the two feature-detected
+ * accessors are the plugin's own (`src/utils/config-run.ts`, which the route
+ * claim reads every fiber config through), re-exported here so a contract
+ * and the claim cannot read a fiber two ways. What stays here is what only a
+ * contract needs: decoding a call strictly (a third shape throws), the core
+ * a fiber was built by, and naming one fiber across handles. Pure: every
+ * function is one of its arguments, so `test/config-shape.test.ts` drives
+ * both shapes with known answers, the OLD one included, which no supported
+ * channel's newest build runs any more.
  *
  * @module test/support/config-shape
  */
+
+import { effectiveConfigOf, isFiber, rawConfigOf } from "./src.ts";
+
+export { effectiveConfigOf, isFiber, rawConfigOf };
 
 /** The two `internal/config` call shapes. */
 export type ConfigShape = "new" | "old";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-/**
- * True for a cordis fiber: an object whose own context's `fiber` is itself.
- *
- * @param value - anything.
- * @returns whether `value` is a fiber.
- */
-export const isFiber = (value: unknown): boolean =>
-  isObject(value) && isObject(value.ctx) && value.ctx.fiber === value;
 
 /** One `internal/config` call, decoded from the shape it arrived in. */
 export interface ConfigCall<F = unknown> {
@@ -114,31 +115,4 @@ export const coreShapeOf = (fiber: unknown): ConfigShape => {
     throw new Error("not a fiber");
   }
   return Object.hasOwn(self as object, "_config") ? "old" : "new";
-};
-
-/**
- * A fiber's RAW config: the input it retains for its next activation.
- *
- * @param fiber - a fiber of either core.
- * @returns `rawConfig` where the core has it, else `_config`.
- */
-export const rawConfigOf = (fiber: unknown): unknown => {
-  if (!isObject(fiber)) {
-    return undefined;
-  }
-  return "rawConfig" in fiber ? fiber.rawConfig : fiber._config;
-};
-
-/**
- * A fiber's RESOLVED config: the value its plugin was activated or last
- * updated with.
- *
- * @param fiber - a fiber of either core.
- * @returns `effectiveConfig` where the core has it, else `config`.
- */
-export const effectiveConfigOf = (fiber: unknown): unknown => {
-  if (!isObject(fiber)) {
-    return undefined;
-  }
-  return "effectiveConfig" in fiber ? fiber.effectiveConfig : fiber.config;
 };

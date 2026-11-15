@@ -83,9 +83,8 @@ describe("the lookup reads the plane's own row", () => {
   });
 
   it("keeps the plane-blind lookup as the fallback, and says what that means", () => {
-    // `findModelSpec` prefers Go. For pricing — which the two planes do NOT
-    // always agree on (`deepseek-v4.1-flash` is $0.30 on Zen, $0.15 on Go) —
-    // that is the wrong answer, and it is why the pricing path takes the route's
+    // `findModelSpec` prefers Go. For pricing — which the planes may set
+    // differently for a shared id — that is the wrong answer, and it is why the pricing path takes the route's
     // plane instead. This asserts the order the doc describes, so a silent
     // reorder fails here.
     expect(findModelSpec(DIVERGENT)?.is_free).toBe(true);

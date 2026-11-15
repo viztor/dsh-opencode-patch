@@ -129,6 +129,55 @@ const deprecatedZenIds = new Set<string>();
 
 let lastRefreshedAt = 0;
 /**
+ * Bumped whenever either active map is replaced, so a reader that derives
+ * something from the catalog (the plane profiles) can tell its derivation is
+ * stale without comparing maps.
+ */
+let generation = 0;
+/** Called after a refresh replaced a map; see {@link onCatalogChange}. */
+const changeListeners = new Set<() => void>();
+
+/**
+ * The catalog's generation: a number that changes whenever the live catalog
+ * does, and only then.
+ */
+export const catalogGeneration = (): number => generation;
+
+/**
+ * Be told when a refresh lands new catalog data. The bundled shim is what a
+ * process starts from, so the first reader of the catalog sees it and only
+ * triggers the refresh; a listener is how that reader learns the refresh
+ * landed. A listener that throws is ignored: the refresh stays a success.
+ *
+ * @param listener - called after the maps are replaced.
+ * @returns the unsubscribe.
+ */
+export const onCatalogChange = (listener: () => void): (() => void) => {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+};
+
+/**
+ * How many change listeners are subscribed: the probe that shows an
+ * unsubscribe happened, since a stale listener that does nothing is otherwise
+ * indistinguishable from none.
+ */
+export const catalogListenerCount = (): number => changeListeners.size;
+
+/** Bump the generation and tell every listener. */
+const catalogChanged = (): void => {
+  generation += 1;
+  for (const listener of changeListeners) {
+    try {
+      listener();
+    } catch {
+      // A listener's failure is its own; the catalog changed either way.
+    }
+  }
+};
+/**
  * Whether the MOST RECENT refresh attempt read a usable payload.
  *
  * Distinct from {@link lastRefreshedAt}, which only advances on success and so
@@ -162,6 +211,7 @@ export const resetCatalogState = (): void => {
   lastRefreshedAt = 0;
   lastRefreshSucceeded = false;
   refreshPromise = undefined;
+  generation += 1;
 };
 
 export interface ParsedCatalogs {
@@ -392,8 +442,8 @@ export type CatalogPlane = "go" | "zen";
 /**
  * The plane a route's models come from.
  *
- * `opencode-go` is the subscription plane; everything else this plugin knows
- * about (`opencode`, and the internal routes derived from it) is Zen.
+ * `opencode-go` is the subscription plane, and so is an `opencode-go-*` relay
+ * route; everything else this plugin knows about (`opencode`) is Zen.
  */
 export const catalogPlaneForRoute = (route: unknown): CatalogPlane =>
   route === "opencode-go" ||
@@ -428,16 +478,16 @@ export const findModelSpecOn = (
  * Answers "does either plane know this model" — which is all some callers need.
  * It is **not** correct for anything the planes can disagree about:
  *
- * - **Routing.** See {@link findModelSpecOn}: `qwen3.8-max` and `minimax-m3`
- *   name `@ai-sdk/anthropic` on Go and nothing (completions) on Zen, so a
- *   Go-first read sent Zen requests to `/messages`, where the gateway answers
+ * - **Routing.** See {@link findModelSpecOn}: a shared id can name
+ *   `@ai-sdk/anthropic` on Go and no SDK (completions) on Zen, so a Go-first
+ *   read sends Zen requests to `/messages`, where the gateway answers
  *   `400 ModelProtocolUnsupported`.
- * - **Pricing.** This doc used to claim the two planes agree on price "for
- *   every shared id", and that stopped being true: `deepseek-v4.1-flash` costs
- *   $0.30/$1.20 per million on Zen and $0.15/$0.60 on Go, and
- *   `deepseek-v4-pro` differs too. A Zen turn priced through here came out at
- *   exactly half of what it cost. `test/catalog.test.ts` measures the
- *   disagreement, so the claim cannot go stale in silence again.
+ * - **Pricing.** The two planes may price a shared id differently, and a turn
+ *   costs what its OWN plane charges, read from the route. A Zen turn priced
+ *   through here takes the Go rate. The seeded cases hold the rule rather than
+ *   whichever ids the vendor prices differently today: `test/stream-hook.test.ts`
+ *   ("a turn is priced at ITS plane's rate") and `test/lifecycle.test.ts`
+ *   ("prices a turn at the rate of the plane its route belongs to").
  *
  * The plane has to come from the route in play; this function is the fallback
  * for a model the plane's OWN row does not describe.
@@ -585,6 +635,7 @@ export const refreshCatalog = (
         if (parsed.go.length > 0 || parsed.zen.length > 0) {
           lastRefreshedAt = Date.now();
           lastRefreshSucceeded = true;
+          catalogChanged();
         }
       }
     } catch {
@@ -750,12 +801,15 @@ export const enrichModelsResponse = async (
   const catalogById = new Map(catalog.map((m) => [m.id, m]));
   const merged = new Map<string, Record<string, unknown>>();
 
-  // **This is the CATALOG surface, so it is the one place that seeds.**
-  // `discoverModels` in `dsh-llm-pi-ai` returns its installed catalog for a
-  // provider it ships and only fetches an endpoint for one it does not — so a
-  // `/models` answer is "what this endpoint offers", the list a user browses, not
-  // the list a picker shows. Widening is right here and wrong anywhere that
-  // decides what a deployment may pick.
+  // **This is a CATALOG surface, so it seeds.** So does Settings' fetch on a
+  // plane the plugin serves (`complementDiscoveredModels`): both offer
+  // candidates to browse or adopt. `discoverModels` in `dsh-llm-pi-ai` returns
+  // its installed catalog for a provider it ships and only fetches an endpoint
+  // for one it does not — so a `/models` answer is "what this endpoint offers",
+  // the list a user browses, not the list a picker shows. Widening is wrong
+  // anywhere that decides what a deployment may pick: the composer lists the
+  // declared models, or the plane's catalog when the entry declares none (D3),
+  // never a list widened by a `/models` answer.
   //
   // The seed also covers the ordinary case of a gateway answering with a subset:
   // the vendor's own listing is narrower than its catalog.

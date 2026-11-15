@@ -19,6 +19,8 @@ export default defineConfig({
   test: {
     ...base.test,
     // Only the mock files; the unit `include` from the base config is replaced.
+    // They keep the base config's file parallelism: each socket they bind is
+    // an ephemeral loopback port of its own.
     include: ["test/mock/**/*.mock.ts"],
     // A Vite server boots inside each file and pi parses a full stream per
     // case; neither is slow, but 5s is a unit-run budget, not this one.

@@ -1,9 +1,12 @@
 /**
  * Synthetic catalog rows, for the decisions the REAL catalog cannot express.
  *
- * Every other fixture in this repository quotes something that exists: a model
- * id, a price, a flag. This one does the opposite — it builds the row a test
- * needs, including the rows the vendor has not produced yet.
+ * Two kinds of fixture, both picked so no case names a vendor id a catalog
+ * refresh can retire. The first reads the SHIPPED shim by shape
+ * (`findCatalogRow`, `catalogRow`, `freeZenModel`): a case about "a Messages
+ * model on Go" takes the first such row and reads its expected values off it.
+ * The second builds the row a test needs, including the rows the vendor has
+ * not produced yet (`spec`, `divergent`, `payload`, `seedDivergentCatalog`).
  *
  * **Why that is necessary rather than convenient.** The plugin's plane-aware
  * decisions — is this model free (so it needs no credential, and gets the free
@@ -14,9 +17,6 @@
  * real catalog therefore cannot tell a plane-aware lookup from a plane-blind
  * one — both pass. It takes a fixture to make the difference observable.
  *
- * The prices DO disagree for two models, which is why the pricing decision was
- * testable against the real catalog and the others were not.
- *
  * It reaches `src` through the one door, `./src.ts`, like the other fixtures,
  * so a module move edits one file. (The setup file cannot: it loads in the
  * jsdom files too, so it names the defining modules directly.)
@@ -24,7 +24,78 @@
  * @module test/support/catalogs
  */
 
-import { type CatalogModelSpec, refreshCatalog } from "./src.ts";
+import {
+  type CatalogModelSpec,
+  OPENCODE_GO_CATALOG,
+  OPENCODE_ZEN_CATALOG,
+  protocolForSdk,
+  refreshCatalog,
+} from "./src.ts";
+
+/** The two plane routes the shims describe. */
+export type CatalogRoute = "opencode" | "opencode-go";
+
+/** The shipped shim for one plane route. */
+export const shimFor = (route: CatalogRoute): readonly CatalogModelSpec[] =>
+  route === "opencode" ? OPENCODE_ZEN_CATALOG : OPENCODE_GO_CATALOG;
+
+/**
+ * The first shim row on `route` whose SDK speaks `protocol` — or, with no
+ * `protocol`, the first row naming no SDK at all — picked by shape
+ * so no case names a vendor id a catalog refresh can retire. Answers
+ * `undefined` when the plane has none; a caller that needs one says so by
+ * name (see {@link catalogRow}).
+ *
+ * @param route - the plane route.
+ * @param protocol - the wire protocol; omitted for "no SDK of its own".
+ * @returns the row, or `undefined`.
+ */
+export const findCatalogRow = (
+  route: CatalogRoute,
+  protocol?: string
+): CatalogModelSpec | undefined =>
+  shimFor(route).find((row) =>
+    protocol === undefined
+      ? row.provider_npm === undefined
+      : row.provider_npm !== undefined &&
+        protocolForSdk(row.provider_npm) === protocol
+  );
+
+/**
+ * {@link findCatalogRow}, failing by name when the plane has no such row, so
+ * a case that cannot find its fixture fails rather than passing vacuously.
+ */
+export const catalogRow = (
+  route: CatalogRoute,
+  protocol?: string
+): CatalogModelSpec => {
+  const row = findCatalogRow(route, protocol);
+  if (row === undefined) {
+    throw new Error(
+      `the ${route} shim carries no row ${protocol === undefined ? "without an SDK" : `on ${protocol}`}`
+    );
+  }
+  return row;
+};
+
+/**
+ * A free Zen id, read off the shim rather than named, so a refresh that
+ * retires one free model cannot turn a case about free models vacuous.
+ *
+ * @param excluding - a substring the id must not contain (a marker under test).
+ * @returns the id.
+ */
+export const freeZenModel = (excluding?: string): string => {
+  const spec = OPENCODE_ZEN_CATALOG.find(
+    (row) =>
+      row.is_free === true &&
+      (excluding === undefined || !row.id.includes(excluding))
+  );
+  if (spec === undefined) {
+    throw new Error("the Zen shim carries no free model");
+  }
+  return spec.id;
+};
 
 /** What a test says about one catalogue row, in the terms the decisions use. */
 export interface SpecInput {
@@ -92,7 +163,7 @@ export const spec = (input: SpecInput): CatalogModelSpec => ({
 /**
  * The same model, described differently on each plane.
  *
- * This is the shape the vendor uses for the two models whose prices differ, and
+ * This is the shape a shared id has when the planes price it differently, and
  * the shape a plane-blind lookup gets wrong: the row is the SAME id, and every
  * field that differs is a field a decision reads.
  *
