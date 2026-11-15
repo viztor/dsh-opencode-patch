@@ -6,7 +6,14 @@
  *
  * @module test/host-drift
  */
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import semver from "semver";
@@ -73,6 +80,15 @@ const PNPMFILE_KEYS = [
 
 /** The pnpmfiles pnpm loads from the root on its own. */
 const PNPMFILES = [".pnpmfile.cjs", ".pnpmfile.mjs"] as const;
+
+/**
+ * The {@link PNPMFILES} present in a directory.
+ *
+ * @param root - the directory pnpm would install from.
+ * @returns each root pnpmfile found there, in {@link PNPMFILES} order.
+ */
+const pnpmfilesIn = (root: string): string[] =>
+  PNPMFILES.filter((file) => existsSync(join(root, file)));
 
 /**
  * What turns builds on from inside a script the step runs: the allow-all flag,
@@ -637,7 +653,7 @@ describe("host drift · the CI wiring, parsed", () => {
           readFileSync(join(ROOT, "package.json"), "utf8")
         ) as Record<string, unknown>,
         npmrc: existsSync(npmrc) ? readFileSync(npmrc, "utf8") : "",
-        pnpmfiles: PNPMFILES.filter((file) => existsSync(join(ROOT, file))),
+        pnpmfiles: pnpmfilesIn(ROOT),
         scripts,
         workspace,
       })
@@ -662,12 +678,15 @@ describe("host drift · the CI wiring, parsed", () => {
             onlyBuiltDependencies: ["esbuild"],
           },
         },
-        npmrc: "dangerously-allow-all-builds=true\npnpmfile=hooks.cjs\n",
+        npmrc:
+          "dangerously-allow-all-builds=true\npnpmfile=hooks.cjs\nglobal-pnpmfile=global.cjs\n",
         pnpmfiles: [".pnpmfile.cjs", ".pnpmfile.mjs"],
         scripts: {
           "scripts/propose-host-bump.ts":
             'run("pnpm", ["install", "--dangerously-allow-all-builds"]);',
           "scripts/regenerate.ts": 'pnpm("install", "--pnpmfile=hooks.cjs");',
+          "scripts/relock.ts":
+            'pnpm("install", "--global-pnpmfile=global.cjs");',
           "scripts/use-channel.ts":
             'pnpm("install", "--config.dangerously-allow-all-builds=true");',
           "the plan step":
@@ -677,6 +696,7 @@ describe("host drift · the CI wiring, parsed", () => {
           allowBuilds: { esbuild: true, protobufjs: false },
           dangerouslyAllowAllBuilds: true,
           configDependencies: { hooks: "1.0.0+sha512-0" },
+          globalPnpmfile: "global.cjs",
           neverBuiltDependencies: [],
           pnpmfile: "hooks/install.cjs",
           permissions: {
@@ -690,18 +710,21 @@ describe("host drift · the CI wiring, parsed", () => {
       "pnpm-workspace.yaml sets dangerouslyAllowAllBuilds",
       "pnpm-workspace.yaml sets neverBuiltDependencies",
       "pnpm-workspace.yaml sets configDependencies",
+      "pnpm-workspace.yaml sets globalPnpmfile",
       "pnpm-workspace.yaml sets pnpmfile",
       "package.json pnpm allowBuilds approves esbuild",
       "package.json pnpm sets onlyBuiltDependencies",
       "pnpm-workspace.yaml permissions grant esbuild build",
       ".npmrc sets dangerously-allow-all-builds",
       ".npmrc sets pnpmfile",
+      ".npmrc sets global-pnpmfile",
       "a pnpmfile is present: .pnpmfile.cjs",
       "a pnpmfile is present: .pnpmfile.mjs",
       "the step's environment sets npm_config_dangerously_allow_all_builds",
       "the step's environment sets PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS",
       "scripts/propose-host-bump.ts carries --dangerously-allow-all-builds",
       "scripts/regenerate.ts carries --pnpmfile",
+      "scripts/relock.ts carries --global-pnpmfile",
       "scripts/use-channel.ts carries --config.dangerously-allow-all-builds",
       "the plan step carries PNPM_CONFIG_ALLOW_BUILDS",
     ]);
@@ -739,6 +762,24 @@ describe("host drift · the CI wiring, parsed", () => {
     expect(job.permissions?.actions).toBe("write");
     expect(job.permissions?.contents).toBe("write");
     expect(job.permissions?.["pull-requests"]).toBe("write");
+  });
+
+  it("finds a root pnpmfile on disk, each spelling pnpm loads, and none in an empty root", () => {
+    const root = mkdtempSync(join(tmpdir(), "host-drift-pnpmfiles-"));
+    try {
+      expect(pnpmfilesIn(root)).toStrictEqual([]);
+      writeFileSync(join(root, ".pnpmfile.mjs"), "export default {};\n");
+      expect(pnpmfilesIn(root)).toStrictEqual([".pnpmfile.mjs"]);
+      writeFileSync(join(root, ".pnpmfile.cjs"), "module.exports = {};\n");
+      expect(pnpmfilesIn(root)).toStrictEqual([
+        ".pnpmfile.cjs",
+        ".pnpmfile.mjs",
+      ]);
+      // The probe reads the directory it is given, not the repository.
+      expect(pnpmfilesIn(join(root, "missing"))).toStrictEqual([]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
   });
 });
 
