@@ -11,13 +11,17 @@
  * - **Exit codes.** A `verify-*` script that cannot fail is decoration:
  *   `verify-session-band` printed "CONFIRMED" unconditionally, and
  *   `verify-catalog` answered an unreachable registry with a skip and exit 0.
- *   `verify-catalog` is spawned and made to fail; `verify-session-band`'s
- *   verdict is its pure half's (`bandVerdict`), made to fail on a planted
- *   derivation, and the script is spawned in its passing state.
+ *   `verify-catalog` is spawned passing (on a payload that reproduces the
+ *   shim) and made to fail (a moved plane or family endpoint, a made-up id,
+ *   an unread source); `verify-session-band`'s verdict is its pure half's
+ *   (`bandVerdict`), made to fail on a planted derivation, and the script is
+ *   spawned both in its passing state and, from a scratch copy beside a
+ *   `src/session.ts` whose derivation leaves the band, failing.
  * - **The generators run.** Each is spawned on a local source (`--from`,
  *   without `--write`): a source that disagrees with the shipped data exits
- *   1, and the limits generator's known answer (a doc made from the shipped
- *   table) exits 0. The limits generator's `--write` runs too, from a scratch
+ *   1 (for the catalog, the same ids with only a plane or a family endpoint
+ *   moved), and each known answer (a doc made from the shipped table, a
+ *   payload that reproduces the shim) exits 0. The limits generator's `--write` runs too, from a scratch
  *   copy of `scripts/` and `src/` (its target is the `src/go-limits-data.ts`
  *   beside its own folder): it rewrites current data in text that is not
  *   the renderer's, and writes a moved figure. The limits renderer's text is held to the committed file
@@ -31,6 +35,7 @@
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -76,6 +81,7 @@ import {
   OPENCODE_PLANE_API,
   OPENCODE_ZEN_CATALOG,
   openCodeSessionIdFor,
+  parseModelsDevCatalog,
 } from "./support/src.ts";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -163,6 +169,77 @@ const goLimitsDoc = (
     )
     .join("\n\n");
 
+/**
+ * A models.dev payload that reproduces `data`: every row with the fields the
+ * parser reads (its limits, cost, modalities and reasoning) and its family's
+ * endpoint as its own `provider.api`, each plane's endpoint as the provider's
+ * `api`, and a retired row for any family no live row names, so the family
+ * map is the shipped one. The inverse of `parseModelsDevCatalog` then
+ * `shimData`, which the current answers below hold.
+ */
+const shimPayload = (data: ShimData): Record<string, unknown> => {
+  const provider = (plane: "go" | "zen"): Record<string, unknown> => {
+    const families = data.familyApi[plane];
+    const rows = data[plane];
+    const models: Record<string, unknown> = {};
+    for (const row of rows) {
+      const npm = row.provider_npm ?? "";
+      const api = families[npm];
+      models[row.id] = {
+        ...(row.cost === undefined ? {} : { cost: row.cost }),
+        id: row.id,
+        limit: { context: row.context_window, output: row.max_output_tokens },
+        modalities: { input: row.input_modalities },
+        name: row.name,
+        provider: {
+          ...(api === undefined ? {} : { api }),
+          ...(npm === "" ? {} : { npm }),
+        },
+        ...(row.reasoning === undefined ? {} : { reasoning: row.reasoning }),
+        ...(row.reasoning_options === undefined
+          ? {}
+          : { reasoning_options: row.reasoning_options }),
+      };
+    }
+    const named = new Set(rows.map((row) => row.provider_npm ?? ""));
+    for (const [npm, api] of Object.entries(families)) {
+      if (!named.has(npm)) {
+        models[`retired-${npm || "default"}`] = {
+          provider: { api, ...(npm === "" ? {} : { npm }) },
+          status: "deprecated",
+        };
+      }
+    }
+    return { api: data.planeApi[plane], models };
+  };
+  return { "opencode-go": provider("go"), opencode: provider("zen") };
+};
+
+/**
+ * {@link SHIPPED} with one family endpoint moved: the first Zen family the
+ * shim names, to an address no vendor serves.
+ */
+const familyMoved = (): ShimData => {
+  const [family] = Object.keys(SHIPPED.familyApi.zen);
+  expect(family).toBeDefined();
+  return {
+    ...SHIPPED,
+    familyApi: {
+      ...SHIPPED.familyApi,
+      zen: {
+        ...SHIPPED.familyApi.zen,
+        [family ?? ""]: "https://example.invalid/v1",
+      },
+    },
+  };
+};
+
+/** {@link SHIPPED} with the Go plane's endpoint moved, and nothing else. */
+const planeMoved = (): ShimData => ({
+  ...SHIPPED,
+  planeApi: { ...SHIPPED.planeApi, go: "https://example.invalid/go/v1" },
+});
+
 /** The shipped table's first model, by id, and its row. */
 const firstLimit = (): [
   string,
@@ -186,26 +263,21 @@ describe("generators · one staleness rule", () => {
 
     expect(shimStale(SHIPPED, SHIPPED)).toBe(false);
     // The two cases the old rule (go and zen arrays only) called current.
-    expect(
-      shimStale(SHIPPED, {
-        ...SHIPPED,
-        planeApi: { ...SHIPPED.planeApi, go: "https://example.invalid/go/v1" },
-      })
-    ).toBe(true);
-    const [family] = Object.keys(SHIPPED.familyApi.zen);
-    expect(family).toBeDefined();
-    expect(
-      shimStale(SHIPPED, {
-        ...SHIPPED,
-        familyApi: {
-          ...SHIPPED.familyApi,
-          zen: {
-            ...SHIPPED.familyApi.zen,
-            [family ?? ""]: "https://example.invalid/v1",
-          },
-        },
-      })
-    ).toBe(true);
+    expect(shimStale(SHIPPED, planeMoved())).toBe(true);
+    expect(shimStale(SHIPPED, familyMoved())).toBe(true);
+    // The payload the spawned cases feed reproduces the shim, and each moved
+    // world differs from it in the endpoint alone, never in an id.
+    const parsed = (data: ShimData): ShimData =>
+      shimData(parseModelsDevCatalog(shimPayload(data)));
+    expect(shimStale(SHIPPED, parsed(SHIPPED))).toBe(false);
+    expect(parsed(planeMoved())).toStrictEqual({
+      ...parsed(SHIPPED),
+      planeApi: planeMoved().planeApi,
+    });
+    expect(parsed(familyMoved())).toStrictEqual({
+      ...parsed(SHIPPED),
+      familyApi: familyMoved().familyApi,
+    });
     // The renderer's order is not data.
     expect(SHIPPED.go.length).toBeGreaterThan(1);
     expect(
@@ -417,7 +489,7 @@ describe("generators · the generators, spawned", () => {
     );
   });
 
-  it("the catalog generator answers stale on a payload the shipped shim does not hold, and fails on one it could not read", () => {
+  it("the catalog generator answers current on a payload that reproduces the shim, stale on one with a moved plane or family endpoint or ids it does not hold, and fails on one it could not read", () => {
     const temp = mkdtempSync(join(tmpdir(), "catalog-shim-"));
     try {
       const file = join(temp, "api.json");
@@ -432,6 +504,27 @@ describe("generators · the generators, spawned", () => {
       expect(behind.stdout).toContain("shim is STALE");
       expect(behind.stdout).toContain("+ 1: made-up-go");
 
+      // The known answer: a payload that reproduces the shim is current.
+      const same = join(temp, "same.json");
+      writeFileSync(same, JSON.stringify(shimPayload(SHIPPED)));
+      const current = runScript("regenerate-catalog-shim.ts", ["--from", same]);
+      expect(current.status, current.stderr).toBe(0);
+      expect(current.stdout).toContain("shim is current");
+      expect(current.stdout).not.toContain("STALE");
+      // The same ids with one endpoint moved, a plane's and then a family's:
+      // stale, which the old rule (the two arrays only) called current.
+      for (const [name, moved] of [
+        ["plane", planeMoved()],
+        ["family", familyMoved()],
+      ] as const) {
+        const path = join(temp, `${name}-moved.json`);
+        writeFileSync(path, JSON.stringify(shimPayload(moved)));
+        const run = runScript("regenerate-catalog-shim.ts", ["--from", path]);
+        expect(run.status, `${name}: ${run.stderr}`).toBe(1);
+        expect(run.stdout, name).toContain("shim is STALE");
+        expect(run.stdout, name).not.toMatch(/^ {2}[+-] /mu);
+      }
+
       const unread = runScript("regenerate-catalog-shim.ts", [
         "--from",
         join(temp, "missing.json"),
@@ -445,7 +538,7 @@ describe("generators · the generators, spawned", () => {
 });
 
 describe("generators · verify-catalog fails closed", () => {
-  it("verify-catalog exits non-zero on a stale shim and on a source it could not read, and passes offline on this tree", () => {
+  it("verify-catalog passes on a payload that reproduces the shim and offline on this tree, and exits non-zero on a stale shim, a moved endpoint and a source it could not read", () => {
     const temp = mkdtempSync(join(tmpdir(), "verify-catalog-"));
     try {
       const file = join(temp, "api.json");
@@ -459,6 +552,29 @@ describe("generators · verify-catalog fails closed", () => {
       expect(behind.status, behind.stderr).toBe(1);
       expect(behind.stdout).toContain("shim is stale");
       expect(behind.stdout).toContain("FAILED:");
+
+      // The known answer: check 1 passes on a payload that reproduces the
+      // shim, and fails on the same ids with one endpoint moved, which the
+      // old rule (id sets) called current.
+      const same = join(temp, "same.json");
+      writeFileSync(same, JSON.stringify(shimPayload(SHIPPED)));
+      const current = runScript("verify-catalog.ts", ["--from", same]);
+      expect(current.status, current.stdout).toBe(0);
+      expect(current.stdout).toMatch(
+        /^ {2}ok {4}zen: \d+ and go: \d+ models, and both planes' endpoints, match the registry$/mu
+      );
+      expect(current.stdout).toContain("PASS:");
+      for (const [name, moved] of [
+        ["plane", planeMoved()],
+        ["family", familyMoved()],
+      ] as const) {
+        const path = join(temp, `${name}-moved.json`);
+        writeFileSync(path, JSON.stringify(shimPayload(moved)));
+        const run = runScript("verify-catalog.ts", ["--from", path]);
+        expect(run.status, `${name}: ${run.stdout}`).toBe(1);
+        expect(run.stdout, name).toContain("shim is stale");
+        expect(run.stdout, name).toContain("FAILED:");
+      }
 
       const unread = runScript("verify-catalog.ts", [
         "--from",
@@ -522,5 +638,42 @@ describe("generators · verify-session-band fails when it should", () => {
     expect(run.status, run.stderr).toBe(0);
     expect(run.stdout).toContain(confirmed.lines.join("\n"));
     expect(run.stdout).not.toContain("MISMATCH");
+  });
+
+  it("verify-session-band, spawned over a derivation that leaves the band, prints the mismatch and exits 1", () => {
+    // A scratch copy of the script and its pure half beside a `src/session.ts`
+    // whose derivation answers an id outside the band: the script's own
+    // wiring (print the verdict, exit with it) is what runs, unchanged.
+    const temp = mkdtempSync(join(tmpdir(), "session-band-"));
+    try {
+      mkdirSync(join(temp, "scripts"));
+      mkdirSync(join(temp, "src"));
+      for (const file of ["verify-session-band.ts", "session-band.ts"]) {
+        cpSync(join(ROOT, "scripts", file), join(temp, "scripts", file));
+      }
+      writeFileSync(
+        join(temp, "src", "session.ts"),
+        `export const openCodeSessionIdFor = (_sessionId: string): string =>\n  "ses_000000000001${"0".repeat(14)}";\n`
+      );
+      const run = spawnSync(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          "--disable-warning=ExperimentalWarning",
+          join(temp, "scripts", "verify-session-band.ts"),
+        ],
+        { cwd: temp, encoding: "utf8", timeout: 60_000 }
+      );
+      expect(run.status, run.stderr).toBe(1);
+      expect(run.stdout).toMatch(
+        /^MISMATCH: this plugin's derivation: 0 of \d+ in band/mu
+      );
+      expect(run.stdout).not.toContain("CONFIRMED");
+      // Known answer: the copy reports the upstream facts as the real script
+      // does, so only the derivation differs.
+      expect(run.stdout).toContain("upstream, DESCENDING");
+    } finally {
+      rmSync(temp, { force: true, recursive: true });
+    }
   });
 });

@@ -253,9 +253,116 @@ export const withRecord = (
   return `${source.slice(0, start)}${block}${source.slice(end)}`;
 };
 
+/** One plan's README move: its record now, as proposed, and the other's. */
+interface PolicyMove {
+  readonly from: Readonly<Record<BumpField, string>>;
+  readonly other: {
+    readonly now: Readonly<Record<BumpField, string>>;
+    readonly proposed: Readonly<Record<BumpField, string>>;
+  };
+  readonly to: Readonly<Record<BumpField, string>>;
+}
+
+/** A literal as a regular expression source. */
+const escaped = (literal: string): string =>
+  literal.replaceAll(/[$()*+.?[\\\]^{|}]/gu, String.raw`\$&`);
+
+/**
+ * Every move's README edit, DECIDED against the paragraphs as they were and
+ * APPLIED in one pass, so a value one field writes is never read again as
+ * another field's old value: a floor that catches up to the pi the record
+ * holds while pi itself moves is written once, as the floor. The rules are
+ * {@link withReadmePolicy}'s; one more follows from deciding everything at
+ * once: one backticked value that two moved fields would rewrite to
+ * different values is left as it is, and both fields are named.
+ *
+ * @param text - the README.
+ * @param marker - the policy paragraph's opening.
+ * @param moves - each plan's move, in any order.
+ * @returns the edited text, and per move the fields left for review, in
+ *   {@link BUMP_FIELDS} order.
+ */
+const editPolicy = (
+  text: string,
+  marker: string,
+  moves: readonly PolicyMove[]
+): { readonly text: string; readonly unresolved: readonly BumpField[][] } => {
+  const lines = text.split("\n");
+  const policy = lines.findIndex((line) => line.startsWith(marker));
+  if (policy === -1) {
+    throw new Error(`no ${marker} paragraph`);
+  }
+  const offset = lines.slice(policy + 1).findIndex((line) => line !== "");
+  const edited = offset === -1 ? [policy] : [policy, policy + 1 + offset];
+  const original = edited.map((index) => lines[index] ?? "");
+  const unresolved = moves.map((): Set<BumpField> => new Set());
+  const rewrites = new Map<
+    string,
+    { readonly owners: [number, BumpField][]; readonly to: string }
+  >();
+  const conflicted = new Set<string>();
+  for (const [at, { from, other, to }] of moves.entries()) {
+    for (const field of BUMP_FIELDS) {
+      if (from[field] === to[field]) continue;
+      const old = `\`${from[field]}\``;
+      if (!original.some((line) => line.includes(old))) continue;
+      const shared = other.now[field] === from[field];
+      if (
+        field === "distTag" ||
+        other.proposed[field] === from[field] ||
+        (shared && other.proposed[field] !== to[field])
+      ) {
+        unresolved[at]?.add(field);
+        continue;
+      }
+      const next = `\`${to[field]}\``;
+      const held = rewrites.get(old);
+      if (held === undefined) {
+        rewrites.set(old, { owners: [[at, field]], to: next });
+      } else {
+        held.owners.push([at, field]);
+        if (held.to !== next) conflicted.add(old);
+      }
+    }
+  }
+  for (const old of conflicted) {
+    for (const [at, field] of rewrites.get(old)?.owners ?? []) {
+      unresolved[at]?.add(field);
+    }
+    rewrites.delete(old);
+  }
+  if (rewrites.size > 0) {
+    // Longest first, so no value is matched by a shorter one it contains.
+    const pattern = new RegExp(
+      [...rewrites.keys()]
+        .toSorted((left, right) => right.length - left.length)
+        .map(escaped)
+        .join("|"),
+      "gu"
+    );
+    for (const index of edited) {
+      lines[index] = (lines[index] ?? "").replaceAll(
+        pattern,
+        (value) => rewrites.get(value)?.to ?? value
+      );
+    }
+  }
+  return {
+    text: lines.join("\n"),
+    unresolved: unresolved.map((fields) =>
+      BUMP_FIELDS.filter((field) => fields.has(field))
+    ),
+  };
+};
+
 /**
  * One README's support-policy paragraph and the installs paragraph after it,
  * with a channel's moved values replaced where they appear in backticks.
+ *
+ * Every field is decided against the paragraphs as they were and the
+ * replacements are applied in one pass, so a field's NEW value is never read
+ * as another field's old one; two fields that would rewrite one value to
+ * different values are both left for review.
  *
  * A value the other channel records too (both say pi `^1.3.0`) is one
  * sentence about both: it is rewritten only when the other channel's
@@ -291,34 +398,8 @@ export const withReadmePolicy = (
     readonly proposed: Readonly<Record<BumpField, string>>;
   }
 ): { readonly text: string; readonly unresolved: readonly BumpField[] } => {
-  const lines = text.split("\n");
-  const policy = lines.findIndex((line) => line.startsWith(marker));
-  if (policy === -1) {
-    throw new Error(`no ${marker} paragraph`);
-  }
-  const offset = lines.slice(policy + 1).findIndex((line) => line !== "");
-  const edited = offset === -1 ? [policy] : [policy, policy + 1 + offset];
-  const unresolved: BumpField[] = [];
-  for (const field of BUMP_FIELDS) {
-    if (from[field] === to[field]) continue;
-    const old = `\`${from[field]}\``;
-    if (!edited.some((index) => lines[index]?.includes(old) === true)) {
-      continue;
-    }
-    const shared = other.now[field] === from[field];
-    if (
-      field === "distTag" ||
-      other.proposed[field] === from[field] ||
-      (shared && other.proposed[field] !== to[field])
-    ) {
-      unresolved.push(field);
-      continue;
-    }
-    for (const index of edited) {
-      lines[index] = (lines[index] ?? "").replaceAll(old, `\`${to[field]}\``);
-    }
-  }
-  return { text: lines.join("\n"), unresolved };
+  const edited = editPolicy(text, marker, [{ from, other, to }]);
+  return { text: edited.text, unresolved: edited.unresolved[0] ?? [] };
 };
 
 /**
@@ -386,22 +467,29 @@ export const applyBumpTexts = (
   const after = (channel: string): Readonly<Record<BumpField, string>> =>
     plans.find((each) => each.channel === channel)?.to ?? now(channel);
   const unresolved: Record<string, BumpField[]> = {};
+  const moves = plans.map((each): PolicyMove => {
+    const other =
+      Object.keys(current).find((channel) => channel !== each.channel) ??
+      each.channel;
+    return {
+      from: each.from,
+      other: { now: now(other), proposed: after(other) },
+      to: each.to,
+    };
+  });
+  // Every plan's edit decided against the README as it was and applied in
+  // one pass, so one plan's new value is never read as another's old one.
   const readmes = texts.readmes.map((readme) => {
-    let { text } = readme;
-    for (const each of plans) {
-      const other =
-        Object.keys(current).find((channel) => channel !== each.channel) ??
-        each.channel;
-      const edited = withReadmePolicy(text, readme.marker, each.from, each.to, {
-        now: now(other),
-        proposed: after(other),
-      });
-      ({ text } = edited);
+    const edited = editPolicy(readme.text, readme.marker, moves);
+    for (const [at, each] of plans.entries()) {
       unresolved[each.channel] = [
-        ...new Set([...(unresolved[each.channel] ?? []), ...edited.unresolved]),
+        ...new Set([
+          ...(unresolved[each.channel] ?? []),
+          ...(edited.unresolved[at] ?? []),
+        ]),
       ];
     }
-    return { ...readme, text };
+    return { ...readme, text: edited.text };
   });
   return { manifest, readmes, records, unresolved };
 };
