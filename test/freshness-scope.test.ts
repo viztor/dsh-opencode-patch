@@ -280,6 +280,26 @@ describe("freshness scope · the import walk on a known tree", () => {
     ]);
   });
 
+  it("reads a file off every loading form, and none off a pattern or import.meta", () => {
+    // es-module-lexer 3 reports a template-literal `import()` as a glob
+    // (`./locales/*.ts`) where 2 reported no specifier; a glob names no file,
+    // so it stays out, as do a computed argument and `import.meta`. A star
+    // re-export loads its module, so it is an edge.
+    expect(
+      importSpecifiers(
+        [
+          'export * from "./star.ts";',
+          'export * as ns from "./star-ns.ts";',
+          'const literal = await import("./literal.ts");',
+          // oxlint-disable-next-line no-template-curly-in-string -- the placeholder is source text for the lexer to read, not one to interpolate.
+          "const glob = await import(`./locales/${name}.ts`);",
+          'const computed = await import("./" + name);',
+          "const here = import.meta.url;",
+        ].join("\n")
+      ).toSorted()
+    ).toStrictEqual(["./literal.ts", "./star-ns.ts", "./star.ts"]);
+  });
+
   it("tells a type-only statement from a type alias and an inline type", () => {
     expect(
       importSpecifiers(
