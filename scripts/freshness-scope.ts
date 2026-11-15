@@ -44,7 +44,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { dirname, join, normalize, resolve } from "node:path/posix";
 import { fileURLToPath } from "node:url";
 
-import { initSync, parse } from "es-module-lexer";
+import { type Import, parse } from "es-module-lexer";
 
 /** The three checks, by the `package.json` script that runs each. */
 export type FreshnessCheck = "catalog:shim" | "cli:version" | "limits:shim";
@@ -104,6 +104,18 @@ export const isFreshnessCheck = (value: string): value is FreshnessCheck =>
   Object.hasOwn(FRESHNESS_CHECKS, value);
 
 /**
+ * The specifier one lexed record loads, as a list of zero or one: a static
+ * import or re-export always names one, a dynamic `import()` only when its
+ * argument is a string literal, and `import.meta` (`specifier: null`) never.
+ */
+const loadedSpecifier = (entry: Import): string[] => {
+  if (entry.type === "dynamic") {
+    return entry.glob || entry.specifier === undefined ? [] : [entry.specifier];
+  }
+  return entry.specifier === null ? [] : [entry.specifier];
+};
+
+/**
  * Every module specifier one source LOADS, as Node would load it: the source's
  * types erased by Node's own stripper (`stripTypeScriptTypes`, the same
  * erasure `--experimental-strip-types` applies when the generator runs), and
@@ -126,18 +138,20 @@ export const isFreshnessCheck = (value: string): value is FreshnessCheck =>
  * the generator first, and a throw fails the scope step closed rather than
  * reporting a walk that stopped early. A type error in a skipped file is
  * `pnpm run check`'s to catch, not freshness's. A dynamic `import()` whose
- * argument is not a string literal names no file and is skipped. Only module
- * source belongs here: `inputsOf` never hands it a JSON file or other data a
+ * argument is not a string literal names no file and is skipped, and so is
+ * one whose argument is a template the lexer reports as a glob
+ * (`` import(`./${name}.ts`) `` answers `./*.ts`, a pattern rather than a
+ * file); an `import.meta` reference names none either. Only module source
+ * belongs here: `inputsOf` never hands it a JSON file or other data a
  * generator imports, and names the file when this throws.
+ *
+ * The lexer's `parse` is synchronous in Node: without a prior `init()` it
+ * compiles its WebAssembly synchronously on the first call, so nothing here
+ * awaits.
  */
 export const importSpecifiers = (source: string): string[] => {
-  initSync();
   const [imports] = parse(stripTypeScriptTypes(source));
-  return [
-    ...new Set(
-      imports.flatMap((entry) => (entry.n === undefined ? [] : [entry.n]))
-    ),
-  ];
+  return [...new Set(imports.flatMap(loadedSpecifier))];
 };
 
 /**
