@@ -180,11 +180,13 @@ jobs:
       # holds because the install runs none of the cut's code (no dependency
       # build script runs unless something approves it: in the pinned pnpm,
       # an `allowBuilds` entry, a `build` permission or the allow-all in
-      # pnpm-workspace.yaml, a PNPM_CONFIG_* variable, or a CLI flag in this
-      # step or the scripts it runs, the proposer and the rc relock; none
-      # does, and test/host-drift.test.ts names each of those and the older
-      # spellings pnpm 12 ignores), so any build approval is a change to this
-      # step.
+      # pnpm-workspace.yaml, a PNPM_CONFIG_* variable, a CLI flag in this
+      # step or the scripts it runs, the proposer and the rc relock, or a
+      # pnpmfile, whose updateConfig hook can set any of those: one at the
+      # root, or one the workspace, its configDependencies, .npmrc or a flag
+      # names; none does, and test/host-drift.test.ts names each of those
+      # and the older spellings pnpm 12 ignores), so any build approval is a
+      # change to this step.
       - name: plan and write the bump (nightly only)
         id: plan
         if: github.event_name == 'schedule'
