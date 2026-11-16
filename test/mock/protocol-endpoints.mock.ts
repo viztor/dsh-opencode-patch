@@ -42,7 +42,6 @@ import {
 } from "../support/keyless-matrix.ts";
 import {
   ANTHROPIC_VERSION,
-  clearCapturedApiKeys,
   DEFAULT_USAGE_BASE_URL,
   LEGACY_PLANE_API,
   OPENCODE_FAMILY_API,
@@ -83,7 +82,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   gateway.requests.length = 0;
-  clearCapturedApiKeys();
   vi.stubEnv("OPENCODE_API_KEY", ZEN_KEY);
   vi.stubEnv("OPENCODE_GO_API_KEY", GO_KEY);
 });

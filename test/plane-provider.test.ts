@@ -34,6 +34,7 @@ import {
   planeApiKeyResolver,
   planeAuth,
   planeProfileFor,
+  planeRequestHeaders,
   relabelEfforts,
 } from "./support/src.ts";
 
@@ -802,5 +803,97 @@ describe("plane-provider · buildPlaneProvider", () => {
         expect(wrapped.has(factory)).toBe(true);
       }
     }
+  });
+});
+
+describe("plane-provider · planeRequestHeaders (OC4, OC5)", () => {
+  /** A context whose `waterfall` records its arguments and runs the last one. */
+  const recordingContext = () => {
+    const calls: unknown[][] = [];
+    return {
+      calls,
+      ctx: {
+        waterfall: (...args: unknown[]) => {
+          calls.push(args);
+          const next = args.at(-1) as () => unknown;
+          return next();
+        },
+      },
+    };
+  };
+
+  it("shapes the headers, then runs the host's request-headers waterfall over them", () => {
+    const { calls, ctx } = recordingContext();
+    const request = Object.freeze({ model: "m", provider: "opencode" });
+    const headers = new Headers({ "x-profile": "1" });
+    const prepare = planeRequestHeaders(ctx, (shaped) => {
+      shaped.set("x-opencode-session", "ses_x");
+    });
+    const answered = prepare(request, headers);
+    expect(answered).toBe(headers);
+    expect(headers.get("x-opencode-session")).toBe("ses_x");
+    expect(headers.get("x-profile")).toBe("1");
+    expect(calls).toHaveLength(1);
+    const [event, passed, carried, next] = calls[0] ?? [];
+    expect(event).toBe("llm-pi-ai/request-headers");
+    expect(passed).toBe(request);
+    expect(carried).toBe(headers);
+    expect((next as () => unknown)()).toBe(headers);
+  });
+
+  it("answers the shaped headers themselves where the context has no waterfall", () => {
+    const headers = new Headers();
+    expect(planeRequestHeaders({}, (h) => h.set("a", "1"))({}, headers)).toBe(
+      headers
+    );
+    expect(headers.get("a")).toBe("1");
+    expect(planeRequestHeaders(undefined)({}, headers)).toBe(headers);
+    expect(planeRequestHeaders({ waterfall: "no" })({}, headers)).toBe(headers);
+  });
+
+  it("never throws of its own: a shape that throws leaves the headers as they were, and the waterfall still runs", () => {
+    const { calls, ctx } = recordingContext();
+    const headers = new Headers({ "x-profile": "1" });
+    const answered = planeRequestHeaders(ctx, () => {
+      throw new Error("shape");
+    })({}, headers);
+    expect(answered).toBe(headers);
+    expect([...headers]).toEqual([["x-profile", "1"]]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("a contributor's throw propagates, and so does an answer that is not Headers, as on pi-ai's own routes", () => {
+    const throwing = {
+      waterfall: () => {
+        throw new Error("policy");
+      },
+    };
+    expect(() => planeRequestHeaders(throwing)({}, new Headers())).toThrow(
+      "policy"
+    );
+    const wrong = { waterfall: () => ({ set: () => null }) };
+    expect(() => planeRequestHeaders(wrong)({}, new Headers())).toThrow(
+      TypeError
+    );
+  });
+
+  it("createPlaneAdapter hands pi-ai the option when given one, and leaves it absent otherwise", async () => {
+    const host = await modules();
+    const base = {
+      auth: planeAuth({}, host.piAi.recordKeyFor, host.libraries),
+      effortNames: () => ({}),
+      modules: host,
+      profiles: () => new Map(),
+      resolveApiKey: async () => "k",
+    };
+    const prepareHeaders = planeRequestHeaders({});
+    const withOption = createPlaneAdapter({ ...base, prepareHeaders }) as {
+      config: Record<string, unknown>;
+    };
+    expect(withOption.config.prepareHeaders).toBe(prepareHeaders);
+    const without = createPlaneAdapter(base) as {
+      config: Record<string, unknown>;
+    };
+    expect(Object.hasOwn(without.config, "prepareHeaders")).toBe(false);
   });
 });

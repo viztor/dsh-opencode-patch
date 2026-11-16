@@ -200,8 +200,9 @@ let refreshPromise:
  * The live maps, the retired-id sets and the refresh bookkeeping are module
  * state for the life of the process, which is right for the host and wrong for
  * a test: a case that refreshes from a fixture would otherwise decide what every
- * later case in the file sees. The sibling resets are `clearCapturedApiKeys` and
- * `clearSessionUsageStore`.
+ * later case in the file sees. The sibling reset is `clearSessionUsageStore`;
+ * captured keys are kept per root (`captureStoreFor`), so a fresh `Context`
+ * needs none.
  */
 export const resetCatalogState = (): void => {
   activeGoCatalog = new Map(OPENCODE_GO_CATALOG.map((m) => [m.id, m]));

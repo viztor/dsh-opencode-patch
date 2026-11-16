@@ -32,7 +32,6 @@ import {
   type TierA,
   type TierB,
 } from "./support/host.ts";
-import { clearCapturedApiKeys } from "./support/src.ts";
 
 let tierA: TierA | undefined;
 let tierB: TierB | undefined;
@@ -45,7 +44,6 @@ afterEach(async () => {
   } finally {
     tierA = undefined;
     tierB = undefined;
-    clearCapturedApiKeys();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   }

@@ -49,9 +49,8 @@ import {
   waitForPlaneOwner,
 } from "./support/host.ts";
 import {
-  clearCapturedApiKeys,
+  captureStoreFor,
   discoverGoConfig,
-  getCapturedApiKey,
   getLiveGoCatalog,
   getLiveZenCatalog,
   isDeprecatedModelOn,
@@ -61,6 +60,7 @@ import {
   resolveGoApiKey,
   SESSION_HEADER,
 } from "./support/src.ts";
+import { collectUnknown } from "./test-helpers.ts";
 
 /** The realm label the fixture isolates pi-ai's credentials into. */
 const REALM = "console-test-realm";
@@ -111,7 +111,6 @@ afterEach(async () => {
   } finally {
     tierA = undefined;
     tierB = undefined;
-    clearCapturedApiKeys();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -313,9 +312,9 @@ describe(
       );
       expect(realm.calls).toContainEqual(["resolve", TOKEN_REF]);
       expect(tier.credentials.calls).not.toContainEqual(["resolve", TOKEN_REF]);
-      expect(getCapturedApiKey("opencode-go")).toBeUndefined();
-      expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
-      expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
+      expect(captureStoreFor(tier.ctx).get("opencode-go")).toBeUndefined();
+      expect(captureStoreFor(tier.ctx).get(undefined, "go")).toBeUndefined();
+      expect(captureStoreFor(tier.ctx).get(undefined, "zen")).toBeUndefined();
     });
 
     it("the realm alone is enough: unmarked entries in a realm the plugin does not share stay pi-ai's, and their turns leave as pi-ai alone sends them, with nothing captured", async () => {
@@ -366,10 +365,10 @@ describe(
       }
       expect(realm.calls).toContainEqual(["resolve", TOKEN_REF]);
       for (const plane of PLANES) {
-        expect(getCapturedApiKey(plane)).toBeUndefined();
+        expect(captureStoreFor(tier.ctx).get(plane)).toBeUndefined();
       }
-      expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
-      expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
+      expect(captureStoreFor(tier.ctx).get(undefined, "go")).toBeUndefined();
+      expect(captureStoreFor(tier.ctx).get(undefined, "zen")).toBeUndefined();
     });
 
     it("a Settings save on a realm plane is judged by pi-ai's own check, not the plugin's", async () => {
@@ -526,14 +525,14 @@ describe(
       for (const header of OURS) {
         expect(go.requests[0]?.headers).not.toHaveProperty(header);
       }
-      expect(getCapturedApiKey("opencode-go")).toBeUndefined();
-      expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
-      expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
+      expect(captureStoreFor(tierA.ctx).get("opencode-go")).toBeUndefined();
+      expect(captureStoreFor(tierA.ctx).get(undefined, "go")).toBeUndefined();
+      expect(captureStoreFor(tierA.ctx).get(undefined, "zen")).toBeUndefined();
       // The known answer: the unmarked plane is decorated, and its key is
       // captured, as before.
       const zen = await turn(tierA.llm, "opencode");
       expect(zen.requests[0]?.headers[SESSION_HEADER]).toMatch(/^ses_/u);
-      expect(getCapturedApiKey("opencode")).toBe("zen-k");
+      expect(captureStoreFor(tierA.ctx).get("opencode")).toBe("zen-k");
     });
   }
 );
@@ -1511,5 +1510,68 @@ describe(
         }
       }
     );
+  }
+);
+
+describe(
+  "host planes · a token the plugin did not send is never replayed (tier A, OC3)",
+  { timeout: 30_000 },
+  () => {
+    it("an unmarked, turnless gateway request carrying a token is never replayed by the meter", async () => {
+      // A Console-style request: on the gateway's URL, outside any turn the
+      // plugin decorated, with no marker. The URL claim still shapes it, but
+      // its token is not the plugin's to keep.
+      offline();
+      tierA = await mountTierA({
+        plugin: {},
+        providers: { "opencode-go": { models: [{ id: MODEL }] } },
+      });
+      await waitForPlaneOwner(tierA.llm, ["opencode-go"]);
+      await globalThis.fetch("https://opencode.ai/zen/go/v1/models", {
+        headers: { authorization: "Bearer console-token" },
+      });
+      expect(wire.requests.at(-1)?.headers[SESSION_HEADER]).toBeTruthy();
+      for (const policy of ["auto", "request", "configured"] as const) {
+        expect(
+          await resolveGoApiKey(tierA.ctx, "opencode-go", policy),
+          policy
+        ).toBeUndefined();
+      }
+      // The known answer: the same token, sent by a request of a turn the
+      // plugin decorated (cordis's own `llm/stream` waterfall, through the
+      // patched fetch), is what the meter of this root answers. So the store
+      // the meter reads is the one the patch writes.
+      const downstream = async function* downstream() {
+        await globalThis.fetch(
+          "https://opencode.ai/zen/go/v1/chat/completions",
+          {
+            body: JSON.stringify({ model: MODEL }),
+            headers: { authorization: "Bearer console-token" },
+            method: "POST",
+          }
+        );
+        yield { type: "finish" };
+      };
+      await collectUnknown(
+        (
+          tierA.ctx as unknown as {
+            waterfall: (event: string, ...args: unknown[]) => unknown;
+          }
+        ).waterfall(
+          "llm/stream",
+          { provider: "opencode-go", sessionId: "oc3-control" },
+          downstream
+        ) as AsyncIterable<unknown>
+      );
+      expect(wire.requests.at(-1)?.headers.authorization).toBe(
+        "Bearer console-token".length
+      );
+      for (const policy of ["auto", "request", "configured"] as const) {
+        expect(
+          await resolveGoApiKey(tierA.ctx, "opencode-go", policy),
+          policy
+        ).toBe("console-token");
+      }
+    });
   }
 );

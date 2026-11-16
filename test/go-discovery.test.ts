@@ -19,8 +19,9 @@
  * characterised rather than endorsed; see the comments for the reason.
  *
  * Offline and deterministic: no network, no clocks, and every case restores
- * `process.env` and the captured-key store in `afterEach`, because a leaked env
- * var silently breaks every file that runs after this one.
+ * `process.env` in `afterEach`, because a leaked env var silently breaks every
+ * file that runs after this one; captured keys are kept per root, so a case's
+ * own context starts with none.
  *
  * This file holds which entry and which row field the Go config is read from;
  * its siblings hold the base URL (`go-discovery-base-url`), the key ladder
@@ -40,20 +41,19 @@ import {
   standaloneEntry,
   ZEN_BASE,
 } from "./support/loader-rows.ts";
-import { clearCapturedApiKeys, discoverGoConfig } from "./support/src.ts";
+import { discoverGoConfig } from "./support/src.ts";
 
 /**
  * Restore every piece of ambient state these cases touch.
  *
- * A leaked env var or a leftover captured key silently breaks whichever file
- * runs next, so the hook lives in this file and not only in the old monolith.
+ * A leaked env var silently breaks whichever file runs next, so the hook lives
+ * in this file and not only in the old monolith.
  */
 afterEach(() => {
   // Named deletes rather than a loop: the names are the contract.
   delete process.env.DSH_TEST_GO_KEY;
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
 });
 
 describe("discoverGoConfig: which entry the credential comes from", () => {

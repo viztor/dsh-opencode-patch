@@ -1,11 +1,12 @@
 /**
- * Credential capture: what a key *is*, and where it was last seen.
+ * Credential capture: what a key *is*, and which account it belongs to.
  *
  * The plugin can learn a key two ways — observed on a live request, or resolved
- * from declared configuration — and this module owns the first: pulling a
- * credential out of whatever header shape carried it, classifying which account
- * tier it belongs to, and remembering it so later lookups do not have to fall
- * back to a static environment variable that may have gone stale.
+ * from declared configuration — and this module reads the first: pulling a
+ * credential out of whatever header shape carried it, and classifying which
+ * account tier it belongs to. Remembering it is the capture store's, one per
+ * root (`credentials.ts`), and what counts as a credential at all is
+ * `utils/credential-policy.ts`'s.
  *
  * Split out of `go-discovery.ts`, which keeps the *plan* side (which endpoint,
  * which key reference, and the policy that orders the two sources). The seam is
@@ -15,41 +16,12 @@
  * @module dsh-opencode-patch/key-capture
  */
 
+import { isPlaceholderApiKey } from "./utils/credential-policy.ts";
 import { isRecord } from "./utils/guards.ts";
 import { gatewayPlaneFor } from "./utils/request-shape.ts";
 
 /** Account tiers a captured credential can belong to. */
 export type KeyTier = "go" | "zen" | "unknown";
-
-/**
- * Bearer values the DSH adapter emits when it holds no real credential, plus the
- * gateway's own keyless sentinel.
- *
- * These are the exact strings the Authorization fallback exists to repair, so
- * they must never be *recorded* as a captured key: doing so overwrites a working
- * key with a dummy one, and every later lookup then re-injects the dummy.
- *
- * `public` is not an adapter placeholder — it is the gateway's own literal for a
- * keyless request, the vendor's own path for a model whose entry allows
- * anonymous use. The proxy treats no key and the literal alike, strips it and
- * forwards keylessly (`packages/console/app/src/lib/inference-proxy.ts`, both
- * 1.19 and 2.x: `const anonymous = !key || key === "public"`). What the service
- * behind the proxy answers is its own decision — the Zen free tier is refused
- * there — but the sentinel must never become a credential: capturing it would
- * forward `Bearer public`, turning an anonymous request into an authenticated
- * one. See `docs/upstream-findings.md` §1.5.
- */
-const PLACEHOLDER_API_KEYS: ReadonlySet<string> = new Set([
-  "null",
-  "none",
-  "public",
-  "undefined",
-  "unused",
-]);
-
-/** Whether a value is one of the adapter's placeholder credentials. */
-export const isPlaceholderApiKey = (key: string): boolean =>
-  PLACEHOLDER_API_KEYS.has(key.trim().toLowerCase());
 
 /**
  * Which account tier a request belongs to.
@@ -161,115 +133,4 @@ export const extractApiKeyFromHeaders = (
   return (
     candidates.find((value) => !isPlaceholderApiKey(value)) ?? candidates[0]
   );
-};
-
-/**
- * The capture store, read three ways.
- *
- * A lookup can be scoped by route (`capturedKeysByProvider`) or by tier
- * (`capturedKeysByTier`); the tier map is what makes a lookup survive a renamed
- * route. `latestCapturedKey` is the last resort, and is why the tier argument
- * matters: without it, "most recently seen" can hand the Go endpoint a Zen key.
- *
- * The route-scoped map carries the tier ALONGSIDE the key rather than only the
- * key. It used to hold `string`, which made the route lookup the one path that
- * ignored a requested tier: a Zen key seen while the Go route was in play came
- * back verbatim, so it outranked every correctly-filtered source — and it is the
- * FIRST captured step of both `auto` and `request`. Holding the tier is what lets
- * the route lookup apply the same rule the other two already did.
- */
-const capturedKeysByProvider = new Map<
-  string,
-  { key: string; tier: KeyTier }
->();
-const capturedKeysByTier = new Map<"go" | "zen", string>();
-let latestCapturedKey:
-  | { key: string; provider?: string; tier: KeyTier }
-  | undefined;
-
-/**
- * Whether a key classified as `tier` may answer a lookup for `wanted`.
- *
- * `unknown` is deliberately permissive, and identically so in all three lookup
- * paths: an unclassifiable key is one we never identified, not one we proved to
- * be the other tier. Filtering on "not the opposite" instead would make the
- * guess fail closed and hide working keys.
- */
-const tierSatisfies = (tier: KeyTier, wanted: "go" | "zen"): boolean =>
-  tier === wanted || tier === "unknown";
-
-/**
- * Record an API key captured from live HTTP request headers or provider configurations.
- *
- * A blank or placeholder value is ignored rather than stored.
- */
-export const recordCapturedApiKey = (
-  rawKey: string,
-  provider?: string,
-  url?: string
-): void => {
-  const key = rawKey.trim();
-  if (key.length === 0 || isPlaceholderApiKey(key)) {
-    return;
-  }
-  // Deliberately NOT the meter's route-first precedence (`resolveGoApiKey`): a
-  // key seen on a live request is classified by the request that carried it,
-  // not by the route the user named. See `tierForRequest`.
-  const tier = tierForRequest(url, provider);
-
-  if (typeof provider === "string" && provider.length > 0) {
-    capturedKeysByProvider.set(provider, { key, tier });
-  }
-  if (tier !== "unknown") {
-    capturedKeysByTier.set(tier, key);
-  }
-  latestCapturedKey = { key, provider, tier };
-};
-
-/**
- * Retrieve a previously captured API key by provider or tier.
- *
- * @param provider - route id to try first, when the caller has one.
- * @param tier - the tier the key must belong to. Pass it whenever the request
- * already identifies one: omitting it lets the most recently seen key win,
- * which may be for the other tier. A route-scoped hit is filtered by it too —
- * naming a route is a preference, not a licence to ignore the tier.
- */
-export const getCapturedApiKey = (
-  provider?: string,
-  tier?: "go" | "zen"
-): string | undefined => {
-  if (typeof provider === "string" && provider.length > 0) {
-    const direct = capturedKeysByProvider.get(provider);
-    if (
-      direct !== undefined &&
-      direct.key.length > 0 &&
-      (tier === undefined || tierSatisfies(direct.tier, tier))
-    ) {
-      return direct.key;
-    }
-  }
-  if (tier !== undefined) {
-    const byTier = capturedKeysByTier.get(tier);
-    if (byTier !== undefined && byTier.length > 0) {
-      return byTier;
-    }
-  }
-  if (
-    latestCapturedKey !== undefined &&
-    latestCapturedKey.key.length > 0 &&
-    (tier === undefined || tierSatisfies(latestCapturedKey.tier, tier))
-  ) {
-    return latestCapturedKey.key;
-  }
-  return undefined;
-};
-
-/**
- * Clear all captured API keys (primarily used in test teardown).
- */
-export const clearCapturedApiKeys = (): void => {
-  capturedKeysByProvider.clear();
-  capturedKeysByTier.clear();
-  latestCapturedKey = undefined;
 };

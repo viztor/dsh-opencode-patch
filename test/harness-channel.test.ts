@@ -235,6 +235,15 @@ describe("harness channel alignment · declarations", () => {
     // silently drops every `0.2.2-*` build, alpha and rc alike. Both clauses
     // stop at 0.3.0, which leaves the next line a separate decision rather than
     // a silent widening.
+    //
+    // The range deliberately does NOT follow the `llm-pi-ai/request-headers`
+    // seam (OC11). That seam first shipped in 0.2.2-alpha.3 and 0.2.2-rc.1 and
+    // is absent from 0.2.2-alpha.2 and every 0.2.1 build (a grep of each
+    // published bridge, 2026-11-15), but the plane adapter detects it by
+    // behaviour, and on a host without it the fetch patch still writes the
+    // plugin's own headers; only other plugins' contributors do not run on the
+    // planes there. Host gaps are feature-detected, never compared by version
+    // (D26), so the seam's floor is stated in the README pair instead.
     const peer =
       manifest().peerDependencies?.["@deepseek-ai/dsh-typert-protocol"];
     expect(peer).toBeDefined();
@@ -254,6 +263,7 @@ describe("harness channel alignment · declarations", () => {
         "0.2.2-alpha.3",
         "0.2.2-rc.1",
         "0.2.2-rc.2",
+        "0.2.2-rc.3",
         "0.2.2",
         ...Object.values(CHANNELS).map((record) => record.dsh),
       ]),
@@ -292,8 +302,8 @@ describe("harness channel alignment · declarations", () => {
     // `~4.0.6-alpha.2` although no 4.0.6 prerelease satisfies it, because the
     // prerelease-tuple rule npm resolves under is not part of an overlap.
     //
-    // Both tables are recorded from the registry on 2026-11-04, and 0.2.2-rc.2
-    // on 2026-11-12 (`npm view
+    // Both tables are recorded from the registry on 2026-11-04, 0.2.2-rc.2 on
+    // 2026-11-12 and 0.2.2-rc.3 on 2026-11-15 (`npm view
     // @deepseek-ai/dsh-typert-protocol@<v> peerDependencies` for every build
     // on the 0.2.1 and 0.2.2 lines; `npm view @deepseek-ai/cordis versions`).
     // A new typert build joins the first with its cordis range, and a new
@@ -322,6 +332,7 @@ describe("harness channel alignment · declarations", () => {
       "0.2.2-alpha.3": "~4.0.6-alpha.2",
       "0.2.2-rc.1": "~4.1.0",
       "0.2.2-rc.2": "~4.1.0",
+      "0.2.2-rc.3": "~4.1.0",
     };
     const peers = manifest().peerDependencies ?? {};
     const typertPeer = peers["@deepseek-ai/dsh-typert-protocol"] ?? "";
@@ -359,6 +370,7 @@ describe("harness channel alignment · declarations", () => {
     expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || >=4.0.6-0 <4.1.0")).toEqual([
       "typert@0.2.2-rc.1 -> cordis@4.1.0",
       "typert@0.2.2-rc.2 -> cordis@4.1.0",
+      "typert@0.2.2-rc.3 -> cordis@4.1.0",
     ]);
     expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || ~4.1.0")).toEqual(
       expect.arrayContaining(["typert@0.2.2-alpha.3 -> cordis@4.0.6-alpha.2"])

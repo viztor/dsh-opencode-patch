@@ -328,6 +328,30 @@ export default defineConfig({
           functions: 100,
           lines: 99,
         },
+        // The credential rules every decider shares, and the store and
+        // resolver over them (P6): every branch is a policy, a source, a
+        // capture gate or a strike, so all of them are covered.
+        "src/utils/credential-policy.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/credentials.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // The one write to `globalThis.fetch` (P6): every branch is a disposal
+        // order, a third party on top, or a fetch missing at install or at
+        // effect time, each driven on real contexts.
+        "src/host/global-fetch.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // The one installer for the remote services (P5): every branch is
         // driven, on a real context or a stand-in composition, so 100.
         "src/host/remote.ts": {
@@ -362,7 +386,14 @@ export default defineConfig({
         // floor above, its throwing `plugin`, throwing `get` and non-string
         // binding namespace covered there by `test/remote-service.test.ts`'s
         // stand-in compositions), which left lifecycle.ts at 98.07 / 85.71 /
-        // 100 / 97.95: the same unreachable branches in a smaller file. What
+        // 100 / 97.95: the same unreachable branches in a smaller file. P6
+        // moved the fetch install to `host/global-fetch.ts` (held at 100 above)
+        // and added the per-call plane headers, driven by their own unit cases,
+        // leaving lifecycle.ts at 98.03 / 88 / 100 / 97.95 (22 of 25 branches),
+        // and moved the credential fill to `credentials.ts`; the no-credential
+        // report's two "present" arms, which no request could reach (either
+        // key fills the wire, so no report follows), went with it, leaving
+        // fetch-patch.ts at 100 / 99.06 / 100 / 100 (106 of 107). What
         // is left uncovered no composition reaches, and is named here, by
         // expression rather than line, rather than driven through a stand-in:
         // - lifecycle.ts: the debug hook's `config.debugFile ?? ""` behind its
@@ -371,15 +402,12 @@ export default defineConfig({
         // - stream-hook.ts: the two `headerValueFor(…) ??
         //   fallbackSessionId(…)` fallbacks for a non-empty string or numeric
         //   session id, since `headerValueFor` never answers `undefined` there;
-        // - fetch-patch.ts: the no-credential report's `requestKey ===
-        //   undefined ? "none" : "present"` and `captured === undefined ?
-        //   "none" : "present"` arms, since either key fills the wire and no
-        //   report follows, and the debug entry's `session:
+        // - fetch-patch.ts: the debug entry's `session:
         //   headers.get(SESSION_HEADER) ?? null` after the patch set the
         //   header.
         "src/lifecycle.ts": {
           statements: 98,
-          branches: 85.5,
+          branches: 87.9,
           functions: 100,
           lines: 97.5,
         },
@@ -391,7 +419,7 @@ export default defineConfig({
         },
         "src/fetch-patch.ts": {
           statements: 100,
-          branches: 97.5,
+          branches: 99,
           functions: 100,
           lines: 100,
         },

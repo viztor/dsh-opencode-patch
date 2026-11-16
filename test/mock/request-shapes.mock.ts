@@ -34,7 +34,6 @@ import {
   type ResolvedPluginConfig,
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
-  clearCapturedApiKeys,
   DUMMY_READ_TOOL_FUNCTION,
   isOpenCodeSessionId,
   newOpenCodeMessageId,
@@ -79,7 +78,6 @@ afterAll(async () => {
 beforeEach(() => {
   gateway.requests.length = 0;
   forced = undefined;
-  clearCapturedApiKeys();
   vi.stubEnv("OPENCODE_API_KEY", ZEN_KEY);
   vi.stubEnv("OPENCODE_GO_API_KEY", GO_KEY);
 });
@@ -467,7 +465,6 @@ describe("keyless: free models still answer", () => {
     // so the request must go out with no credential and still succeed.
     vi.stubEnv("OPENCODE_API_KEY", "");
     vi.stubEnv("OPENCODE_GO_API_KEY", "");
-    clearCapturedApiKeys();
 
     const response = await als.run(sessionTurn(), () =>
       post(

@@ -17,7 +17,6 @@ import {
   DUMMY_BASH_TOOL,
   DUMMY_READ_TOOL,
   SESSION_HEADER,
-  clearCapturedApiKeys,
   findModelSpecOn,
   openCodeSessionIdFor,
   patchFetch,
@@ -37,7 +36,6 @@ afterEach(() => {
   delete process.env.OPENCODE_GO_API_KEY;
   delete process.env.OPENCODE_SESSION_ID;
   delete process.env.XDG_DATA_HOME;
-  clearCapturedApiKeys();
 });
 
 describe("patchFetch · core tools", () => {

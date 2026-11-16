@@ -13,8 +13,7 @@ import {
   type FixtureStore,
 } from "./support/opencode-store-fixture.ts";
 import {
-  clearCapturedApiKeys,
-  recordCapturedApiKey,
+  captureStoreFor,
   resolveGoApiKey,
   resolveOpencodeStoreKey,
 } from "./support/src.ts";
@@ -22,15 +21,14 @@ import {
 /**
  * Restore every piece of ambient state these cases touch.
  *
- * A leaked env var or a leftover captured key silently breaks whichever file
- * runs next, so the hook lives in this file and not only in the old monolith.
+ * A leaked env var silently breaks whichever file runs next, so the hook lives
+ * in this file and not only in the old monolith.
  */
 afterEach(() => {
   // Named deletes rather than a loop: the names are the contract.
   delete process.env.DSH_TEST_GO_KEY;
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
 });
 
 describe("go-discovery: the installation's own store, and where it sits", () => {
@@ -91,9 +89,14 @@ describe("go-discovery: the installation's own store, and where it sits", () => 
 
   it("still loses to a key captured from a live request", async () => {
     withStore([{ integrationId: "opencode-go", value: "sk-fixture-go" }]);
-    recordCapturedApiKey("sk-captured-go", "opencode-go", GO_REQUEST);
+    const context = composition();
+    captureStoreFor(context).record(
+      "sk-captured-go",
+      "opencode-go",
+      GO_REQUEST
+    );
     await expect(
-      resolveGoApiKey(composition(), undefined, "auto", true)
+      resolveGoApiKey(context, undefined, "auto", true)
     ).resolves.toBe("sk-captured-go");
   });
 
@@ -117,5 +120,16 @@ describe("go-discovery: the installation's own store, and where it sits", () => 
     await expect(
       resolveGoApiKey(composition(), undefined, "auto", true)
     ).resolves.toBeUndefined();
+  });
+
+  it("a placeholder in the store is no credential: the meter resolves nothing", async () => {
+    // The one placeholder filter applies at the meter's exit too, whichever
+    // source answered: a stored `unused` must not reach the usage endpoint.
+    withStore([{ integrationId: "opencode-go", value: "unused" }]);
+    for (const policy of ["auto", "request", "configured"] as const) {
+      await expect(
+        resolveGoApiKey(composition(), undefined, policy, true)
+      ).resolves.toBeUndefined();
+    }
   });
 });

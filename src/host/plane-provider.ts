@@ -26,6 +26,13 @@
  * both are restated here over the same seams, keyed by pi-ai's exported
  * `recordKeyFor`, and the key resolution mirrors pi-ai's exactly (D20).
  *
+ * The adapter is also built with pi-ai's `prepareHeaders` option, as pi-ai's
+ * own adapter is ({@link planeRequestHeaders}): per call, the plugin writes
+ * the plane headers from the turn the stream hook decorated (OC5), and then
+ * runs the host's `llm-pi-ai/request-headers` waterfall, so another plugin's
+ * contributor runs on the planes the plugin serves as it does on pi-ai's own
+ * routes (OC4). pi-ai applies its attribution after both.
+ *
  * @module dsh-opencode-patch/host/plane-provider
  */
 
@@ -35,7 +42,7 @@ import {
   type HostModules,
   readLaunchEnvironment,
 } from "../cordis-context.ts";
-import { resolveOpencodeStoreKey } from "../go-discovery.ts";
+import { resolveOpencodeStoreKey } from "../credentials.ts";
 import { reclassifyRefusals } from "../utils/gateway-refusal.ts";
 import {
   isAsyncIterableLike,
@@ -102,6 +109,8 @@ export interface PlaneAdapterInputs {
     model: string;
     reason: string;
   }) => void;
+  /** pi-ai's per-call header seam; see {@link planeRequestHeaders}. */
+  readonly prepareHeaders?: (request: unknown, headers: Headers) => Headers;
 }
 
 /** The error code of a thrown value, when it has one. */
@@ -260,8 +269,59 @@ export const createPlaneAdapter = (inputs: PlaneAdapterInputs): object => {
     ...(inputs.onReplayDegrade === undefined
       ? {}
       : { onReplayDegrade: inputs.onReplayDegrade }),
+    ...(inputs.prepareHeaders === undefined
+      ? {}
+      : { prepareHeaders: inputs.prepareHeaders }),
   });
 };
+
+/**
+ * The plane adapter's `prepareHeaders`: the plugin's plane headers, then the
+ * host's `llm-pi-ai/request-headers` waterfall, exactly as pi-ai's own
+ * `apply` wires the option for its adapter.
+ *
+ * The order is profile headers (pi-ai sets them before calling this), the
+ * plugin's plane headers, the contributors, and pi-ai's attribution last —
+ * the place profile headers hold on pi-ai's own routes. A contributor can
+ * therefore see, and change, what the plugin set.
+ *
+ * Detected by behaviour, never by a host version: the waterfall runs only
+ * where the context has one, and a host whose adapter never calls this option
+ * leaves the turn unflagged, so the fetch patch shapes it as it always has.
+ *
+ * @param ctx - the plugin context whose `waterfall` runs the contributors.
+ * @param shape - writes the plugin's plane headers for the current turn; it
+ *   never throws out of here, because an unshaped turn is still shaped by the
+ *   fetch patch.
+ * @returns the option; a contributor's throw propagates, and pi-ai fails the
+ *   call with `REQUEST_HEADERS`, as on its own routes.
+ */
+export const planeRequestHeaders =
+  (ctx: unknown, shape?: (headers: Headers) => void) =>
+  (request: unknown, headers: Headers): Headers => {
+    try {
+      shape?.(headers);
+    } catch {
+      // Never throws: an unshaped turn is shaped by the fetch patch.
+    }
+    if (!isRecord(ctx) || !isFunctionLike(ctx.waterfall)) {
+      return headers;
+    }
+    const prepared: unknown = Reflect.apply(ctx.waterfall, ctx, [
+      "llm-pi-ai/request-headers",
+      request,
+      headers,
+      () => headers,
+    ]);
+    if (!(prepared instanceof Headers)) {
+      // What pi-ai's own route does with such an answer: its attribution
+      // write fails, and the call with it (`REQUEST_HEADERS`).
+      throw new TypeError(
+        "a llm-pi-ai/request-headers contributor answered something other than Headers"
+      );
+    }
+    return prepared;
+  };
 
 /** A pi credential, as pi-ai maps one from a stored record. */
 type PiCredential = Readonly<Record<string, unknown>>;

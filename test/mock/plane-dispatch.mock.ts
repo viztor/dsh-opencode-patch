@@ -40,11 +40,7 @@ import {
   type TierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
-import {
-  clearCapturedApiKeys,
-  headerValueFor,
-  OPENCODE_ZEN_CATALOG,
-} from "../support/src.ts";
+import { headerValueFor, OPENCODE_ZEN_CATALOG } from "../support/src.ts";
 import { usesCatalogThinkingLevels } from "../support/thinking-levels.ts";
 import { urlOf } from "../test-helpers.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
@@ -224,7 +220,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   gateway.requests.length = 0;
-  clearCapturedApiKeys();
 });
 
 afterEach(async () => {

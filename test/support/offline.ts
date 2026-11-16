@@ -1,5 +1,6 @@
 /**
- * Keep the unit and mock suites off the network.
+ * Keep the unit and mock suites off the network, and off the developer's
+ * exported OpenCode keys.
  *
  * Both are documented as offline, and they were not: every `getLive*Catalog`
  * read on a stale catalog — which is every read in a fresh test process —
@@ -46,3 +47,14 @@ export const offlineFetch = async (
 };
 
 globalThis.fetch = offlineFetch as typeof fetch;
+
+/**
+ * Off the developer's keys as well as the network: a key exported in the
+ * shell that runs the suite would answer every case that expects no declared
+ * credential (the fill's placeholder, the no-credential report, the meter's
+ * `configured` step). Unset once per file, before any case runs; a case that
+ * wants a key sets or stubs its own. CI exports neither in the unit run, so
+ * this changes nothing there.
+ */
+delete process.env.OPENCODE_API_KEY;
+delete process.env.OPENCODE_GO_API_KEY;

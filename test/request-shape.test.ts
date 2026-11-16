@@ -18,6 +18,8 @@ import {
   isGoPlaneUrl,
   isZenProvider,
   modelIdOf,
+  planeHeadersFor,
+  pluginMarkerOn,
   requestUrlOf,
   toolNamesOf,
 } from "./support/src.ts";
@@ -273,5 +275,82 @@ describe("request-shape · toolNamesOf", () => {
 describe("request-shape · constants", () => {
   it("sends the Anthropic version the client sends", () => {
     expect(ANTHROPIC_VERSION).toBe("2023-06-01");
+  });
+});
+
+describe("request-shape · pluginMarkerOn (OC2)", () => {
+  it("reads the marker's value in any case, an empty one included", () => {
+    expect(pluginMarkerOn(new Headers({ "X-OpenCode-Plugin": "x/1" }))).toBe(
+      "x/1"
+    );
+    expect(pluginMarkerOn(new Headers({ "x-opencode-plugin": "" }))).toBe("");
+    expect(pluginMarkerOn(new Headers())).toBeUndefined();
+  });
+});
+
+describe("request-shape · planeHeadersFor, the one table of plane headers", () => {
+  const SES = "ses_0123456789abAAAAAAAAAAAAAA";
+  const PARENT = "ses_0123456789abBBBBBBBBBBBBBB";
+  const MSG = "msg_0123456789abCCCCCCCCCCCCCC";
+
+  it("a plane: the two session headers, and no affinity pair", () => {
+    expect(planeHeadersFor({ relay: false, session: SES })).toEqual([
+      ["x-opencode-session-id", SES],
+      ["x-opencode-session", SES],
+    ]);
+  });
+
+  it("a relay: the affinity pair after them", () => {
+    expect(planeHeadersFor({ relay: true, session: SES })).toEqual([
+      ["x-opencode-session-id", SES],
+      ["x-opencode-session", SES],
+      ["x-session-affinity", SES],
+      ["x-session-id", SES],
+    ]);
+  });
+
+  it("everything, in write order: parent pair, org, then the origin headers", () => {
+    expect(
+      planeHeadersFor({
+        org: "wrk_1",
+        origin: { client: "cli", project: "p", request: MSG },
+        parent: PARENT,
+        relay: false,
+        session: SES,
+      })
+    ).toEqual([
+      ["x-opencode-session-id", SES],
+      ["x-opencode-session", SES],
+      ["x-opencode-parent-session-id", PARENT],
+      ["x-parent-session-id", PARENT],
+      ["x-opencode-org-id", "wrk_1"],
+      ["x-opencode-client", "cli"],
+      ["x-opencode-request", MSG],
+      ["x-opencode-project", "p"],
+    ]);
+  });
+
+  it("drops a blank org, a request id not in the client's shape, and an absent project; no origin means none of the three", () => {
+    expect(
+      planeHeadersFor({
+        org: "",
+        origin: { client: "cli", request: "not-a-message-id" },
+        relay: false,
+        session: SES,
+      }).map(([name]) => name)
+    ).toEqual([
+      "x-opencode-session-id",
+      "x-opencode-session",
+      "x-opencode-client",
+    ]);
+    expect(
+      planeHeadersFor({ org: "wrk_1", relay: false, session: SES }).map(
+        ([name]) => name
+      )
+    ).toEqual([
+      "x-opencode-session-id",
+      "x-opencode-session",
+      "x-opencode-org-id",
+    ]);
   });
 });

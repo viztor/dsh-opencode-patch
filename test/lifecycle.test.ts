@@ -17,7 +17,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -33,7 +33,9 @@ import {
 } from "./support/composition.ts";
 import { offlineFetch } from "./support/offline.ts";
 import {
+  type ActiveTurnState,
   apply,
+  callHeadersFor,
   findModelSpecOn,
   getSessionUsage,
   inspectPatch,
@@ -224,13 +226,10 @@ describe("apply (plugin lifecycle)", () => {
     );
     await second.dispose();
 
-    // KNOWN_DEFECT P6: disposing the first activation while the second's patch
-    // is on top skips the first's restore (it restores only while current),
-    // and the second then restores to the first's patch — which outlives both.
-    // P6 flips this assertion; until then the case owns the stub underneath
-    // and removes it, so the leftover cannot reach the next case.
-    expect(globalThis.fetch?.name, "KNOWN_DEFECT P6").toBe(PATCHED_FETCH);
-    vi.unstubAllGlobals();
+    // Disposing the first activation while the second's patch is on top turns
+    // the first into a pass-through link, and the second's restore unwinds
+    // through it to the fetch that was there before either.
+    expect(globalThis.fetch).toBe(replacementFetch);
   });
 
   it("a reload keeps every remote service reachable", async () => {
@@ -493,8 +492,9 @@ describe("apply (plugin lifecycle)", () => {
     ]);
     const binding = usage().typertRemote;
 
-    // Latest first, so the fetch patches unwind cleanly (the other order is
-    // P6's). The service is the same one, now reading the remaining row's.
+    // Latest first (either order unwinds the fetch patches since P6,
+    // `src/host/global-fetch.ts`). The service is the same one, now reading
+    // the remaining row's.
     urls.length = 0;
     await second.dispose();
     expect(usage().typertRemote, "the same service").toBe(binding);
@@ -710,12 +710,11 @@ describe("apply (plugin lifecycle)", () => {
     }
   });
 
-  it("three activations, the middle one disposed first: the remaining one warns though its patch runs (KNOWN_DEFECT P6)", async () => {
-    // pC wraps pB wraps pA. Disposing B leaves pC current; disposing C then
-    // restores the fetch C wrapped, the disposed pB, which no live activation
-    // holds. pB still calls through to pA, so A's turn carries its header,
-    // but A's predicate reads pB as a replacement and warns (L1).
+  it("three activations, the middle one disposed first: the remaining one's patch is current and it does not warn", async () => {
+    // pC wraps pB wraps pA. Disposing B leaves pB as a pass-through link under
+    // pC; disposing C then unwinds through pB to pA, which is A's own patch.
     echoHeaders();
+    const stub = globalThis.fetch;
     const first = await mountPlugin();
     const second = await mountPlugin({ ctx: first.ctx });
     const third = await mountPlugin({ ctx: first.ctx });
@@ -731,21 +730,52 @@ describe("apply (plugin lifecycle)", () => {
     expect((headers as Record<string, string>)["x-opencode-session"]).toBe(
       openCodeSessionIdFor("l1-three")
     );
-    // KNOWN_DEFECT P6: the stale restore put a disposed patch back, so this
-    // reads one warning; P6's chain-aware restore flips it to none.
     expect(
       first
         .lines()
-        .filter((line) => line.includes("globalThis.fetch is no longer")),
-      "KNOWN_DEFECT P6"
-    ).toHaveLength(1);
+        .filter((line) => line.includes("globalThis.fetch is no longer"))
+    ).toHaveLength(0);
     await first.fiber.dispose();
-    // The disposed pB outlives every activation (the same defect); the case
-    // owns the stub underneath and removes it, so the leftover cannot reach
-    // the next case.
-    expect(globalThis.fetch?.name, "KNOWN_DEFECT P6").toBe(PATCHED_FETCH);
-    vi.unstubAllGlobals();
+    expect(globalThis.fetch).toBe(stub);
   });
+
+  it.each([
+    ["the earlier first", "first"],
+    ["the later first", "second"],
+  ] as const)(
+    "apply A, apply B, dispose A and B (%s) ends at the fetch that was there",
+    async (_order, disposedFirst) => {
+      vi.stubGlobal("fetch", replacementFetch);
+      const tmpDir = await mkdtemp(path.join(tmpdir(), "dsh-opencode-order-"));
+      try {
+        const fileA = path.join(tmpDir, "a.jsonl");
+        const fileB = path.join(tmpDir, "b.jsonl");
+        const a = await mountPlugin({ config: { debugFile: fileA } });
+        const b = await mountPlugin({
+          config: { debugFile: fileB },
+          ctx: a.ctx,
+        });
+        const [early, late] = disposedFirst === "first" ? [a, b] : [b, a];
+        await early.fiber.dispose();
+        if (disposedFirst === "first") {
+          // B's patch still runs, and A's link under it passes through: a
+          // claimed request is recorded by B and never by A.
+          await globalThis.fetch(
+            "https://opencode.ai/zen/v1/chat/completions",
+            { body: "{}", method: "POST" }
+          );
+          const content = await waitForFileContent(fileB);
+          expect(content).toContain('"claimed":true');
+          const written = await readFile(fileA, "utf-8").catch(() => "");
+          expect(written).not.toContain('"claimed":true');
+        }
+        await late.fiber.dispose();
+        expect(globalThis.fetch).toBe(replacementFetch);
+      } finally {
+        await rm(tmpDir, { force: true, recursive: true });
+      }
+    }
+  );
 
   it("apply waits for the remote services' reports before it settles", async () => {
     // cordis waits for `apply`'s promise; the services' reports are part of
@@ -1244,5 +1274,84 @@ describe("apply (plugin lifecycle)", () => {
     expect(
       (fromOptions as Record<string, string>)["x-opencode-parent-session-id"]
     ).toBe(openCodeSessionIdFor("explicit-parent"));
+  });
+});
+
+describe("callHeadersFor · the plane headers the adapter writes per call (OC5)", () => {
+  const SES = openCodeSessionIdFor("per-call");
+  const PARENT = openCodeSessionIdFor("per-call-parent");
+  const MSG = "msg_0123456789abCCCCCCCCCCCCCC";
+
+  /** The headers one call writes inside `state`, and the state after it. */
+  const written = (
+    state: ActiveTurnState | undefined,
+    config = resolveConfig()
+  ): {
+    headers: Record<string, string>;
+    state: ActiveTurnState | undefined;
+  } => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const headers = new Headers({ "x-profile": "1" });
+    const write = callHeadersFor(als, config);
+    if (state === undefined) {
+      write(headers);
+    } else {
+      als.run(state, () => {
+        write(headers);
+      });
+    }
+    return { headers: Object.fromEntries(headers), state };
+  };
+
+  it("writes the turn's plane headers from the one table, and marks the turn", () => {
+    const { headers, state } = written({
+      parentValue: PARENT,
+      project: "repo",
+      provider: "opencode",
+      requestValue: MSG,
+      value: SES,
+    });
+    expect(headers).toEqual({
+      "x-opencode-client": "cli",
+      "x-opencode-parent-session-id": PARENT,
+      "x-opencode-project": "repo",
+      "x-opencode-request": MSG,
+      "x-opencode-session": SES,
+      "x-opencode-session-id": SES,
+      "x-parent-session-id": PARENT,
+      "x-profile": "1",
+    });
+    expect(state?.perCall).toBe(true);
+  });
+
+  it("follows the settings: the org, no project, no origin headers", () => {
+    const base = { provider: "opencode-go", value: SES } as ActiveTurnState;
+    expect(
+      written({ ...base }, resolveConfig({ credentialOrg: "wrk_1" })).headers[
+        "x-opencode-org-id"
+      ]
+    ).toBe("wrk_1");
+    expect(
+      written({ ...base }, resolveConfig({ injectProject: false })).headers
+    ).not.toHaveProperty("x-opencode-project");
+    expect(
+      written({ ...base, project: "" }).headers["x-opencode-project"]
+    ).toBe("global");
+    const bare = written(
+      { ...base },
+      resolveConfig({ injectOriginHeaders: false })
+    );
+    expect(Object.keys(bare.headers).toSorted()).toEqual([
+      "x-opencode-session",
+      "x-opencode-session-id",
+      "x-profile",
+    ]);
+  });
+
+  it("writes nothing outside a turn the plugin decorated, or on another plugin's turn", () => {
+    expect(written(undefined).headers).toEqual({ "x-profile": "1" });
+    const foreign = written({ foreign: true, provider: "opencode", value: "" });
+    expect(foreign.headers).toEqual({ "x-profile": "1" });
+    expect(foreign.state?.perCall).toBeUndefined();
   });
 });
