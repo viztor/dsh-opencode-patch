@@ -17,7 +17,7 @@ import {
   KEY_SOURCE_POLICIES,
   PKG,
 } from "./support/src.ts";
-import { elementName, findAll, firstOf } from "./test-helpers.ts";
+import { collectText, elementName, findAll, firstOf } from "./test-helpers.ts";
 
 describe("settings-page: OpencodeCard rendering", () => {
   const mountCard = () => {
@@ -257,6 +257,49 @@ describe("settings-page: OpencodeCard rendering", () => {
       view: "page",
     });
   };
+
+  it("says once, on the page view, that the settings apply when the plugin is applied again", () => {
+    // A Settings write takes the loader's volatile-only path and the plugin
+    // reads its row once, at apply, so an edit lands on the next apply. The
+    // card says so once, above the form, rather than in every control's hint.
+    const Card = mountCard();
+    const seat = (k: string): string => `seat:${k}`;
+    const state = {
+      fields: {},
+      shell: {
+        available: true,
+        dirty: false,
+        failed: false,
+        invalid: false,
+        saving: false,
+        writable: true,
+      },
+    };
+    const tree = Card({
+      discard: () => {},
+      edit: () => {},
+      resetField: () => {},
+      save: () => {},
+      t: seat,
+      useOpencodeCard: (selector: (s: typeof state) => unknown) =>
+        selector(state),
+      view: "page",
+    });
+    const line = seat("appliesOnReapply");
+    expect(collectText(tree).filter((text) => text === line)).toHaveLength(1);
+    // Not inside a control: no control carries it as a label or a hint.
+    const controls = controlsInOrder(tree);
+    expect(controls).toHaveLength(CARD_FIELDS.length);
+    for (const control of controls) {
+      expect(Object.values(control.props)).not.toContain(line);
+      expect(collectText(control)).not.toContain(line);
+    }
+
+    const summary = Card({ t: seat, view: "summary" }) as {
+      props: { children: unknown };
+    };
+    expect(summary.props.children).toBe(seat("description"));
+  });
 
   it("renders one control per register entry, in register order", () => {
     const tree = renderPage(mountCard());

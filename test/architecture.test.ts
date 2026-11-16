@@ -527,6 +527,10 @@ describe("architecture · the client bundle reaches nothing host-only", () => {
     expect(graph.has("config-values.ts")).toBe(true);
     // And it must not wander into the host half through a type-only import.
     expect(graph.has("lifecycle.ts")).toBe(false);
+    // The settings table does, and the schema module, and schemastery with
+    // it, never reaches the browser.
+    expect(graph.has("settings-table.ts")).toBe(true);
+    expect(graph.has("config.ts")).toBe(false);
   });
 
   it("imports no node built-in, no cordis runtime and no pi", () => {

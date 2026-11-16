@@ -432,7 +432,7 @@ describe("usage-pill: UsagePill component gating", () => {
     expect(element.type).toBeDefined();
   });
 
-  it("replaces the default gate when custom markers exclude the stock route", () => {
+  it("replaces the default gate when the configured routes exclude the stock route", () => {
     const store = createStore({
       current: {
         model: "deepseek-v4.1-flash",
@@ -442,7 +442,6 @@ describe("usage-pill: UsagePill component gating", () => {
 
     const element = UsagePill({
       directory: store,
-      modelMarkers: ["only-this-model"],
       meterProviders: ["only-this-route"],
       readUsage: async () => createMockUsage(),
       t: (k: string) => k,
@@ -451,7 +450,7 @@ describe("usage-pill: UsagePill component gating", () => {
     expect(element).toBeNull();
   });
 
-  it("falls back to the default markers when the configured lists are empty", () => {
+  it("falls back to the default routes when the configured list is empty", () => {
     const store = createStore({
       current: {
         model: "some-model",
@@ -461,7 +460,6 @@ describe("usage-pill: UsagePill component gating", () => {
 
     const element = UsagePill({
       directory: store,
-      modelMarkers: [],
       meterProviders: [],
       readUsage: async () => createMockUsage(),
       t: (k: string) => k,

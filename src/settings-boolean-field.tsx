@@ -1,7 +1,7 @@
 /**
  * Boolean settings field: the injected `Switch` inside the shared
- * {@link SettingsFieldShell}. See `AGENTS.md` → "Why the card owns its
- * boolean/list fields".
+ * {@link SettingsFieldShell}. Ours because the host ships no boolean field
+ * spec.
  *
  * @module dsh-opencode-patch/settings-boolean-field
  */

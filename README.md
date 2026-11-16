@@ -223,7 +223,7 @@ Hovering the trigger explains its own number; clicking it opens the panel. The s
 
 ### Settings card — _Settings → Plugins → OpenCode Patch_
 
-Nine controls in four sections — the decisions a user actually makes. Everything renders from the platform's own primitives (`Switch`, `Tag`, `Button`, host tokens), and every knob carries a hint plus a reset-to-default affordance.
+Nine controls in four sections — the decisions a user actually makes. Everything renders from the platform's own primitives (`Switch`, `Tag`, `Button`, host tokens), and every knob carries a hint plus a reset-to-default affordance. A change takes effect the next time the plugin is applied (disable and re-enable it, or restart `dsh`), as the card says above its controls.
 
 | Section | Control | Default | What it does |
 | :-- | :-- | :-: | :-- |

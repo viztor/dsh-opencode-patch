@@ -41,7 +41,6 @@ import {
 } from "../scripts/package-checks.ts";
 import * as packageChecks from "../scripts/package-checks.ts";
 import { SCOPED_TARGETS } from "../scripts/scoped-targets.ts";
-import { en as cardCopy } from "./support/src.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -374,7 +373,7 @@ describe("package checks · the manifest (moved from check.ts)", () => {
     expect(dts).toMatch(/interface TypertRemoteContribution\b/u);
   });
 
-  it("the locales hold the same keys, and the bundle shows one display name", () => {
+  it("the locales hold the same keys", () => {
     const [en, zh] = ["en", "zh"].map(
       (lang) =>
         JSON.parse(
@@ -388,6 +387,9 @@ describe("package checks · the manifest (moved from check.ts)", () => {
     const enKeys = localeKeyPaths(en).toSorted();
     expect(enKeys.length).toBeGreaterThan(0);
     expect(localeKeyPaths(zh).toSorted()).toStrictEqual(enKeys);
-    expect(en?.meta?.title).toBe(cardCopy.title);
+    // A known answer that the read reached `meta.title`, the card's one
+    // display name; that the card's dictionary has no `title` of its own is
+    // pinned by test/settings-snapshot.test.ts.
+    expect(en?.meta?.title).toBe("OpenCode Patch");
   });
 });

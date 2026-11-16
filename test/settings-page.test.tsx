@@ -720,7 +720,6 @@ describe("settings-page: apply & slots", () => {
             status: "ready",
             user: {},
             value: {
-              usageModelMarkers: ["custom-go-model"],
               providers: ["custom-go-route"],
             },
             writable: true,

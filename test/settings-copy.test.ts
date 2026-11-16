@@ -16,10 +16,19 @@
  */
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { en, withBundleCopy, zh } from "./support/src.ts";
+import {
+  CARD_FIELDS,
+  en,
+  isRecord,
+  withBundleCopy,
+  zh,
+} from "./support/src.ts";
+import { blankCommentLines } from "./support/strip-comments.ts";
 
 /** A seat whose dictionary predates every key: it answers with the key itself. */
 const staleSeat = (key: string): string => key;
@@ -107,5 +116,167 @@ describe("the dictionaries", () => {
         `${dict.usageResetsAtPrefix}3:00${dict.usageResetsAtSuffix}`.trim()
       ).not.toBe("3:00");
     }
+  });
+});
+
+describe("the card's name", () => {
+  const ROOT = join(import.meta.dirname, "..");
+  const read = (file: string): string => readFileSync(join(ROOT, file), "utf8");
+  /**
+   * The package's own title in one language. The host heads the card with it
+   * (the plugin manager reads `meta.title`), so it is the card's name; the
+   * dictionary has no title of its own.
+   */
+  const metaTitle = (locale: "en" | "zh"): string => {
+    const parsed: unknown = JSON.parse(read(`locale/${locale}.json`));
+    const title =
+      isRecord(parsed) && isRecord(parsed.meta) ? parsed.meta.title : undefined;
+    if (typeof title !== "string") {
+      throw new TypeError(`locale/${locale}.json has no meta.title`);
+    }
+    return title;
+  };
+
+  it("is the name each README gives the card", () => {
+    // Known answers: the reads reached the files.
+    expect(metaTitle("en")).toBe("OpenCode Patch");
+    expect(metaTitle("zh")).toBe("OpenCode 补丁");
+    expect(read("README.md")).toContain(
+      `_Settings → Plugins → ${metaTitle("en")}_`
+    );
+    expect(read("README.zh-CN.md")).toContain(
+      `_Settings → Plugins → ${metaTitle("zh")}_`
+    );
+    // The stale zh name P8 replaced is gone from every zh page, not only from
+    // the italic path: one sentence also named the card in bold.
+    for (const page of [
+      "README.zh-CN.md",
+      "docs/detail.zh-CN.md",
+      "docs/quota-meter.zh-CN.md",
+    ]) {
+      const text = read(page);
+      expect(text.length, page).toBeGreaterThan(0);
+      expect(text, page).not.toContain("OpenCode 补丁设置");
+    }
+  });
+});
+
+describe("every copy key has a reader", () => {
+  const SRC = join(import.meta.dirname, "..", "src");
+
+  /**
+   * The keys of `keys` nothing in `sources` names: a quoted literal (`"x"`,
+   * `'x'` or `` `x` ``) in code, or one of `derived`, the keys the card builds
+   * from the settings table rather than spells. Comments are blanked first,
+   * so a word a comment quotes is not a reader: comment lines through
+   * {@link blankCommentLines}, then a JSX `{/* … *\/}` span and a `// …` tail
+   * after code (with a space before the `//`, so a `"https://…"` string is
+   * not cut short). Blanking too much is the loud direction for this scan,
+   * since a key it hides is reported as unread.
+   */
+  const unread = (
+    keys: readonly string[],
+    sources: readonly string[],
+    derived: ReadonlySet<string>
+  ): string[] => {
+    const named = new Set(derived);
+    for (const text of sources) {
+      const code = blankCommentLines(text)
+        .replaceAll(/\{\/\*[\s\S]*?\*\/\}/gu, "")
+        .replaceAll(/(?<=\s)\/\/.*$/gmu, "");
+      for (const match of code.matchAll(/["'`](\w+)["'`]/gu)) {
+        named.add(match[1] ?? "");
+      }
+    }
+    return keys.filter((key) => !named.has(key));
+  };
+
+  // Every source file but the dictionary itself, which names every key.
+  const sources = readdirSync(SRC, { recursive: true, withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        /\.tsx?$/u.test(entry.name) &&
+        entry.name !== "settings-copy.ts"
+    )
+    .map((entry) => readFileSync(join(entry.parentPath, entry.name), "utf8"));
+  const derived = new Set(
+    CARD_FIELDS.flatMap((entry) => [
+      entry.labelKey,
+      entry.hintKey,
+      entry.group,
+      ...(entry.options ?? []).map((option) => option.labelKey),
+    ])
+  );
+
+  it("names every key in src, spelled or derived from the table", () => {
+    // Known answers: the read reached the tree, a group heading is only
+    // derived, and a purge key is only spelled.
+    expect(sources.length).toBeGreaterThan(20);
+    expect(sources.some((text) => text.includes('"groupAccess"'))).toBe(false);
+    expect(derived).toContain("groupAccess");
+    expect(unread(["purgeAction"], sources, new Set())).toEqual([]);
+    expect(unread(Object.keys(en), sources, derived)).toEqual([]);
+  });
+
+  it("reports a key nothing reads (planted)", () => {
+    expect(
+      unread([...Object.keys(en), "plantedOrphanKey"], sources, derived)
+    ).toEqual(["plantedOrphanKey"]);
+    // A key only a comment quotes has no reader: the comment is blanked.
+    const commented = [
+      "/**",
+      " * The panel header (which is `plantedCommentKey`).",
+      " */",
+      "// and `plantedCommentKey` again",
+      'export const read = t("purgeAction");',
+    ].join("\n");
+    expect(
+      unread(["plantedCommentKey", "purgeAction"], [commented], new Set())
+    ).toEqual(["plantedCommentKey"]);
+    // Nor does one only a JSX comment or a `//` tail after code quotes,
+    // though neither opens its line.
+    const jsxAndTail = [
+      "  return (",
+      "    <div>",
+      "      {/* the top-up link,",
+      '         labelled "plantedJsxKey" */}',
+      '      {t("purgeAction")} // was "plantedTailKey"',
+      '      {/* "plantedJsxKey" */}',
+      "    </div>",
+      "  );",
+    ].join("\n");
+    expect(
+      unread(
+        ["plantedJsxKey", "plantedTailKey", "purgeAction"],
+        [jsxAndTail],
+        new Set()
+      )
+    ).toEqual(["plantedJsxKey", "plantedTailKey"]);
+    // The fifteen keys P8 deleted, found by this same scan: had they stayed,
+    // each would be reported. `title` among them was quoted only by a comment
+    // in `src/usage-ui.ts`, about the meter's own panel header.
+    const deleted = [
+      "storeInspectFound",
+      "loginAction",
+      "loginAgain",
+      "loginExpired",
+      "loginFailed",
+      "loginSignedIn",
+      "loginSignedOut",
+      "loginPlane",
+      "loginPlaneGo",
+      "loginPlaneZen",
+      "loginTitle",
+      "loginWaiting",
+      "zenFallbackNotice",
+      "zenOverflowActive",
+      "title",
+    ];
+    expect(unread(deleted, sources, derived)).toEqual(deleted);
+    // A derived key is read only through the table.
+    expect(unread(["groupAccess"], sources, new Set())).toEqual([
+      "groupAccess",
+    ]);
   });
 });

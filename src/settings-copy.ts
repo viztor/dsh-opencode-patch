@@ -1,12 +1,17 @@
 /**
- * Locale dictionaries for the OpenCode Patch card and quota meter. `zh` is typed
- * against `en`'s key set, so a missing translation fails typecheck instead of
- * surfacing as a raw key in the UI.
+ * Locale dictionaries for the OpenCode Patch card and quota meter. `en` is
+ * checked against the copy keys the settings table implies, and `zh` is typed
+ * against `en`'s key set, so a card field without its copy, or a missing
+ * translation, fails typecheck instead of surfacing as a raw key in the UI.
  *
  * @module dsh-opencode-patch/settings-copy
  */
 
+import type { SettingsCopyKey } from "./settings-table.ts";
+
 export const en = {
+  appliesOnReapply:
+    "Changes take effect the next time the plugin is applied: disable and re-enable it, or restart DSH.",
   description:
     "OpenCode Zen gateway origin headers, session affinity, free-tier compatibility, and live Go quota display.",
   enrichModels: "Enrich listings from the OpenCode catalog (default on)",
@@ -50,7 +55,6 @@ export const en = {
   storeInspectTitle: "Local OpenCode installation",
   storeInspectHint:
     "Reads the credential store the OpenCode CLI on this machine already holds and reports which account it belongs to. It never displays or transmits the secret itself.",
-  storeInspectFound: "Found",
   storeInspectMissing: "No local OpenCode store was found on this machine.",
   storeInspectNoAccount:
     "The store exists but holds no OpenCode account credential.",
@@ -79,7 +83,6 @@ export const en = {
   save: "Save",
   saveFailed: "The deployment did not accept these values.",
   saving: "Saving…",
-  title: "OpenCode Patch",
   unavailable: "This plugin is not loaded, so it cannot be configured.",
   usageConsole: "Console",
   usageTopUp: "Top up",
@@ -134,17 +137,6 @@ export const en = {
   usageSummaryTitle: "Go usage",
   usageSummaryStatusOk: "Healthy",
   usageSummaryStatusLimited: "Limit reached",
-  loginAction: "Sign in to OpenCode",
-  loginAgain: "Sign in again",
-  loginExpired: "The code expired",
-  loginFailed: "Sign-in failed",
-  loginSignedIn: "Signed in",
-  loginSignedOut: "Not signed in",
-  loginPlane: "Sign in to",
-  loginPlaneGo: "Go (subscription)",
-  loginPlaneZen: "Zen (pay-as-you-go)",
-  loginTitle: "OpenCode account",
-  loginWaiting: "Waiting for approval…",
   usageSummaryUnavailable: "Quota unavailable",
   usageSummaryUsed: "used",
   usageSummaryRemaining: "left",
@@ -165,8 +157,6 @@ export const en = {
   usage_rolling: "5 hours",
   usage_weekly: "Weekly",
   zenCredit: "Available Zen Balance",
-  zenFallbackNotice: "Requests will automatically consume Zen balance",
-  zenOverflowActive: "Zen balance ready for overflow",
   zenPaygBadge: "Pay-as-you-go",
   goPlanTitle: "OpenCode Go",
   goPlusTier: "Plus",
@@ -174,10 +164,13 @@ export const en = {
   monthlyAllowance: "Monthly allowance",
   zenPaygTitle: "OpenCode Zen",
   zenPaygTooltip: "Pay-as-you-go · no quota window",
-};
+  // Every key the table implies, and any other copy the card and meter use.
+} satisfies Record<SettingsCopyKey, string> & Record<string, string>;
 
 /** `zh` mirrors `en` key-for-key; the type makes a missing key a compile error. */
 export const zh: Record<keyof typeof en, string> = {
+  appliesOnReapply:
+    "更改在插件下次应用时生效：停用后重新启用插件，或重启 DSH。",
   description:
     "OpenCode Zen 网关来源头恢复、会话保持、免费模型兼容与 Go 实时额度显示。",
   enrichModels: "用 OpenCode 官方目录补全列表（默认开启）",
@@ -221,7 +214,6 @@ export const zh: Record<keyof typeof en, string> = {
   storeInspectTitle: "本机 OpenCode 安装",
   storeInspectHint:
     "读取本机 OpenCode CLI 已保存的凭据库，并报告它属于哪个账号。密钥本身既不会显示，也不会外传。",
-  storeInspectFound: "已找到",
   storeInspectMissing: "本机没有找到 OpenCode 的凭据库。",
   storeInspectNoAccount: "凭据库存在，但其中没有 OpenCode 账号凭据。",
   storeInspectUnavailable: "当前宿主未挂载检测服务。",
@@ -244,7 +236,6 @@ export const zh: Record<keyof typeof en, string> = {
   save: "保存",
   saveFailed: "保存失败，请检查填写内容。",
   saving: "保存中…",
-  title: "OpenCode 补丁设置",
   unavailable: "插件未加载，暂无法配置。",
   usageConsole: "控制台",
   usageTopUp: "充值",
@@ -278,17 +269,6 @@ export const zh: Record<keyof typeof en, string> = {
   usageSummaryTitle: "Go 用量",
   usageSummaryStatusOk: "状态正常",
   usageSummaryStatusLimited: "已达限额",
-  loginAction: "登录 OpenCode",
-  loginAgain: "重新登录",
-  loginExpired: "验证码已过期",
-  loginFailed: "登录失败",
-  loginSignedIn: "已登录",
-  loginSignedOut: "未登录",
-  loginPlane: "登录到",
-  loginPlaneGo: "Go（订阅）",
-  loginPlaneZen: "Zen（按量付费）",
-  loginTitle: "OpenCode 账户",
-  loginWaiting: "等待批准…",
   usageSummaryUnavailable: "读不到配额",
   usageSummaryUsed: "已用",
   usageSummaryRemaining: "剩余",
@@ -303,8 +283,6 @@ export const zh: Record<keyof typeof en, string> = {
   usage_rolling: "5 小时",
   usage_weekly: "每周",
   zenCredit: "可用 Zen 余额",
-  zenFallbackNotice: "请求将自动从 Zen 余额中扣除",
-  zenOverflowActive: "Zen 余额已就绪，将在额度用尽时自动承接",
   zenPaygBadge: "按量计费",
   goPlanTitle: "OpenCode Go",
   goPlusTier: "Plus",

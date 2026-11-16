@@ -58,7 +58,8 @@ export const PKG = "dsh-opencode-patch";
  * `opencodeLogin` namespace are v2 work.
  */
 export const patchRemote = {
-  // ONE contribution, TWO namespaces. Typert enforces a unique package name per
+  // ONE contribution, THREE namespaces (usage, purge, store inspection).
+  // Typert enforces a unique package name per
   // contribution, so mounting them separately with the same package throws
   // "already registered" and drops the remote entirely.
   descriptors: [
@@ -362,13 +363,14 @@ export const apply = (ctx: ClientContext): void => {
     return noopDisposer;
   }, "dsh-opencode-patch: dictionaries");
 
-  // Both remotes mount as ONE contribution under the plugin's package name.
-  // Typert enforces unique package names per contribution (`dsh-typert-registry`:
+  // The three remotes (usage, purge, store inspection) mount as ONE
+  // contribution under the plugin's package name. Typert enforces unique
+  // package names per contribution (`dsh-typert-registry`:
   // `if (this.packages.has(contribution.package)) throw new Error(...)`).
-  // Mounting `usageRemote` and `loginRemote` separately with the same package
-  // name ("dsh-opencode-patch") causes the second `$mount` call to throw
-  // `Remote package "dsh-opencode-patch" is already registered` — dropping the
-  // remote completely.
+  // Mounting `usageRemote`, `purgeRemote` and `storeRemote` separately with the
+  // same package name ("dsh-opencode-patch") causes the second `$mount` call to
+  // throw `Remote package "dsh-opencode-patch" is already registered` —
+  // dropping that remote completely.
   //
   // One contribution registers the package ONCE, which is what lets `api-gateway`
   // install the meter's namespace.
@@ -376,7 +378,7 @@ export const apply = (ctx: ClientContext): void => {
     const remotes = mountRemote(
       ctx,
       patchRemote,
-      "remotes; the meter and sign-in row will render nothing"
+      "remotes; the meter, purge and store rows will render nothing"
     );
     // The meter is registered when the mount is DONE, which is the fact the ten
     // -second timeout used to stand in for. `registerMeter` is idempotent, so
@@ -665,8 +667,7 @@ export const apply = (ctx: ClientContext): void => {
                 // host inspects its own OpenCode store and answers a sanitized
                 // summary, so the card can show the account without the secret.
                 inspectStore: () => inspectStore(ctx),
-                // The sign-in remote, when the host mounted one. Same shape as
-                // the meter's: the card calls, the host holds the credential.
+                // The form model's edit, reset, save and discard.
                 ...model.actions(),
               }),
               key: alias.key,
