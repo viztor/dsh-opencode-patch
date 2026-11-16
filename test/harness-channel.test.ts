@@ -221,63 +221,67 @@ describe("harness channel alignment · declarations", () => {
     }
   });
 
-  it("the typert peer range admits only builds that carry the request-headers seam", () => {
-    // A peer range is a statement about the CODE. The plane adapter hands
-    // pi-ai's `prepareHeaders` the plugin's per-call headers and runs the
-    // host's `llm-pi-ai/request-headers` waterfall (OC4, OC5), and that seam
-    // first shipped in 0.2.2-alpha.3 on the alpha channel and in 0.2.2-rc.1
-    // on rc: a grep of each published bridge for the event finds it there and
-    // in every later build, and finds nothing in 0.2.2-alpha.2 or any 0.2.1
-    // build (measured 2026-11-15). The code still runs without it (the seam
-    // is detected by behaviour and the fetch patch shapes an unshaped turn),
-    // but a declaration names what the code is built for.
+  it("the typert peer range covers BOTH channels of every supported line", () => {
+    // A peer range is a statement about the CODE, and the code is verified
+    // against the `0.2.1` and `0.2.2` lines on both channels: all of them load,
+    // and `apply` plus the remote-service symbols exist on each. The delta
+    // between them is purely ADDITIVE.
     //
-    // So the range is one clause, `>=0.2.2-alpha.3 <0.3.0`: its lower bound
-    // carries a prerelease in the 0.2.2 tuple, so every later 0.2.2
-    // prerelease (rc sorts after alpha) is admitted, and it stops at 0.3.0,
-    // which leaves the next line a separate decision rather than a silent
-    // widening.
+    // The range is `>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0`. The first
+    // clause covers the 0.2.1 line on both channels — its lower bound alpha.1
+    // sorts below every rc of that line, so rc needs no separate entry. The
+    // second is not redundant: semver excludes a prerelease unless a comparator
+    // in the SAME `major.minor.patch` tuple carries one, so `<0.3.0` alone
+    // silently drops every `0.2.2-*` build, alpha and rc alike. Both clauses
+    // stop at 0.3.0, which leaves the next line a separate decision rather than
+    // a silent widening.
+    //
+    // The range deliberately does NOT follow the `llm-pi-ai/request-headers`
+    // seam (OC11). That seam first shipped in 0.2.2-alpha.3 and 0.2.2-rc.1 and
+    // is absent from 0.2.2-alpha.2 and every 0.2.1 build (a grep of each
+    // published bridge, 2026-11-15), but the plane adapter detects it by
+    // behaviour, and on a host without it the fetch patch still writes the
+    // plugin's own headers; only other plugins' contributors do not run on the
+    // planes there. Host gaps are feature-detected, never compared by version
+    // (D26), so the seam's floor is stated in the README pair instead.
     const peer =
       manifest().peerDependencies?.["@deepseek-ai/dsh-typert-protocol"];
     expect(peer).toBeDefined();
 
-    // What the range admits, in three kinds of evidence: both channels'
-    // records (installed and run by this suite: 0.2.2-alpha.3 and rc.2), the
-    // other published builds whose bridge the registry read found the seam
-    // in (rc.1, rc.3; read, not installed), and the line's stable release by
-    // construction (not yet published). A host bump outside the range fails
-    // here.
+    // The published builds the code is verified on, plus both channels'
+    // records by construction, so a host bump outside the range fails here.
     const admitted = [
       ...new Set([
-        ...Object.values(CHANNELS).map((record) => record.dsh),
+        // 0.2.1 line, both channels, and the stable release both lead to.
+        "0.2.1-alpha.1",
+        "0.2.1-alpha.5",
+        "0.2.1-rc.1",
+        "0.2.1-rc.5",
+        "0.2.1",
+        // 0.2.2 line, both channels, and its stable release.
+        "0.2.2-alpha.2",
+        "0.2.2-alpha.3",
         "0.2.2-rc.1",
+        "0.2.2-rc.2",
         "0.2.2-rc.3",
         "0.2.2",
+        ...Object.values(CHANNELS).map((record) => record.dsh),
       ]),
     ];
     for (const version of admitted) {
       expect(
         semver.satisfies(version, peer ?? ""),
-        `${version} is admitted`
+        `${version} is a published build on a line this plugin supports`
       ).toBe(true);
     }
 
-    // Builds without the seam are refused, and so is the next line.
-    for (const version of [
-      "0.2.1-alpha.1",
-      "0.2.1-rc.5",
-      "0.2.1",
-      "0.2.2-alpha.2",
-    ]) {
-      expect(
-        semver.satisfies(version, peer ?? ""),
-        `${version}: no llm-pi-ai/request-headers seam (measured 2026-11-15)`
-      ).toBe(false);
-    }
+    // And it stops at the line's edges: an older line and the next one are
+    // untested surfaces, which is a separate decision rather than a silent
+    // widening.
     for (const version of ["0.2.0-rc.2", "0.3.0", "0.3.0-alpha.1"]) {
       expect(
         semver.satisfies(version, peer ?? ""),
-        `${version} is outside the 0.2.2 line`
+        `${version} is outside the 0.2.1/0.2.2 lines`
       ).toBe(false);
     }
   });
@@ -301,9 +305,9 @@ describe("harness channel alignment · declarations", () => {
     // Both tables are recorded from the registry on 2026-11-04, 0.2.2-rc.2 on
     // 2026-11-12 and 0.2.2-rc.3 on 2026-11-15 (`npm view
     // @deepseek-ai/dsh-typert-protocol@<v> peerDependencies` for every build
-    // the typert peer admits; `npm view @deepseek-ai/cordis versions`). A new
-    // typert build joins the first with its cordis range, and a new cordis
-    // release joins the second, when they are published.
+    // on the 0.2.1 and 0.2.2 lines; `npm view @deepseek-ai/cordis versions`).
+    // A new typert build joins the first with its cordis range, and a new
+    // cordis release joins the second, when they are published.
     const CORDIS_PUBLISHED = [
       "4.0.4",
       "4.0.5-alpha.1",
@@ -314,6 +318,17 @@ describe("harness channel alignment · declarations", () => {
       "4.1.0",
     ];
     const CORDIS_PEER_OF_TYPERT: Record<string, string> = {
+      "0.2.1-alpha.1": "~4.0.5-alpha.1",
+      "0.2.1-alpha.2": "~4.0.5-alpha.1",
+      "0.2.1-alpha.3": "~4.0.5-alpha.2",
+      "0.2.1-alpha.4": "~4.0.5-alpha.2",
+      "0.2.1-alpha.5": "~4.0.5-alpha.2",
+      "0.2.1-rc.1": "~4.0.5",
+      "0.2.1-rc.2": "~4.0.5",
+      "0.2.1-rc.3": "~4.0.5",
+      "0.2.1-rc.4": "~4.0.5",
+      "0.2.1-rc.5": "~4.0.5",
+      "0.2.2-alpha.2": "~4.0.6-alpha.1",
       "0.2.2-alpha.3": "~4.0.6-alpha.2",
       "0.2.2-rc.1": "~4.1.0",
       "0.2.2-rc.2": "~4.1.0",
