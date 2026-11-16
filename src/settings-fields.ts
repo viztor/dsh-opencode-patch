@@ -1,10 +1,13 @@
 /**
- * Field registry for the OpenCode Patch card — the single source of truth for
- * which knobs the card edits: knob, section, control kind and copy keys.
+ * The card's view of the settings table: which keys the card edits, under
+ * which heading, with which control and copy.
  *
- * {@link SPECS} and the card's JSX are both derived from it, so a field can no
- * longer be bound but never rendered. See `AGENTS.md` → "Why the card owns its
- * boolean/list fields" for why the helpers below are ours.
+ * Nothing here is a second list: {@link CARD_FIELDS} is read off
+ * `settings-table.ts`, and {@link SPECS} and the card's JSX are derived from
+ * it, so a field can no longer be bound but never rendered. The keys the card
+ * leaves to the row are `CONFIG_ONLY_FIELDS`, in `config.ts`, beside the prose
+ * that says why. The draft conversions below are ours because the host ships
+ * no boolean or enum field spec.
  *
  * @module dsh-opencode-patch/settings-fields
  */
@@ -12,109 +15,20 @@
 import type { SettingsFieldSpec } from "@deepseek-ai/dsh-client-ui-primitives";
 
 import type { CopyKey } from "./settings-copy.ts";
-
-/** Schema knob names the card edits; keys double as label ids. */
-export const FIELD = {
-  endpoint: "endpoint",
-  enrichModels: "enrichModels",
-  injectCoreTools: "injectCoreTools",
-  injectOriginHeaders: "injectOriginHeaders",
-  injectProject: "injectProject",
-  injectUserAgent: "injectUserAgent",
-  keySource: "keySource",
-  readOpencodeStore: "readOpencodeStore",
-  usageEnabled: "usageEnabled",
-} as const;
-
-/**
- * Knobs that exist in the schema but deliberately render no control.
- *
- * The card shows the decisions a user actually makes — behaviour toggles and the
- * credential policy. Everything here is an *override*: a literal (a UA string, a
- * header value, an endpoint), a marker (a model-id or URL substring), or a
- * reference (an env-var name, a credential ref, a route list). Their defaults are
- * correct for every documented setup, so exposing them only invites someone to
- * break their own routing — and they are all still editable in the row's
- * `config` (`cordis.patch.yml` carries the reference).
- *
- * A test pins that this list and {@link CARD_FIELDS} partition the schema
- * exactly: no knob may be in both, and none may be in neither.
- */
-export const CONFIG_ONLY_FIELDS: readonly {
-  field: string;
-  /** Why this knob stays out of the card. */
-  reason: string;
-}[] = [
-  {
-    field: "credentialOrg",
-    reason:
-      "the org an account credential belongs to; a login through this plugin " +
-      "stores it with the token, so the row is for a token that came from " +
-      "elsewhere and has no UI to belong to",
-  },
-  {
-    field: "debug",
-    reason:
-      "diagnostic console logging of streamed calls, not a behaviour a user " +
-      "tunes in the UI",
-  },
-  {
-    field: "debugFile",
-    reason:
-      "the JSONL file both debug halves append to; naming it writes the file " +
-      "whether or not debug is on, and a server-side path is a deployment fact " +
-      "rather than a card control",
-  },
-  {
-    field: "userAgent",
-    reason:
-      "literal User-Agent override; the default is the canonical CLI string",
-  },
-  {
-    field: "originClient",
-    reason:
-      "literal x-opencode-client value; the default ('cli') is what the gateway expects",
-  },
-  {
-    field: "sessionIdEnv",
-    reason: "names an env var only a caller-supplied session id would use",
-  },
-  {
-    field: "freeModelMarker",
-    reason:
-      "model-id substring; 'free' tracks the vendor's ids, '*' forces the fallback",
-  },
-  {
-    field: "providers",
-    reason:
-      "route ids whose turns are decorated; both planes are always included, so only a relay route needs adding",
-  },
-  {
-    field: "gatewayUrls",
-    reason: "URL substrings; only a mirror or relay needs to change them",
-  },
-  {
-    field: "usageBaseURL",
-    reason: "endpoint override; auto-discovered from the composition",
-  },
-];
+import {
+  type CardSettingKey,
+  groupKeyOf,
+  hintKeyOf,
+  isCardSetting,
+  isChoiceSetting,
+  labelKeyOf,
+  optionKeyOf,
+  SETTING_KEYS,
+  SETTINGS,
+} from "./settings-table.ts";
 
 /** Which control renders a field, and which draft conversion backs it. */
 export type FieldKind = "boolean" | "select";
-
-/**
- * Section headings, in the order they appear.
- *
- * A field names its group and the card inserts a heading wherever it changes, so
- * the display order comes from {@link CARD_FIELDS} rather than a second list.
- * Keeping each group's entries adjacent is what makes the heading appear once.
- */
-export const GROUP = {
-  access: "groupAccess",
-  models: "groupModels",
-  quota: "groupQuota",
-  requests: "groupRequests",
-} as const;
 
 /** One choice a `select` field offers: the label is copy, the value is stored. */
 export interface CardFieldOption {
@@ -124,7 +38,7 @@ export interface CardFieldOption {
 
 /** One rendered field: the knob, its control kind, and its copy. */
 export interface CardFieldSpec {
-  field: string;
+  field: CardSettingKey;
   /** Section heading this field renders under. */
   group: CopyKey;
   hintKey: CopyKey;
@@ -197,94 +111,34 @@ const toSettingsFieldSpec = (entry: CardFieldSpec): SettingsFieldSpec =>
   FIELD_SPEC_BUILDERS[entry.kind](entry);
 
 /**
- * Every field the card renders, in render order, grouped into sections.
+ * Every field the card renders, in render order, grouped into sections: the
+ * table's rows that name a `card` group, in table order.
  *
- * Entries are ordered so each {@link GROUP} stays contiguous: the card inserts a
+ * The table keeps each group's rows adjacent, because the card inserts a
  * heading where the group changes. Only decisions a user makes live here — the
- * override knobs are in {@link CONFIG_ONLY_FIELDS}.
- *
- * The endpoint family and the credential choice both live under
- * {@link GROUP.access}: together they are "which account, on which endpoint",
- * and filing the credential knob under the quota meter instead is what made it
- * hard to find.
+ * override knobs are `CONFIG_ONLY_FIELDS`, in `config.ts`.
  */
-export const CARD_FIELDS: readonly CardFieldSpec[] = [
-  {
-    field: FIELD.endpoint,
-    group: GROUP.access,
-    hintKey: "endpointHint",
-    kind: "select",
-    labelKey: "endpoint",
-    // Values must stay in step with `ENDPOINT_FAMILIES`; a test pins that.
-    options: [
-      { labelKey: "endpointAuto", value: "auto" },
-      { labelKey: "endpointLegacy", value: "legacy" },
-      { labelKey: "endpointModern", value: "modern" },
-    ],
-  },
-  {
-    field: FIELD.keySource,
-    group: GROUP.access,
-    hintKey: "keySourceHint",
-    kind: "select",
-    labelKey: "keySource",
-    // Values must stay in step with `KEY_SOURCE_POLICIES`; a test pins that.
-    options: [
-      { labelKey: "keySourceAuto", value: "auto" },
-      { labelKey: "keySourceRequest", value: "request" },
-      { labelKey: "keySourceConfigured", value: "configured" },
-    ],
-  },
-  {
-    field: FIELD.readOpencodeStore,
-    group: GROUP.access,
-    hintKey: "readOpencodeStoreHint",
-    kind: "boolean",
-    labelKey: "readOpencodeStore",
-  },
-  {
-    field: FIELD.injectUserAgent,
-    group: GROUP.requests,
-    hintKey: "injectUserAgentHint",
-    kind: "boolean",
-    labelKey: "injectUserAgent",
-  },
-  {
-    field: FIELD.injectOriginHeaders,
-    group: GROUP.requests,
-    hintKey: "injectOriginHeadersHint",
-    kind: "boolean",
-    labelKey: "injectOriginHeaders",
-  },
-  {
-    field: FIELD.injectProject,
-    group: GROUP.requests,
-    hintKey: "injectProjectHint",
-    kind: "boolean",
-    labelKey: "injectProject",
-  },
-  {
-    field: FIELD.enrichModels,
-    group: GROUP.models,
-    hintKey: "enrichModelsHint",
-    kind: "boolean",
-    labelKey: "enrichModels",
-  },
-  {
-    field: FIELD.injectCoreTools,
-    group: GROUP.models,
-    hintKey: "injectCoreToolsHint",
-    kind: "boolean",
-    labelKey: "injectCoreTools",
-  },
-  {
-    field: FIELD.usageEnabled,
-    group: GROUP.quota,
-    hintKey: "usageEnabledHint",
-    kind: "boolean",
-    labelKey: "usageEnabled",
-  },
-];
+export const CARD_FIELDS: readonly CardFieldSpec[] = SETTING_KEYS.filter(
+  isCardSetting
+).map((field): CardFieldSpec => {
+  const entry = {
+    field,
+    group: groupKeyOf(SETTINGS[field].card),
+    hintKey: hintKeyOf(field),
+    labelKey: labelKeyOf(field),
+  };
+  // A boolean entry has no `options` key at all, not an undefined one.
+  return isChoiceSetting(field)
+    ? {
+        ...entry,
+        kind: "select",
+        options: SETTINGS[field].values.map((value) => ({
+          labelKey: optionKeyOf(field, value),
+          value,
+        })),
+      }
+    : { ...entry, kind: "boolean" };
+});
 
 /** The draft conversions the form model binds, derived from {@link CARD_FIELDS}. */
 export const SPECS: SettingsFieldSpec[] = CARD_FIELDS.map(toSettingsFieldSpec);

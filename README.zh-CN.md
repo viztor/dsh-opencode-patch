@@ -109,7 +109,7 @@ npm install dsh-opencode-patch
 
 **4. 重启 `dsh web`。** 宿主 bundle 只在启动时导入（`hmr root: []`），因此要重启才会加载 `lib/index.mjs`；客户端 UI 变更（`lib/client.js`）只需刷新浏览器。
 
-完成——**OpenCode 补丁设置**卡片会出现在 _Settings → Plugins_ 下，一旦有 OpenCode 模型激活，计量表就会挂载到输入框停靠栏。
+完成——**OpenCode 补丁**卡片会出现在 _Settings → Plugins_ 下，一旦有 OpenCode 模型激活，计量表就会挂载到输入框停靠栏。
 
 ---
 
@@ -215,13 +215,13 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | :-- | :-- | :-- |
 | **计量表触发按钮** | 输入框停靠栏，模型选择器旁 | Go：圆环 + 该窗口的百分比。Zen：本会话消费额，**不画圆环** |
 | **计量表面板** | 点击触发按钮 | 三个窗口、月度额度、本会话消耗、Zen 余额、操作链接 |
-| **设置卡片** | _Settings → Plugins → OpenCode 补丁设置_ | 九个控件，上方另有一份实时 Go 用量摘要 |
+| **设置卡片** | _Settings → Plugins → OpenCode 补丁_ | 九个控件，上方另有一份实时 Go 用量摘要 |
 
 悬停触发按钮解释它自己的数字；点击打开面板。下面逐节展示每个界面，逐状态的行为见 [docs/quota-meter.zh-CN.md](./docs/quota-meter.zh-CN.md)。
 
-### 设置卡片 — _Settings → Plugins → OpenCode 补丁设置_
+### 设置卡片 — _Settings → Plugins → OpenCode 补丁_
 
-四个分区共九个控件——都是用户真正会做出的决定。所有控件都基于平台自身的原语渲染（`Switch`、`Tag`、`Button`、宿主 token），每个配置项都带提示以及恢复默认的操作。
+四个分区共九个控件——都是用户真正会做出的决定。所有控件都基于平台自身的原语渲染（`Switch`、`Tag`、`Button`、宿主 token），每个配置项都带提示以及恢复默认的操作。更改在插件下次应用时生效（停用后重新启用插件，或重启 `dsh`），卡片在控件上方也这样说明。
 
 | 分区 | 控件 | 默认 | 作用 |
 | :-- | :-- | :-: | :-- |

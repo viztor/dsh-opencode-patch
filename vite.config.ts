@@ -342,6 +342,13 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // The one settings table (P8): data and four one-line key helpers.
+        "src/settings-table.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // The plane routes' host half, measured rather than aspirational: what
         // is left uncovered are guards for host shapes no composition offers.
         "src/host/route-claim.ts": {

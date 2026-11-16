@@ -309,4 +309,16 @@ describe("client-bundle: artifact & VM loader boundary", () => {
       registeredSlots.filter((slot) => slot === "conversation.input.right")
     ).toHaveLength(1);
   });
+
+  it("ships no schema description and no config-only reason", () => {
+    // The settings table's prose (each key's schema description and the reason
+    // a key stays off the card) is host-side reading: the card renders neither.
+    // It is one export no client module imports (`config.ts`, host-side, is
+    // its one reader, `CONFIG_ONLY_FIELDS` included), so the bundler drops it,
+    // and a client module that started reading it would ship it all.
+    // Known answer: the card's own copy is in the bundle.
+    expect(SOURCE).toContain("Credential Source");
+    expect(SOURCE).not.toContain("Route ids whose turns this plugin decorates");
+    expect(SOURCE).not.toContain("literal User-Agent override");
+  });
 });

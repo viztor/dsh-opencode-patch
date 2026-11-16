@@ -12,7 +12,14 @@
 #
 # Shown in the settings card (Settings -> Plugins -> OpenCode Patch). These are
 # the decisions a user actually makes: behaviour toggles, plus the credential
-# policy. See src/settings-fields.ts CARD_FIELDS.
+# policy. In the card's order; the source is src/settings-table.ts, read as
+# src/settings-fields.ts CARD_FIELDS.
+#   endpoint: string            endpoint family: auto | modern | legacy (default 'auto', an alias of
+#                               modern). modern = the per-protocol inference family; legacy = one base
+#                               per plane.
+#   keySource: string           which credential source wins: auto | request | configured (default 'auto').
+#   readOpencodeStore: boolean  read the credential an OpenCode installation already holds, as the LAST
+#                               resort after every declared one (default false).
 #   injectUserAgent: boolean    restore OpenCode CLI User-Agent stripped by DSH adapter (default true).
 #   injectOriginHeaders: bool   inject x-opencode-client (default true).
 #   injectProject: boolean      attach active workspace project in x-opencode-project (default true).
@@ -20,32 +27,28 @@
 #                               model discovery; off leaves both raw (default true).
 #   injectCoreTools: boolean    auto-inject read & bash tool schemas on free models (default true).
 #   usageEnabled: boolean       enable host-side OpenCode Go usage querying (default true).
-#   keySource: string           which credential source wins: auto | request | configured (default 'auto').
-#   readOpencodeStore: boolean  read the credential an OpenCode installation already holds, as the LAST
-#                               resort after every declared one (default false).
-#   endpoint: string            endpoint family: auto | modern | legacy (default 'auto', an alias of
-#                               modern). modern = the per-protocol inference family; legacy = one base
-#                               per plane.
 #
 # Config-only overrides — the card deliberately hides these, because each is a
 # literal, a marker, or a reference whose default fits every documented setup.
-# See src/settings-fields.ts CONFIG_ONLY_FIELDS.
-#   providers: [string]         route ids whose turns this plugin decorates (default: opencode,
-#                               opencode-go; both planes are always included, so only a relay route
-#                               needs adding).
+# In the table's order; the source is src/settings-table.ts, read as
+# src/config.ts CONFIG_ONLY_FIELDS.
+#   credentialOrg: string       org id (wrk_...) sent with an account credential that came from elsewhere.
+#   debug: true|false           log every streamed call that receives the header to the console
+#                               (default false).
+#   debugFile: path             optional JSONL file for the request and stream debug entries; naming
+#                               it writes the file whether or not debug is on.
 #   userAgent: string           optional custom User-Agent override (default empty = use OpenCode CLI UA).
 #   originClient: string        x-opencode-client value (default 'cli').
 #   sessionIdEnv: string        env var carrying a caller-supplied session id (default 'OPENCODE_SESSION_ID').
 #   freeModelMarker: string     model-id substring getting the core-tool fallback ('*' = all; a blank
 #                               value inherits the default 'free'; models the catalog marks free always
 #                               qualify).
+#   providers: [string]         route ids whose turns this plugin decorates (default: opencode,
+#                               opencode-go; both planes are always included, so only a relay route
+#                               needs adding).
 #   gatewayUrls: [string]       URL substrings marking OpenCode gateway traffic (default both
 #                               families: ['opencode.ai/zen', 'opencode.ai/inference']).
 #   usageBaseURL: string        OpenCode Go gateway base URL (default 'https://opencode.ai/zen/go/v1').
-#   credentialOrg: string       org id (wrk_...) sent with an account credential that came from elsewhere.
-#   debug: true|false           log every streamed call that receives the header to the console.
-#   debugFile: path             optional JSONL file for the request and stream debug entries; naming
-#                               it writes the file whether or not debug is on.
 - insert:
     - id: dsh-opencode-patch
       name: "dsh-opencode-patch"

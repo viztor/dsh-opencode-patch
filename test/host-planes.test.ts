@@ -32,11 +32,13 @@ import {
   routeIds,
   settle,
   stateOf,
+  turn,
   wire,
 } from "./support/host-planes.ts";
 import {
   type ApplyOrder,
   bootTierB,
+  CHARACTERIZED_MODELS,
   characterizedProviders,
   drainStream,
   fakeCredentials,
@@ -330,6 +332,66 @@ describe("host planes · lifecycle", { timeout: 30_000 }, () => {
     );
     await waitForPlaneOwner(tier.llm);
     expect(restarts() - before).toBe(0);
+  });
+
+  it("a volatile edit of the plugin's own row commits in place, and the plugin follows it only once re-applied (tier B; the card's re-apply line)", async () => {
+    const { tier } = await bootPlanes();
+    await waitForPlaneOwner(tier.llm);
+    const { pluginEntry } = tier;
+    if (pluginEntry === undefined) {
+      throw new Error("no plugin row");
+    }
+    const volatile: unknown[] = [];
+    tier.ctx.on(
+      "loader/volatile-update",
+      (paths: unknown) => {
+        volatile.push(paths);
+      },
+      { global: true }
+    );
+    const model = CHARACTERIZED_MODELS.opencode[0] ?? "";
+    // The plane headers of one turn's first request. `x-opencode-client`
+    // (`injectOriginHeaders`, on by default) is the positive control: it goes
+    // out on every turn the plugin decorates, so a missing project header
+    // means the plugin read its row, not that it stopped decorating.
+    const planeHeaders = async (): Promise<{
+      client: unknown;
+      project: unknown;
+    }> => {
+      const { requests } = await turn(tier.llm, "opencode", model);
+      expect(requests.length, "the turn reached the wire").toBeGreaterThan(0);
+      const headers = requests[0]?.headers ?? {};
+      return {
+        client: headers["x-opencode-client"],
+        project: headers["x-opencode-project"],
+      };
+    };
+    // A known answer first: the default sends the header.
+    expect(await planeHeaders()).toEqual({ client: "cli", project: "global" });
+
+    const { fiber } = pluginEntry;
+    // The write the card's save performs: Settings' `mutate` on the row's
+    // namespace, which checks the path is volatile before the config editor
+    // commits it.
+    await tier.ctx.settings.mutate(pluginEntry.options.id, [
+      { op: "set", path: ["injectProject"], value: false },
+    ]);
+    // The loader committed it as a volatile edit: one update naming the key,
+    // and the same fiber, so nothing re-ran the plugin's apply.
+    expect(volatile).toEqual([[["injectProject"]]]);
+    expect(pluginEntry.fiber).toBe(fiber);
+    expect(stateOf(fiber)).toBe(FIBER_STATE.ACTIVE);
+    // The plugin read its row once, at apply: the header still goes out.
+    expect(await planeHeaders()).toEqual({ client: "cli", project: "global" });
+
+    // Re-applied, it follows the row.
+    await fiber?.restart();
+    await until(
+      () => stateOf(pluginEntry.fiber) === FIBER_STATE.ACTIVE,
+      "the plugin row applies again"
+    );
+    await waitForPlaneOwner(tier.llm);
+    expect(await planeHeaders()).toEqual({ client: "cli", project: undefined });
   });
 
   it("an llm restart registers every route again, the planes the plugin's (tier B)", async () => {

@@ -17,6 +17,8 @@
  * The hidden routes the plugin used to mount (`INTERNAL_ROUTES`,
  * `opencode-responses`, `opencode-anthropic`, `opencode-google` and their Go
  * twins) went with them (D13): the planes are the only routes it claims.
+ * The meter's `modelMarkers` prop (and the `usageModelMarkers` key that fed
+ * it) went in P8: the meter's gate is the provider list, and nothing read it.
  *
  * @module test/deleted-settings.test
  */
@@ -32,7 +34,7 @@ const ROOT = join(import.meta.dirname, "..");
 
 /** A deleted name, as a whole word. */
 const DELETED =
-  /\b(?:internalRoutes|resolveRoutedKey|RoutedKeyDetails|modelOverrides|maxContextWindow|modelRoutes|hiddenModels|INTERNAL_ROUTES)\b|\bopencode-(?:go-)?(?:responses|anthropic|google)\b/u;
+  /\b(?:internalRoutes|resolveRoutedKey|RoutedKeyDetails|modelOverrides|maxContextWindow|modelRoutes|hiddenModels|INTERNAL_ROUTES|modelMarkers|usageModelMarkers)\b|\bopencode-(?:go-)?(?:responses|anthropic|google)\b/u;
 
 /** The deleted settings, one by one, for the places that list settings. */
 const DELETED_SETTINGS: readonly string[] = [
@@ -54,7 +56,7 @@ const PI_AI_KEY_READERS: ReadonlyMap<string, RegExp> = new Map([
 
 /** What a README may not name outside its "Changed in 1.x" section. */
 const DELETED_IN_README =
-  /\b(?:internalRoutes|modelOverrides|maxContextWindow|modelRoutes|hiddenModels|INTERNAL_ROUTES)\b|\bopencode-(?:go-)?(?:responses|anthropic|google)\b/u;
+  /\b(?:internalRoutes|modelOverrides|maxContextWindow|modelRoutes|hiddenModels|INTERNAL_ROUTES|modelMarkers|usageModelMarkers)\b|\bopencode-(?:go-)?(?:responses|anthropic|google)\b/u;
 
 /** Every `.ts`/`.tsx` under `dir`, at any depth, relative to `ROOT`. */
 const sourcesUnder = (dir: string): string[] =>

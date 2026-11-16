@@ -19,7 +19,7 @@ import React from "react";
 import { SettingsBooleanField } from "./settings-boolean-field.tsx";
 import { SettingsChoiceField } from "./settings-choice-field.tsx";
 import { withBundleCopy, type Translate } from "./settings-copy.ts";
-import { CARD_FIELDS, FIELD, type CardFieldSpec } from "./settings-fields.ts";
+import { CARD_FIELDS, type CardFieldSpec } from "./settings-fields.ts";
 import type { PurgeOutcome } from "./settings-purge.ts";
 import { StoreInspectRow } from "./settings-store-inspect.tsx";
 import type { StoreInspectOutcome } from "./settings-store.ts";
@@ -187,12 +187,6 @@ export interface CardProps {
    * that cannot act invites a click that explains nothing.
    */
   inspectStore?: () => Promise<StoreInspectOutcome>;
-  /**
-   * The Host's sign-in remote. Never absent: the page always hands over the three
-   * calls, and each resolves the service when it is invoked, so a remote that mounts
-   * late is still reached and a host that mounts none shows a row that says so.
-   */
-
   edit: (field: string, text: string) => void;
   resetField: (field: string) => void;
   save: () => void;
@@ -327,6 +321,20 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
       {props.purgeDeprecated !== undefined && (
         <PurgeRow onPurge={props.purgeDeprecated} t={t} />
       )}
+      {/*
+        A Settings write takes the loader's volatile-only path and the plugin
+        reads its row once, at apply: said once, above the form, rather than in
+        every control's hint.
+      */}
+      <div
+        style={{
+          color: "var(--dsw-alias-label-caption)",
+          fontSize: 12,
+          marginBottom: 8,
+        }}
+      >
+        {t("appliesOnReapply")}
+      </div>
       <SettingsForm
         labels={formLabels(t)}
         onDiscard={props.discard}
@@ -339,7 +347,7 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
           // says what MAY be read, the row says what IS there. Splitting them
           // across the card is what left "turn this on" as a blind choice.
           const beside =
-            entry.field === FIELD.readOpencodeStore &&
+            entry.field === "readOpencodeStore" &&
             props.inspectStore !== undefined
               ? [
                   <StoreInspectRow

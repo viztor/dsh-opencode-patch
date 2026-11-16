@@ -66,6 +66,7 @@ export type { KeySourcePolicy } from "../../src/config-values.ts";
 export {
   Config,
   CONFIG_DEFAULTS,
+  CONFIG_ONLY_FIELDS,
   DEFAULT_FREE_MODEL_MARKER,
   DEFAULT_ORIGIN_CLIENT,
   DEFAULT_USAGE_BASE_URL,
@@ -319,11 +320,7 @@ export { SettingsFieldShell } from "../../src/settings-field-shell.tsx";
 export type { FieldShellProps } from "../../src/settings-field-shell.tsx";
 
 // settings-fields.ts
-export {
-  CARD_FIELDS,
-  CONFIG_ONLY_FIELDS,
-  SPECS,
-} from "../../src/settings-fields.ts";
+export { CARD_FIELDS, SPECS } from "../../src/settings-fields.ts";
 
 // settings-page.tsx
 export {
@@ -354,6 +351,9 @@ export {
 // settings-store.ts
 export { inspectStore } from "../../src/settings-store.ts";
 export type { StoreInspectOutcome } from "../../src/settings-store.ts";
+
+// settings-table.ts
+export { SETTING_PROSE, SETTINGS } from "../../src/settings-table.ts";
 
 // settings-usage.tsx
 export {

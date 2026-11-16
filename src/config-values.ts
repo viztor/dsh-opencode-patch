@@ -48,11 +48,6 @@ export type KeySourcePolicy = (typeof KEY_SOURCE_POLICIES)[number];
 /** Policy applied when a row does not name one. */
 export const DEFAULT_KEY_SOURCE: KeySourcePolicy = "auto";
 
-/** Whether `value` is one of the accepted policies. */
-export const isKeySourcePolicy = (value: unknown): value is KeySourcePolicy =>
-  typeof value === "string" &&
-  (KEY_SOURCE_POLICIES as readonly string[]).includes(value);
-
 /**
  * Which endpoint family the gateway's requests go to.
  *
@@ -74,11 +69,6 @@ export type EndpointFamily = (typeof ENDPOINT_FAMILIES)[number];
 
 /** Family applied when a row does not name one. */
 export const DEFAULT_ENDPOINT_FAMILY: EndpointFamily = "auto";
-
-/** Whether `value` is one of the accepted families. */
-export const isEndpointFamily = (value: unknown): value is EndpointFamily =>
-  typeof value === "string" &&
-  (ENDPOINT_FAMILIES as readonly string[]).includes(value);
 
 /**
  * Unwrap a schemastery volatile `.get()` node to its current value.

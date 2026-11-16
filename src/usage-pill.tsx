@@ -79,10 +79,6 @@ export interface UsagePillProps {
    */
   directory?: SnapshotStore<ModelDirectoryState>;
   getLocale?: () => string;
-  /**
-   * Deprecated: model markers are no longer used for gating. Kept optional for backward compatibility.
-   */
-  modelMarkers?: readonly string[];
   /** Why the meter has no directory; set only on the diagnostic path. */
   reason?: string;
   /**
@@ -437,7 +433,6 @@ const reportAbsence = (reason: string): void => {
 export const UsagePill = ({
   directory,
   meterProviders,
-  modelMarkers: _modelMarkers,
   reason,
   ...props
 }: UsagePillProps): React.ReactElement | null => {
