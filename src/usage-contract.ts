@@ -219,9 +219,10 @@ declare module "@deepseek-ai/dsh-typert-protocol" {
        * `dsh-opencode-go` owns an `opencodeGoUsage` contract of its own and its
        * account page calls `readAccount(ref)`; this plugin mounts the
        * root-context instance the Typert gateway resolves for that namespace
-       * (see `installUsageService`), so a namespace offering only `read` answers
-       * that page with `active Service "opencodeGoUsage" has no callable method
-       * "readAccount"` and the account row reads as unavailable.
+       * (see `installRemoteService` in `src/host/remote.ts`), so a namespace
+       * offering only `read` answers that page with `active Service
+       * "opencodeGoUsage" has no callable method "readAccount"` and the
+       * account row reads as unavailable.
        */
       readAccount: (ref: string) => Promise<RemoteResult<GoUsage>>;
     };

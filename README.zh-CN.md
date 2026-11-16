@@ -441,6 +441,7 @@ OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harnes
 - **`@viztor/dsh-opencode` 已弃用，但仍在发布。** 它是一个转导出 `dsh-opencode-patch` 的薄包装，所以用旧名的安装照常解析；registry 上标记为弃用并指向正式名称。新安装请用 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 - **其他插件拥有的路由留给它自己。** 当 `llm-pi-ai` 的配置行在本插件不解析凭据的凭据域中解析凭据，或者平面条目带有 `x-opencode-plugin` 请求头时（OpenCode Console 安装步骤写入的正是这种形状），该平面由 `llm-pi-ai` 而不是本插件服务，本插件的请求头、密钥与计量都不碰它的流量。在已发布的 1.x 中，这类路由上被本插件转到其隐藏的 Responses、Messages 或 Google 路由的轮次用本插件的凭据解析，因拿不到 Console 的令牌而失败，其余轮次则带上本插件的请求头，其密钥也被记录下来供计量使用；见[与 OpenCode Console 同时安装](#与-opencode-console-同时安装)。
 - **网关的拒绝如实报告。** 在本插件服务的平面上，`FreeTierError`（403）或 `FreeUsageLimitError`（429）现在以 `FREE_TIER` 结束回合，`RegionError`、`ModelDeprecated` 或 `ModelProtocolUnsupported` 以 `MODEL_UNAVAILABLE` 结束，各自带有网关的原话，以及它的状态码（Google 协议的模型除外，其失败文本不带状态码）。过去对话对这些 403 显示“API 密钥无效”（API key is invalid），对用量上限显示“当前请求的额度已用尽”（Request quota exhausted.），网关的消息被丢弃。与被替换的代码一样，这两个新代码都不在宿主的可重试集合中，所以被拒绝的回合仍不会被重发。没有自带工具的免费 Chat Completions 回合现在在免费层的 `read` 与 `bash` 之外带上 `tool_choice: none`，以空 schema 声明的 `read` 或 `bash` 会被完整的定义替换。
+- **用量设置在插件再次应用时生效，停用插件会撤下它的服务。** 修改 `usageBaseURL`、`keySource` 或 `readOpencodeStore`，或关闭 `usageEnabled`，在插件下一次被应用时生效：即停用后再启用，或 `dsh` 重启时。以前用量服务会一直沿用启动时的值，直到 `dsh` 重启，期间无论停用再启用多少次都不变。停用插件现在会撤下它的用量、清理与存储检查服务，而不是让它们继续应答。
 
 ## 📜 兼容性与验证
 

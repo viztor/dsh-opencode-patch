@@ -17,13 +17,16 @@
  * {@link degradedHost} is the one stand-in for the plugin's COMPOSITION, for
  * the diagnostics a real `Context` cannot reach, because a real one registers
  * what it is asked to and always has `plugin`: (1) a `plugin` that registers
- * nothing, with and without `get`, which drives the three unreachable-service
- * diagnostics; (2) a composition with no `plugin`, or with neither `plugin`
- * nor `provide`. Even there `effect` runs
- * its callback and keeps the disposer, so nothing it installs outlives the
- * case. (The route claim's clause tests keep a stand-in host of their own,
- * `route-claim-stand-in.ts`, for fiber states a real host cannot be put in on
- * demand; that is a module under test, not the composition.)
+ * nothing or throws, with and without `get`, which drives the three
+ * unreachable-service diagnostics and a refused mount; (2) a `plugin` whose
+ * fiber the case settles, for `apply` waiting on the services' reports; (3) a
+ * composition with no `plugin` (with or without `provide`, which is never
+ * called). Even there `effect` runs its callback and keeps the disposer, so
+ * nothing it installs outlives the case. (The route claim's clause tests keep
+ * a stand-in host of their own, `route-claim-stand-in.ts`, for fiber states a
+ * real host cannot be put in on demand, and `test/remote-service.test.ts`
+ * keeps stand-in compositions for `installRemoteService`'s clauses; those are
+ * modules under test, not the composition.)
  *
  * @module test/support/composition
  */
@@ -139,7 +142,8 @@ export interface DegradedHost {
 
 /**
  * A composition a real `Context` cannot stand for: a `plugin` that registers
- * nothing (with or without `get`), or one missing `plugin`, or `provide` too.
+ * nothing, throws or answers a fiber the case settles (with or without
+ * `get`), or one missing `plugin` (with or without `provide`).
  * Its `effect` runs the callback and records the disposer, as
  * cordis does, so the fetch patch it installs is restored by `dispose()`.
  *

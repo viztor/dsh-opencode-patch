@@ -7,9 +7,11 @@
  * plugin's effects run and are undone as a deployment runs and undoes them.
  * Only the degraded-composition diagnostics keep a stand-in (`degradedHost`),
  * because a real `Context` registers what it is asked to and always has
- * `plugin`: a `plugin` that registers nothing, with and without `get` (the
- * three unreachable-service diagnostics), and a composition with no `plugin`,
- * or with neither `plugin` nor `provide`.
+ * `plugin`: a `plugin` that registers nothing or throws, with and without
+ * `get` (the three unreachable-service diagnostics, and a refused mount), a
+ * `plugin` whose fiber the case settles (`apply` waiting for the reports),
+ * and a composition with no `plugin` (with or without `provide`, which is
+ * never called).
  *
  * @module test/lifecycle.test
  */
@@ -19,7 +21,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { Context } from "@deepseek-ai/cordis";
+import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { seedDivergentCatalog, ZEN_FREE_PROBE } from "./support/catalogs.ts";
@@ -190,7 +192,8 @@ describe("apply (plugin lifecycle)", () => {
     //    remote.opencodeGoUsage.read is missing"
     //
     // The reproduction, on real cordis: apply, apply again on the same root,
-    // dispose the first. On the root, once per process, the service survives.
+    // dispose the first. On the root, the service outlives the first
+    // activation while the second still holds it.
     vi.stubGlobal("fetch", replacementFetch);
     const { ctx, fiber: first } = await mountPlugin({
       config: { usageEnabled: true },
@@ -205,6 +208,20 @@ describe("apply (plugin lifecycle)", () => {
       | undefined;
     expect(usage, "the reload lost the usage service").toBeDefined();
     expect(typeof usage?.read).toBe("function");
+    // The purge and store-inspection services mount the same way, and survive
+    // the same ordering.
+    const purge = ctx.get("opencodeModelPurge" as never) as
+      | { purge?: unknown }
+      | undefined;
+    expect(typeof purge?.purge, "the reload lost the purge service").toBe(
+      "function"
+    );
+    const store = ctx.get(STORE_NAMESPACE as never) as
+      | { inspect?: unknown }
+      | undefined;
+    expect(typeof store?.inspect, "the reload lost the store service").toBe(
+      "function"
+    );
     await second.dispose();
 
     // KNOWN_DEFECT P6: disposing the first activation while the second's patch
@@ -214,6 +231,28 @@ describe("apply (plugin lifecycle)", () => {
     // and removes it, so the leftover cannot reach the next case.
     expect(globalThis.fetch?.name, "KNOWN_DEFECT P6").toBe(PATCHED_FETCH);
     vi.unstubAllGlobals();
+  });
+
+  it("a reload keeps every remote service reachable", async () => {
+    // A reload is `fiber.update`: the activation unloads and applies again with
+    // the new config. Each of the three services answers once it resolves.
+    vi.stubGlobal("fetch", replacementFetch);
+    const { ctx, fiber } = await mountPlugin({
+      config: { usageEnabled: true },
+    });
+    await fiber.update({ debug: true, usageEnabled: true });
+    const usage = ctx.get("opencodeGoUsage" as never) as
+      | { read?: unknown }
+      | undefined;
+    const purge = ctx.get("opencodeModelPurge" as never) as
+      | { purge?: unknown }
+      | undefined;
+    const store = ctx.get(STORE_NAMESPACE as never) as
+      | { inspect?: unknown }
+      | undefined;
+    expect(typeof usage?.read, "usage").toBe("function");
+    expect(typeof purge?.purge, "purge").toBe("function");
+    expect(typeof store?.inspect, "store").toBe("function");
   });
 
   it("the usage service reads the Go usage endpoint of the composition", async () => {
@@ -337,60 +376,426 @@ describe("apply (plugin lifecycle)", () => {
     ).toBe(true);
   });
 
-  it("survives a composition with neither mount path, and reports it (KNOWN_DEFECT P5: the provide fallback never publishes)", async () => {
-    // With no `ctx.plugin`, each installer takes the `ctx.provide` fallback —
-    // and today that fallback cannot publish anything: it constructs the
-    // service first, and a service's constructor registers itself through
-    // `ctx.reflect`, which only a real cordis context has (and a real context
-    // always has `plugin`). So on this stand-in each service reports, by its
-    // own name, that it did not mount, `provide` is never called, and `apply`
-    // carries on without throwing. P5 (`installRemoteService`) either drops the
-    // provide arm or makes it publish; the empty list below is what it flips.
+  it("reports a composition with no ctx.plugin by each service's name, and never provides one", async () => {
+    // A service the Gateway can find is a mounted Service with a
+    // `typertRemote` binding; a value published through `ctx.provide` is
+    // invisible to its discovery, and constructing a service needs
+    // `ctx.reflect`, which only a real context has (and a real context always
+    // has `plugin`). So a composition without `plugin` mounts nothing and
+    // says so, service by service, whether or not it has `provide` — and
+    // `apply` carries on without throwing.
     const warned: string[] = [];
     const logger = {
       warn: (...args: unknown[]) => warned.push(args.map(String).join(" ")),
     };
     const services = ["opencodeGoUsage", "opencodeModelPurge", STORE_NAMESPACE];
     const provided: string[] = [];
-    const withProvide = degradedHost({
+    for (const host of [
+      degradedHost({
+        logger,
+        provide: (name) => {
+          provided.push(name);
+        },
+      }),
+      degradedHost({ logger }),
+    ]) {
+      warned.length = 0;
+      try {
+        await expect(
+          apply(host.ctx, { usageEnabled: true })
+        ).resolves.toBeUndefined();
+      } finally {
+        host.dispose();
+      }
+      for (const service of services) {
+        expect(warned, service).toContainEqual(
+          expect.stringContaining(
+            `${service} did not mount: this composition has no ctx.plugin`
+          )
+        );
+      }
+      expect(warned.join(" ")).not.toContain("neither ctx.plugin");
+    }
+    expect(provided).toEqual([]);
+  });
+
+  it("the usage service reads the settings of the latest reload, not the first", async () => {
+    // The service used to keep the options of the activation that first
+    // mounted it, so a changed `usageBaseURL` took effect only after `dsh`
+    // restarted. A reload now reads the reloaded row's.
+    vi.stubEnv("OPENCODE_GO_API_KEY", "sk-go-usage-test");
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(urlOf(input));
+        return Response.json({});
+      })
+    );
+    const { ctx, fiber } = await mountPlugin({
+      config: {
+        usageBaseURL: "https://relay-a.example/zen/go/v1",
+        usageEnabled: true,
+      },
+    });
+    await fiber.update({
+      usageBaseURL: "https://relay-b.example/zen/go/v1",
+      usageEnabled: true,
+    });
+    const usage = ctx.get("opencodeGoUsage" as never) as unknown as {
+      read: () => Promise<unknown>;
+    };
+    // The stub answers no usage windows, so the read itself fails; what is
+    // asserted is where it went.
+    await expect(usage.read()).rejects.toThrow(/usage response/u);
+    expect(urls, urls.join(", ")).toContain(
+      "https://relay-b.example/zen/go/v1/usage"
+    );
+    expect(urls, urls.join(", ")).not.toContain(
+      "https://relay-a.example/zen/go/v1/usage"
+    );
+  });
+
+  it("two live activations: the usage service reads the latest one's settings, then the remaining one's", async () => {
+    vi.stubEnv("OPENCODE_GO_API_KEY", "sk-go-usage-test");
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(urlOf(input));
+        return Response.json({});
+      })
+    );
+    const { ctx } = await mountPlugin({
+      config: {
+        usageBaseURL: "https://relay-a.example/zen/go/v1",
+        usageEnabled: true,
+      },
+    });
+    const { fiber: second } = await mountPlugin({
+      config: {
+        usageBaseURL: "https://relay-b.example/zen/go/v1",
+        usageEnabled: true,
+      },
+      ctx,
+    });
+    const usage = (): {
+      read: () => Promise<unknown>;
+      typertRemote: unknown;
+    } =>
+      ctx.get("opencodeGoUsage" as never) as unknown as {
+        read: () => Promise<unknown>;
+        typertRemote: unknown;
+      };
+    await expect(usage().read()).rejects.toThrow(/usage response/u);
+    expect(urls, urls.join(", ")).toEqual([
+      "https://relay-b.example/zen/go/v1/usage",
+    ]);
+    const binding = usage().typertRemote;
+
+    // Latest first, so the fetch patches unwind cleanly (the other order is
+    // P6's). The service is the same one, now reading the remaining row's.
+    urls.length = 0;
+    await second.dispose();
+    expect(usage().typertRemote, "the same service").toBe(binding);
+    await expect(usage().read()).rejects.toThrow(/usage response/u);
+    expect(urls, urls.join(", ")).toEqual([
+      "https://relay-a.example/zen/go/v1/usage",
+    ]);
+  });
+
+  it("disabling the plugin withdraws its three remote services", async () => {
+    const namespaces = [
+      "opencodeGoUsage",
+      "opencodeModelPurge",
+      STORE_NAMESPACE,
+    ];
+    // Read as booleans: a live service is a cordis proxy, which the
+    // assertion's diff cannot print.
+    const present = (ctx: Context): boolean[] =>
+      namespaces.map((namespace) => ctx.get(namespace as never) !== undefined);
+
+    const { ctx, fiber } = await mountPlugin({
+      config: { usageEnabled: true },
+    });
+    expect(present(ctx)).toEqual([true, true, true]);
+    await fiber.dispose();
+    expect(present(ctx)).toEqual([false, false, false]);
+
+    // Two overlapping activations: the services go with the last of them.
+    const { ctx: shared, fiber: first } = await mountPlugin({
+      config: { usageEnabled: true },
+    });
+    const { fiber: second } = await mountPlugin({
+      config: { usageEnabled: true },
+      ctx: shared,
+    });
+    await second.dispose();
+    expect(present(shared)).toEqual([true, true, true]);
+    await first.dispose();
+    expect(present(shared)).toEqual([false, false, false]);
+  });
+
+  it("turning usageEnabled off takes effect on reload", async () => {
+    const { ctx, fiber } = await mountPlugin({
+      config: { usageEnabled: true },
+    });
+    await fiber.update({ usageEnabled: false });
+    expect(
+      ctx.get("opencodeGoUsage" as never) === undefined,
+      "the usage service outlived usageEnabled: false"
+    ).toBe(true);
+    const purge = ctx.get("opencodeModelPurge" as never) as
+      | { purge?: unknown }
+      | undefined;
+    const store = ctx.get(STORE_NAMESPACE as never) as
+      | { inspect?: unknown }
+      | undefined;
+    expect(typeof purge?.purge).toBe("function");
+    expect(typeof store?.inspect).toBe("function");
+
+    await fiber.update({ usageEnabled: true });
+    const usage = ctx.get("opencodeGoUsage" as never) as
+      | { read?: unknown }
+      | undefined;
+    expect(typeof usage?.read).toBe("function");
+  });
+
+  it("reports a refused mount through the activation's logger, never the console", async () => {
+    // (a) A real context where another provider already holds the name: the
+    // service's fiber fails, and the activation says so on its own logger.
+    const taken = new Context();
+    taken.provide("opencodeModelPurge" as never, {} as never);
+    const { lines } = await mountPlugin({
+      config: { usageEnabled: false },
+      ctx: taken,
+    });
+    expect(
+      lines().some(
+        (line) =>
+          line.startsWith("warn dsh-opencode-patch:") &&
+          line.includes("opencodeModelPurge did not mount") &&
+          line.includes("has been registered")
+      ),
+      lines().join("\n")
+    ).toBe(true);
+
+    // (b) A `plugin` that throws: each service reports through the logger,
+    // and nothing reaches the console.
+    const warned: string[] = [];
+    const logger = {
+      info: () => {
+        // the reachable lines are not what this case reads
+      },
+      warn: (...args: unknown[]) => warned.push(args.map(String).join(" ")),
+    };
+    const consoleWarn = vi.spyOn(console, "warn");
+    const host = degradedHost({
       logger,
-      provide: (name) => {
-        provided.push(name);
+      plugin: () => {
+        throw new Error("refused");
       },
     });
     try {
-      await expect(
-        apply(withProvide.ctx, { usageEnabled: true })
-      ).resolves.toBeUndefined();
+      await apply(host.ctx, { usageEnabled: true });
+      for (const namespace of [
+        "opencodeGoUsage",
+        "opencodeModelPurge",
+        STORE_NAMESPACE,
+      ]) {
+        expect(
+          warned.some(
+            (line) =>
+              line.includes(`${namespace} did not mount`) &&
+              line.includes("refused")
+          ),
+          `${namespace}: ${warned.join(" | ")}`
+        ).toBe(true);
+      }
+      expect(
+        consoleWarn.mock.calls.filter((call) =>
+          call.some((argument) => String(argument).includes("did not mount"))
+        )
+      ).toEqual([]);
     } finally {
-      withProvide.dispose();
+      host.dispose();
+      consoleWarn.mockRestore();
     }
-    for (const service of services) {
-      expect(warned, service).toContainEqual(
-        expect.stringContaining(`${service} did not mount`)
-      );
-    }
-    expect(warned.join(" ")).not.toContain("neither ctx.plugin");
-    expect(provided, "KNOWN_DEFECT P5").toEqual([]);
+  });
 
-    // Neither `plugin` nor `provide`: the installer says so instead of throwing,
-    // which is what keeps one service's absence from taking the rest of `apply`
-    // down with it.
-    warned.length = 0;
-    const neither = degradedHost({ logger });
-    try {
-      await expect(
-        apply(neither.ctx, { usageEnabled: true })
-      ).resolves.toBeUndefined();
-    } finally {
-      neither.dispose();
+  it("a healthy boot reports every service reachable, and no false 'did not register'", async () => {
+    // The check used to run before cordis had loaded the service, so every
+    // healthy boot logged that the usage service did not register.
+    const { lines } = await mountPlugin({ config: { usageEnabled: true } });
+    expect(
+      lines().filter((line) => line.includes("did not register: ctx.get("))
+    ).toEqual([]);
+    for (const namespace of [
+      "opencodeGoUsage",
+      "opencodeModelPurge",
+      STORE_NAMESPACE,
+    ]) {
+      expect(
+        lines().some(
+          (line) => line.includes("reachable") && line.includes(namespace)
+        ),
+        `${namespace}: ${lines().join("\n")}`
+      ).toBe(true);
     }
-    for (const service of services) {
-      expect(warned, service).toContainEqual(
-        expect.stringContaining(
-          `${service} did not mount: this composition has neither ctx.plugin nor ctx.provide`
+  });
+
+  it("warns once when globalThis.fetch is no longer the function it installed (L1)", async () => {
+    echoHeaders();
+    const { ctx, lines } = await mountPlugin();
+    const replaced = (): string[] =>
+      lines().filter((line) => line.includes("globalThis.fetch is no longer"));
+
+    // The known answer first: with the patch in place, no warning.
+    await drain(
+      stream(ctx, { provider: "opencode", sessionId: "l1-before" }, echoTurn)
+    );
+    expect(replaced()).toEqual([]);
+
+    // Whatever replaced it calls through to nothing of ours.
+    const foreign = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        Response.json(Object.fromEntries(new Headers(init?.headers)))
+    );
+    globalThis.fetch = foreign;
+
+    // A turn the hook does not decorate says nothing.
+    const down = createMockStream("x");
+    expect(stream(ctx, { provider: "deepseek" }, () => down)).toBe(down);
+    expect(replaced()).toEqual([]);
+
+    // Two decorated turns: one warning.
+    await drain(
+      stream(ctx, { provider: "opencode", sessionId: "l1-a" }, echoTurn)
+    );
+    await drain(
+      stream(ctx, { provider: "opencode", sessionId: "l1-b" }, echoTurn)
+    );
+    expect(replaced()).toHaveLength(1);
+    expect(replaced()[0]?.startsWith("warn ")).toBe(true);
+  });
+
+  it("two live activations raise no L1 warning: the later patch wraps the earlier one", async () => {
+    // Two rows of the plugin (the rename notice's legacy row beside the
+    // current one) nest their fetch patches: the second wraps the first's,
+    // which still runs underneath, so neither activation's hook may say its
+    // patch was replaced.
+    echoHeaders();
+    const first = await mountPlugin();
+    const second = await mountPlugin({ ctx: first.ctx });
+    try {
+      const [headers] = await drain(
+        stream(
+          first.ctx,
+          { provider: "opencode", sessionId: "l1-nested" },
+          echoTurn
         )
       );
+      expect((headers as Record<string, string>)["x-opencode-session"]).toBe(
+        openCodeSessionIdFor("l1-nested")
+      );
+      expect(
+        first
+          .lines()
+          .filter((line) => line.includes("globalThis.fetch is no longer"))
+      ).toEqual([]);
+    } finally {
+      // Latest first, so each restore finds its own patch current.
+      await second.fiber.dispose();
+      await first.fiber.dispose();
+    }
+  });
+
+  it("three activations, the middle one disposed first: the remaining one warns though its patch runs (KNOWN_DEFECT P6)", async () => {
+    // pC wraps pB wraps pA. Disposing B leaves pC current; disposing C then
+    // restores the fetch C wrapped, the disposed pB, which no live activation
+    // holds. pB still calls through to pA, so A's turn carries its header,
+    // but A's predicate reads pB as a replacement and warns (L1).
+    echoHeaders();
+    const first = await mountPlugin();
+    const second = await mountPlugin({ ctx: first.ctx });
+    const third = await mountPlugin({ ctx: first.ctx });
+    await second.fiber.dispose();
+    await third.fiber.dispose();
+    const [headers] = await drain(
+      stream(
+        first.ctx,
+        { provider: "opencode", sessionId: "l1-three" },
+        echoTurn
+      )
+    );
+    expect((headers as Record<string, string>)["x-opencode-session"]).toBe(
+      openCodeSessionIdFor("l1-three")
+    );
+    // KNOWN_DEFECT P6: the stale restore put a disposed patch back, so this
+    // reads one warning; P6's chain-aware restore flips it to none.
+    expect(
+      first
+        .lines()
+        .filter((line) => line.includes("globalThis.fetch is no longer")),
+      "KNOWN_DEFECT P6"
+    ).toHaveLength(1);
+    await first.fiber.dispose();
+    // The disposed pB outlives every activation (the same defect); the case
+    // owns the stub underneath and removes it, so the leftover cannot reach
+    // the next case.
+    expect(globalThis.fetch?.name, "KNOWN_DEFECT P6").toBe(PATCHED_FETCH);
+    vi.unstubAllGlobals();
+  });
+
+  it("apply waits for the remote services' reports before it settles", async () => {
+    // cordis waits for `apply`'s promise; the services' reports are part of
+    // it, so a mount still loading keeps the activation pending and its
+    // report has not been made yet.
+    const infos: string[] = [];
+    let settle: () => void = () => {
+      // assigned below, synchronously
+    };
+    const loaded = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const host = degradedHost({
+      get: (service) => ({ typertRemote: { namespace: service } }),
+      logger: {
+        info: (...args: unknown[]) => {
+          infos.push(args.map(String).join(" "));
+        },
+        warn: () => {
+          // not what this case reads
+        },
+      },
+      plugin: () => ({
+        await: async () => loaded,
+        dispose: () => {
+          // nothing to unload
+        },
+      }),
+    });
+    const reachable = (): string[] =>
+      infos.filter((line) => line.includes("is reachable"));
+    try {
+      let applied = false;
+      const applying = (async () => {
+        await apply(host.ctx, { usageEnabled: true });
+        applied = true;
+      })();
+      for (let tick = 0; tick < 5; tick += 1) {
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+      }
+      expect(applied, "apply settled before the mounts did").toBe(false);
+      expect(reachable()).toEqual([]);
+      settle();
+      await applying;
+      expect(applied).toBe(true);
+      expect(reachable()).toHaveLength(3);
+    } finally {
+      host.dispose();
     }
   });
 

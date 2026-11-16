@@ -111,6 +111,7 @@ export const createStreamHook = (
   ctx: DebugContext & {
     logger?: {
       info?: (msg: string, ...args: unknown[]) => void;
+      warn?: (msg: string, ...args: unknown[]) => void;
     };
   },
   config: ResolvedPluginConfig,
@@ -121,9 +122,19 @@ export const createStreamHook = (
    * decorated or priced; its requests run under a turn marked `foreign`,
    * which the fetch patch passes through untouched. Read per turn.
    */
-  steppedAside: () => ReadonlySet<string> = () => new Set()
+  steppedAside: () => ReadonlySet<string> = () => new Set(),
+  /**
+   * Whether `globalThis.fetch` is still a live fetch patch of the plugin's,
+   * this activation's own or a later one wrapping it (L1): the predicate its
+   * installer returns, read per decorated turn. A turn decorated after
+   * something replaced it carries the session and gateway headers only if the
+   * replacement calls through, so the hook says so, once. A disposed patch
+   * that P6's stale restore put back reads as a replacement too.
+   */
+  fetchInPlace: () => boolean = () => true
 ): StreamHandler => {
   const { debug, debugFile, providers } = config;
+  let fetchReplacedWarned = false;
 
   return (options: unknown, next: () => unknown): unknown => {
     if (!isStreamOptions(options)) {
@@ -149,6 +160,12 @@ export const createStreamHook = (
             als
           )
         : foreign;
+    }
+    if (!fetchReplacedWarned && !fetchInPlace()) {
+      fetchReplacedWarned = true;
+      ctx.logger?.warn?.(
+        "[dsh-opencode-patch] globalThis.fetch is no longer the function this plugin installed: a turn's OpenCode requests carry the session and gateway headers only if whatever replaced it calls through to it"
+      );
     }
 
     const sessionProp: unknown = options.sessionId;

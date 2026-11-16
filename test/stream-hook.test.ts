@@ -237,6 +237,62 @@ describe("stream-hook · a plane another plugin owns (D27)", () => {
   });
 });
 
+describe("stream-hook · the fetch it installed was replaced (L1)", () => {
+  /**
+   * A turn is decorated through the plugin's fetch patch, so a turn that runs
+   * after something else replaced `globalThis.fetch` carries the session and
+   * gateway headers only if the replacement calls through. The installer
+   * hands the hook a predicate, read per decorated turn, and the hook says so
+   * once — never for a turn it does not decorate.
+   */
+  const drainTurn = (
+    hook: ReturnType<typeof createStreamHook>,
+    provider: string
+  ) =>
+    collectUnknown(
+      hook({ model: "m", provider }, () =>
+        createMockStream("chunk")
+      ) as AsyncIterable<unknown>
+    );
+
+  it("warns once, on decorated turns only", async () => {
+    const warn = vi.fn();
+    const hook = createStreamHook(
+      { logger: { info: () => {}, warn } } as never,
+      resolveConfig({ usageEnabled: false } as never),
+      new AsyncLocalStorage(),
+      () => new Set(["opencode-go"]),
+      () => false
+    );
+    // A provider the plugin does not own, and a stepped-aside plane.
+    const next = vi.fn(() => "next-result");
+    expect(hook({ model: "m", provider: "other" }, next)).toBe("next-result");
+    await drainTurn(hook, "opencode-go");
+    expect(warn).not.toHaveBeenCalled();
+
+    await drainTurn(hook, "opencode");
+    await drainTurn(hook, "opencode");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain(
+      "globalThis.fetch is no longer the function this plugin installed"
+    );
+  });
+
+  it("says nothing while the patch is in place", async () => {
+    const warn = vi.fn();
+    const hook = createStreamHook(
+      { logger: { info: () => {}, warn } } as never,
+      resolveConfig({ usageEnabled: false } as never),
+      new AsyncLocalStorage(),
+      () => new Set(),
+      () => true
+    );
+    await drainTurn(hook, "opencode");
+    await drainTurn(hook, "opencode");
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
 describe("stream-hook · the debug gate", () => {
   /**
    * Naming `debugFile` writes the file; `debug` governs the console alone. The
