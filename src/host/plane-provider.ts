@@ -50,6 +50,7 @@ import {
   isRecord,
 } from "../utils/guards.ts";
 import type { PlaneProviderBuilder } from "../utils/plane-profile.ts";
+import { planeOfPlaneRoute } from "../utils/planes.ts";
 import { PROTOCOLS } from "../utils/protocols.ts";
 
 /** A resolved plane profile, as far as this module reads one. */
@@ -650,7 +651,7 @@ export const buildPlaneProvider =
         })
       ),
       auth:
-        id === "opencode-go"
+        planeOfPlaneRoute(id) === "go"
           ? libraries.opencodeGoAuth
           : libraries.opencodeAuth,
       id,

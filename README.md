@@ -166,7 +166,7 @@ Zen's provider-level SDK is `@ai-sdk/openai-compatible`. models.dev names a **di
 | `@ai-sdk/openai` | 32 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 18 | Anthropic Messages |
 | `@ai-sdk/google` | 10 | Google Generative AI |
-| `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, as pi's own data files it |
+| `@ai-sdk/mistral` | 1 | OpenAI Chat Completions, the plugin's own rule for this SDK |
 
 Counts are the **89** active `opencode` models in `models.opencode.ai` as of 2026-11-16 — everything else the vendor lists is deprecated or retired, and the patch ships only what the gateway still serves. The same 89 are bundled offline in `src/catalog-data.ts`, so every one of them routes correctly before the first catalog refresh; regenerate that file with `pnpm run catalog:shim -- --write` (without `--write` it only checks).
 

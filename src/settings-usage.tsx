@@ -22,7 +22,6 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
-import { formatUsd } from "./go-limits.ts";
 import type { Translate } from "./settings-copy.ts";
 import {
   callUsageRead,
@@ -34,6 +33,7 @@ import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import { formatRelativeReset, getWindowState, resetLabel } from "./usage-ui.ts";
 import { isRecord } from "./utils/guards.ts";
 import { backoffOver, retryUntilAnswered } from "./utils/retry.ts";
+import { formatUsd } from "./utils/usd.ts";
 
 /** The three windows, in the order the panel lists them. */
 /**
@@ -338,9 +338,7 @@ export const UsageSummaryView = ({
         >
           {`${t("usageSummaryAllowance")} ${usage.allowance.model} · ${t(
             "goTier"
-          )} ${formatUsd(usage.allowance.go)} · ${t("goPlusTier")} ${formatUsd(
-            usage.allowance.goPlus
-          )}`}
+          )} ${formatUsd(usage.allowance.go, "allowance")} · ${t("goPlusTier")} ${formatUsd(usage.allowance.goPlus, "allowance")}`}
         </div>
       )}
     </div>

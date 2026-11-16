@@ -233,7 +233,8 @@ describe("OpenCode model catalog · the bundled shim", () => {
 
     // And each of those SDKs maps to a protocol the plane adapter serves, so no
     // carried model names a format with nowhere to go. `@ai-sdk/mistral` is no
-    // exception any more: pi's own data files it as completions (D16).
+    // exception any more: the plugin's own rule sends it as completions, on the
+    // root the catalog's family table places it (D16, D26).
     for (const [npm, ids] of buckets) {
       expect(protocolForSdk(npm), npm).toBeDefined();
       expect(isServableSdk(npm), npm).toBe(true);

@@ -117,6 +117,34 @@ describe("purge: deleting what the catalog retired", () => {
       { id: "mimo-v2.6-flash-free" },
     ]);
   });
+  it("judges each plane route on its own plane: an id retired on Go only stays declared on Zen", async () => {
+    // One id, live on Zen and retired on Go, declared on both routes. The
+    // route-to-plane table decides which plane's retirement applies, so a
+    // swapped or constant plane fails one way or the other.
+    const split = {
+      opencode: {
+        models: { "split-probe": { name: "Probe", limit: { context: 1000 } } },
+      },
+      "opencode-go": { models: { "split-probe": { status: "deprecated" } } },
+    };
+    parseModelsDevCatalog(split);
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve({ json: async () => split, ok: true })
+    );
+    const editor = editorWith({
+      go: [{ id: "split-probe" }],
+      zen: [{ id: "split-probe" }],
+    });
+
+    const result = await new ModelPurgeService(ctxWith(editor)).purge();
+
+    expect(result.removed).toEqual([
+      { id: "split-probe", provider: "opencode-go" },
+    ]);
+    const written = editor.entry.options.config.providers;
+    expect(written.opencode.models).toEqual([{ id: "split-probe" }]);
+    expect(written["opencode-go"].models).toEqual([]);
+  });
 });
 
 describe("purge: the refusals it can report", () => {

@@ -8,6 +8,9 @@
  *
  * @module test/model-metadata.test
  */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 
@@ -22,6 +25,7 @@ import {
   protocolForSdk,
   reasoningFor,
 } from "./support/src.ts";
+import { blankCommentLines } from "./support/strip-comments.ts";
 
 const zen = (id: string): CatalogModelSpec => {
   const spec = OPENCODE_ZEN_CATALOG.find((model) => model.id === id);
@@ -259,5 +263,99 @@ describe("model-metadata · piReasoningFromEfforts (pi-ai's resolveModelReasonin
     expect(error({ low: null })).toMatch(
       /^llm-pi-ai: provider "opencode" model "m" /u
     );
+  });
+});
+
+describe("model-metadata · the level names live in one table (pin)", () => {
+  const SRC = join(import.meta.dirname, "..", "src");
+  /** Generated tables hold the vendor's words, not a copy this repo keeps. */
+  const GENERATED = new Set(["catalog-data.ts", "go-limits-data.ts"]);
+
+  /** Every `src` file, relative to `src`, with its comments blanked. */
+  const sources = (): ReadonlyMap<string, string> =>
+    new Map(
+      readdirSync(SRC, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile() && /\.tsx?$/u.test(entry.name))
+        .map((entry) =>
+          join(entry.parentPath, entry.name).slice(SRC.length + 1)
+        )
+        .filter((file) => !GENERATED.has(file))
+        .map((file) => [
+          file,
+          blankCommentLines(readFileSync(join(SRC, file), "utf8")),
+        ])
+    );
+
+  /**
+   * A capitalised level name written as a literal, the form of the `"Off"`
+   * copy this phase removed from `reasoningFor`. `"On"` is D1's toggle label,
+   * not a level name, and is not matched.
+   */
+  const LEVEL_NAME = /"(?:Off|Minimal|Low|Medium|High|Xhigh|XHigh|Max)"/u;
+
+  /** The files whose code (comments blanked) matches `pattern`. */
+  const holding = (
+    files: ReadonlyMap<string, string>,
+    pattern: RegExp
+  ): string[] =>
+    [...files]
+      .filter(([, source]) => pattern.test(source))
+      .map(([file]) => file)
+      .toSorted();
+
+  it("names every offered effort through effortName, Off included", () => {
+    // A bare toggle on a protocol that can disable: Off, then On.
+    const toggle = reasoningFor(
+      { reasoning: true, reasoning_options: [{ type: "toggle" }] },
+      "anthropic-messages"
+    );
+    expect(toggle?.efforts[0]).toEqual({ id: "off", name: effortName("off") });
+    expect(toggle?.effortNames.off).toBe("Off");
+    // An effort list with an explicit disable, on completions: every name is
+    // the table's.
+    const listed = reasoningFor(
+      {
+        reasoning: true,
+        reasoning_options: [
+          { type: "effort", values: ["none", "low", "high"] },
+        ],
+      },
+      "openai-completions"
+    );
+    expect(listed?.efforts.map((effort) => effort.id)).toEqual([
+      "off",
+      "low",
+      "high",
+    ]);
+    for (const effort of listed?.efforts ?? []) {
+      expect(effort.name).toBe(effortName(effort.id));
+    }
+  });
+
+  it("no second copy of the level list or of its capitalisation in src", () => {
+    const files = sources();
+    // The scan reads the tree: the module that holds the table is in it.
+    expect(files.has("utils/model-metadata.ts")).toBe(true);
+    expect(holding(files, /"minimal"/u)).toEqual(["utils/model-metadata.ts"]);
+    expect(holding(files, /ALL_THINKING_LEVELS/u)).toEqual([]);
+    expect(holding(files, /charAt\(0\)\.toUpperCase\(\)/u)).toEqual([
+      "utils/model-metadata.ts",
+    ]);
+    // A capitalised level name, as a literal: only effortName's `"Off"`.
+    expect(holding(files, LEVEL_NAME)).toEqual(["utils/model-metadata.ts"]);
+    // A planted copy is seen, so an empty answer above is not a blind scan.
+    const planted = new Map([
+      ...files,
+      ["planted.ts", 'const LEVELS = ["off", "minimal"];\n'],
+      ["planted-names.ts", 'const NAMES = [{ id: "high", name: "High" }];\n'],
+    ]);
+    expect(holding(planted, /"minimal"/u)).toEqual([
+      "planted.ts",
+      "utils/model-metadata.ts",
+    ]);
+    expect(holding(planted, LEVEL_NAME)).toEqual([
+      "planted-names.ts",
+      "utils/model-metadata.ts",
+    ]);
   });
 });

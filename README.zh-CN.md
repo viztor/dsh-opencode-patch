@@ -164,7 +164,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | `@ai-sdk/openai` | 32 | OpenAI Responses |
 | `@ai-sdk/anthropic` | 18 | Anthropic Messages |
 | `@ai-sdk/google` | 10 | Google Generative AI |
-| `@ai-sdk/mistral` | 1 | OpenAI Chat Completions（与 pi 自己的数据一致） |
+| `@ai-sdk/mistral` | 1 | OpenAI Chat Completions（插件自己对该 SDK 的规则） |
 
 数量为 `models.opencode.ai` 中 `opencode` 的 89 个**在用**模型，统计于 2026-11-16 —— 其余已废弃或下架，补丁只内置网关仍在服务的部分。同样这 89 个模型离线内置在 `src/catalog-data.ts`，因此在第一次 catalog 刷新之前它们每一个路由都是正确的；用 `pnpm run catalog:shim -- --write` 重新生成该文件（不加 `--write` 时只做检查）。
 

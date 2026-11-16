@@ -26,9 +26,8 @@
  * Importing this file loads the whole `src` graph, host and client, so a module
  * that fails to load fails every test that comes through here, not only its own.
  *
- * Two names are defined twice under one name, so the second definition is
- * aliased: the client bundle's `apply` (`applySettingsPage`) and the Go
- * allowance formatter `formatUsd` (`formatAllowanceUsd`).
+ * One name is defined twice, so the second definition is aliased: the client
+ * bundle's `apply` (`applySettingsPage`).
  *
  * The file is type-checked with the rest of `test/`, so `vp check` proves that
  * every re-export resolves.
@@ -138,7 +137,6 @@ export { GO_MODEL_LIMITS } from "../../src/go-limits-data.ts";
 // go-limits.ts
 export {
   allowanceFor,
-  formatUsd as formatAllowanceUsd,
   GO_PLAN_TIERS,
   normalizeModelLabel,
   parseGoLimitsDoc,
@@ -196,6 +194,7 @@ export {
   LEGACY_NAME,
   LEGACY_PKG,
   name,
+  OPENCODE_CLI_VERSION,
   OPENCODE_PATCH_USER_AGENT,
   OPENCODE_USER_AGENT,
 } from "../../src/identity.ts";
@@ -213,7 +212,6 @@ export { apply, callHeadersFor } from "../../src/lifecycle.ts";
 export {
   catalogGeneration,
   catalogListenerCount,
-  catalogPlaneForRoute,
   enrichModelsResponse,
   findModelSpec,
   findModelSpecOn,
@@ -222,12 +220,15 @@ export {
   isDeprecatedModelOn,
   isGoModelsListingUrl,
   isModelsListingUrl,
+  liveCatalogOn,
   MODELS_OPENCODE_URL,
   onCatalogChange,
   parseModelsDevCatalog,
   refreshCatalog,
   resetCatalogState,
   sanitizeModalities,
+  specFor,
+  specOn,
 } from "../../src/models-catalog.ts";
 
 // models-discovery.ts
@@ -282,7 +283,6 @@ export {
   clearSessionUsageStore,
   describeModel,
   formatModelRate,
-  formatUsd,
   getSessionUsage,
   recordTurnUsage,
 } from "../../src/session-cost.ts";
@@ -424,6 +424,12 @@ export type { RelativeReset } from "../../src/usage-ui.ts";
 // usage.ts
 export { GoUsageService } from "../../src/usage.ts";
 
+// utils/client-generation.ts
+export {
+  CLIENT_GENERATIONS,
+  EMULATED_GENERATION,
+} from "../../src/utils/client-generation.ts";
+
 // utils/config-run.ts
 export {
   configRunOf,
@@ -509,6 +515,14 @@ export {
 } from "../../src/utils/plane-profile.ts";
 export type { PlaneProfileInput } from "../../src/utils/plane-profile.ts";
 
+// utils/planes.ts
+export {
+  PLANE_OF_ROUTE,
+  planeForRoute,
+  planeOfPlaneRoute,
+} from "../../src/utils/planes.ts";
+export type { Plane } from "../../src/utils/planes.ts";
+
 // utils/protocols.ts
 export {
   allOfferedCompatFields,
@@ -544,12 +558,20 @@ export {
   isGoPlaneUrl,
   isZenProvider,
   modelIdOf,
+  planeForUrl,
   planeHeadersFor,
   pluginMarkerOn,
   projectHeaderOf,
   requestUrlOf,
   toolNamesOf,
 } from "../../src/utils/request-shape.ts";
+
+// utils/context-windows.ts
+export {
+  MEASURED_CONTEXT_WINDOWS,
+  measuredWindowFor,
+} from "../../src/utils/context-windows.ts";
+export type { MeasuredWindows } from "../../src/utils/context-windows.ts";
 
 // utils/credential-policy.ts
 export {
@@ -570,6 +592,10 @@ export type {
   FillSource,
   MeterSource,
 } from "../../src/utils/credential-policy.ts";
+
+// utils/usd.ts
+export { formatUsd } from "../../src/utils/usd.ts";
+export type { UsdStyle } from "../../src/utils/usd.ts";
 
 // utils/retry.ts
 export { backoffOver, retryUntilAnswered } from "../../src/utils/retry.ts";

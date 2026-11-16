@@ -20,13 +20,9 @@
  */
 
 import { ALL_MODELS_MARKER } from "./config-values.ts";
-import {
-  type CatalogPlane,
-  findModelSpec,
-  findModelSpecOn,
-} from "./models-catalog.ts";
+import { type CatalogPlane, findModelSpec, specOn } from "./models-catalog.ts";
 import { isRecord, isUnknownArray } from "./utils/guards.ts";
-import { isGoPlaneUrl } from "./utils/request-shape.ts";
+import { planeForUrl } from "./utils/request-shape.ts";
 
 /** Path segment that marks a Responses-API body worth inspecting. */
 export const RESPONSES_PATH = "/responses";
@@ -238,8 +234,7 @@ export const isCoreToolModel = (
   plane?: CatalogPlane
 ): boolean => {
   const row =
-    (plane === undefined ? undefined : findModelSpecOn(plane, modelId)) ??
-    findModelSpec(modelId);
+    plane === undefined ? findModelSpec(modelId) : specOn(plane, modelId);
   return coreToolDecision(row, modelId, marker);
 };
 
@@ -306,7 +301,7 @@ export const maybeInjectCoreTools = (
   // The plane is the PATH's, not the route's: a relay serves its Go plane
   // under a path of the same shape, and the route id there is the user's own
   // name.
-  const plane: CatalogPlane = isGoPlaneUrl(url) ? "go" : "zen";
+  const plane = planeForUrl(url);
   if (!isCoreToolModel(modelProp, options.modelMarker, plane)) {
     return body;
   }

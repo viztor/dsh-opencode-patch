@@ -343,8 +343,17 @@ try {
  * That is the kind of growth the last four raises were: a surface the HOST
  * answers, not a dependency that should have stayed external — which is the case
  * this tripwire exists to catch, and which the ceiling is not raised for.
+ *
+ * Raised 136 -> 140 KB when P7 gave each table one source: the client now
+ * carries the one dollar formatter with both styles (`src/utils/usd.ts`,
+ * replacing the allowance one it took from `go-limits.ts`) and the route rule
+ * the meter's Zen test reads (`planeForRoute`, `src/utils/planes.ts`; the
+ * table itself is tree-shaken out). The growth is chiefly the `metered`
+ * style's rationale comment, which used to live in the host-only
+ * `session-cost.ts`. Source and its comments, not a dependency — the client
+ * measured 141010 bytes against the old line, from 139148 on the base.
  */
-const CLIENT_BUDGET = 136 * 1024;
+const CLIENT_BUDGET = 140 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

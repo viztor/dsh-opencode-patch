@@ -14,6 +14,11 @@
  * @module dsh-opencode-patch/identity
  */
 
+import {
+  CLIENT_GENERATIONS,
+  EMULATED_GENERATION,
+} from "./utils/client-generation.ts";
+
 /** Component identity (log lines, service scoping). */
 export const name = "dsh-opencode-patch";
 
@@ -59,8 +64,12 @@ export const OPENCODE_CLI_VERSION = "1.19.5";
  * SDK's own User-Agent, which is what a DIFFERENT transport stamps on a request;
  * it is not the client's, and 2.x changed the shape again to
  * `opencode/<channel>/<version>/<client>` (`packages/core/src/app.ts:24`).
+ * Both forms are rows of `CLIENT_GENERATIONS` (`utils/client-generation.ts`),
+ * and this is the emulated generation's.
  */
-export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_CLI_VERSION}`;
+export const OPENCODE_USER_AGENT = CLIENT_GENERATIONS[
+  EMULATED_GENERATION
+].userAgent({ version: OPENCODE_CLI_VERSION });
 
 /** The User-Agent the plugin signs its own requests with. */
-export const OPENCODE_PATCH_USER_AGENT = `opencode/${OPENCODE_CLI_VERSION} dsh-opencode-patch`;
+export const OPENCODE_PATCH_USER_AGENT = `${OPENCODE_USER_AGENT} dsh-opencode-patch`;

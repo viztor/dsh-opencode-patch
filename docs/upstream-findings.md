@@ -14,7 +14,7 @@ The payload we send is negotiated with whatever gateway the account is on, and b
 | :-- | :-- | :-- |
 | Latest at time of writing | 1.19.5 | 2.0.32 |
 | Session id generator | `packages/opencode/src/id/id.ts` **and** `packages/schema/src/identifier.ts` | `packages/schema/src/identifier.ts` only (`packages/opencode/` is gone) |
-| Header assembly | `packages/core/src/session/runner/llm.ts` | `packages/core/src/session/model-request.ts` |
+| Header assembly | `packages/opencode/src/session/llm/request.ts` at the `v1.19.5` tag, as `CLIENT_GENERATIONS["1.x"]` records it (§1.2 has an earlier, unreconciled reading) | `packages/core/src/session/model-request.ts` |
 | Gateway shape | `opencode.ai/zen/v1/…` | `opencode.ai/inference/<proto>/v1/…` |
 | Free-tier gate | `allowAnonymous` on the model entry | not present in the snapshot (see §1.5) |
 
@@ -72,7 +72,9 @@ Three facts, each of which contradicts something this plugin once assumed:
 
 ### 1.2 The header contract — 1.19.5
 
-`packages/core/src/session/runner/llm.ts`, the authoritative assembly:
+> **Unreconciled reading.** The plugin follows the plane and relay branches of `packages/opencode/src/session/llm/request.ts` at the `v1.19.5` tag, recorded once in `CLIENT_GENERATIONS["1.x"]` (`src/utils/client-generation.ts`): on an `opencode*` route, `x-opencode-session-id` and `x-opencode-session`; the affinity pair (`x-session-affinity`, `X-Session-Id`) only on a relay. The block below is an earlier reading of `packages/core/src/session/runner/llm.ts`, most likely taken from the `dev` branch (`docs/engineering-notes.md` records three such misreadings), and has not been checked against the tag. It is kept as found, not as the contract.
+
+`packages/core/src/session/runner/llm.ts`, as first read:
 
 ```ts
 const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
@@ -124,7 +126,7 @@ Differences that matter to us:
 2. **Three headers 1.19 does not send**: `User-Agent`, `x-opencode-project`, `x-opencode-client` (value `app.name`).
 3. `x-opencode-session` exists in both lines but carries different things.
 
-**Consequence.** Our plugin sends `session.id` in all five of 1.19's headers. That is exactly 1.19's contract and correct for a 1.19 account. For a 2.x account the gateway expects the affinity-derived value in three of them, so a 2.x account sees a session that does not group as the client intended. Whether the 2.x gateway _enforces_ this is **unverified** — it may happily accept `session.id`.
+**Consequence.** Our plugin sends the session id in 1.19's headers as `CLIENT_GENERATIONS["1.x"]` records them: two session headers on a plane route (`x-opencode-session-id`, `x-opencode-session`), four on a relay (those two plus `x-session-affinity` and `X-Session-Id`), and the parent pair for a subagent. That is 1.19's contract and correct for a 1.19 account. For a 2.x account the gateway expects the affinity-derived value in three of them, so a 2.x account sees a session that does not group as the client intended. Whether the 2.x gateway _enforces_ this is **unverified** — it may happily accept `session.id`.
 
 ### 1.4 The gateway path table — identical in both lines
 

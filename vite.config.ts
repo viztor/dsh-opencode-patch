@@ -314,6 +314,34 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // The one route-to-plane table (P7): every branch is a route shape.
+        "src/utils/planes.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // The one dollar formatter (P7): every branch is a style or a value.
+        "src/utils/usd.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // The client-generation table (P7, L6): one row per generation.
+        "src/utils/client-generation.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // The measured context-window table (P7, L11) and its reader.
+        "src/utils/context-windows.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // The plane routes' host half, measured rather than aspirational: what
         // is left uncovered are guards for host shapes no composition offers.
         "src/host/route-claim.ts": {

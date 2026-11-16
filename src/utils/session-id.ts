@@ -32,8 +32,9 @@ export const SESSION_AFFINITY_HEADER = "x-session-affinity";
  *
  * Captured from OpenCode 2.0.28 talking to a local server: it sends
  * `x-opencode-session`, `x-opencode-session-id`, `x-session-affinity` AND
- * `x-session-id`, all four carrying the same value on every request. This plugin
- * has always sent three of them.
+ * `x-session-id`, all four carrying the same value on every request. Which
+ * generation sends which of them where — 1.x sends this pair to a relay only —
+ * is `CLIENT_GENERATIONS`' (`client-generation.ts`).
  */
 export const SESSION_ID_HEADER = "x-session-id";
 

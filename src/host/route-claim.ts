@@ -105,8 +105,7 @@ import {
 } from "../cordis-context.ts";
 import {
   catalogGeneration,
-  getLiveGoCatalog,
-  getLiveZenCatalog,
+  liveCatalogOn,
   onCatalogChange,
 } from "../models-catalog.ts";
 import {
@@ -128,6 +127,7 @@ import {
   planeProfileFor,
   withoutPlaneProviders,
 } from "../utils/plane-profile.ts";
+import { PLANE_OF_ROUTE } from "../utils/planes.ts";
 import { PLANE_ROUTES, type PlaneRoute } from "../utils/protocols.ts";
 import {
   buildPlaneProvider,
@@ -482,14 +482,10 @@ export const installRouteClaim = (
       }
       const result = planeProfileFor({
         buildProvider: buildPlaneProvider(libraries),
-        catalog:
-          route === "opencode-go" ? getLiveGoCatalog() : getLiveZenCatalog(),
+        catalog: liveCatalogOn(PLANE_OF_ROUTE[route]),
         endpoint: config.endpoint,
         entry: entries[route],
-        familyApi:
-          route === "opencode-go"
-            ? OPENCODE_FAMILY_API.go
-            : OPENCODE_FAMILY_API.zen,
+        familyApi: OPENCODE_FAMILY_API[PLANE_OF_ROUTE[route]],
         ...(interpolate === undefined
           ? {}
           : { interpolate: (value: unknown) => interpolate(pi.ctx, value) }),
@@ -912,14 +908,10 @@ export const installRouteClaim = (
       const { interpolate } = modules.libraries;
       const result = planeProfileFor({
         buildProvider: buildPlaneProvider(modules.libraries),
-        catalog:
-          plane === "opencode-go" ? getLiveGoCatalog() : getLiveZenCatalog(),
+        catalog: liveCatalogOn(PLANE_OF_ROUTE[plane]),
         endpoint: config.endpoint,
         entry: candidate[plane],
-        familyApi:
-          plane === "opencode-go"
-            ? OPENCODE_FAMILY_API.go
-            : OPENCODE_FAMILY_API.zen,
+        familyApi: OPENCODE_FAMILY_API[PLANE_OF_ROUTE[plane]],
         ...(interpolate === undefined
           ? {}
           : { interpolate: (value: unknown) => interpolate(fiber.ctx, value) }),

@@ -12,7 +12,6 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { piKnows } from "./support/host.ts";
 import {
   allOfferedCompatFields,
   COMPAT_GATES,
@@ -37,7 +36,7 @@ import {
 } from "./support/src.ts";
 
 describe("protocols · the SDK table", () => {
-  it("maps every catalog SDK, mistral as completions as pi's own data does, and nothing is unserved", () => {
+  it("maps every catalog SDK, mistral as completions by the plugin's own rule, and nothing is unserved", () => {
     expect(PROTOCOL_FOR_SDK).toEqual({
       "@ai-sdk/anthropic": "anthropic-messages",
       "@ai-sdk/google": "google-generative-ai",
@@ -54,7 +53,6 @@ describe("protocols · the SDK table", () => {
     for (const sdk of sdks) {
       expect(isServableSdk(sdk), `catalog SDK ${String(sdk)}`).toBe(true);
     }
-    expect(piKnows("opencode", "mistral-large-4")).toBe("openai-completions");
     expect(protocolForSdk()).toBe("openai-completions");
     expect(protocolForSdk("@ai-sdk/cohere")).toBeUndefined();
     expect(protocolForSdk(5)).toBeUndefined();

@@ -331,6 +331,30 @@ describe("credentials · the fill's resolver", () => {
     expect(
       credentials.fillKey({ plane: "", provider: "my-relay", url: RELAY }).key
     ).toBe("env-zen");
+    // The two edges that tell the EXACT route reader from the relay-inclusive
+    // one: an `opencode-go-*` relay off the planes takes the Zen variable, and
+    // a URL on a plane decides alone, whatever the route is named.
+    expect(
+      credentials.fillKey({
+        plane: "",
+        provider: "opencode-go-relay",
+        url: RELAY,
+      }).key
+    ).toBe("env-zen");
+    expect(
+      credentials.fillKey({
+        plane: "opencode",
+        provider: "opencode-go",
+        url: ZEN,
+      }).key
+    ).toBe("env-zen");
+    expect(
+      credentials.fillKey({
+        plane: "opencode-go",
+        provider: "opencode",
+        url: GO,
+      }).key
+    ).toBe("env-go");
   });
 
   it("fill: a route named after a plane takes that plane's capture on a URL on neither plane (the name fallback)", () => {

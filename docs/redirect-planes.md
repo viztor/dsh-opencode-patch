@@ -39,7 +39,7 @@ That is why the servability check treats `undefined` as servable, and why `@ai-s
 
 **The two bold cells were the gap, and they are closed.** The Go plane serves 12 models on shapes other than completions; both planes now serve every shape either one carries, on the plane's own route (§3).
 
-**`@ai-sdk/mistral` is completions (D16).** pi's own data files `mistral-large-4` under `openai-completions`, so the plugin follows it rather than keeping the SDK unserved; nothing is withheld for its protocol any more.
+**`@ai-sdk/mistral` is completions (D16).** The plugin's own rule: `PROTOCOL_FOR_SDK` files the SDK as `openai-completions`, on the OpenAI root the catalog's family table places it; which dialect the gateway serves there is unmeasured. Nothing is withheld for its protocol any more.
 
 ## 3. Routes
 

@@ -46,12 +46,13 @@ import {
   pluginMarkerOf,
   type RealmSide,
 } from "./utils/plane-ownership.ts";
+import { type Plane, PLANE_OF_ROUTE } from "./utils/planes.ts";
+import { PLANE_ROUTES } from "./utils/protocols.ts";
 
-/** A provider route the plugin knows how to read a plane from. */
-const PLANES: readonly { route: string; plane: "go" | "zen" }[] = [
-  { route: "opencode", plane: "zen" },
-  { route: "opencode-go", plane: "go" },
-];
+/** A provider route the plugin knows how to read a plane from, in route order. */
+const PLANES: readonly { route: string; plane: Plane }[] = PLANE_ROUTES.map(
+  (route) => ({ plane: PLANE_OF_ROUTE[route], route })
+);
 
 /** The configEditor surface this module uses, narrowed from `unknown`. */
 interface ConfigEditorFace {

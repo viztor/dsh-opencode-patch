@@ -5,7 +5,6 @@ import {
   GO_PLAN_TIERS,
   WINDOW_SHARE,
   allowanceFor,
-  formatAllowanceUsd as formatUsd,
   normalizeModelLabel,
   parseGoLimitsDoc,
 } from "./support/src.ts";
@@ -142,18 +141,6 @@ describe("go-limits: labels and formatting", () => {
     ]);
     expect(allowanceFor(limits, " MiMo-V2.6-Flash ")?.go).toBe(60);
     expect(allowanceFor(limits, "grok-4.7")).toBeUndefined();
-  });
-
-  it("writes whole dollars without cents", () => {
-    expect(formatUsd(0)).toBe("$0");
-    expect(formatUsd(60)).toBe("$60");
-    expect(formatUsd(7.5)).toBe("$7.50");
-  });
-
-  it("does not price missing or invalid allowances as zero", () => {
-    for (const value of [null, undefined, Number.NaN, Infinity, -1, "60"]) {
-      expect(formatUsd(value)).toBe("—");
-    }
   });
 
   it("states the window shares the docs give, rather than inventing them", () => {

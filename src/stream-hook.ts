@@ -16,11 +16,7 @@ import type { ResolvedPluginConfig } from "./config.ts";
 import { readSessionMetaResolver } from "./cordis-context.ts";
 import type { DebugContext } from "./debug.ts";
 import { recordDebug } from "./debug.ts";
-import {
-  catalogPlaneForRoute,
-  findModelSpec,
-  findModelSpecOn,
-} from "./models-catalog.ts";
+import { specFor } from "./models-catalog.ts";
 import { recordTurnUsage } from "./session-cost.ts";
 import {
   fallbackSessionId,
@@ -31,6 +27,7 @@ import {
 import type { ActiveTurnState } from "./turn-store.ts";
 import { withStore } from "./turn-store.ts";
 import { isAsyncIterableLike, isRecord } from "./utils/guards.ts";
+import { planeForRoute } from "./utils/planes.ts";
 
 interface StreamOptions {
   messages?: unknown;
@@ -259,9 +256,8 @@ export const createStreamHook = (
     // The fallback is for a model the plane's own catalog does not describe,
     // where any price is better than none — and the turn is still attributed to
     // the plane it ran on.
-    const spec =
-      findModelSpecOn(catalogPlaneForRoute(providerKey), modelName) ??
-      findModelSpec(modelName);
+    const plane = planeForRoute(providerKey);
+    const spec = specFor(providerKey, modelName);
 
     const wrappedStream = async function* wrappedStream() {
       for await (const chunk of downstream) {
@@ -287,7 +283,7 @@ export const createStreamHook = (
             spec?.cost,
             modelName,
             spec?.is_free,
-            catalogPlaneForRoute(providerKey)
+            plane
           );
         }
         yield chunk;

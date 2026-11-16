@@ -49,13 +49,14 @@ When DSH spawns subagents (`subagent` / `subagent_fork`), each child runs in a s
            ▼ spawns subagent
 [Child DSH Session:  "session-xyz"] ──> [ses_<12hex><14base62>]
 
-Outgoing subagent request:
-  x-opencode-session:           ses_<child 12hex><14base62>
+Outgoing subagent request on an OpenCode plane:
   x-opencode-session-id:        ses_<child 12hex><14base62>
-  x-session-affinity:           ses_<child 12hex><14base62>
+  x-opencode-session:           ses_<child 12hex><14base62>
   x-opencode-parent-session-id: ses_<parent 12hex><14base62>
   x-parent-session-id:          ses_<parent 12hex><14base62>
 ```
+
+A relay adds `x-session-affinity` and `X-Session-Id` after the plane pair, both carrying the child's id; which headers go where is recorded once, in `CLIENT_GENERATIONS` (`src/utils/client-generation.ts`).
 
 This lineage lets upstream servers optimize prompt caching across agent teams and delegation workflows.
 

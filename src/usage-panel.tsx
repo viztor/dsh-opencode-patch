@@ -16,7 +16,6 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
-import { formatUsd } from "./go-limits.ts";
 import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import {
   BREAKDOWN_WINDOWS,
@@ -29,6 +28,7 @@ import {
   RADIUS,
   type UsageFailure,
 } from "./usage-ui.ts";
+import { formatUsd } from "./utils/usd.ts";
 
 /**
  * The refresh glyph is the HOST'S, not a hand-drawn arrow.
@@ -383,8 +383,8 @@ export const UsagePanel = ({
               </span>
             </div>
             <span className="dsh-oc-usage-detail-value">
-              {t("goTier")} {formatUsd(usage.allowance.go)} · {t("goPlusTier")}{" "}
-              {formatUsd(usage.allowance.goPlus)}
+              {t("goTier")} {formatUsd(usage.allowance.go, "allowance")} ·{" "}
+              {t("goPlusTier")} {formatUsd(usage.allowance.goPlus, "allowance")}
             </span>
           </div>
         )}

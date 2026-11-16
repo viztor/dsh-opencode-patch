@@ -5,7 +5,7 @@
  * | field | first source that has it |
  * | :-- | :-- |
  * | protocol | the catalog SDK ({@link protocolForSdk}) > the route's `api` > completions (D16) |
- * | name, context, max tokens, modalities | the user's row > pi-ai's `modelOverrides` > catalog > pi > pi-ai's own route defaults, as its `Config` filled them (D17) |
+ * | name, context, max tokens, modalities | the user's row > pi-ai's `modelOverrides` > catalog > pi > pi-ai's own route defaults, as its `Config` filled them (D17); the context window reads a measured window ({@link measuredWindowFor}, L11) ahead of the catalog's |
  * | cost | catalog > pi > zero |
  * | reasoning | the user's `reasoningEfforts` > the override's > the catalog ({@link reasoningFor}, D1) > pi > none |
  * | baseUrl | the route's `baseURL`, shaped > the endpoint family table ({@link baseUrlFor}; `auto` is {@link AUTO_ENDPOINT_FAMILY}) |
@@ -27,12 +27,14 @@
  * @module dsh-opencode-patch/utils/plane-model
  */
 
+import { type MeasuredWindows, measuredWindowFor } from "./context-windows.ts";
 import { isRecord } from "./guards.ts";
 import {
   piReasoningFromEfforts,
   reasoningFor,
   type ReasoningSpec,
 } from "./model-metadata.ts";
+import { PLANE_OF_ROUTE } from "./planes.ts";
 import {
   compatProtocols,
   FAMILY_SDK_KEY,
@@ -124,6 +126,8 @@ export interface PlaneModelInput {
     readonly maxTokens?: number;
     readonly input: readonly string[];
   };
+  /** The measured context windows; the shipped table by default (L11). */
+  readonly measuredWindows?: MeasuredWindows;
 }
 
 /** A model {@link planeModelFor} could build. */
@@ -355,6 +359,7 @@ export const planeModelFor = (input: PlaneModelInput): PlaneModelResult => {
   const contextWindow =
     entry.contextWindow ??
     override?.contextWindow ??
+    measuredWindowFor(PLANE_OF_ROUTE[route], id, input.measuredWindows) ??
     spec?.context_window ??
     pi?.contextWindow ??
     input.defaults.contextWindow;

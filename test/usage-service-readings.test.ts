@@ -92,6 +92,19 @@ describe("GoUsageService readings", () => {
     });
   });
 
+  it.each(["opencode-google", "opencode-go", "opencode-go-relay", "my-relay"])(
+    "refuses with no key and no Zen credit on route %s: only the exact Zen route overflows",
+    async (provider) => {
+      // Two readers of "is this route Zen" live in this service: the no-key
+      // path reads the EXACT route (only `opencode` overflows), while the 401
+      // path reads `isZenProvider`, which is name-gated and relay-aware. This
+      // pins the no-key half, so a swap to the other reader is caught.
+      const failure = await failureOf(serviceWithKey("").read({ provider }));
+      expect(failure.message).toBe("OpenCode Go API key is not configured");
+      expect(failure.details).toMatchObject({ configured: false });
+    }
+  );
+
   it("attaches the spend of the conversation that asked for it", async () => {
     // Spend is per conversation: two open sessions must not read the same total.
     recordTurnUsage(

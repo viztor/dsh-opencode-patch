@@ -407,6 +407,53 @@ describe("plane-model · base (modern, legacy, route-level)", () => {
 });
 
 describe("plane-model · metadata (D17) and the model object", () => {
+  it("reads a measured window after the user's row and the override, and before the catalog and pi (L11)", () => {
+    // Seeded throughout, so no vendor row is read: the shipped table has no
+    // rows, and a made-up id with a catalog window and a pi window of its own
+    // makes "before the catalog and pi" an assertion rather than a premise.
+    const ID = "window-probe";
+    const spec = {
+      context_window: 128_000,
+      id: ID,
+      name: "Window Probe",
+      provider_npm: "@ai-sdk/openai",
+    };
+    const pi = { api: "openai-responses", contextWindow: 200_000, id: ID };
+    const measured = {
+      go: {},
+      zen: {
+        [ID]: {
+          evidence: "a seeded row",
+          measured: "2026-11-16",
+          window: 64_000,
+        },
+      },
+    };
+    const windowOn = (
+      route: "opencode" | "opencode-go",
+      extra: Partial<PlaneModelInput> = {}
+    ) => modelOf(inputFor(route, ID, { pi, spec, ...extra })).contextWindow;
+    // Without the table, the catalog's window answers, ahead of pi's.
+    expect(windowOn("opencode")).toBe(128_000);
+    expect(windowOn("opencode", { measuredWindows: measured })).toBe(64_000);
+    expect(
+      windowOn("opencode", {
+        measuredWindows: measured,
+        override: { contextWindow: 300_000, id: ID },
+      })
+    ).toBe(300_000);
+    expect(
+      windowOn("opencode", {
+        entry: { contextWindow: 400_000, id: ID },
+        measuredWindows: measured,
+      })
+    ).toBe(400_000);
+    // The other plane's row is not this route's measurement.
+    expect(windowOn("opencode-go", { measuredWindows: measured })).toBe(
+      128_000
+    );
+  });
+
   it("takes the user's row, then the override, then the catalog, then pi, then the defaults", () => {
     const spark = modelOf(
       inputFor("opencode", "gpt-5.3-codex-spark", {

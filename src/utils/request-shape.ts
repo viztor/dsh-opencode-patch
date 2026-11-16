@@ -15,16 +15,14 @@
  * @module dsh-opencode-patch/request-shape
  */
 
+import {
+  CLIENT_GENERATIONS,
+  EMULATED_GENERATION,
+} from "./client-generation.ts";
 import { isRecord } from "./guards.ts";
 import { PLUGIN_MARKER_HEADER } from "./plane-ownership.ts";
-import {
-  isOpenCodeMessageId,
-  PARENT_SESSION_ALT_HEADER,
-  PARENT_SESSION_HEADER,
-  SESSION_AFFINITY_HEADER,
-  SESSION_HEADER,
-  SESSION_ID_HEADER,
-} from "./session-id.ts";
+import { type Plane, planeForRoute } from "./planes.ts";
+import { isOpenCodeMessageId } from "./session-id.ts";
 
 /**
  * The PATH of a gateway URL, whether it is absolute or a bare path.
@@ -84,6 +82,17 @@ const ZEN_PLANE_PATH = /\/zen(?:\/|$)|\/inference(?:\/|$)/u;
  */
 export const isGoPlaneUrl = (url: string): boolean =>
   GO_PLANE_PATH.test(pathOf(url));
+
+/**
+ * The plane a URL's path belongs to: Go by {@link isGoPlaneUrl}, otherwise
+ * Zen. For a caller that already knows the URL is a gateway's, so "not Go"
+ * is Zen rather than "neither".
+ *
+ * @param url - a request URL or a bare path.
+ * @returns the URL's plane.
+ */
+export const planeForUrl = (url: string): Plane =>
+  isGoPlaneUrl(url) ? "go" : "zen";
 
 /**
  * Which gateway plane a URL belongs to.
@@ -268,9 +277,10 @@ export const ANTHROPIC_VERSION = "2023-06-01";
  * Whether a provider route is OpenCode Zen rather than Go.
  *
  * The Go plane is `opencode-go` and any `opencode-go-*` relay route — the rule
- * `catalogPlaneForRoute` encodes. Everything else in the opencode family is
- * Zen pay-as-you-go, including a route named `opencode-google`, which starts
- * with `opencode-go` but not with `opencode-go-`.
+ * `planeForRoute` encodes (`planes.ts`), read here on the lower-cased name.
+ * Everything else in the opencode family is Zen pay-as-you-go, including a
+ * route named `opencode-google`, which starts with `opencode-go` but not with
+ * `opencode-go-`; a name without `opencode` in it is neither.
  */
 export const isZenProvider = (provider?: string): boolean => {
   if (typeof provider !== "string") {
@@ -280,7 +290,7 @@ export const isZenProvider = (provider?: string): boolean => {
   if (!lower.includes("opencode")) {
     return false;
   }
-  return !(lower === "opencode-go" || lower.startsWith("opencode-go-"));
+  return planeForRoute(lower) === "zen";
 };
 
 /**
@@ -334,32 +344,27 @@ export interface PlaneHeaderInputs {
  * one table both the fetch patch and the plane adapter's per-call seam (OC5)
  * write from.
  *
- * 1. **Session headers, as the version this plugin emulates sends them.** Read
- *    from the 1.x line's last release, v1.19.5, in
- *    `packages/opencode/src/session/llm/request.ts`: `x-opencode-session-id`
- *    and `x-opencode-session` both carry `sessionID`, and the affinity pair
- *    belongs to relays. 2.x splits the first of those into an affinity id; the
- *    plugin emulates 1.19.5, so it follows 1.19.5. Which ENDPOINT the request
- *    goes to is the deployment's, not this table's: measured, either key
- *    serves a paid model on either endpoint — they are two paths into one
- *    gateway.
- * 2. **The affinity pair belongs to the OTHER branch in 1.19.5:** for a
- *    provider that does not start with `opencode` — a relay a deployment
- *    claimed by URL — the client sends `x-session-affinity` and
- *    `X-Session-Id`; for an OpenCode plane it sends `x-opencode-session`
- *    instead and nothing else.
+ * Every header NAME is the emulated generation's (`CLIENT_GENERATIONS`, in
+ * `client-generation.ts`), which records what each generation sends, where,
+ * and its evidence:
+ *
+ * 1. **The plane's session headers**, both carrying the session id. Which
+ *    ENDPOINT the request goes to is the deployment's, not this table's:
+ *    measured, either key serves a paid model on either endpoint — they are
+ *    two paths into one gateway.
+ * 2. **The relay's affinity pair**, after them, for a provider that does not
+ *    start with `opencode` — a relay a deployment claimed by URL.
  * 3. The parent pair, for subagents and child sessions.
  * 4. **The org, when this plane's credential belongs to one.** A session token
  *    needs the org it belongs to — measured on a paid model: `200` with it,
- *    `403` without — and the free tier is refused with or without one.
- * 5. **The origin headers**, when enabled: the client; the message id, read
- *    from v1.19.5's `request.ts` (`"x-opencode-request": input.user.id`, in
- *    the same branch as the client and project headers), which the console
- *    reads for per-request metrics and rewrites to `x-opencode-request-id`
- *    before the request reaches the inference service (`inference-proxy.ts`);
- *    and the project. L4 is still open: P-R2's rows measured nothing about
- *    the message id, so it is sent as it always was, and this line is where a
- *    decision to drop or gate it lands.
+ *    `403` without — and the free tier is refused with or without one. The
+ *    header is the credential's, not a generation's.
+ * 5. **The origin headers**, when enabled: the client; the message id, which
+ *    the console reads for per-request metrics and rewrites to
+ *    `x-opencode-request-id` before the request reaches the inference service
+ *    (`inference-proxy.ts`); and the project. L4 is still open: P-R2's rows
+ *    measured nothing about the message id, so it is sent as it always was,
+ *    and this line is where a decision to drop or gate it lands.
  *
  * @param inputs - the session, parent, relay flag, org and origin.
  * @returns the headers, as `[name, value]` pairs in write order.
@@ -368,32 +373,28 @@ export const planeHeadersFor = (
   inputs: PlaneHeaderInputs
 ): readonly (readonly [string, string])[] => {
   const { origin, org, parent, relay, session } = inputs;
-  const headers: (readonly [string, string])[] = [
-    ["x-opencode-session-id", session],
-    [SESSION_HEADER, session],
-  ];
+  const names = CLIENT_GENERATIONS[EMULATED_GENERATION];
+  const headers: (readonly [string, string])[] = names.planeSessionHeaders.map(
+    (name) => [name, session] as const
+  );
   if (relay) {
     headers.push(
-      [SESSION_AFFINITY_HEADER, session],
-      [SESSION_ID_HEADER, session]
+      ...names.relaySessionHeaders.map((name) => [name, session] as const)
     );
   }
   if (parent !== undefined) {
-    headers.push(
-      [PARENT_SESSION_HEADER, parent],
-      [PARENT_SESSION_ALT_HEADER, parent]
-    );
+    headers.push(...names.parentHeaders.map((name) => [name, parent] as const));
   }
   if (org !== undefined && org.length > 0) {
     headers.push(["x-opencode-org-id", org]);
   }
   if (origin !== undefined) {
-    headers.push(["x-opencode-client", origin.client]);
+    headers.push([names.originHeaders.client, origin.client]);
     if (isOpenCodeMessageId(origin.request)) {
-      headers.push(["x-opencode-request", origin.request]);
+      headers.push([names.originHeaders.request, origin.request]);
     }
     if (origin.project !== undefined) {
-      headers.push(["x-opencode-project", origin.project]);
+      headers.push([names.originHeaders.project, origin.project]);
     }
   }
   return headers;
