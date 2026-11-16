@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { freeZenModel, payload, shimFor } from "./support/catalogs.ts";
 import { createOpencodeStore } from "./support/opencode-store-fixture.ts";
 import {
+  callHeadersFor,
   type CaptureStore,
   createCaptureStore,
   createCredentials,
@@ -1146,5 +1147,59 @@ describe("patchFetch · whose key, and for how long (P6)", () => {
     await als.run(unshaped as ActiveTurnState, () => request(theirs));
     expect(wire.seen[2]?.get(SESSION_HEADER)).toBe(ses);
     expect(wire.seen[2]?.get("x-opencode-project")).toBe("p");
+  });
+
+  it("OC11 — on a host without the request-headers seam, where prepareHeaders is never called, the patch still writes the plugin's session and plane headers on a plane turn", async () => {
+    // 0.2.2-alpha.2 and every 0.2.1 build never call the adapter's
+    // `prepareHeaders`, so the turn the stream hook decorated is never
+    // marked per call and the request reaches the patch with pi's headers
+    // only. The peer still admits those hosts (OC11 is met in the README
+    // pair), and this is what keeps the plugin's headers on their wire.
+    process.env.OPENCODE_API_KEY = "declared-zen";
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const config = resolveConfig();
+    const wire = gateway();
+    const patched = patchFetch(wire.original, als, config);
+    const ses = openCodeSessionIdFor("p6-no-seam");
+    const turn = {
+      project: "p",
+      provider: "opencode",
+      value: ses,
+    } as ActiveTurnState;
+    const callHeaders = callHeadersFor(als, config);
+    const piHeaders = (): Headers =>
+      new Headers({
+        authorization: "Bearer unused",
+        "content-type": "application/json",
+      });
+
+    // No seam: the host sends pi's headers as they are.
+    await als.run(turn, () =>
+      patched(ZEN, { body: "{}", headers: piHeaders(), method: "POST" })
+    );
+    expect(turn.perCall).toBeUndefined();
+    const [fallback] = wire.seen;
+    expect(fallback?.get(SESSION_HEADER)).toMatch(
+      /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/u
+    );
+    expect(fallback?.get(SESSION_HEADER)).toBe(ses);
+    expect(fallback?.get("x-opencode-session-id")).toBe(ses);
+    expect(fallback?.get("x-opencode-client")).toBe("cli");
+    expect(fallback?.get("x-opencode-project")).toBe("p");
+    expect(fallback?.get("user-agent")).toBe(OPENCODE_UA);
+    expect(fallback?.get("authorization")).toBe("Bearer declared-zen");
+
+    // The known answer: with the seam, the host calls `prepareHeaders`, the
+    // turn is marked, and the patch leaves the per-call headers as written.
+    const seamed = { ...turn } as ActiveTurnState;
+    await als.run(seamed, () => {
+      const headers = piHeaders();
+      callHeaders(headers);
+      headers.set("x-opencode-project", "per-call");
+      return patched(ZEN, { body: "{}", headers, method: "POST" });
+    });
+    expect(seamed.perCall).toBe(true);
+    expect(wire.seen[1]?.get(SESSION_HEADER)).toBe(ses);
+    expect(wire.seen[1]?.get("x-opencode-project")).toBe("per-call");
   });
 });
