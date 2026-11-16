@@ -16,6 +16,15 @@
  */
 
 import { isRecord } from "./guards.ts";
+import { PLUGIN_MARKER_HEADER } from "./plane-ownership.ts";
+import {
+  isOpenCodeMessageId,
+  PARENT_SESSION_ALT_HEADER,
+  PARENT_SESSION_HEADER,
+  SESSION_AFFINITY_HEADER,
+  SESSION_HEADER,
+  SESSION_ID_HEADER,
+} from "./session-id.ts";
 
 /**
  * The PATH of a gateway URL, whether it is absolute or a bare path.
@@ -272,4 +281,120 @@ export const isZenProvider = (provider?: string): boolean => {
     return false;
   }
   return !(lower === "opencode-go" || lower.startsWith("opencode-go-"));
+};
+
+/**
+ * The value of a request's `x-opencode-plugin` marker, `""` included, or
+ * `undefined` when it carries none (OC2's rule 1, D27).
+ *
+ * A route another plugin wrote through pi-ai carries the marker, and its
+ * request goes out as it was sent. The pass-through triggers on PRESENCE, any
+ * value an empty one included, matching `pluginMarkerOf` on a provider row:
+ * a marker the patch cannot read is still another plugin's, which is the
+ * fail-safe direction.
+ *
+ * @param headers - the request's headers.
+ * @returns the marker's value, or `undefined`.
+ */
+export const pluginMarkerOn = (headers: Headers): string | undefined =>
+  headers.get(PLUGIN_MARKER_HEADER) ?? undefined;
+
+/**
+ * The `x-opencode-project` value for a turn: its project name, or `global`
+ * for a turn that has none, as the client sends for a session outside any
+ * project.
+ *
+ * @param project - the folder name the stream hook derived, when it did.
+ */
+export const projectHeaderOf = (project: string | undefined): string =>
+  project !== undefined && project.length > 0 ? project : "global";
+
+/** What {@link planeHeadersFor} builds the plane headers from. */
+export interface PlaneHeaderInputs {
+  /** The session id, as the request will carry it. */
+  readonly session: string;
+  /** The parent session's id, for a subagent or child session. */
+  readonly parent?: string;
+  /** Whether the route is a relay a deployment claimed (not an `opencode*` route). */
+  readonly relay: boolean;
+  /** The org the plane's credential belongs to, when it has one. */
+  readonly org?: string;
+  /** The origin headers, when the deployment sends them. */
+  readonly origin?: {
+    readonly client: string;
+    /** The turn's message id; dropped unless it is in the client's `msg_` shape. */
+    readonly request?: string;
+    /** The project name, when the deployment sends one. */
+    readonly project?: string;
+  };
+}
+
+/**
+ * The plane headers one request carries, in the order they are written: the
+ * one table both the fetch patch and the plane adapter's per-call seam (OC5)
+ * write from.
+ *
+ * 1. **Session headers, as the version this plugin emulates sends them.** Read
+ *    from the 1.x line's last release, v1.19.5, in
+ *    `packages/opencode/src/session/llm/request.ts`: `x-opencode-session-id`
+ *    and `x-opencode-session` both carry `sessionID`, and the affinity pair
+ *    belongs to relays. 2.x splits the first of those into an affinity id; the
+ *    plugin emulates 1.19.5, so it follows 1.19.5. Which ENDPOINT the request
+ *    goes to is the deployment's, not this table's: measured, either key
+ *    serves a paid model on either endpoint — they are two paths into one
+ *    gateway.
+ * 2. **The affinity pair belongs to the OTHER branch in 1.19.5:** for a
+ *    provider that does not start with `opencode` — a relay a deployment
+ *    claimed by URL — the client sends `x-session-affinity` and
+ *    `X-Session-Id`; for an OpenCode plane it sends `x-opencode-session`
+ *    instead and nothing else.
+ * 3. The parent pair, for subagents and child sessions.
+ * 4. **The org, when this plane's credential belongs to one.** A session token
+ *    needs the org it belongs to — measured on a paid model: `200` with it,
+ *    `403` without — and the free tier is refused with or without one.
+ * 5. **The origin headers**, when enabled: the client; the message id, read
+ *    from v1.19.5's `request.ts` (`"x-opencode-request": input.user.id`, in
+ *    the same branch as the client and project headers), which the console
+ *    reads for per-request metrics and rewrites to `x-opencode-request-id`
+ *    before the request reaches the inference service (`inference-proxy.ts`);
+ *    and the project. L4 is still open: P-R2's rows measured nothing about
+ *    the message id, so it is sent as it always was, and this line is where a
+ *    decision to drop or gate it lands.
+ *
+ * @param inputs - the session, parent, relay flag, org and origin.
+ * @returns the headers, as `[name, value]` pairs in write order.
+ */
+export const planeHeadersFor = (
+  inputs: PlaneHeaderInputs
+): readonly (readonly [string, string])[] => {
+  const { origin, org, parent, relay, session } = inputs;
+  const headers: (readonly [string, string])[] = [
+    ["x-opencode-session-id", session],
+    [SESSION_HEADER, session],
+  ];
+  if (relay) {
+    headers.push(
+      [SESSION_AFFINITY_HEADER, session],
+      [SESSION_ID_HEADER, session]
+    );
+  }
+  if (parent !== undefined) {
+    headers.push(
+      [PARENT_SESSION_HEADER, parent],
+      [PARENT_SESSION_ALT_HEADER, parent]
+    );
+  }
+  if (org !== undefined && org.length > 0) {
+    headers.push(["x-opencode-org-id", org]);
+  }
+  if (origin !== undefined) {
+    headers.push(["x-opencode-client", origin.client]);
+    if (isOpenCodeMessageId(origin.request)) {
+      headers.push(["x-opencode-request", origin.request]);
+    }
+    if (origin.project !== undefined) {
+      headers.push(["x-opencode-project", origin.project]);
+    }
+  }
+  return headers;
 };

@@ -10,25 +10,24 @@
  * (`key-capture.ts`). `usageBaseURL` remains as the one endpoint override.
  *
  * Credential *capture* — pulling a key off a live request and classifying its
- * tier — lives in `key-capture.ts`. This module owns the plan side: which
- * endpoint, which credential reference, and the policy that orders the two
- * sources against each other.
+ * tier — lives in `key-capture.ts`, and the store it is kept in, one per
+ * root, in `credentials.ts`. This module owns the plan side: which endpoint,
+ * which credential reference, and the policy that orders the sources against
+ * each other (`METER_ORDER`, in `utils/credential-policy.ts`).
  *
  * @module dsh-opencode-patch/go-discovery
  */
 
-import os from "node:os";
-
 import type { KeySourcePolicy } from "./config-values.ts";
 import { DEFAULT_USAGE_BASE_URL, DEFAULT_USAGE_KEY_ENV } from "./config.ts";
 import { loaderOfContext, readCredentialsResolver } from "./cordis-context.ts";
+import { captureStoreFor, resolveOpencodeStoreKey } from "./credentials.ts";
+import { extractApiKeyFromHeaders } from "./key-capture.ts";
 import {
-  extractApiKeyFromHeaders,
-  getCapturedApiKey,
-  isPlaceholderApiKey,
-} from "./key-capture.ts";
-import { opencodeDatabasePath } from "./opencode-paths.ts";
-import { readOpencodeCredentials } from "./opencode-store.ts";
+  firstUsableAsync,
+  METER_ORDER,
+  usableKey,
+} from "./utils/credential-policy.ts";
 import { isRecord } from "./utils/guards.ts";
 import {
   foreignCredentialsRealm,
@@ -56,15 +55,15 @@ export interface DiscoveredGoConfig {
  * - **Placeholders.** `Bearer unused` is not a typo — it is what this plugin's
  *   own keyless routes carry, and what the README tells users to write. It is a
  *   deliberate stand-in for "this route needs a key injected later", so it must
- *   never be mistaken for the key itself. `recordCapturedApiKey` already refuses
+ *   never be mistaken for the key itself. The capture store already refuses
  *   one; a discovered literal has to refuse it too, or the meter's first step
  *   hands the gateway a placeholder and the poll fails with a 401 that reads
  *   like a missing subscription.
+ *
+ * Both are `usableKey`'s, the one filter every decider shares.
  */
 const usableCredential = (value: unknown): value is string =>
-  typeof value === "string" &&
-  value.trim().length > 0 &&
-  !isPlaceholderApiKey(value.trim());
+  usableKey(value) !== undefined;
 
 const readProviderRow = (
   row: Record<string, unknown>,
@@ -310,128 +309,9 @@ export const effectiveGoKeyRef = (discovered: DiscoveredGoConfig): string =>
   discovered.keyEnv ?? DEFAULT_USAGE_KEY_ENV;
 
 /**
- * One lookup step a policy can consult.
- *
- * `captured` is scoped to the route in hand; `capturedAny` accepts a key
- * captured under any route. They are separate steps so `auto` can keep
- * credentials ahead of the any-route fallback, exactly as it always has.
- *
- * `opencodeStore` is the installation's own store, and it is LAST in every
- * policy rather than placed among them: everything the user declared — a
- * literal, a captured request, a named reference — outranks anything inferred
- * from another program's files.
- */
-type KeySourceStep =
-  | "captured"
-  | "capturedAny"
-  | "configured"
-  | "literal"
-  | "opencodeStore";
-
-/**
- * The lookup order each policy imposes — the only thing the user is choosing
- * between.
- *
- * `auto` reproduces the original precedence exactly, so the default is not a
- * behaviour change: composition first, then a captured key in the right tier,
- * then credentials/env, then any captured key. `request` promotes both captured
- * steps above the declared sources; `configured` does the reverse.
- *
- * The captured steps read only keys filed under the Go plane, in all three
- * policies — but a key is filed by the plane its request went to, not by what
- * it is entitled to. Nothing here can tell a Zen key from a Go key: a Go entry
- * without `apiKeyEnv` sends pi's `OPENCODE_API_KEY` on its turns (D20), that
- * bearer is filed as a Go key, and `auto` then sends it to the Go usage
- * endpoint, which refuses it. Naming the reference on the Go entry is the fix.
- *
- * The store is appended to all three, and to none of them in the middle: the
- * policy orders the sources the user declared, and the installation's store is
- * never one of those.
- */
-const KEY_SOURCE_ORDER: Record<KeySourcePolicy, readonly KeySourceStep[]> = {
-  auto: ["literal", "captured", "configured", "capturedAny", "opencodeStore"],
-  configured: [
-    "literal",
-    "configured",
-    "captured",
-    "capturedAny",
-    "opencodeStore",
-  ],
-  request: [
-    "captured",
-    "capturedAny",
-    "literal",
-    "configured",
-    "opencodeStore",
-  ],
-};
-
-/** First non-empty result from a policy's steps, or `undefined`. */
-const firstResolved = async (
-  order: readonly KeySourceStep[],
-  steps: Record<KeySourceStep, () => unknown>
-): Promise<string | undefined> => {
-  for (const step of order) {
-    // Sequential on purpose: the order IS the policy, and a later step must not
-    // run (or be able to throw) once an earlier one has answered.
-    // oxlint-disable-next-line no-await-in-loop -- see above; order is the contract.
-    const value: unknown = await steps[step]();
-    if (typeof value === "string" && value.length > 0) {
-      return value;
-    }
-  }
-  return undefined;
-};
-
-/**
- * The database path the installation itself would use.
- *
- * Resolved per call rather than cached, because the two facts it depends on —
- * the ambient environment and the home directory — belong to the process at
- * request time.
- *
- * @returns the path the store readers take, which may be `:memory:`.
- */
-const opencodeStorePath = (): string =>
-  opencodeDatabasePath(
-    {
-      channel: process.env.OPENCODE_CHANNEL,
-      env: process.env,
-      home: os.homedir(),
-    },
-    os.tmpdir()
-  );
-
-/**
- * The credential the OpenCode installation already holds for a plane.
- *
- * The path is resolved the way the installation resolves it, from the ambient
- * environment and the user's home, because that is where those facts live at
- * request time. Nothing here throws and nothing here logs: a machine without
- * OpenCode is the ordinary case, and a secret never reaches a message.
- *
- * @param plane - the integration id to match: `opencode` (Zen) or
- *   `opencode-go`.
- * @param enabled - the deployment's opt-in. When false this answers
- *   `undefined` without touching the filesystem, which is the default.
- * @returns the stored value, or `undefined` when the switch is off, the store
- *   is absent or unreadable, or it holds nothing for this plane.
- */
-export const resolveOpencodeStoreKey = (
-  plane: string,
-  enabled: boolean
-): string | undefined => {
-  if (!enabled || plane.length === 0) {
-    return undefined;
-  }
-  const credentials = readOpencodeCredentials(opencodeStorePath());
-  return credentials?.find((entry) => entry.integrationId === plane)?.value;
-};
-
-/**
  * Resolve the Go API key without ever exposing it to the client.
  *
- * Order is {@link KEY_SOURCE_ORDER}`[policy]`; with the default `auto` that is
+ * Order is `METER_ORDER[policy]`; with the default `auto` that is
  * a literal `apiKey` discovered in another entry, then a captured key for the
  * Go tier, then the credential service and environment, then any captured key,
  * and last the installation's own store when the deployment opted in.
@@ -451,9 +331,10 @@ export const resolveGoApiKey = (
   readOpencodeStore = false
 ): Promise<string | undefined> => {
   const discovered = discoverGoConfig(ctx, targetProvider);
-  return firstResolved(KEY_SOURCE_ORDER[policy], {
-    captured: () => getCapturedApiKey(targetProvider, "go"),
-    capturedAny: () => getCapturedApiKey(undefined, "go"),
+  const store = captureStoreFor(ctx);
+  return firstUsableAsync(METER_ORDER[policy], {
+    captured: () => store.get(targetProvider, "go"),
+    capturedAny: () => store.get(undefined, "go"),
     configured: () => resolveGoKeyForRef(ctx, effectiveGoKeyRef(discovered)),
     literal: () => discovered.literalKey,
     opencodeStore: () =>
@@ -463,7 +344,9 @@ export const resolveGoApiKey = (
 
 /**
  * Resolve one credential reference through the credentials service, then the
- * environment.
+ * environment, each answer through the one filter (`usableKey`): a blank or a
+ * placeholder is no credential, and a service that answers one falls through
+ * to the environment, as {@link resolveGoKeyForRef} does.
  *
  * Never throws: a failing credentials service degrades to the env path.
  *
@@ -477,16 +360,16 @@ const resolveRef = async (
   const resolve = readCredentialsResolver(ctx);
   if (resolve !== undefined) {
     try {
-      const hit = await resolve(ref);
-      if (hit?.value !== undefined && hit.value.length > 0) {
-        return hit.value;
+      const answer = await resolve(ref);
+      const hit = usableKey(answer?.value);
+      if (hit !== undefined) {
+        return hit;
       }
     } catch {
       // Fall through to the environment.
     }
   }
-  const fromEnv = process.env[ref];
-  return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : undefined;
+  return usableKey(process.env[ref]);
 };
 
 /**
@@ -508,7 +391,7 @@ const resolveRef = async (
  * rather than a guess about a string.
  */
 const isUsableGoKey = (value: string | undefined): value is string =>
-  value !== undefined && value.length > 0 && !isPlaceholderApiKey(value);
+  usableKey(value) !== undefined;
 
 /**
  * Look one credential reference up for the Go quota endpoint.
@@ -582,8 +465,7 @@ export interface ZenCreditInfo {
 export const resolveZenCreditInfo = async (
   ctx: unknown
 ): Promise<ZenCreditInfo> => {
-  const capturedZen = getCapturedApiKey("opencode", "zen");
-  if (capturedZen !== undefined && capturedZen.length > 0) {
+  if (usableKey(captureStoreFor(ctx).get("opencode", "zen")) !== undefined) {
     return { isConfigured: true };
   }
 

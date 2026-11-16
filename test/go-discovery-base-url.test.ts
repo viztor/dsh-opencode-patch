@@ -15,7 +15,6 @@ import {
 } from "./support/loader-rows.ts";
 import {
   DEFAULT_USAGE_BASE_URL,
-  clearCapturedApiKeys,
   resolveGoBaseURL,
   toGoBaseURL,
 } from "./support/src.ts";
@@ -31,7 +30,6 @@ afterEach(() => {
   delete process.env.DSH_TEST_GO_KEY;
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
 });
 
 describe("toGoBaseURL and resolveGoBaseURL", () => {

@@ -6,11 +6,11 @@
  *
  * | installer                | side effect                                   |
  * | ------------------------ | --------------------------------------------- |
- * | {@link installRouteClaim}   | own the `opencode`/`opencode-go` routes (D13) |
+ * | {@link installRouteClaim}   | own the `opencode`/`opencode-go` routes (D13), with the per-call plane headers (OC4, OC5) |
  * | {@link installDescribeGraft} | keep Settings showing the planes (D18)      |
  * | {@link logRenameNotice}  | one-time notice for legacy rows                |
  * | {@link installRemoteServices} | the usage, purge and store-inspection services, through {@link installRemoteService} |
- * | {@link installFetchPatch}   | wrap `globalThis.fetch` (returns `undefined` if none) |
+ * | {@link installFetchPatch}   | wrap `globalThis.fetch` through {@link installGlobalFetch}, with the credential resolver of the root (returns `undefined` if none) |
  * | {@link installStreamHook}   | capture turn state on `llm/stream`; warn once if fetch was replaced (L1) |
  * | {@link installDiscovery}  | complement Settings' model discovery with the catalog (D3) |
  *
@@ -27,10 +27,12 @@ import {
   resolveConfig,
 } from "./config.ts";
 import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
+import { captureStoreFor, createCredentials } from "./credentials.ts";
 import { recordDebug } from "./debug.ts";
 import { patchFetch } from "./fetch-patch.ts";
 import { resolveGoBaseURL } from "./go-discovery.ts";
 import { installDescribeGraft } from "./host/describe-graft.ts";
+import { installGlobalFetch } from "./host/global-fetch.ts";
 import { installRemoteService } from "./host/remote.ts";
 import { installRouteClaim } from "./host/route-claim.ts";
 import { LEGACY_NAME, LEGACY_PKG } from "./identity.ts";
@@ -46,18 +48,8 @@ import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { usageRemote } from "./usage-contract.ts";
 import { GoUsageService } from "./usage.ts";
-import { isFetchFunction, isFunctionLike, isRecord } from "./utils/guards.ts";
-
-/**
- * The fetch patches of this module's live activations. Two live activations
- * nest (the later one wraps the earlier one's patch), so an activation's own
- * patch still runs while `globalThis.fetch` is ANY of these; a function outside
- * the set reads as a replacement (L1). One such function still calls through:
- * a disposed patch that a later activation's restore put back (P6's stale
- * restore, which takes three overlapping activations on one root, the middle
- * one disposed first), so that case warns although the patch runs.
- */
-const livePatches = new Set<unknown>();
+import { isFunctionLike, isRecord } from "./utils/guards.ts";
+import { planeHeadersFor, projectHeaderOf } from "./utils/request-shape.ts";
 
 /** Tell a row still configured under the pre-rename id/package to update. */
 const logRenameNotice = (ctx: CordisContext): void => {
@@ -107,7 +99,11 @@ const installRemoteServices = (
 
 /**
  * Wrap `globalThis.fetch` so claimed OpenCode traffic carries session affinity
- * and the gateway headers, restoring it on dispose.
+ * and the gateway headers, restoring it on dispose in any order
+ * ({@link installGlobalFetch}).
+ *
+ * The credential resolver reads and writes the capture store of the root, so
+ * the meter reads what the fill learned and two activations share it.
  *
  * @returns `undefined` when there is no fetch to wrap. The caller then stops:
  * the stream hook and discovery must not attach, or turns would run without
@@ -121,63 +117,95 @@ const installFetchPatch = (
   config: ResolvedPluginConfig,
   als: AsyncLocalStorage<ActiveTurnState>
 ): (() => boolean) | undefined => {
-  const originalFetch: unknown = globalThis.fetch;
-  if (!isFetchFunction(originalFetch)) {
-    ctx.logger?.warn?.(
-      "[dsh-opencode-patch] globalThis.fetch is unavailable; cannot inject x-opencode-session"
-    );
-    return undefined;
-  }
-
-  const patched = patchFetch(originalFetch, als, config, {
-    // The configured value wins, because it is the one thing here the user said
-    // out loud. There is no login to infer an org from: this build carries the
-    // API key path only.
-    resolveOrg: () => config.credentialOrg,
-    // One JSONL line per request the interceptor touched, when the deployment
-    // asked for debugging. It is the only way to see a request that was patched
-    // wrongly: the gateway's answer for a malformed session id reads exactly
-    // like its answer for a bad credential.
-    // **The FILE is written when the deployment named a file.** `debug` is the
-    // console switch ("Log injected streamed calls"), and `debugFile` is the
-    // path — so a deployment that set only the path asked for the file, and
-    // the two halves of one JSONL log must not have different gates.
-    //
-    // They did: the stream hook wrote its entries whenever a path was set, and
-    // this one required `debug` as well. So the README's own example — `debug:
-    // false` beside a `debugFile` path — produced a file holding the stream
-    // entries and none of the per-request ones, which is the half that says
-    // what the interceptor did.
-    ...(config.debugFile === undefined
-      ? {}
-      : {
-          debug: (entry: Record<string, unknown>) => {
-            void recordDebug(ctx, config.debugFile ?? "", entry);
-          },
-        }),
+  const credentials = createCredentials({
+    keySource: config.keySource,
+    readOpencodeStore: config.readOpencodeStore,
+    store: captureStoreFor(ctx),
   });
-
-  ctx.effect?.(() => {
-    globalThis.fetch = patched;
-    livePatches.add(patched);
-    // Console as well as the logger: the logger's default exporter only buffers,
-    // so a boot line that says "the plugin loaded" has to reach stdout to be worth
-    // anything when someone is checking whether a build was picked up.
-    console.info(
-      `[dsh-opencode-patch] active for providers [${[...config.providers].join(
-        ", "
-      )}]`
-    );
-    return () => {
-      livePatches.delete(patched);
-      if (globalThis.fetch === patched) {
-        globalThis.fetch = originalFetch;
-      }
-    };
-  }, "dsh-opencode-patch.fetch-patch");
-
-  return () => livePatches.has(globalThis.fetch);
+  return installGlobalFetch(
+    ctx,
+    (original, live) =>
+      patchFetch(original, als, config, {
+        credentials,
+        live,
+        // The configured value wins, because it is the one thing here the
+        // user said out loud. There is no login to infer an org from: this
+        // build carries the API key path only.
+        resolveOrg: () => config.credentialOrg,
+        // One JSONL line per request the interceptor touched, when the
+        // deployment asked for debugging. It is the only way to see a request
+        // that was patched wrongly: the gateway's answer for a malformed
+        // session id reads exactly like its answer for a bad credential.
+        // **The FILE is written when the deployment named a file.** `debug`
+        // is the console switch ("Log injected streamed calls"), and
+        // `debugFile` is the path — so a deployment that set only the path
+        // asked for the file, and the two halves of one JSONL log must not
+        // have different gates.
+        //
+        // They did: the stream hook wrote its entries whenever a path was
+        // set, and this one required `debug` as well. So the README's own
+        // example — `debug: false` beside a `debugFile` path — produced a file
+        // holding the stream entries and none of the per-request ones, which
+        // is the half that says what the interceptor did.
+        ...(config.debugFile === undefined
+          ? {}
+          : {
+              debug: (entry: Record<string, unknown>) => {
+                void recordDebug(ctx, config.debugFile ?? "", entry);
+              },
+            }),
+      }),
+    () => {
+      // Console as well as the logger: the logger's default exporter only
+      // buffers, so a boot line that says "the plugin loaded" has to reach
+      // stdout to be worth anything when someone is checking whether a build
+      // was picked up.
+      console.info(
+        `[dsh-opencode-patch] active for providers [${[
+          ...config.providers,
+        ].join(", ")}]`
+      );
+    }
+  );
 };
+
+/**
+ * The plane headers of the current turn, written per call by the plane
+ * adapter's `prepareHeaders` (OC5): the values the stream hook derived for the
+ * turn, from the one table the fetch patch writes from. A request outside any
+ * turn the plugin decorated, or on another plugin's plane, gets none, and the
+ * turn is marked so the fetch patch leaves what was set here alone.
+ *
+ * @param als - the turn store the stream hook fills.
+ * @param config - the plugin's settings.
+ * @returns the writer `installRouteClaim` hands the adapter.
+ */
+export const callHeadersFor =
+  (als: AsyncLocalStorage<ActiveTurnState>, config: ResolvedPluginConfig) =>
+  (headers: Headers): void => {
+    const state = als.getStore();
+    if (state === undefined || state.foreign === true) {
+      return;
+    }
+    for (const [name, value] of planeHeadersFor({
+      org: config.credentialOrg,
+      origin: config.injectOriginHeaders
+        ? {
+            client: config.originClient,
+            project: config.injectProject
+              ? projectHeaderOf(state.project)
+              : undefined,
+            request: state.requestValue,
+          }
+        : undefined,
+      parent: state.parentValue,
+      relay: !state.provider.startsWith("opencode"),
+      session: state.value,
+    })) {
+      headers.set(name, value);
+    }
+    state.perCall = true;
+  };
 
 /**
  * Capture turn state (session id, project, parent) on every streamed turn,
@@ -228,7 +256,9 @@ const installDiscovery = (
  * Order matters:
  * 1. the route claim, first, so its teardown is the first effect and runs
  *    last, and its `internal/config` listener is in place before any pi-ai
- *    config run this activation can see;
+ *    config run this activation can see; its adapter writes the plane headers
+ *    per call from the turn store the stream hook fills (OC5), which is read
+ *    per call, so the hook attaching later is no gap;
  * 2. the Settings graft, which reads the claim's committed entries;
  * 3. the rename notice and the remote services, before the fetch patch, so
  *    a composition without `globalThis.fetch` still gets a working meter;
@@ -254,7 +284,9 @@ export const apply = async (
   const config = resolveConfig(rawConfig);
   const als = new AsyncLocalStorage<ActiveTurnState>();
 
-  const claim = installRouteClaim(ctx, config);
+  const claim = installRouteClaim(ctx, config, {
+    callHeaders: callHeadersFor(als, config),
+  });
   installDescribeGraft(ctx, claim);
   logRenameNotice(ctx);
   const services = installRemoteServices(ctx, config);

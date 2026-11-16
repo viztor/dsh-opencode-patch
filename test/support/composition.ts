@@ -110,9 +110,9 @@ export const mountPlugin = async (
 
 /**
  * Dispose every fiber {@link mountPlugin} mounted, latest first, so the
- * patched `fetch` never leaks into the next case. Latest first is the order
- * that unwinds nested patches cleanly; the other order is P6's open defect
- * (an earlier activation's patch outlives two overlapping ones).
+ * patched `fetch` never leaks into the next case. Either order unwinds nested
+ * patches to the fetch that was there (`src/host/global-fetch.ts`, P6);
+ * latest first is the one a reader expects.
  */
 export const disposeMounted = async (): Promise<void> => {
   const fibers = [...live].toReversed();

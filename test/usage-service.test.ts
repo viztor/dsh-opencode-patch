@@ -7,8 +7,9 @@
  * typed failure the composer meter reacts to.
  *
  * Offline by construction: `fetch` is stubbed per case, the endpoint and the
- * credential are injected, and the two pieces of ambient state a read consults
- * (captured keys, session spend) are cleared after every case.
+ * credential are injected, and the ambient state a read consults (session
+ * spend) is cleared after every case; captured keys are kept per root, so a
+ * case's own context starts with none.
  *
  * This file holds the service's construction, the endpoint it builds and the
  * identity it sends; its siblings hold credential failures
@@ -24,7 +25,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GoUsageService,
   OPENCODE_PATCH_USER_AGENT,
-  clearCapturedApiKeys,
   clearSessionUsageStore,
 } from "./support/src.ts";
 import {
@@ -42,7 +42,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
   clearSessionUsageStore();
 });
 

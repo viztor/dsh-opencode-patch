@@ -5,9 +5,17 @@
  * provider on the active turn) are touched; everything else returns through
  * the original `fetch` byte-identical, and so does a request of another
  * plugin's (D27): one issued inside a turn the stream hook marked `foreign`,
- * or one that carries an `x-opencode-plugin` marker. For claimed requests the patch
- * restores the session header, the CLI User-Agent, and the gateway origin
- * headers, and runs the free-tier core-tool fallback over the body.
+ * or one that carries an `x-opencode-plugin` marker. For claimed requests the
+ * patch fills an empty or placeholder credential (`credentials.ts`, the one
+ * resolver), restores the CLI User-Agent, and runs the free-tier core-tool
+ * fallback over the body.
+ *
+ * The plane headers (session, parent, org, origin) are written here for a
+ * relay, a turnless URL-claimed request and a turn the plane adapter did not
+ * shape. On a turn whose requests the plane adapter shaped per call (OC5,
+ * `prepareHeaders` in `host/plane-provider.ts`) the patch writes none of them
+ * while the request carries a well-formed session id: the adapter's are the
+ * plugin's own, and a contributor's change to them is the contributor's.
  *
  * @module dsh-opencode-patch/fetch-patch
  */
@@ -15,14 +23,12 @@
 import type { AsyncLocalStorage } from "node:async_hooks";
 
 import { DEFAULT_GATEWAY_URLS, type ResolvedPluginConfig } from "./config.ts";
-import { resolveOpencodeStoreKey } from "./go-discovery.ts";
 import {
-  extractApiKeyFromHeaders,
-  getCapturedApiKey,
-  isPlaceholderApiKey,
-  recordCapturedApiKey,
-  tierForRequest,
-} from "./key-capture.ts";
+  createCaptureStore,
+  createCredentials,
+  type FetchCredentials,
+} from "./credentials.ts";
+import { extractApiKeyFromHeaders } from "./key-capture.ts";
 import {
   type CatalogPlane,
   enrichModelsResponse,
@@ -31,26 +37,24 @@ import {
   isModelsListingUrl,
 } from "./models-catalog.ts";
 import {
-  isOpenCodeMessageId,
   isOpenCodeSessionId,
   OPENCODE_UA,
-  PARENT_SESSION_ALT_HEADER,
-  PARENT_SESSION_HEADER,
-  SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
-  SESSION_ID_HEADER,
   digestOf,
   sessionIdForRequest,
 } from "./session.ts";
 import { maybeInjectCoreTools } from "./tool-fallback.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
-import { PLUGIN_MARKER_HEADER } from "./utils/plane-ownership.ts";
+import { needsFill, usableKey } from "./utils/credential-policy.ts";
 import {
   ANTHROPIC_VERSION,
   authHeaderFor,
   gatewayPlaneFor,
   headerSourceOf,
   isGoPlaneUrl,
+  planeHeadersFor,
+  pluginMarkerOn,
+  projectHeaderOf,
   requestUrlOf,
   toolNamesOf,
 } from "./utils/request-shape.ts";
@@ -188,6 +192,18 @@ export interface FetchPatchHooks {
    * interceptor SAW and what it SENT, never the credential itself.
    */
   readonly debug?: (entry: Record<string, unknown>) => void;
+  /**
+   * The credential resolver and the capture store it learns into. The plugin
+   * hands the one of its root (`captureStoreFor`), so the meter reads what
+   * the fill learned; absent, the patch keeps a store of its own.
+   */
+  readonly credentials?: FetchCredentials;
+  /**
+   * Whether this patch is still live. A patch disposed while another wraps it
+   * stays in the chain as a pass-through link (`host/global-fetch.ts`), so a
+   * request through it reaches the fetch underneath untouched.
+   */
+  readonly live?: () => boolean;
 }
 
 export const patchFetch = (
@@ -199,11 +215,21 @@ export const patchFetch = (
   // One report per plane for the no-credential case, because this runs on every
   // gateway request and the same missing credential would otherwise log on each.
   const warnedNoCredential = new Set<string>();
+  const credentials =
+    hooks.credentials ??
+    createCredentials({
+      keySource: config.keySource,
+      readOpencodeStore: config.readOpencodeStore,
+      store: createCaptureStore(),
+    });
   const patchedFetch = async function patchedFetch(
     this: unknown,
     input: RequestInfo | URL,
     init?: RequestInit
   ): Promise<Response> {
+    if (hooks.live?.() === false) {
+      return original.call(this, input, init);
+    }
     const state = als.getStore();
     // **A turn another plugin owns goes out as it was sent** (D27): the
     // stream hook marks a turn on a stepped-aside plane, whichever rule
@@ -225,7 +251,7 @@ export const patchFetch = (
     // plugin wrote through pi-ai carries its marker, and its credential comes
     // from a realm this plugin does not share: no header of ours, no key fill
     // and no key capture, so its token is never recorded or replayed.
-    if (headers.has(PLUGIN_MARKER_HEADER)) {
+    if (pluginMarkerOn(headers) !== undefined) {
       return original.call(this, input, init);
     }
 
@@ -248,16 +274,19 @@ export const patchFetch = (
       }
     }
 
-    // Capture the API key from the request headers so that quota monitoring,
-    // usage display, and key resolution don't have to rely purely on static env vars.
-    const extracted = extractApiKeyFromHeaders(headers);
-    const requestKey =
-      extracted === undefined || isPlaceholderApiKey(extracted)
-        ? undefined
-        : extracted;
-    if (requestKey !== undefined) {
-      recordCapturedApiKey(requestKey, state?.provider, url);
-    }
+    // The request's own key, recorded only when this request belongs to a turn
+    // the plugin decorated (OC3): a key on a turnless request — a Console
+    // call, another tool's background request — was not sent by the plugin,
+    // and is never kept or replayed. A foreign turn and a marked request
+    // returned above; the rule still takes both, so it is one function.
+    const requestKey = credentials.observe({
+      decorated: state !== undefined,
+      foreign: false,
+      headers,
+      marked: false,
+      provider: state?.provider,
+      url,
+    });
 
     // Ensure an Authorization header is present if the caller omitted it or provided a dummy value.
     const plane = gatewayPlaneFor(url);
@@ -272,50 +301,23 @@ export const patchFetch = (
     if (wireHeader === "x-api-key" && !headers.has("anthropic-version")) {
       headers.set("anthropic-version", ANTHROPIC_VERSION);
     }
-    const authHeader = headers.get(wireHeader);
-    const wireKey = authHeader?.replace(/^Bearer\s+/iu, "").trim();
-    if (
-      wireKey === undefined ||
-      wireKey.length === 0 ||
-      isPlaceholderApiKey(wireKey)
-    ) {
-      // The captured key is looked up by tier as well as by provider: a user
-      // may have named the route anything, and a provider-id miss must not hide
-      // a key that is already known to work. Under the `configured` policy the
-      // declared credential wins outright, so the capture is skipped entirely.
-      const tier = tierForRequest(url, state?.provider);
-      const captured =
-        config.keySource === "configured"
-          ? undefined
-          : getCapturedApiKey(
-              state?.provider,
-              tier === "unknown" ? undefined : tier
-            );
-      // Explicit request auth (including x-api-key) and declared sources win.
-      // Only a known gateway plane may ask for a login: a configured provider
-      // can also claim other URLs, which must not receive an account token.
-      const declared =
-        plane === "opencode-go" ||
-        (plane.length === 0 && state?.provider === "opencode-go")
-          ? process.env.OPENCODE_GO_API_KEY
-          : process.env.OPENCODE_API_KEY;
-      const explicit =
-        requestKey ??
-        captured ??
-        (declared === undefined ||
-        declared.length === 0 ||
-        isPlaceholderApiKey(declared)
-          ? undefined
-          : declared);
-      // **API key only.** The credential ladder ends at the installation's own
-      // store: a login (device flow, session, credential pool) is v2 work and does
-      // not live here. `readOpencodeStore` is off unless the deployment opted in.
-      const fallbackKey =
-        explicit ?? resolveOpencodeStoreKey(plane, config.readOpencodeStore);
-      if (typeof fallbackKey === "string" && fallbackKey.length > 0) {
+    const wireKey = headers
+      .get(wireHeader)
+      ?.replace(/^Bearer\s+/iu, "")
+      .trim();
+    if (needsFill(wireKey)) {
+      const decision = credentials.fillKey({
+        plane,
+        provider: state?.provider,
+        requestKey,
+        url,
+      });
+      if (decision.key !== undefined) {
         headers.set(
           wireHeader,
-          wireHeader === "authorization" ? `Bearer ${fallbackKey}` : fallbackKey
+          wireHeader === "authorization"
+            ? `Bearer ${decision.key}`
+            : decision.key
         );
         // **One credential, on the protocol's own header, and nothing else.**
         // The official client passes the key as an SDK option
@@ -346,16 +348,16 @@ export const patchFetch = (
         !isFreeModelBody(bodyToPatch, isGoPlaneUrl(url) ? "go" : "zen")
       ) {
         warnedNoCredential.add(plane);
+        const { consulted } = decision;
+        // The request's own key and a captured one answer "none" by
+        // construction: every policy consults both ahead of the declared
+        // variable, so either one present would have filled the wire.
         const sources: string[] = [
-          `a key on the request: ${requestKey === undefined ? "none" : "present"}`,
-          `a key captured from a live request (policy ${config.keySource}): ${
-            captured === undefined ? "none" : "present"
-          }`,
-          `${plane === "opencode-go" ? "OPENCODE_GO_API_KEY" : "OPENCODE_API_KEY"}: ${
-            declared === undefined || declared.length === 0 ? "unset" : "set"
-          }`,
+          "a key on the request: none",
+          `a key captured from a live request (policy ${config.keySource}): none`,
+          `${consulted.declaredName}: ${consulted.declaredSet ? "set" : "unset"}`,
           `the installation's own store: ${
-            config.readOpencodeStore ? "read" : "not enabled"
+            consulted.storeRead ? "read" : "not enabled"
           }`,
         ];
         console.warn(
@@ -365,88 +367,49 @@ export const patchFetch = (
       }
     }
 
-    // 1. Session headers, as the version this plugin emulates sends them.
-    //
-    // Read from the 1.x line's last release, v1.19.5, in
-    // `packages/opencode/src/session/llm/request.ts`: `x-opencode-session-id`
-    // and `x-opencode-session` both carry `sessionID`, and the affinity pair
-    // belongs to relays. 2.x splits the first of those into an affinity id; the
-    // plugin emulates 1.19.5, so it follows 1.19.5.
-    //
-    // Which ENDPOINT the request goes to is the deployment's, not this block's:
-    // measured, either key serves a paid model on either endpoint - they are two
-    // paths into one gateway - so nothing here has to pick one. `x-opencode-
-    // request` is the one header of the set this plugin does not send, because
-    // the CLI fills it from its own user id and the turn store has no equivalent.
-    const envName =
-      config.sessionIdEnv !== undefined && config.sessionIdEnv.length > 0
-        ? config.sessionIdEnv
-        : undefined;
-    const sessionVal = sessionIdForRequest(
-      state?.value,
-      headers.get(SESSION_HEADER),
-      envName === undefined ? undefined : process.env[envName],
-      digestOf
-    );
-    headers.set("x-opencode-session-id", sessionVal);
-    headers.set(SESSION_HEADER, sessionVal);
-    // The affinity pair belongs to the OTHER branch in 1.19.5: for a provider
-    // that does not start with `opencode` - a relay a deployment claimed by URL -
-    // the client sends `x-session-affinity` and `X-Session-Id`; for an OpenCode
-    // plane it sends `x-opencode-session` instead and nothing else. This plugin
-    // sent all three everywhere, which is neither generation's behaviour.
-    if (!(state?.provider ?? "").startsWith("opencode")) {
-      headers.set(SESSION_AFFINITY_HEADER, sessionVal);
-      headers.set(SESSION_ID_HEADER, sessionVal);
+    // The plane headers (`planeHeadersFor`, the one table the per-call seam
+    // writes from too). On a turn the plane adapter shaped per call (OC5) a
+    // request that carries a well-formed session id keeps the headers it was
+    // given; a malformed one is still replaced, because the gateway answers
+    // it with `401 Invalid API key` (L8), whoever wrote it.
+    const shaped =
+      state?.perCall === true &&
+      isOpenCodeSessionId(headers.get(SESSION_HEADER));
+    if (!shaped) {
+      const sessionVal = sessionIdForRequest(
+        state?.value,
+        headers.get(SESSION_HEADER),
+        credentials.sessionPin(config.sessionIdEnv),
+        digestOf
+      );
+      // The org: the configured one wins, because it is the one thing here
+      // the user said out loud; the hook is the deployment's own source.
+      const org =
+        config.credentialOrg ?? hooks.resolveOrg?.(gatewayPlaneFor(url));
+      for (const [name, value] of planeHeadersFor({
+        org,
+        origin: config.injectOriginHeaders
+          ? {
+              client: config.originClient,
+              project: config.injectProject
+                ? projectHeaderOf(state?.project)
+                : undefined,
+              request: state?.requestValue,
+            }
+          : undefined,
+        parent: state?.parentValue,
+        relay: !(state?.provider ?? "").startsWith("opencode"),
+        session: sessionVal,
+      })) {
+        headers.set(name, value);
+      }
     }
 
-    // 1b. Parent session header: injected for subagents and child sessions
-    if (state?.parentValue !== undefined) {
-      headers.set(PARENT_SESSION_HEADER, state.parentValue);
-      headers.set(PARENT_SESSION_ALT_HEADER, state.parentValue);
-    }
-
-    // 2. User-Agent: injected / restored when enabled, with user override support
+    // User-Agent: injected / restored when enabled, with user override
+    // support, whoever shaped the rest — attribution wins after pi-ai's
+    // `prepareHeaders`, so the per-call seam cannot carry it.
     if (config.injectUserAgent) {
       headers.set("User-Agent", config.userAgent ?? OPENCODE_UA);
-    }
-
-    // 2b. The org, when this plane's credential belongs to one. A session token
-    // needs the org it belongs to — measured on a paid model: `200` with it,
-    // `403` without — and the free tier is refused with or without one, which is
-    // a gate no header cleared.
-    // The configured org wins, because it is the one thing here the user said out
-    // loud. The hook is the deployment's own source (an account that ships with
-    // the profile); there is no login to infer one from.
-    const org =
-      config.credentialOrg ?? hooks.resolveOrg?.(gatewayPlaneFor(url));
-    if (org !== undefined && org.length > 0) {
-      headers.set("x-opencode-org-id", org);
-    }
-
-    // 3. Client & Project origin headers: injected when enabled
-    if (config.injectOriginHeaders) {
-      headers.set("x-opencode-client", config.originClient);
-
-      // The message id, the one header of the captured set this block omitted.
-      // Read from v1.19.5's `request.ts`: `"x-opencode-request": input.user.id`,
-      // in the same branch as the client and project headers. The console reads
-      // it for per-request metrics and rewrites it to `x-opencode-request-id`
-      // before the request reaches the inference service
-      // (`inference-proxy.ts`); the turn store carries the value because a
-      // request cannot know its own message id.
-      const requestValue = state?.requestValue;
-      if (requestValue !== undefined && isOpenCodeMessageId(requestValue)) {
-        headers.set("x-opencode-request", requestValue);
-      }
-
-      if (config.injectProject) {
-        const project =
-          state?.project !== undefined && state.project.length > 0
-            ? state.project
-            : "global";
-        headers.set("x-opencode-project", project);
-      }
     }
 
     const newInit: RequestInit = { ...init, headers };
@@ -480,6 +443,27 @@ export const patchFetch = (
     }
 
     const response = await original.call(this, requestToSend, newInit);
+
+    // What the gateway said about the key a request of a decorated turn
+    // carried (L8): a key the plugin captured is dropped after a second
+    // well-formed 401 in a row, and comes back once a request of a decorated
+    // turn carrying it as its own is accepted. A turnless request (the
+    // meter's `/usage` poll among them) settles nothing (OC3).
+    const sentKey = usableKey(
+      headers.get(wireHeader)?.replace(/^Bearer\s+/iu, "")
+    );
+    credentials.settle({
+      decorated: state !== undefined,
+      key: sentKey,
+      provider: state?.provider,
+      // A dropped key comes back only on a request that may file it: its
+      // own key, on a turn the plugin decorated (OC3).
+      recordable:
+        state !== undefined && sentKey !== undefined && sentKey === requestKey,
+      sessionWellFormed: isOpenCodeSessionId(headers.get(SESSION_HEADER)),
+      status: response.status,
+      url,
+    });
 
     // One line per request the interceptor touched, so a run that misbehaves can
     // be read back instead of guessed at. Presence, never values: whether a

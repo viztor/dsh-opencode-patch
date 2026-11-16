@@ -6,25 +6,30 @@
  * @module test/usage.test
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  clearCapturedApiKeys,
+  type CaptureStore,
+  createCaptureStore,
   extractApiKeyFromHeaders,
-  getCapturedApiKey,
   isPlaceholderApiKey,
   parseGoUsage,
   parseUsageQuery,
-  recordCapturedApiKey,
   tierForRequest,
 } from "./support/src.ts";
+
+/** A capture store of the case's own; the plugin keeps one per root. */
+let store: CaptureStore = createCaptureStore();
+
+beforeEach(() => {
+  store = createCaptureStore();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_SESSION_ID;
   delete process.env.OPENCODE_GO_API_KEY;
   delete process.env.OPENCODE_API_KEY;
-  clearCapturedApiKeys();
 });
 
 describe("OpenCode Go Usage", () => {
@@ -112,12 +117,12 @@ describe("OpenCode Go Usage", () => {
   });
 
   it("never records a placeholder as a captured key", () => {
-    recordCapturedApiKey(
+    store.record(
       "sk-real-key-111",
       "opencode-go",
       "https://opencode.ai/zen/go/v1/chat/completions"
     );
-    expect(getCapturedApiKey("opencode-go", "go")).toBe("sk-real-key-111");
+    expect(store.get("opencode-go", "go")).toBe("sk-real-key-111");
 
     // The adapter's dummy values must not overwrite a working key: capturing
     // one poisons every later lookup, which then re-injects the dummy.
@@ -129,14 +134,14 @@ describe("OpenCode Go Usage", () => {
       "  UNUSED  ",
     ]) {
       expect(isPlaceholderApiKey(placeholder)).toBe(true);
-      recordCapturedApiKey(
+      store.record(
         placeholder,
         "opencode-go",
         "https://opencode.ai/zen/go/v1/chat/completions"
       );
     }
-    expect(getCapturedApiKey("opencode-go", "go")).toBe("sk-real-key-111");
-    expect(getCapturedApiKey(undefined, "go")).toBe("sk-real-key-111");
+    expect(store.get("opencode-go", "go")).toBe("sk-real-key-111");
+    expect(store.get(undefined, "go")).toBe("sk-real-key-111");
 
     expect(isPlaceholderApiKey("sk-real-key-111")).toBe(false);
     expect(isPlaceholderApiKey("oc_sk_real")).toBe(false);
@@ -160,21 +165,19 @@ describe("OpenCode Go Usage", () => {
       // The reproduction: read prefix-first, this key was filed under Zen. The
       // meter's Go lookup then missed it, and a Zen request carrying a
       // placeholder was handed the Go key.
-      recordCapturedApiKey(
+      store.record(
         "oc_sk_GOKEY_fixture",
         "opencode-go",
         "https://opencode.ai/zen/go/v1/chat/completions"
       );
-      expect(getCapturedApiKey("opencode-go", "go")).toBe(
-        "oc_sk_GOKEY_fixture"
-      );
-      expect(getCapturedApiKey(undefined, "zen")).toBeUndefined();
+      expect(store.get("opencode-go", "go")).toBe("oc_sk_GOKEY_fixture");
+      expect(store.get(undefined, "zen")).toBeUndefined();
     });
 
     it("does not claim a foreign sk- key for the Go account", () => {
       // An OpenAI key on a relay a deployment routes through the patch. Read by
       // prefix it was filed as Go and offered to every Go request.
-      recordCapturedApiKey(
+      store.record(
         "sk-openai-fixture",
         "my-relay",
         "https://relay.example/v1/chat/completions"
@@ -183,7 +186,7 @@ describe("OpenCode Go Usage", () => {
         tierForRequest("https://relay.example/v1/chat/completions", "my-relay")
       ).toBe("unknown");
       // Unknown stays answerable by route, as before, but is not filed by tier.
-      expect(getCapturedApiKey("my-relay")).toBe("sk-openai-fixture");
+      expect(store.get("my-relay")).toBe("sk-openai-fixture");
     });
 
     it("trusts the URL above the provider route id", () => {

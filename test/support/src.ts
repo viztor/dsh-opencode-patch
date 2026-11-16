@@ -61,12 +61,14 @@ export {
   readStringList,
   unwrapNode,
 } from "../../src/config-values.ts";
+export type { KeySourcePolicy } from "../../src/config-values.ts";
 
 // config.ts
 export {
   Config,
   CONFIG_DEFAULTS,
   DEFAULT_FREE_MODEL_MARKER,
+  DEFAULT_ORIGIN_CLIENT,
   DEFAULT_USAGE_BASE_URL,
   DEFAULT_USAGE_KEY_ENV,
   resolveConfig,
@@ -93,6 +95,20 @@ export type {
   PiAiModule,
 } from "../../src/cordis-context.ts";
 
+// credentials.ts
+export {
+  captureStoreFor,
+  createCaptureStore,
+  createCredentials,
+  resolveOpencodeStoreKey,
+} from "../../src/credentials.ts";
+export type {
+  CaptureStore,
+  CredentialInputs,
+  FetchCredentials,
+  FillDecision,
+} from "../../src/credentials.ts";
+
 // debug.ts
 export { recordDebug } from "../../src/debug.ts";
 
@@ -111,7 +127,6 @@ export {
   resolveGoApiKey,
   resolveGoBaseURL,
   resolveGoKeyForRef,
-  resolveOpencodeStoreKey,
   resolveZenCreditInfo,
   toGoBaseURL,
 } from "../../src/go-discovery.ts";
@@ -154,8 +169,12 @@ export {
   hostError,
   planeApiKeyResolver,
   planeAuth,
+  planeRequestHeaders,
   relabelEfforts,
 } from "../../src/host/plane-provider.ts";
+
+// host/global-fetch.ts
+export { installGlobalFetch } from "../../src/host/global-fetch.ts";
 
 // host/route-claim.ts
 export { installRouteClaim } from "../../src/host/route-claim.ts";
@@ -183,16 +202,12 @@ export {
 
 // key-capture.ts
 export {
-  clearCapturedApiKeys,
   extractApiKeyFromHeaders,
-  getCapturedApiKey,
-  isPlaceholderApiKey,
-  recordCapturedApiKey,
   tierForRequest,
 } from "../../src/key-capture.ts";
 
 // lifecycle.ts
-export { apply } from "../../src/lifecycle.ts";
+export { apply, callHeadersFor } from "../../src/lifecycle.ts";
 
 // models-catalog.ts
 export {
@@ -529,9 +544,32 @@ export {
   isGoPlaneUrl,
   isZenProvider,
   modelIdOf,
+  planeHeadersFor,
+  pluginMarkerOn,
+  projectHeaderOf,
   requestUrlOf,
   toolNamesOf,
 } from "../../src/utils/request-shape.ts";
+
+// utils/credential-policy.ts
+export {
+  countsAsRefusal,
+  EVICT_AFTER,
+  FILL_ORDER,
+  firstUsable,
+  firstUsableAsync,
+  isPlaceholderApiKey,
+  mayCapture,
+  METER_ORDER,
+  needsFill,
+  PLACEHOLDER_API_KEYS,
+  strike,
+  usableKey,
+} from "../../src/utils/credential-policy.ts";
+export type {
+  FillSource,
+  MeterSource,
+} from "../../src/utils/credential-policy.ts";
 
 // utils/retry.ts
 export { backoffOver, retryUntilAnswered } from "../../src/utils/retry.ts";

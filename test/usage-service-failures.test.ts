@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { clearCapturedApiKeys, clearSessionUsageStore } from "./support/src.ts";
+import { clearSessionUsageStore } from "./support/src.ts";
 import {
   failureOf,
   GO_USAGE_URL,
@@ -18,7 +18,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
   clearSessionUsageStore();
 });
 

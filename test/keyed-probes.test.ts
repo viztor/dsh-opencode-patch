@@ -20,7 +20,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readdirSync, readFileSync } from "node:fs";
 
 import { attributionHeaders } from "@deepseek-ai/dsh-llm";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { handleGatewayRequest } from "./mock/opencode-gateway.ts";
 import {
@@ -61,7 +61,6 @@ import {
   type ActiveTurnState,
   authHeaderFor,
   type CatalogModelSpec,
-  clearCapturedApiKeys,
   CONFIG_DEFAULTS,
   isOpenCodeMessageId,
   isOpenCodeSessionId,
@@ -113,11 +112,6 @@ const GO = [
   spec("go-claude", "@ai-sdk/anthropic"),
   spec("go-gemini", "@ai-sdk/google"),
 ];
-
-// The fetch-patch case below captures the key it sends, process-wide.
-afterEach(() => {
-  clearCapturedApiKeys();
-});
 
 describe("keyed probes · the tier", () => {
   it.each([

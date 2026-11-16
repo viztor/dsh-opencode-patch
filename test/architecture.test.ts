@@ -593,6 +593,49 @@ describe("architecture · the host bundle mutates no registry it does not own", 
   });
 });
 
+describe("architecture · the request path reads no environment of its own (P6)", () => {
+  /**
+   * The fetch patch, the lifecycle and the plane provider take every value
+   * they need as a parameter or a service: the fill's one read of the process
+   * environment lives in `credentials.ts`, and the plane adapter's in the
+   * host's launch environment (D20). Comments are stripped first, as in the
+   * utilities' rule. Textual, like the repository's other environment rules:
+   * a read through an alias (`process["env"]`, `const { env } = process`)
+   * escapes it.
+   */
+  const FILES = ["fetch-patch.ts", "lifecycle.ts", "host/plane-provider.ts"];
+  const readsEnv = (source: string): boolean =>
+    /process\.env/u.test(stripComments(source));
+
+  it("flags a planted read, so a pass means something", () => {
+    expect(readsEnv("const k = process.env.X;")).toBe(true);
+    expect(readsEnv("// process.env.X\nconst k = 1;")).toBe(false);
+  });
+
+  it.each(FILES)("%s never reads process.env", (file) => {
+    expect(readsEnv(readFileSync(join(SRC_DIR, file), "utf8"))).toBe(false);
+  });
+
+  /** Whether a source writes a capture store: a `.record(` call. */
+  const writesStore = (source: string): boolean =>
+    /\.record\(/u.test(stripComments(source));
+
+  it("flags a planted store write, so a pass means something", () => {
+    expect(
+      writesStore("captureStoreFor(ctx).record(key, provider, url);")
+    ).toBe(true);
+    expect(writesStore("store.record(k);")).toBe(true);
+    expect(writesStore("// store.record(k)\nconst recorded = 1;")).toBe(false);
+  });
+
+  it("a capture store is written from src/credentials.ts only", () => {
+    const writers = filesUnder(SRC_DIR).filter((file) =>
+      writesStore(readFileSync(join(SRC_DIR, file), "utf8"))
+    );
+    expect(writers).toEqual(["credentials.ts"]);
+  });
+});
+
 describe("architecture · host methods are wrapped only through patchMethod", () => {
   /** The host half's composition root: everything `apply()` can run. */
   const ENTRY = "lifecycle.ts";
@@ -625,10 +668,13 @@ describe("architecture · host methods are wrapped only through patchMethod", ()
 
   /**
    * Named exemptions, each `<file>: <the write as matched>`. The global `fetch`
-   * patch stacks the same way but is a global, not a host service method, and
-   * P6 owns it (docs/improvement-plan.md).
+   * patch is a global, not a host service method: P6 moved it into its own
+   * installer, which reads the original inside the effect and unwinds through
+   * disposed links in any order (`host/global-fetch.ts`). The exemption stays
+   * while the patch keeps relays, listing enrichment, the credential fill, the
+   * free-tier body fallback and the User-Agent (docs/improvement-plan.md).
    */
-  const EXEMPT = new Set(["lifecycle.ts: globalThis.fetch ="]);
+  const EXEMPT = new Set(["host/global-fetch.ts: globalThis.fetch ="]);
 
   /** Every host write in `source`, as `<file>: <match>`. */
   const hostWritesIn = (file: string, source: string): string[] =>

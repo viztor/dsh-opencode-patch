@@ -42,11 +42,7 @@ import {
   type TierA,
   waitForPlaneOwner,
 } from "../support/host.ts";
-import {
-  clearCapturedApiKeys,
-  FREE_TIER_CODE,
-  MODEL_UNAVAILABLE_CODE,
-} from "../support/src.ts";
+import { FREE_TIER_CODE, MODEL_UNAVAILABLE_CODE } from "../support/src.ts";
 import { urlOf } from "../test-helpers.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import { fixtureModel, GO_KEY, ZEN_KEY } from "./helpers.ts";
@@ -220,7 +216,6 @@ afterAll(async () => {
 beforeEach(() => {
   gateway.requests.length = 0;
   refusal = undefined;
-  clearCapturedApiKeys();
 });
 
 afterEach(() => {

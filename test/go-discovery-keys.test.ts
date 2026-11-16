@@ -22,12 +22,10 @@ import {
   DEFAULT_USAGE_KEY_ENV,
   type DiscoveredGoConfig,
   KEY_SOURCE_POLICIES,
-  clearCapturedApiKeys,
+  captureStoreFor,
   discoverGoConfig,
   effectiveGoKeyRef,
-  getCapturedApiKey,
   isPlaceholderApiKey,
-  recordCapturedApiKey,
   resolveGoApiKey,
   resolveGoKeyForRef,
   resolveZenCreditInfo,
@@ -36,16 +34,22 @@ import {
 /**
  * Restore every piece of ambient state these cases touch.
  *
- * A leaked env var or a leftover captured key silently breaks whichever file
- * runs next, so the hook lives in this file and not only in the old monolith.
+ * A leaked env var silently breaks whichever file runs next, so the hook lives
+ * in this file and not only in the old monolith. Captured keys are kept per
+ * root: each case seeds the store of the composition it resolves against.
  */
 afterEach(() => {
   // Named deletes rather than a loop: the names are the contract.
   delete process.env.DSH_TEST_GO_KEY;
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
 });
+
+/** Seed a key into a composition's capture store, as a decorated turn would. */
+const seed = <T>(context: T, key: string, provider: string, url: string): T => {
+  captureStoreFor(context).record(key, provider, url);
+  return context;
+};
 
 describe("effectiveGoKeyRef", () => {
   it("uses the composition's reference and defaults when there is none", () => {
@@ -96,15 +100,25 @@ describe("resolveGoApiKey: which source the policy selects", () => {
     // The default policy is byte-for-byte the original precedence: what the
     // composition declares is what the user configured on purpose.
     process.env.OPENCODE_GO_API_KEY = "sk-env";
-    recordCapturedApiKey("sk-captured", "opencode-go", GO_REQUEST);
-    expect(await resolveGoApiKey(withLiteral())).toBe("sk-literal");
+    const context = seed(
+      withLiteral(),
+      "sk-captured",
+      "opencode-go",
+      GO_REQUEST
+    );
+    expect(await resolveGoApiKey(context)).toBe("sk-literal");
   });
 
   it("request: a captured key is promoted above both declared sources", async () => {
     // The whole point of the policy — a rotated live key beats a pinned one.
     process.env.OPENCODE_GO_API_KEY = "sk-env";
-    recordCapturedApiKey("sk-captured", "opencode-go", GO_REQUEST);
-    expect(await resolveGoApiKey(withLiteral(), undefined, "request")).toBe(
+    const context = seed(
+      withLiteral(),
+      "sk-captured",
+      "opencode-go",
+      GO_REQUEST
+    );
+    expect(await resolveGoApiKey(context, undefined, "request")).toBe(
       "sk-captured"
     );
   });
@@ -113,17 +127,23 @@ describe("resolveGoApiKey: which source the policy selects", () => {
     // The opposite choice, for a pinned or CI deployment: the declared
     // credential is the contract, whatever the last request happened to carry.
     process.env.OPENCODE_GO_API_KEY = "sk-env";
-    recordCapturedApiKey("sk-captured", "opencode-go", GO_REQUEST);
-    expect(await resolveGoApiKey(withLiteral(), undefined, "configured")).toBe(
+    const literal = seed(
+      withLiteral(),
+      "sk-captured",
+      "opencode-go",
+      GO_REQUEST
+    );
+    expect(await resolveGoApiKey(literal, undefined, "configured")).toBe(
       "sk-literal"
     );
-    expect(await resolveGoApiKey(bare(), undefined, "configured")).toBe(
+    const context = seed(bare(), "sk-captured", "opencode-go", GO_REQUEST);
+    expect(await resolveGoApiKey(context, undefined, "configured")).toBe(
       "sk-env"
     );
-    expect(await resolveGoApiKey(bare(), undefined, "auto")).toBe(
+    expect(await resolveGoApiKey(context, undefined, "auto")).toBe(
       "sk-captured"
     );
-    expect(await resolveGoApiKey(bare(), undefined, "request")).toBe(
+    expect(await resolveGoApiKey(context, undefined, "request")).toBe(
       "sk-captured"
     );
   });
@@ -131,9 +151,9 @@ describe("resolveGoApiKey: which source the policy selects", () => {
   it("every policy falls back to a key captured under a route it no longer names", async () => {
     // A user who renames their Go route would otherwise lose the only working
     // key they have: the tier lookup must find it by account, not by route id.
-    recordCapturedApiKey("sk-rotated", "my-relay", GO_REQUEST);
+    const context = seed(bare(), "sk-rotated", "my-relay", GO_REQUEST);
     for (const policy of KEY_SOURCE_POLICIES) {
-      expect(await resolveGoApiKey(bare(), "opencode-go", policy)).toBe(
+      expect(await resolveGoApiKey(context, "opencode-go", policy)).toBe(
         "sk-rotated"
       );
     }
@@ -162,8 +182,8 @@ describe("resolveGoApiKey: which source the policy selects", () => {
     // not.
     delete process.env.OPENCODE_GO_API_KEY;
     delete process.env.OPENCODE_API_KEY;
-    recordCapturedApiKey("oc_sk_zen", "opencode", ZEN_REQUEST);
-    expect(await resolveGoApiKey(bare(), "opencode-go", "configured")).toBe(
+    const zen = seed(bare(), "oc_sk_zen", "opencode", ZEN_REQUEST);
+    expect(await resolveGoApiKey(zen, "opencode-go", "configured")).toBe(
       undefined
     );
   });
@@ -338,19 +358,28 @@ describe("resolveZenCreditInfo", () => {
   it("accepts a captured Zen key as configured credit", async () => {
     // The captured Zen key is the rotation-proof answer, and it is checked
     // before any host lookup so a live turn settles the question immediately.
-    recordCapturedApiKey("oc_sk_captured", "opencode", ZEN_REQUEST);
-    const captured = await resolveZenCreditInfo(composition());
+    const context = seed(
+      composition(),
+      "oc_sk_captured",
+      "opencode",
+      ZEN_REQUEST
+    );
+    // With nothing in the environment, so the capture really did answer.
+    const captured = await resolveZenCreditInfo(context);
     expect(captured.isConfigured).toBe(true);
-    // Even with nothing in the environment, so the capture really did answer.
+    // The store is the composition's: another root learned nothing, and
+    // neither did a context that is none at all.
+    const other = await resolveZenCreditInfo(composition());
+    expect(other.isConfigured).toBe(false);
     const noContext = await resolveZenCreditInfo(null);
-    expect(noContext.isConfigured).toBe(true);
+    expect(noContext.isConfigured).toBe(false);
   });
 
   it("does not count a Go key as Zen credit", async () => {
     // Go credit cannot overflow into Zen: the overflow card is only drawn when
     // the Zen plane is the one that would be charged.
-    recordCapturedApiKey("sk-go", "opencode-go", GO_REQUEST);
-    const goOnly = await resolveZenCreditInfo(composition());
+    const context = seed(composition(), "sk-go", "opencode-go", GO_REQUEST);
+    const goOnly = await resolveZenCreditInfo(context);
     expect(goOnly.isConfigured).toBe(false);
   });
 
@@ -377,14 +406,37 @@ describe("resolveZenCreditInfo", () => {
     const blank = await resolveZenCreditInfo(probe.context);
     expect(blank.isConfigured).toBe(false);
   });
+
+  it("a placeholder or a blank is no Zen credit, from the environment or the credentials service (P6)", async () => {
+    // The one filter applies at this decider's exit too: a placeholder Zen
+    // key would otherwise draw the overflow card for a key that is none.
+    for (const value of ["unused", "none", "   "]) {
+      process.env.OPENCODE_API_KEY = value;
+      // oxlint-disable-next-line no-await-in-loop -- one value at a time.
+      const exported = await resolveZenCreditInfo(composition());
+      expect(exported.isConfigured, JSON.stringify(value)).toBe(false);
+      delete process.env.OPENCODE_API_KEY;
+      // oxlint-disable-next-line no-await-in-loop -- one value at a time.
+      const served = await resolveZenCreditInfo(
+        withCredentials({ OPENCODE_API_KEY: value }).context
+      );
+      expect(served.isConfigured, JSON.stringify(value)).toBe(false);
+    }
+    // A placeholder the service answers falls through to the environment.
+    process.env.OPENCODE_API_KEY = "oc_sk_env";
+    const fallsThrough = await resolveZenCreditInfo(
+      withCredentials({ OPENCODE_API_KEY: "unused" }).context
+    );
+    expect(fallsThrough.isConfigured).toBe(true);
+  });
 });
 
 describe("gaps characterised while pinning the policy", () => {
   it("never lets a placeholder become the credential the meter sends", async () => {
     // This repo's README tells users to write exactly `authorization: Bearer
     // unused` on a keyless route, and `readProviderRow` used to copy that header
-    // into `literalKey` with none of the placeholder check
-    // `recordCapturedApiKey` applies. Because `literal` is the first step of
+    // into `literalKey` with none of the placeholder check the capture store
+    // applies. Because `literal` is the first step of
     // both `auto` and `configured`, the sentinel outranked a working stored
     // credential AND a working captured key, so the meter authenticated as
     // `Bearer unused` on every poll and the 401 read like a missing
@@ -396,7 +448,7 @@ describe("gaps characterised while pinning the policy", () => {
       }),
     ]);
     process.env.OPENCODE_GO_API_KEY = "sk-real-env-key";
-    recordCapturedApiKey("sk-real-captured", "opencode-go", GO_REQUEST);
+    seed(context, "sk-real-captured", "opencode-go", GO_REQUEST);
 
     expect(isPlaceholderApiKey("unused")).toBe(true);
     // The sentinel is not a credential at any point of discovery…
@@ -429,9 +481,8 @@ describe("gaps characterised while pinning the policy", () => {
     expect(isPlaceholderApiKey("PUBLIC")).toBe(true);
 
     // Never captured from a live request, however it arrives.
-    clearCapturedApiKeys();
-    recordCapturedApiKey("public", "opencode-go", GO_REQUEST);
-    expect(getCapturedApiKey("opencode-go")).toBeUndefined();
+    const captured = seed(composition(), "public", "opencode-go", GO_REQUEST);
+    expect(captureStoreFor(captured).get("opencode-go")).toBeUndefined();
 
     // And never used as a declared env credential, so a free turn goes out
     // keyless rather than carrying the sentinel.
@@ -456,41 +507,65 @@ describe("gaps characterised while pinning the policy", () => {
     // `request`. Reachable whenever a request left the Go route carrying a Zen
     // key (a `OPENCODE_GO_API_KEY` mislabelled to the Zen secret, say).
     //
-    // Fixed in `getCapturedApiKey`: the route-scoped map now stores the tier
+    // Fixed in the capture store's `get`: the route-scoped map now stores the tier
     // alongside the key and applies the same rule as the other two lookups.
     // Naming a route is a PREFERENCE, not a licence to ignore the tier.
     // Under any other route id it was always filtered correctly:
-    clearCapturedApiKeys();
-    recordCapturedApiKey("oc_sk_zen", "my-relay", ZEN_REQUEST);
+    const relay = seed(composition(), "oc_sk_zen", "my-relay", ZEN_REQUEST);
     expect(
-      await resolveGoApiKey(composition(), "opencode-go", "request")
+      await resolveGoApiKey(relay, "opencode-go", "request")
     ).toBeUndefined();
     expect(
-      await resolveGoKeyForRef(composition(), DEFAULT_USAGE_KEY_ENV)
+      await resolveGoKeyForRef(relay, DEFAULT_USAGE_KEY_ENV)
     ).toBeUndefined();
 
     // Filed under the Go route id it is now filtered identically, so no policy
     // can surface it.
-    clearCapturedApiKeys();
-    recordCapturedApiKey("oc_sk_zen", "opencode-go", ZEN_REQUEST);
+    const misfiled = seed(
+      composition(),
+      "oc_sk_zen",
+      "opencode-go",
+      ZEN_REQUEST
+    );
     for (const policy of KEY_SOURCE_POLICIES) {
       expect(
-        await resolveGoApiKey(composition(), "opencode-go", policy),
+        await resolveGoApiKey(misfiled, "opencode-go", policy),
         `policy ${policy} sent a Zen key to the Go endpoint`
       ).toBeUndefined();
     }
 
     // And a correctly-classified key filed under the same route id still
     // answers — the filter rejects the wrong tier, not the right one.
-    clearCapturedApiKeys();
-    recordCapturedApiKey("sk-go-key", "opencode-go", GO_REQUEST);
-    expect(await resolveGoApiKey(composition(), "opencode-go", "auto")).toBe(
+    const filed = seed(composition(), "sk-go-key", "opencode-go", GO_REQUEST);
+    expect(await resolveGoApiKey(filed, "opencode-go", "auto")).toBe(
       "sk-go-key"
     );
   });
 
+  it("OC3 — the meter never answers a key a route sent to a URL on neither plane", async () => {
+    // A relay's key went to a third party, not to the gateway, so neither the
+    // route-scoped nor the any-route captured step may hand it to Go's
+    // `/usage`, under any policy.
+    const relay = seed(
+      composition(),
+      "sk-relay",
+      "my-relay",
+      "https://relay.example/v1/chat/completions"
+    );
+    for (const policy of KEY_SOURCE_POLICIES) {
+      expect(
+        await resolveGoApiKey(relay, "my-relay", policy),
+        `policy ${policy} sent a relay key to the Go endpoint`
+      ).toBeUndefined();
+      expect(await resolveGoApiKey(relay, undefined, policy)).toBeUndefined();
+    }
+    // The known answer: the same key sent to the Go plane is the meter's.
+    const go = seed(composition(), "sk-relay", "my-relay", GO_REQUEST);
+    expect(await resolveGoApiKey(go, undefined, "auto")).toBe("sk-relay");
+  });
+
   it("never sends a whitespace-only credential to the Go endpoint", async () => {
-    // CHARACTERISED, NOT ENDORSED. `readProviderRow` and `firstResolved` both
+    // CHARACTERISED, NOT ENDORSED. `readProviderRow` and the meter's step loop both
     // ask only whether a value is a non-empty *string*, so a row carrying
     // `apiKey: "   "` — what a YAML value with trailing whitespace parses to —
     // declares a credential that is whitespace. It is the first step of `auto`
@@ -502,7 +577,7 @@ describe("gaps characterised while pinning the policy", () => {
       registryEntry("opencode-go", { apiKey: "   " }),
     ]);
     process.env.OPENCODE_GO_API_KEY = "sk-real-env-key";
-    recordCapturedApiKey("sk-real-captured", "opencode-go", GO_REQUEST);
+    seed(context, "sk-real-captured", "opencode-go", GO_REQUEST);
 
     // Same guard as the placeholder above: a blanked-but-indented secret must
     // not reach the wire under ANY policy, not only the ones that happen to

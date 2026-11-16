@@ -10,7 +10,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   OPENCODE_UA,
   SESSION_HEADER,
-  clearCapturedApiKeys,
   getLiveGoCatalog,
   isOpenCodeSessionId,
   openCodeSessionIdFor,
@@ -26,7 +25,6 @@ afterEach(() => {
   delete process.env.OPENCODE_GO_API_KEY;
   delete process.env.OPENCODE_SESSION_ID;
   delete process.env.XDG_DATA_HOME;
-  clearCapturedApiKeys();
 });
 
 describe("patchFetch · observability", () => {

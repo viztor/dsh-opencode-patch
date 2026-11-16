@@ -128,8 +128,7 @@ export const createStreamHook = (
    * this activation's own or a later one wrapping it (L1): the predicate its
    * installer returns, read per decorated turn. A turn decorated after
    * something replaced it carries the session and gateway headers only if the
-   * replacement calls through, so the hook says so, once. A disposed patch
-   * that P6's stale restore put back reads as a replacement too.
+   * replacement calls through, so the hook says so, once.
    */
   fetchInPlace: () => boolean = () => true
 ): StreamHandler => {

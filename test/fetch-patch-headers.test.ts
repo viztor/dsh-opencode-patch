@@ -14,7 +14,6 @@ import {
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
   SESSION_ID_HEADER,
-  clearCapturedApiKeys,
   hasSessionHeader,
   isOpenCodeSessionId,
   openCodeSessionIdFor,
@@ -38,7 +37,6 @@ afterEach(() => {
   delete process.env.OPENCODE_GO_API_KEY;
   delete process.env.OPENCODE_SESSION_ID;
   delete process.env.XDG_DATA_HOME;
-  clearCapturedApiKeys();
 });
 
 describe("patchFetch · headers", () => {

@@ -56,7 +56,6 @@ import {
 } from "./support/host.ts";
 import {
   apply,
-  clearCapturedApiKeys,
   Config,
   inject,
   LEGACY_NAME,
@@ -77,7 +76,6 @@ afterEach(async () => {
   } finally {
     tierA = undefined;
     tierB = undefined;
-    clearCapturedApiKeys();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   }

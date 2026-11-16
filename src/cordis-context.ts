@@ -51,6 +51,11 @@ export interface CordisContext {
   get?: (name: string) => unknown;
   inject?: (deps: string[], cb: (scope: unknown) => void) => void;
   /**
+   * Run an event's listeners in turn, each handing the value to the next;
+   * how pi-ai's own adapter runs `llm-pi-ai/request-headers`.
+   */
+  waterfall?: (name: string, ...args: unknown[]) => unknown;
+  /**
    * The ROOT context of this composition.
    *
    * Cordis exposes it on every context (`typert-protocol` reads `ctx.root` to

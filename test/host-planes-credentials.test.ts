@@ -31,12 +31,7 @@ import {
   createOpencodeStore,
   type FixtureStore,
 } from "./support/opencode-store-fixture.ts";
-import {
-  clearCapturedApiKeys,
-  getCapturedApiKey,
-  recordCapturedApiKey,
-  resolveGoApiKey,
-} from "./support/src.ts";
+import { captureStoreFor, resolveGoApiKey } from "./support/src.ts";
 
 let tierA: TierA | undefined;
 
@@ -50,7 +45,6 @@ afterEach(async () => {
   } finally {
     tierA = undefined;
     tierB = undefined;
-    clearCapturedApiKeys();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   }
@@ -150,7 +144,9 @@ describe("host planes · credentials (tier A, D20)", { timeout: 30_000 }, () => 
       "deepseek-v4-pro"
     );
     expect(requests[0]?.url).toContain("/inference/go/");
-    expect(getCapturedApiKey("opencode-go", "go")).toBe(refs.OPENCODE_API_KEY);
+    expect(captureStoreFor(tierA.ctx).get("opencode-go", "go")).toBe(
+      refs.OPENCODE_API_KEY
+    );
     expect(await resolveGoApiKey(tierA.ctx, "opencode-go")).toBe(
       refs.OPENCODE_API_KEY
     );
@@ -289,10 +285,14 @@ describe("host planes · credentials (tier A, D20)", { timeout: 30_000 }, () => 
   });
 
   it("a captured key never answers for a named ref that resolves nothing", async () => {
-    recordCapturedApiKey("opencode", "cap");
     const tier = await mountWith(fakeCredentials(), {
       apiKeyEnv: "OPENCODE_API_KEY",
     });
+    captureStoreFor(tier.ctx).record(
+      "cap",
+      "opencode",
+      "https://opencode.ai/zen/v1/chat/completions"
+    );
     const { drained, requests } = await turn(
       tier.llm,
       "opencode",

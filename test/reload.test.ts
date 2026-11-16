@@ -565,8 +565,9 @@ describe("reload · through apply()", { timeout: 15_000 }, () => {
   });
 
   it("apply() twice, the first disposed first: every host method the plugin patched is restored exactly", async () => {
-    // The global fetch is patched too, and stacks the same way; it is not a host
-    // service method and is not asserted here (P6 owns it).
+    // The global fetch is patched too, but not through `patchMethod`: it is not
+    // a host service method, and its installer (`src/host/global-fetch.ts`)
+    // unwinds in any order; `test/global-fetch.test.ts` holds that.
     vi.stubGlobal("fetch", vi.fn());
     vi.spyOn(console, "info").mockImplementation(() => {
       // Silenced: the activation line.

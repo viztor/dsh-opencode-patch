@@ -256,6 +256,38 @@ describe("route-claim · Settings' fetch follows the claim's engagement", () => 
     expect(answered).not.toStrictEqual(mergeDiscoveredModels(pis, "zen"));
   });
 
+  it("builds the plane adapter with pi-ai's prepareHeaders, which writes the seam's call headers (OC4, OC5)", async () => {
+    useTestModules();
+    let held: Record<string, unknown> = { deepseek: {}, opencode: zen };
+    const pi = newPiFiber();
+    Object.defineProperty(pi, "effectiveConfig", {
+      get: () => ({ providers: { get: () => held } }),
+    });
+    const host = standIn({ fibers: () => [pi] });
+    pi.restart = vi.fn(async () => {
+      const resolved = host.waterfall(pi, () => pi.rawConfig) as {
+        providers: Record<string, unknown>;
+      };
+      held = resolved.providers;
+    });
+    const callHeaders = vi.fn((headers: Headers) => {
+      headers.set("x-opencode-session", "ses_from_the_seam");
+    });
+    const claim = installRouteClaim(host.ctx, config, { callHeaders });
+    await claim.mounted;
+    await flush();
+    const adapter = host.llm.registerAdapter.mock.calls[0]?.[1] as {
+      config: {
+        prepareHeaders?: (request: unknown, headers: Headers) => Headers;
+      };
+    };
+    expect(typeof adapter.config.prepareHeaders).toBe("function");
+    const headers = new Headers();
+    expect(adapter.config.prepareHeaders?.({}, headers)).toBe(headers);
+    expect(callHeaders).toHaveBeenCalledWith(headers);
+    expect(headers.get("x-opencode-session")).toBe("ses_from_the_seam");
+  });
+
   it("a handover's window: while the newly served new-core row's restart is in flight, claiming() stays true and Settings' fetch is complemented before it unloads and the plane's catalog alone while it does, as in the mount's restart", async () => {
     useTestModules();
     // The served row resolved without its plane (the listener was in place).

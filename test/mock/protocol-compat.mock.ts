@@ -34,7 +34,6 @@ import {
 import {
   OPENCODE_UA,
   SESSION_HEADER,
-  clearCapturedApiKeys,
   OPENCODE_FAMILY_API,
   planeModelFor,
   resolveConfig,
@@ -77,7 +76,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   gateway.requests.length = 0;
-  clearCapturedApiKeys();
 });
 
 afterEach(() => {

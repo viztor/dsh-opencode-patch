@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { freeZenModel } from "./support/catalogs.ts";
 import {
-  clearCapturedApiKeys,
   clearSessionUsageStore,
   findModelSpecOn,
   GO_MODEL_LIMITS,
@@ -46,7 +45,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
   clearSessionUsageStore();
 });
 

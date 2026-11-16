@@ -19,10 +19,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { freeZenModel, payload, shimFor } from "./support/catalogs.ts";
 import { createOpencodeStore } from "./support/opencode-store-fixture.ts";
 import {
-  clearCapturedApiKeys,
+  type CaptureStore,
+  createCaptureStore,
+  createCredentials,
+  type FetchPatchHooks,
   findModelSpecOn,
-  getCapturedApiKey,
-  recordCapturedApiKey,
+  OPENCODE_UA,
+  openCodeSessionIdFor,
   patchFetch,
   refreshCatalog,
   resolveConfig,
@@ -41,8 +44,27 @@ afterEach(() => {
   delete process.env.OPENCODE_GO_API_KEY;
   delete process.env.OPENCODE_SESSION_ID;
   delete process.env.XDG_DATA_HOME;
-  clearCapturedApiKeys();
 });
+
+/**
+ * A capture store of the case's own, and the hooks that hand the patch a
+ * resolver over it, so a case can seed and read what the patch learned.
+ */
+const storeFor = (
+  config: ReturnType<typeof resolveConfig> = resolveConfig()
+): { readonly store: CaptureStore; readonly hooks: FetchPatchHooks } => {
+  const store = createCaptureStore();
+  return {
+    hooks: {
+      credentials: createCredentials({
+        keySource: config.keySource,
+        readOpencodeStore: config.readOpencodeStore,
+        store,
+      }),
+    },
+    store,
+  };
+};
 
 describe("patchFetch · another plugin's request (D27)", () => {
   /**
@@ -68,7 +90,8 @@ describe("patchFetch · another plugin's request (D27)", () => {
         seen.push(args);
         return Response.json({ ok: true });
       }) as unknown as typeof fetch;
-      const patched = patchFetch(original, als, resolveConfig(), {});
+      const { hooks, store } = storeFor();
+      const patched = patchFetch(original, als, resolveConfig(), hooks);
       const init: RequestInit = {
         body: JSON.stringify({ messages: [], model: "deepseek-v4-pro" }),
         headers: { authorization: "Bearer realm-token", [header]: "x/1" },
@@ -80,8 +103,8 @@ describe("patchFetch · another plugin's request (D27)", () => {
       expect(seen[0]?.[0]).toBe(url);
       expect(seen[0]?.[1]).toBe(init);
       expect(new Headers(init.headers).has(SESSION_HEADER)).toBe(false);
-      expect(getCapturedApiKey("opencode-go")).toBeUndefined();
-      expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+      expect(store.get("opencode-go")).toBeUndefined();
+      expect(store.get(undefined, "go")).toBeUndefined();
     }
   );
 
@@ -93,7 +116,8 @@ describe("patchFetch · another plugin's request (D27)", () => {
       seen.push(args);
       return Response.json({ ok: true });
     }) as unknown as typeof fetch;
-    const patched = patchFetch(original, als, resolveConfig(), {});
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(original, als, resolveConfig(), hooks);
     const url = "https://opencode.ai/zen/go/v1/chat/completions";
     const init: RequestInit = {
       body: JSON.stringify({ messages: [], model: "deepseek-v4-pro" }),
@@ -104,15 +128,16 @@ describe("patchFetch · another plugin's request (D27)", () => {
     await als.run(foreign as ActiveTurnState, () => patched(url, init));
     expect(seen[0]?.[0]).toBe(url);
     expect(seen[0]?.[1]).toBe(init);
-    expect(getCapturedApiKey("opencode-go")).toBeUndefined();
-    expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+    expect(store.get("opencode-go")).toBeUndefined();
+    expect(store.get(undefined, "go")).toBeUndefined();
     // Outside the foreign turn the gateway URL is claimed: headers are
-    // written and the key is captured.
+    // written. The key is not captured: no turn of the plugin's sent it
+    // (OC3).
     await patched(url, init);
     const sent = seen[1]?.[1] as RequestInit | undefined;
     expect(sent).not.toBe(init);
     expect(new Headers(sent?.headers).get(SESSION_HEADER)).toBeTruthy();
-    expect(getCapturedApiKey(undefined, "go")).toBe("realm-token");
+    expect(store.get(undefined, "go")).toBeUndefined();
   });
 
   it("passes a marked Request through as the same object, and still patches the unmarked one (the known answer)", async () => {
@@ -122,7 +147,8 @@ describe("patchFetch · another plugin's request (D27)", () => {
       seen.push(args);
       return Response.json({ ok: true });
     }) as unknown as typeof fetch;
-    const patched = patchFetch(original, als, resolveConfig(), {});
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(original, als, resolveConfig(), hooks);
     const url = "https://opencode.ai/zen/go/v1/chat/completions";
     const marked = new Request(url, {
       body: "{}",
@@ -135,7 +161,7 @@ describe("patchFetch · another plugin's request (D27)", () => {
     await als.run(turn, () => patched(marked));
     expect(seen[0]?.[0]).toBe(marked);
     expect(seen[0]?.[1]).toBeUndefined();
-    expect(getCapturedApiKey(undefined, "go")).toBeUndefined();
+    expect(store.get(undefined, "go")).toBeUndefined();
     const plain = new Request(url, {
       body: "{}",
       headers: { authorization: "Bearer user-go-key" },
@@ -144,7 +170,7 @@ describe("patchFetch · another plugin's request (D27)", () => {
     await als.run(turn, () => patched(plain));
     const sent = seen[1]?.[1] as RequestInit | undefined;
     expect(new Headers(sent?.headers).get(SESSION_HEADER)).toBeTruthy();
-    expect(getCapturedApiKey(undefined, "go")).toBe("user-go-key");
+    expect(store.get(undefined, "go")).toBe("user-go-key");
   });
 });
 
@@ -413,15 +439,16 @@ describe("patchFetch · credentials", () => {
     // not look at the model (it reads the request's key, then the captured
     // one, then the declared one), so the id below is a neutral uncatalogued
     // one: the subject is the placeholder, not the tier. A placeholder is never
-    // forwarded (P6 owns the fill).
+    // forwarded (the fill's one filter, `usableKey`, in `credentials.ts`).
     //
     // A key captured from the user's own plane route, on the endpoint family the
     // catalog now names.
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const { capture, mockFetch } = createCaptureFetch();
-    const patched = patchFetch(mockFetch, als, resolveConfig());
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(mockFetch, als, resolveConfig(), hooks);
 
-    recordCapturedApiKey("oc_sk_zen_key", "opencode");
+    store.record("oc_sk_zen_key", "opencode");
     // Read through `Headers`, because the patch hands the adapter a `Headers`
     // instance rather than the plain object it was given.
     const auth = (init?: RequestInit): string | null =>
@@ -446,9 +473,10 @@ describe("patchFetch · credentials", () => {
   it("captures API key from request headers on intercepted OpenCode requests", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const { mockFetch } = createCaptureFetch();
-    const patched = patchFetch(mockFetch, als, resolveConfig());
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(mockFetch, als, resolveConfig(), hooks);
 
-    expect(getCapturedApiKey("opencode-go")).toBeUndefined();
+    expect(store.get("opencode-go")).toBeUndefined();
 
     await als.run(
       { provider: "opencode-go", value: "ses_header_key" },
@@ -463,26 +491,25 @@ describe("patchFetch · credentials", () => {
       }
     );
 
-    expect(getCapturedApiKey("opencode-go")).toBe("sk-intercepted-go-key-xyz");
-    expect(getCapturedApiKey(undefined, "go")).toBe(
-      "sk-intercepted-go-key-xyz"
-    );
+    expect(store.get("opencode-go")).toBe("sk-intercepted-go-key-xyz");
+    expect(store.get(undefined, "go")).toBe("sk-intercepted-go-key-xyz");
   });
 
   it("picks the captured key for the request's TIER, not the most recent one", async () => {
     const als = new AsyncLocalStorage<ActiveTurnState>();
     const { capture, mockFetch } = createCaptureFetch();
-    const patched = patchFetch(mockFetch, als, resolveConfig());
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(mockFetch, als, resolveConfig(), hooks);
 
     // A Go key captured first…
-    recordCapturedApiKey(
+    store.record(
       "sk-go-key-aaa",
       "opencode-go",
       "https://opencode.ai/zen/go/v1/chat/completions"
     );
     // …then a Zen key, so "most recently seen" is now the WRONG tier for a Go
     // call. A Zen key sent to the Go quota endpoint is rejected outright.
-    recordCapturedApiKey(
+    store.record(
       "oc_sk_zen_key_bbb",
       "opencode",
       "https://opencode.ai/zen/v1/messages"
@@ -530,16 +557,19 @@ describe("patchFetch · credentials", () => {
     ]);
     process.env.XDG_DATA_HOME = store.root;
     const als = new AsyncLocalStorage<ActiveTurnState>();
+    const captured = createCaptureStore();
     const call = async (
       config: ReturnType<typeof resolveConfig>,
       url: string
     ): Promise<string | null> => {
       const { capture, mockFetch } = createCaptureFetch();
-      await patchFetch(
-        mockFetch,
-        als,
-        config
-      )(url, {
+      await patchFetch(mockFetch, als, config, {
+        credentials: createCredentials({
+          keySource: config.keySource,
+          readOpencodeStore: config.readOpencodeStore,
+          store: captured,
+        }),
+      })(url, {
         headers: { Authorization: "Bearer unused" },
         method: "POST",
       });
@@ -570,7 +600,7 @@ describe("patchFetch · credentials", () => {
       );
       delete process.env.OPENCODE_API_KEY;
 
-      recordCapturedApiKey("oc_sk_captured", "opencode", zen);
+      captured.record("oc_sk_captured", "opencode", zen);
       expect(await call(resolveConfig({ readOpencodeStore: true }), zen)).toBe(
         "Bearer oc_sk_captured"
       );
@@ -587,7 +617,8 @@ describe("patchFetch · credentials", () => {
   const reportFor = async (
     config: ReturnType<typeof resolveConfig>,
     url: string,
-    init: RequestInit
+    init: RequestInit,
+    store: CaptureStore = createCaptureStore()
   ): Promise<{ authorization: string | null; line: string | undefined }> => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { capture, mockFetch } = createCaptureFetch();
@@ -596,7 +627,14 @@ describe("patchFetch · credentials", () => {
       await patchFetch(
         mockFetch,
         new AsyncLocalStorage<ActiveTurnState>(),
-        config
+        config,
+        {
+          credentials: createCredentials({
+            keySource: config.keySource,
+            readOpencodeStore: config.readOpencodeStore,
+            store,
+          }),
+        }
       )(url, init);
       lines = warn.mock.calls.map((args) => args.map(String).join(" "));
     } finally {
@@ -633,11 +671,13 @@ describe("patchFetch · credentials", () => {
 
   it("under the configured policy a captured key never fills the wire, and the report says so", async () => {
     const url = "https://opencode.ai/zen/v1/responses";
-    recordCapturedApiKey("sk-captured", "opencode", url);
+    const store = createCaptureStore();
+    store.record("sk-captured", "opencode", url);
     const { authorization, line } = await reportFor(
       resolveConfig({ keySource: "configured" }),
       url,
-      { body: JSON.stringify({ model: paidZenModel() }), method: "POST" }
+      { body: JSON.stringify({ model: paidZenModel() }), method: "POST" },
+      store
     );
     expect(authorization).toBeNull();
     expect(line).toContain(
@@ -680,5 +720,431 @@ describe("patchFetch · credentials", () => {
     } finally {
       rmSync(empty, { force: true, recursive: true });
     }
+  });
+});
+
+describe("patchFetch · whose key, and for how long (P6)", () => {
+  const GO = "https://opencode.ai/zen/go/v1/chat/completions";
+  const ZEN = "https://opencode.ai/zen/v1/chat/completions";
+  /** A decorated Go turn, with a session id the gateway accepts. */
+  const goTurn = {
+    provider: "opencode-go",
+    value: openCodeSessionIdFor("p6-go"),
+  };
+  const zenTurn = {
+    provider: "opencode",
+    value: openCodeSessionIdFor("p6-zen"),
+  };
+
+  /**
+   * A wrapped fetch that records the credential each request carried and
+   * answers the next status of `statuses` (200 once they run out).
+   */
+  const gateway = (statuses: number[] = []) => {
+    const auth: (string | null)[] = [];
+    const seen: Headers[] = [];
+    const original = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      seen.push(headers);
+      auth.push(headers.get("authorization") ?? headers.get("x-api-key"));
+      return Response.json({}, { status: statuses.shift() ?? 200 });
+    }) as unknown as typeof fetch;
+    return { auth, original, seen };
+  };
+
+  const send = (
+    patched: typeof fetch,
+    url: string,
+    bearer?: string
+  ): Promise<Response> =>
+    patched(url, {
+      body: JSON.stringify({ model: "p6-model" }),
+      headers:
+        bearer === undefined ? {} : { authorization: `Bearer ${bearer}` },
+      method: "POST",
+    });
+
+  it("OC3 — a key on a claimed request outside any turn of the plugin's is never recorded", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const wire = gateway();
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(wire.original, als, resolveConfig(), hooks);
+    // Turnless: the URL claim still writes the session header.
+    await send(patched, GO, "realm-token");
+    expect(wire.seen[0]?.get(SESSION_HEADER)).toBeTruthy();
+    // …but the key it carried is nobody's to keep, or to replay.
+    expect(store.get(undefined, "go")).toBeUndefined();
+    expect(store.get("opencode-go")).toBeUndefined();
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(wire.auth[1]).toBe("Bearer unused");
+    // The known answer: the same key inside a decorated turn is recorded.
+    await als.run(goTurn, () => send(patched, GO, "turn-token"));
+    expect(store.get("opencode-go", "go")).toBe("turn-token");
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(wire.auth[3]).toBe("Bearer turn-token");
+  });
+
+  it("OC3 — a key captured on a plane never fills a provider-claimed request to a URL on neither plane", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const wire = gateway();
+    const patched = patchFetch(
+      wire.original,
+      als,
+      resolveConfig({ providers: ["my-relay"] })
+    );
+    const relay = { provider: "my-relay", value: openCodeSessionIdFor("r") };
+    const relayUrl = "https://relay.example/v1/chat/completions";
+    await als.run(goTurn, () => send(patched, GO, "go-key"));
+    await als.run(relay, () => send(patched, relayUrl, "unused"));
+    expect(wire.auth[1]).toBe("Bearer unused");
+    // The known answer: a key the relay route itself sent there fills it.
+    await als.run(relay, () => send(patched, relayUrl, "relay-key"));
+    await als.run(relay, () => send(patched, relayUrl, "unused"));
+    expect(wire.auth[3]).toBe("Bearer relay-key");
+  });
+
+  it("OC3 / L8 — a relay route's key never fills a plane request, not even once the plane's own key is dropped", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const statuses: number[] = [];
+    const wire = gateway(statuses);
+    const { hooks, store } = storeFor(
+      resolveConfig({ providers: ["my-relay"] })
+    );
+    const patched = patchFetch(
+      wire.original,
+      als,
+      resolveConfig({ providers: ["my-relay"] }),
+      hooks
+    );
+    const relay = { provider: "my-relay", value: openCodeSessionIdFor("r") };
+    const relayUrl = "https://relay.example/v1/chat/completions";
+    await als.run(goTurn, () => send(patched, GO, "go-key"));
+    await als.run(relay, () => send(patched, relayUrl, "relay-key"));
+    // The known answer: the plane's own key fills a placeholder there.
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(wire.auth.at(-1)).toBe("Bearer go-key");
+    // Two well-formed 401s drop it…
+    statuses.push(401, 401);
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    // …and the relay's key, the latest one seen, does not take its place.
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(wire.auth.at(-1)).toBe("Bearer unused");
+    await send(patched, GO, "unused");
+    expect(wire.auth.at(-1)).toBe("Bearer unused");
+    // It still fills its own route's request.
+    await als.run(relay, () => send(patched, relayUrl, "unused"));
+    expect(wire.auth.at(-1)).toBe("Bearer relay-key");
+    expect(store.forRoute("my-relay")).toBe("relay-key");
+  });
+
+  it("L8 — a captured key is dropped after a second well-formed 401 in a row, per plane, and not before", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const statuses: number[] = [];
+    const wire = gateway(statuses);
+    const patched = patchFetch(wire.original, als, resolveConfig());
+    const fill = async (turn: ActiveTurnState, url: string, status: number) => {
+      statuses.push(status);
+      await als.run(turn, () => send(patched, url, "unused"));
+      return wire.auth.at(-1);
+    };
+    await als.run(goTurn, () => send(patched, GO, "k"));
+    await als.run(zenTurn, () => send(patched, ZEN, "z"));
+    // One 401: the key stays.
+    expect(await fill(goTurn, GO, 401)).toBe("Bearer k");
+    // A 2xx clears the strike, so another single 401 still does not drop it.
+    expect(await fill(goTurn, GO, 200)).toBe("Bearer k");
+    expect(await fill(goTurn, GO, 401)).toBe("Bearer k");
+    // The second 401 in a row drops it.
+    expect(await fill(goTurn, GO, 401)).toBe("Bearer k");
+    expect(await fill(goTurn, GO, 200)).toBe("Bearer unused");
+    expect(
+      warn.mock.calls.some(([line]) =>
+        String(line).includes("no credential resolved for opencode-go")
+      )
+    ).toBe(true);
+    // Per plane: the Zen key captured beside it still fills a Zen request.
+    expect(await fill(zenTurn, ZEN, 200)).toBe("Bearer z");
+  });
+
+  /**
+   * A patch whose captured Go key `k` was dropped by two well-formed 401s on
+   * decorated turns, and a `fill` that sends a placeholder on a decorated Go
+   * turn and answers what reached the wire.
+   */
+  const droppedKey = async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const statuses: number[] = [];
+    const wire = gateway(statuses);
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(wire.original, als, resolveConfig(), hooks);
+    const sendIn = async (
+      turn: ActiveTurnState | undefined,
+      url: string,
+      bearer: string,
+      status: number
+    ) => {
+      statuses.push(status);
+      await (turn === undefined
+        ? send(patched, url, bearer)
+        : als.run(turn, () => send(patched, url, bearer)));
+      return wire.auth.at(-1);
+    };
+    await sendIn(goTurn, GO, "k", 200);
+    await sendIn(goTurn, GO, "unused", 401);
+    await sendIn(goTurn, GO, "unused", 401);
+    expect(await sendIn(goTurn, GO, "unused", 200)).toBe("Bearer unused");
+    return {
+      fill: () => sendIn(goTurn, GO, "unused", 200),
+      sendIn,
+      store,
+    };
+  };
+
+  it("L8 — a dropped key comes back only when a decorated turn's own request carrying it is accepted", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fill, sendIn } = await droppedKey();
+    // Refused: the drop stands, and the turn's observation does not file it.
+    await sendIn(goTurn, GO, "k", 401);
+    expect(await fill()).toBe("Bearer unused");
+    // Accepted: the answer files it again, from the settle and not the
+    // observation (which refuses a dropped key).
+    await sendIn(goTurn, GO, "k", 200);
+    expect(await fill()).toBe("Bearer k");
+  });
+
+  it("L8 / OC3 — a dropped key the fill supplied, accepted, stays dropped: the declared variable's rotation is what the next fill sends", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fill, store } = await droppedKey();
+    // The declared variable holds the dropped key: the fill sends it, and the
+    // gateway accepts it, but the request did not carry it as its own.
+    process.env.OPENCODE_GO_API_KEY = "k";
+    expect(await fill()).toBe("Bearer k");
+    expect(store.get(undefined, "go")).toBeUndefined();
+    // Rotated: had the acceptance filed k again, the captured step would
+    // outrank the declared one and send the stale key.
+    process.env.OPENCODE_GO_API_KEY = "k2";
+    expect(await fill()).toBe("Bearer k2");
+  });
+
+  it("L8 — a 401 on a malformed session id strikes nothing, while the same 401s on a well-formed one drop the key", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const statuses: number[] = [];
+    const wire = gateway(statuses);
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(wire.original, als, resolveConfig(), hooks);
+    // A turn whose session value the gateway reads as malformed; the patch
+    // sends it as it is.
+    const malformed = { provider: "opencode-go", value: "ses_x" };
+    await als.run(goTurn, () => send(patched, GO, "k"));
+    for (const _ of [1, 2, 3]) {
+      statuses.push(401);
+      // oxlint-disable-next-line no-await-in-loop -- the turns are sequential.
+      await als.run(malformed, () => send(patched, GO, "unused"));
+    }
+    expect(wire.seen.at(-1)?.get(SESSION_HEADER)).toBe("ses_x");
+    expect(wire.auth.at(-1)).toBe("Bearer k");
+    expect(store.get(undefined, "go")).toBe("k");
+    // The known answer: two 401s on a well-formed session drop it.
+    statuses.push(401, 401);
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(store.get(undefined, "go")).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it("OC3 — a turnless placeholder request on a plane URL is still filled with a key a decorated turn sent, and its own token is never kept", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const wire = gateway();
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(wire.original, als, resolveConfig(), hooks);
+    await als.run(goTurn, () => send(patched, GO, "k"));
+    // Turnless, with the placeholder: the plugin's own key fills it.
+    await send(patched, GO, "unused");
+    expect(wire.auth.at(-1)).toBe("Bearer k");
+    // Turnless, with a token of its own: sent as it is, never kept…
+    await send(patched, GO, "realm-token");
+    expect(wire.auth.at(-1)).toBe("Bearer realm-token");
+    expect(store.get(undefined, "go")).toBe("k");
+    // …and never used to fill the next one.
+    await send(patched, GO, "unused");
+    expect(wire.auth.at(-1)).toBe("Bearer k");
+  });
+
+  it("OC3 — a turnless accepted request carrying a dropped key does not lift the drop", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { fill, sendIn } = await droppedKey();
+    await sendIn(undefined, GO, "k", 200);
+    expect(await fill()).toBe("Bearer unused");
+    // Had the turnless answer lifted it, this refused decorated request would
+    // have filed it on the way out; it does not.
+    await sendIn(goTurn, GO, "k", 401);
+    expect(await fill()).toBe("Bearer unused");
+  });
+
+  it("OC3 / L8 — the meter's own /usage 401s drop nothing: a turnless refusal is no evidence about a turn's key", async () => {
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const statuses: number[] = [];
+    const wire = gateway(statuses);
+    const { hooks, store } = storeFor();
+    const patched = patchFetch(wire.original, als, resolveConfig(), hooks);
+    const usage = "https://opencode.ai/zen/go/v1/usage";
+    await als.run(goTurn, () => send(patched, GO, "k"));
+    expect(store.get("opencode-go", "go")).toBe("k");
+    for (const _ of [1, 2, 3]) {
+      statuses.push(401);
+      // oxlint-disable-next-line no-await-in-loop -- the polls are sequential.
+      await patched(usage, { headers: { authorization: "Bearer k" } });
+    }
+    // The poll was claimed (it carries the patch's session header)…
+    expect(wire.seen.at(-1)?.get(SESSION_HEADER)).toMatch(/^ses_/u);
+    // …and the key still fills a Go turn.
+    expect(store.get("opencode-go", "go")).toBe("k");
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(wire.auth.at(-1)).toBe("Bearer k");
+    // The known answer: two refusals on decorated turns do drop it.
+    statuses.push(401, 401);
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    await als.run(goTurn, () => send(patched, GO, "unused"));
+    expect(store.get("opencode-go", "go")).toBeUndefined();
+  });
+
+  it("a disposed link passes every request through untouched: no header, no fill, no capture", async () => {
+    process.env.OPENCODE_API_KEY = "declared-zen";
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const calls: { input: unknown; init: unknown }[] = [];
+    const original = (async (input: unknown, init?: unknown) => {
+      calls.push({ init, input });
+      return Response.json({});
+    }) as unknown as typeof fetch;
+    const store = createCaptureStore();
+    const credentials = createCredentials({
+      keySource: "auto",
+      readOpencodeStore: false,
+      store,
+    });
+    let live = false;
+    const patched = patchFetch(original, als, resolveConfig(), {
+      credentials,
+      live: () => live,
+    });
+    const init = {
+      body: JSON.stringify({ model: "p6-model" }),
+      headers: { authorization: "Bearer real-key" },
+      method: "POST",
+    };
+    const placeholder = {
+      ...init,
+      headers: { authorization: "Bearer unused" },
+    };
+    await als.run(goTurn, () => patched(ZEN, init));
+    await als.run(goTurn, () => patched(ZEN, placeholder));
+    expect(calls[0]?.input).toBe(ZEN);
+    expect(calls[0]?.init).toBe(init);
+    expect(calls[1]?.init).toBe(placeholder);
+    expect(store.get("opencode-go")).toBeUndefined();
+    expect(store.get(undefined, "zen")).toBeUndefined();
+    // The known answer: the same link, live, decorates and captures.
+    live = true;
+    await als.run(goTurn, () => patched(ZEN, init));
+    expect(calls[2]?.init).not.toBe(init);
+    const decorated = calls[2]?.init as RequestInit | undefined;
+    expect(new Headers(decorated?.headers).get(SESSION_HEADER)).toBe(
+      goTurn.value
+    );
+    expect(store.get(undefined, "zen")).toBe("real-key");
+  });
+
+  it("the placeholder filter applies to the installation's store: a stored `unused` fills nothing, and the report fires", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = createOpencodeStore([
+      { integrationId: "opencode-go", value: "unused" },
+    ]);
+    process.env.XDG_DATA_HOME = store.root;
+    try {
+      const wire = gateway();
+      await send(
+        patchFetch(
+          wire.original,
+          new AsyncLocalStorage<ActiveTurnState>(),
+          resolveConfig({ readOpencodeStore: true })
+        ),
+        GO
+      );
+      expect(wire.auth[0]).toBeNull();
+      expect(
+        warn.mock.calls.some(([line]) =>
+          String(line).includes("no credential resolved for opencode-go")
+        )
+      ).toBe(true);
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  it("a blank exported key is no key: nothing fills the wire, and the report fires", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.OPENCODE_API_KEY = "   ";
+    const wire = gateway();
+    await send(
+      patchFetch(
+        wire.original,
+        new AsyncLocalStorage<ActiveTurnState>(),
+        resolveConfig()
+      ),
+      ZEN
+    );
+    expect(wire.auth[0]).toBeNull();
+    expect(
+      warn.mock.calls.some(([line]) =>
+        String(line).includes("no credential resolved for opencode;")
+      )
+    ).toBe(true);
+  });
+
+  it("OC5 — on a per-call-shaped turn the patch writes no plane header, still fills the key and the User-Agent, and still replaces a malformed session id", async () => {
+    process.env.OPENCODE_API_KEY = "declared-zen";
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    const wire = gateway();
+    const patched = patchFetch(wire.original, als, resolveConfig());
+    const ses = openCodeSessionIdFor("p6-percall");
+    const theirs = openCodeSessionIdFor("someone-else");
+    const shaped = {
+      perCall: true,
+      project: "p",
+      provider: "opencode",
+      value: ses,
+    } as ActiveTurnState;
+    const request = (session: string) =>
+      patched(ZEN, {
+        body: "{}",
+        headers: {
+          authorization: "Bearer unused",
+          "x-opencode-project": "theirs",
+          "x-opencode-session": session,
+        },
+        method: "POST",
+      });
+    await als.run(shaped, () => request(theirs));
+    const [kept] = wire.seen;
+    expect(kept?.get(SESSION_HEADER)).toBe(theirs);
+    expect(kept?.get("x-opencode-project")).toBe("theirs");
+    expect(kept?.has("x-opencode-session-id")).toBe(false);
+    expect(kept?.get("user-agent")).toBe(OPENCODE_UA);
+    expect(kept?.get("authorization")).toBe("Bearer declared-zen");
+    // A malformed id is still replaced, with every plane header from the turn.
+    await als.run(shaped, () => request("oc5-raw"));
+    const [, rewritten] = wire.seen;
+    expect(rewritten?.get(SESSION_HEADER)).toBe(ses);
+    expect(rewritten?.get("x-opencode-session-id")).toBe(ses);
+    expect(rewritten?.get("x-opencode-project")).toBe("p");
+    // The known answer: without the flag the first request is rewritten.
+    const { perCall: _dropped, ...unshaped } = shaped;
+    await als.run(unshaped as ActiveTurnState, () => request(theirs));
+    expect(wire.seen[2]?.get(SESSION_HEADER)).toBe(ses);
+    expect(wire.seen[2]?.get("x-opencode-project")).toBe("p");
   });
 });

@@ -22,6 +22,13 @@ export interface ActiveTurnState {
   foreign?: true;
   model?: string;
   parentValue?: string;
+  /**
+   * Set by the plane adapter's `prepareHeaders` when it shaped this turn's
+   * request headers per call (OC5). The fetch patch then writes no plane
+   * header on a request of the turn that carries a well-formed session id.
+   * Per turn, and only ever set by a host that called the option.
+   */
+  perCall?: true;
   project?: string;
   provider: string;
   /**

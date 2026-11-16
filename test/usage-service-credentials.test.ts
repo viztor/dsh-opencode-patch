@@ -7,12 +7,12 @@
 import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { disposeMounted, mountPlugin } from "./support/composition.ts";
 import { withCredentials } from "./support/loader-rows.ts";
 import {
   GoUsageService,
-  clearCapturedApiKeys,
   clearSessionUsageStore,
-  recordCapturedApiKey,
+  captureStoreFor,
 } from "./support/src.ts";
 import {
   contextWithEntries,
@@ -22,13 +22,14 @@ import {
   okBody,
   stubFetch,
 } from "./support/usage-fixture.ts";
-import { headerOf } from "./test-helpers.ts";
+import { collectUnknown, headerOf, urlOf } from "./test-helpers.ts";
 
-afterEach(() => {
+afterEach(async () => {
+  await disposeMounted();
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
-  clearCapturedApiKeys();
   clearSessionUsageStore();
 });
 
@@ -80,19 +81,25 @@ describe("GoUsageService credential failures", () => {
     // one; if the service ignored it, `request` setups would silently keep
     // polling with a stale credential.
     process.env.OPENCODE_GO_API_KEY = "sk-env-key";
-    recordCapturedApiKey(
-      "sk-captured-key",
-      "opencode-go",
-      "https://opencode.ai/zen/go/v1/chat/completions"
-    );
+    // One composition per service, each having seen the same key on a Go
+    // turn: the capture store is the root's, and a service is the root's too.
+    const seen = (): Context => {
+      const context = contextWithEntries([]);
+      captureStoreFor(context).record(
+        "sk-captured-key",
+        "opencode-go",
+        "https://opencode.ai/zen/go/v1/chat/completions"
+      );
+      return context;
+    };
     const pinned = stubFetch(() => new Response(okBody()));
-    await new GoUsageService(contextWithEntries([]), {
+    await new GoUsageService(seen(), {
       keySource: "configured",
     }).read();
     expect(headerOf(pinned.init, "authorization")).toBe("Bearer sk-env-key");
 
     const rotated = stubFetch(() => new Response(okBody()));
-    await new GoUsageService(contextWithEntries([]), {
+    await new GoUsageService(seen(), {
       keySource: "request",
     }).read();
     expect(headerOf(rotated.init, "authorization")).toBe(
@@ -162,5 +169,81 @@ describe("usage service: the read that a silent meter depends on", () => {
     expect(usage.weekly.percent).toBe(0);
     expect(usage.monthly.percent).toBe(44);
     expect(usage.quotaUnavailable ?? false).toBe(false);
+  });
+});
+
+const GO_CHAT = `${GO_ENDPOINT}/chat/completions`;
+
+describe("the mounted meter and the capture store (P6: OC3, L8)", () => {
+  /**
+   * The meter the plugin mounts reads the key the fill learned on a decorated
+   * turn of the same root, and its own `/usage` poll is no evidence about
+   * that key: the usage endpoint refuses keys inference accepts, so its 401
+   * never drops one (docs/credentials.md). Through the plugin as the Loader
+   * mounts it, the meter as `ctx.get("opencodeGoUsage")` answers it, and the
+   * patched `globalThis.fetch` the meter's own request goes through.
+   */
+  it("reads the key a decorated Go turn sent, and two refused polls leave it in place", async () => {
+    vi.stubEnv("OPENCODE_API_KEY", "");
+    vi.stubEnv("OPENCODE_GO_API_KEY", "");
+    const sent: { url: string; authorization: string | null }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = urlOf(input);
+        sent.push({
+          authorization: new Headers(init?.headers).get("authorization"),
+          url,
+        });
+        return Response.json(
+          {},
+          { status: url.endsWith("/usage") ? 401 : 200 }
+        );
+      })
+    );
+    const { ctx } = await mountPlugin({ config: { usageEnabled: true } });
+    const goTurn = async (bearer: string): Promise<string | null> => {
+      const downstream = async function* downstream() {
+        await globalThis.fetch(GO_CHAT, {
+          body: JSON.stringify({ model: "meter-model" }),
+          headers: { authorization: `Bearer ${bearer}` },
+          method: "POST",
+        });
+        yield { type: "finish" };
+      };
+      await collectUnknown(
+        (
+          ctx as unknown as {
+            waterfall: (event: string, ...args: unknown[]) => unknown;
+          }
+        ).waterfall(
+          "llm/stream",
+          { provider: "opencode-go", sessionId: "meter" },
+          downstream
+        ) as AsyncIterable<unknown>
+      );
+      return sent.at(-1)?.authorization ?? null;
+    };
+    const usage = ctx.get("opencodeGoUsage" as never) as unknown as {
+      read: () => Promise<unknown>;
+    };
+    // Nothing captured yet: the meter has no key and says so.
+    await expect(usage.read()).rejects.toThrow(/not configured/u);
+    expect(sent).toHaveLength(0);
+
+    expect(await goTurn("sk-turn-go")).toBe("Bearer sk-turn-go");
+    for (const _ of [1, 2]) {
+      // oxlint-disable-next-line no-await-in-loop -- the polls are sequential.
+      await expect(usage.read()).rejects.toThrow();
+      expect(sent.at(-1)).toEqual({
+        authorization: "Bearer sk-turn-go",
+        url: GO_USAGE_URL,
+      });
+    }
+    // Two refused polls later, the key still fills a Go turn's placeholder,
+    // and the meter still reads it.
+    expect(await goTurn("unused")).toBe("Bearer sk-turn-go");
+    await expect(usage.read()).rejects.toThrow();
+    expect(sent.at(-1)?.authorization).toBe("Bearer sk-turn-go");
   });
 });

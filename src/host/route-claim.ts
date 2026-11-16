@@ -135,6 +135,7 @@ import {
   planeApiKeyResolver,
   planeAuth,
   type PlaneProfileLike,
+  planeRequestHeaders,
 } from "./plane-provider.ts";
 
 /** cordis `FiberState`. */
@@ -280,11 +281,15 @@ const codeOf = (error: unknown): unknown =>
  *
  * @param ctx - the plugin context (its root fiber).
  * @param config - the plugin's resolved settings.
+ * @param seams - what the plugin hands the adapter beyond its settings:
+ *   `callHeaders` writes the plane headers of the current turn per call
+ *   (OC5), ahead of the host's `llm-pi-ai/request-headers` waterfall (OC4).
  * @returns the claim's readers and its mount.
  */
 export const installRouteClaim = (
   ctx: CordisContext,
-  config: Pick<ResolvedPluginConfig, "endpoint" | "readOpencodeStore">
+  config: Pick<ResolvedPluginConfig, "endpoint" | "readOpencodeStore">,
+  seams: { readonly callHeaders?: (headers: Headers) => void } = {}
 ): RouteClaim => {
   const state = {
     active: true,
@@ -529,6 +534,7 @@ export const installRouteClaim = (
             `unusable replay state on assistant history for route "${provider}/${model}"; sending that message as provider-neutral content (${reason})`
           );
         },
+        prepareHeaders: planeRequestHeaders(ctx, seams.callHeaders),
         profiles: () => state.profiles,
         resolveApiKey: planeApiKeyResolver(ctx, modules, config, auth),
         resolveAttachments: images.resolveAttachments,
