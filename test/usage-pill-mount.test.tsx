@@ -28,13 +28,13 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GoUsage } from "../src/contracts/usage.ts";
+import { STYLES } from "../src/usage-css.ts";
 import {
   MIN_FEEDBACK_MS,
   UsagePill,
   type ModelDirectoryState,
   type SnapshotStore,
 } from "../src/usage-pill.tsx";
-import { STYLES } from "../src/usage-ui.ts";
 
 /** A quota reading with one window in each of the states the panel distinguishes. */
 const USAGE: GoUsage = {

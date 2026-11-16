@@ -2,9 +2,10 @@
  * Pure readers of a request's SHAPE — everything the fetch patch decides about a
  * request before it touches it.
  *
- * Extracted because these were private inside `fetch-patch.ts`: seven
- * predicates and resolvers, all pure, none reachable from a test. The exported
- * ones (`hasSessionHeader`, `isOpenCodeRequest`) had tests; the private ones did
+ * Extracted because these were private inside the fetch patch (now the stages
+ * under `src/request/`): seven predicates and resolvers, all pure, none
+ * reachable from a test. The exported ones (`hasSessionHeader`,
+ * `isOpenCodeRequest`) had tests; the private ones did
  * not, which is the difference between "covered" and "testable" — a rule that
  * lives in a closure cannot be exercised on its own, so its branches survive
  * until some integration path happens to take them.
@@ -224,10 +225,44 @@ export const modelIdOf = (body: RequestInit["body"]): string | undefined => {
 };
 
 /**
- * The tool names a JSON request body carries, comma-joined.
+ * The tool names a parsed JSON request body carries, comma-joined.
  *
  * Both wire shapes are read — `{name}` and `{type:"function",function:{name}}` —
- * because the fallback injects into either. A malformed body answers `""`.
+ * because the fallback injects into either. A body that is not a JSON object,
+ * or has no `tools` array, or no body at all, answers `""`.
+ *
+ * @param parsed - the body, parsed, when there is one.
+ * @returns the names, comma-joined, or `""`.
+ */
+export const toolNamesIn = (parsed: unknown): string => {
+  if (!isRecord(parsed)) {
+    return "";
+  }
+  const { tools } = parsed;
+  if (!Array.isArray(tools)) {
+    return "";
+  }
+  const names: string[] = [];
+  for (const tool of tools) {
+    if (!isRecord(tool)) {
+      continue;
+    }
+    if (typeof tool.name === "string") {
+      names.push(tool.name);
+      continue;
+    }
+    const fn = tool.function;
+    if (isRecord(fn) && typeof fn.name === "string") {
+      names.push(fn.name);
+    }
+  }
+  return names.join(",");
+};
+
+/**
+ * The tool names a JSON request body carries, comma-joined.
+ *
+ * A string body only, parsed here; a malformed one answers `""`.
  *
  * @param body - the request body, when there is one to read.
  * @returns the names, comma-joined, or `""`.
@@ -237,29 +272,7 @@ export const toolNamesOf = (body: RequestInit["body"]): string => {
     return "";
   }
   try {
-    const parsed: unknown = JSON.parse(body);
-    if (!isRecord(parsed)) {
-      return "";
-    }
-    const { tools } = parsed;
-    if (!Array.isArray(tools)) {
-      return "";
-    }
-    const names: string[] = [];
-    for (const tool of tools) {
-      if (!isRecord(tool)) {
-        continue;
-      }
-      if (typeof tool.name === "string") {
-        names.push(tool.name);
-        continue;
-      }
-      const fn = tool.function;
-      if (isRecord(fn) && typeof fn.name === "string") {
-        names.push(fn.name);
-      }
-    }
-    return names.join(",");
+    return toolNamesIn(JSON.parse(body));
   } catch {
     return "";
   }

@@ -2,7 +2,8 @@
  * Composer-dock component displaying OpenCode Go quota and rate limits.
  *
  * Owns the meter's *state* (polling, dismissal, retry, gating); `usage-panel.tsx`
- * renders it and `usage-ui.ts` reads it, so both are testable without a DOM.
+ * renders it and `usage-state.ts`, `usage-copy.ts` and `usage-css.ts` read
+ * it, so both are testable without a DOM.
  *
  * @module dsh-opencode-patch/usage-pill
  */
@@ -15,20 +16,22 @@ import React, {
 } from "react";
 
 import { DEFAULT_PROVIDERS } from "./config-values.ts";
-import type { GoUsage } from "./contracts/usage.ts";
+import {
+  type GoUsage,
+  parseFailure,
+  type UsageFailure,
+} from "./contracts/usage.ts";
+import { describeUsage } from "./usage-copy.ts";
+import { STYLES } from "./usage-css.ts";
 import { goQuotaTooltip, UsagePanel, UsageTrigger } from "./usage-panel.tsx";
 import {
   CIRCUMFERENCE,
-  describeUsage,
   getAffectingWindow,
   getWindowColorFor,
-  isZenProvider,
   matchesAny,
-  parseFailure,
   ringGeometry,
-  STYLES,
-  type UsageFailure,
-} from "./usage-ui.ts";
+} from "./usage-state.ts";
+import { isZenProvider } from "./utils/request-shape.ts";
 
 export interface SnapshotStore<T> {
   getSnapshot: () => T;
@@ -331,7 +334,7 @@ const ActiveUsage = ({
 
   const locale = getLocale?.();
 
-  // Wording lives in `usage-ui.ts` so it can be unit-tested without React.
+  // Wording lives in `usage-copy.ts` so it can be unit-tested without React.
   // The hover label is the SAME string the panel opens under: no second
   // composition, no keys an older served dictionary has not heard of.
   const { badgeText, title, tooltip, zenCardCredit } = describeUsage(

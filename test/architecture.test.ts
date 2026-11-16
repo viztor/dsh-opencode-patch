@@ -680,21 +680,30 @@ describe("architecture · the host bundle mutates no registry it does not own", 
 
 describe("architecture · the request path reads no environment of its own (P6)", () => {
   /**
-   * The fetch patch, the lifecycle and the plane provider take every value
-   * they need as a parameter or a service: the fill's one read of the process
-   * environment lives in `credentials.ts`, and the plane adapter's in the
-   * host's launch environment (D20). Comments are stripped first, as in the
-   * utilities' rule. Textual, like the repository's other environment rules:
-   * a read through an alias (`process["env"]`, `const { env } = process`)
-   * escapes it.
+   * The fetch patch's stages (every module under `src/request/`, so a new
+   * stage cannot escape), the lifecycle and the plane provider take every
+   * value they need as a parameter or a service: the fill's one read of the
+   * process environment lives in `credentials.ts`, and the plane adapter's in
+   * the host's launch environment (D20). Comments are stripped first, as in
+   * the utilities' rule. Textual, like the repository's other environment
+   * rules: a read through an alias (`process["env"]`, `const { env } =
+   * process`) escapes it.
    */
-  const FILES = ["fetch-patch.ts", "lifecycle.ts", "host/plane-provider.ts"];
+  const FILES = [
+    ...filesUnder(SRC_DIR).filter((file) => file.startsWith("request/")),
+    "lifecycle.ts",
+    "host/plane-provider.ts",
+  ];
   const readsEnv = (source: string): boolean =>
     /process\.env/u.test(stripComments(source));
 
   it("flags a planted read, so a pass means something", () => {
     expect(readsEnv("const k = process.env.X;")).toBe(true);
     expect(readsEnv("// process.env.X\nconst k = 1;")).toBe(false);
+  });
+
+  it("walks the request stages, so an empty folder is not a pass", () => {
+    expect(FILES).toContain("request/patch-fetch.ts");
   });
 
   it.each(FILES)("%s never reads process.env", (file) => {
@@ -805,7 +814,7 @@ describe("architecture · host methods are wrapped only through patchMethod", ()
   it("walks a graph that contains the helper and the sites it serves", () => {
     const graph = runtimeGraph(ENTRY);
     expect(graph.has(HELPER)).toBe(true);
-    expect(graph.has("models-discovery.ts")).toBe(true);
+    expect(graph.has("host/discovery.ts")).toBe(true);
     // The helper itself is what the rule exempts, and it does match it.
     expect(hostWritesIn(HELPER, graph.get(HELPER) ?? "")).not.toEqual([]);
   });

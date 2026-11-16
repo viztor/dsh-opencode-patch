@@ -82,8 +82,8 @@ afterEach(async () => {
 
 /**
  * The name `patchFetch` gives the function it installs, read off the module
- * rather than written out, so renaming it in `src/fetch-patch.ts` cannot
- * quietly turn the leak check above into a no-op.
+ * rather than written out, so renaming it in `src/request/patch-fetch.ts`
+ * cannot quietly turn the leak check above into a no-op.
  */
 const PATCHED_FETCH = patchFetch(
   offlineFetch,

@@ -839,14 +839,13 @@ jobs:
           # dependency bump touches it), so a change to its `test:e2e:host`
           # script alone is exercised only by the nightly run.
           # The host seam lives under src/host/ (the route claim, the plane
-          # adapter, the Settings graft, the host-module loaders), and the
-          # modules whose behaviour depends on the real loader and apply order
-          # sit beside it by name: the composition (lifecycle.ts, identity.ts),
-          # the host-module seam (cordis-context.ts), the remaining discovery
-          # patch (models-discovery.ts), and the two modules that still install
-          # host-level patches until P6/P10a move them under src/host/: the
-          # global fetch wrapper (fetch-patch.ts, whose order the probe reads
-          # as fetchInnermost) and the llm/stream hook (stream-hook.ts). Every
+          # adapter, the Settings graft, the discovery patch, the host-module
+          # loaders), and the modules whose behaviour depends on the real
+          # loader and apply order sit beside it: the composition
+          # (lifecycle.ts, identity.ts), the host-module seam
+          # (cordis-context.ts), the global fetch wrapper's stages under
+          # src/request/ (the patch whose order the probe reads as
+          # fetchInnermost) and, by name, the llm/stream hook (stream-hook.ts). Every
           # other row producer (the pure plane profile and model in
           # src/utils/, key-capture.ts, models-catalog.ts, config.ts, the
           # generated catalog) is covered on each pull request by the
@@ -858,7 +857,7 @@ jobs:
           # reader its gate, prefix and cell come through (support/e2e-env.ts).
           # test/keyed-probes.test.ts compiles this pattern and checks it.
           # A here-string, not a pipe: see the e2e job's tier step.
-          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/models-discovery\.ts$|src/fetch-patch\.ts$|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|test/support/e2e-env\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|\.github/actions/|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
+          if grep -Eq '^(src/host/|src/lifecycle\.ts$|src/identity\.ts$|src/cordis-context\.ts$|src/request/|src/stream-hook\.ts$|cordis\.patch\.yml$|test/e2e/host/|test/e2e/host-binary\.e2e\.ts$|test/support/host\.ts$|test/support/host-versions\.ts$|test/support/e2e-env\.ts$|scripts/host-drift\.ts$|\.github/workflows/ci\.yml$|\.github/actions/|vitest\.e2e\.config\.ts$|vite\.config\.ts$)' <<<"$changed"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

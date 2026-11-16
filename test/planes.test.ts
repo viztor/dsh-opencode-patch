@@ -92,29 +92,30 @@ describe("planes · no second copy of the rule in src", () => {
   /**
    * Files that may hold a comparison, and exactly how many: the table (its
    * exact `=== "opencode-go"` and its relay half, `startsWith("opencode-go-")`),
-   * the route list's own guard (`isPlaneRoute`'s pair), and `go-discovery.ts`,
-   * whose reads of a provider row by name stay until the module moves in
-   * P10a. A count, not a whole-file pass, so a second copy added inside an
-   * allowed file is still seen; and an EXACT count, not a ceiling, so a copy
-   * that goes (P10a's move) forces its allowance down rather than leaving
-   * room for a new one. Generated files hold the vendor's data, not a copy of
+   * the route list's own guard (`isPlaneRoute`'s pair), and `credentials.ts`,
+   * whose reads of a provider row by name moved there with the meter's
+   * discovery (P10a). A count, not a whole-file pass, so a second copy added
+   * inside an allowed file is still seen; and an EXACT count, not a ceiling,
+   * so a copy that goes forces its allowance down rather than leaving room
+   * for a new one. Generated files hold the vendor's data, not a copy of
    * a rule.
    */
   const ALLOWED: ReadonlyMap<string, number> = new Map([
     ["utils/planes.ts", 2],
     ["utils/protocols.ts", 2],
-    ["go-discovery.ts", 2],
+    ["credentials.ts", 2],
   ]);
 
   /**
    * Files that may hold a quoted route paired with a plane's name, and exactly
    * how many: `PLANE_OF_ROUTE`'s quoted row (`"opencode-go": "go"`; its
-   * `opencode` key is unquoted), and `go-discovery.ts`'s capture-store read
-   * `get("opencode", "zen")`, until P10a moves it.
+   * `opencode` key is unquoted), and `credentials.ts`'s capture-store read
+   * `get("opencode", "zen")`, which moved there with the meter's discovery
+   * (P10a).
    */
   const PAIRS_ALLOWED: ReadonlyMap<string, number> = new Map([
     ["utils/planes.ts", 1],
-    ["go-discovery.ts", 1],
+    ["credentials.ts", 1],
   ]);
   const GENERATED = new Set(["catalog-data.ts", "go-limits-data.ts"]);
 
@@ -205,13 +206,13 @@ describe("planes · no second copy of the rule in src", () => {
       "utils/planes.ts",
     ]);
     // A removed copy is seen too: the allowance is exact, not a ceiling.
-    const removed = new Map([...files, ["go-discovery.ts", ""]]);
-    expect(offenders(removed)).toEqual(["go-discovery.ts"]);
+    const removed = new Map([...files, ["credentials.ts", ""]]);
+    expect(offenders(removed)).toEqual(["credentials.ts"]);
   });
 
   it("pairs a route with a plane's name in a table only in the table", () => {
     const files = sources();
-    expect(files.has("go-discovery.ts")).toBe(true);
+    expect(files.has("credentials.ts")).toBe(true);
     // The table's one quoted row is the match, not a plane-first reading of
     // its two neighbouring rows.
     expect(
@@ -274,9 +275,7 @@ describe("planes · no second copy of the rule in src", () => {
       "utils/planes.ts",
     ]);
     // Exact here as well: a pair that goes forces its allowance down.
-    const removed = new Map([...files, ["go-discovery.ts", ""]]);
-    expect(offenders(removed, PAIR, PAIRS_ALLOWED)).toEqual([
-      "go-discovery.ts",
-    ]);
+    const removed = new Map([...files, ["credentials.ts", ""]]);
+    expect(offenders(removed, PAIR, PAIRS_ALLOWED)).toEqual(["credentials.ts"]);
   });
 });

@@ -238,73 +238,50 @@ export const isCoreToolModel = (
   return coreToolDecision(row, modelId, marker);
 };
 
+/** Whether a URL is a chat-completions one, the route that takes a `tool_choice`. */
+const isCompletionsUrl = (url: string): boolean =>
+  url.includes("/chat/completions") || url.includes("/completions");
+
 /**
- * Inject `read` + `bash` schemas into a free-tier completions body.
+ * Whether a URL is one of the two JSON routes the gateway checks `read` +
+ * `bash` on: `/responses` and `/chat/completions` (a toolless completions body
+ * 403s the same way). An Anthropic `/messages` URL names neither, which is why
+ * there are no Anthropic-dialect schemas here.
  *
- * A declared `read`/`bash` without `properties` is replaced, never duplicated;
- * a chat-completions body that had no tools of its own also gets
- * `tool_choice: "none"`, and a `/responses` body never gets a `tool_choice`.
+ * @param url - the request URL.
+ */
+export const isCoreToolUrl = (url: string): boolean =>
+  url.includes(RESPONSES_PATH) || isCompletionsUrl(url);
+
+/**
+ * Inject `read` + `bash` schemas into a parsed free-tier body, in place.
+ *
+ * The record is changed only when the model is in scope, and then always:
+ * a body this answers `false` for is left exactly as it came, so a caller that
+ * reads the record afterwards reads what it was given.
  *
  * @param url - request URL (supports `/responses` and `/chat/completions`).
- * @param body - the outgoing request body.
- * @param headers - the mutable header bag whose `content-length` must track a
- * rewritten body.
- * @param options - whether injection is enabled and which model marker scopes it.
- * @returns the (possibly rewritten) body; the original reference when untouched.
+ * @param parsed - the body, parsed; rewritten in place when this answers true.
+ * @param modelMarker - the configured free-tier marker.
+ * @returns whether the body was rewritten.
  */
-export const maybeInjectCoreTools = (
+export const injectCoreToolsInto = (
   url: string,
-  body: RequestInit["body"],
-  headers: Headers,
-  options: { enabled: boolean; modelMarker: string }
-): RequestInit["body"] => {
-  if (!options.enabled) {
-    return body;
-  }
-  // Both JSON routes: the gateway checks read+bash on /responses AND
-  // /chat/completions (a toolless completions body 403s the same way). An
-  // Anthropic `/messages` URL names neither, so it never gets this far — which
-  // is why there are no Anthropic-dialect schemas below.
-  const isResponses = url.includes(RESPONSES_PATH);
-  const isCompletions =
-    url.includes("/chat/completions") || url.includes("/completions");
-  if (!isResponses && !isCompletions) {
-    return body;
-  }
-  if (body === undefined || body === null) {
-    return body;
-  }
-  let bodyStr: string | undefined;
-  if (typeof body === "string") {
-    bodyStr = body;
-  } else if (Buffer.isBuffer(body)) {
-    bodyStr = body.toString("utf-8");
-  } else {
-    return body;
-  }
-  if (bodyStr.length === 0) {
-    return body;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bodyStr);
-  } catch {
-    return body;
-  }
-  if (!isRecord(parsed)) {
-    return body;
-  }
+  parsed: Record<string, unknown>,
+  modelMarker: string
+): boolean => {
   const modelProp: unknown = parsed.model;
   if (typeof modelProp !== "string") {
-    return body;
+    return false;
   }
   // The plane is the PATH's, not the route's: a relay serves its Go plane
   // under a path of the same shape, and the route id there is the user's own
   // name.
   const plane = planeForUrl(url);
-  if (!isCoreToolModel(modelProp, options.modelMarker, plane)) {
-    return body;
+  if (!isCoreToolModel(modelProp, modelMarker, plane)) {
+    return false;
   }
+  const isCompletions = isCompletionsUrl(url);
   const toolsProp: unknown = parsed.tools;
   // A malformed `tools` value cannot be merged with — replace it, the same
   // as an absent one, so the request leaves with schemas the gateway accepts.
@@ -335,7 +312,5 @@ export const maybeInjectCoreTools = (
   if (hadNoTools && isCompletions) {
     parsed.tool_choice = "none";
   }
-  const newBodyStr = JSON.stringify(parsed);
-  headers.set("content-length", Buffer.byteLength(newBodyStr).toString());
-  return newBodyStr;
+  return true;
 };

@@ -2,7 +2,7 @@
  * The one way this plugin wraps a method on a host object.
  *
  * Every instance patch in `src/` goes through {@link patchMethod}; today two
- * sites: model discovery (`models-discovery.ts`) and the `settings.describe`
+ * sites: model discovery (`host/discovery.ts`) and the `settings.describe`
  * graft (`host/describe-graft.ts`).
  * Wrapping an INSTANCE is enough because the host resolves a service method per
  * call (F20: the gateway reads it with `Reflect.get` at dispatch), so a wrapper

@@ -12,8 +12,8 @@
  * `apiKeyEnv` instruction, the install snippet's version range (which had
  * drifted to two different 0.x ranges, neither reaching a 1.x release), and
  * the `keySource` hint's order, which is
- * `KEY_SOURCE_ORDER.auto` in `src/go-discovery.ts` (literal, captured,
- * configured).
+ * the meter's `auto` order, `METER_ORDER.auto` in
+ * `src/utils/credential-policy.ts` (literal, captured, configured).
  *
  * @module test/readme-parity.test
  */

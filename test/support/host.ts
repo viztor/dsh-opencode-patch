@@ -53,12 +53,11 @@
  * looks first (`launchEnvironmentOf` reads `ctx.get("launchEnvironment")`
  * before it falls back to `process.env`). The plugin itself still reads
  * `process.env.OPENCODE_API_KEY`/`OPENCODE_GO_API_KEY` in its fill and its
- * quota discovery (`src/credentials.ts`, `src/go-discovery.ts`), so tier B
- * blanks either one that is set for the life of the boot and restores it on
- * dispose: the suite measures the keyless deployment whatever the shell
- * holds. Under the unit and mock configs `test/support/offline.ts` has already
- * unset both, so this is the second line, for a runner without that setup
- * file.
+ * quota discovery (both in `src/credentials.ts`), so tier B blanks either one
+ * that is set for the life of the boot and restores it on dispose: the suite
+ * measures the keyless deployment whatever the shell holds. Under the unit
+ * and mock configs `test/support/offline.ts` has already unset both, so this
+ * is the second line, for a runner without that setup file.
  *
  * **Offline.** {@link recordingFetch} answers every `opencode.ai` request with a
  * 401 and refuses every other host. Install it with `vi.stubGlobal("fetch", …)`
@@ -1606,11 +1605,11 @@ export const AMBIENT_KEYS = [
 ] as const;
 
 /**
- * Blank the keys the plugin reads directly (`src/credentials.ts`,
- * `src/go-discovery.ts`) for the life of one boot, so a contributor's exported
- * key cannot turn the keyless rows into keyed ones. An empty value is what the
- * plugin reads as "no key". Only a key that IS set is touched, and the
- * returned restore puts back exactly what was there.
+ * Blank the keys the plugin reads directly (the fill and the quota discovery,
+ * both in `src/credentials.ts`) for the life of one boot, so a contributor's
+ * exported key cannot turn the keyless rows into keyed ones. An empty value
+ * is what the plugin reads as "no key". Only a key that IS set is touched,
+ * and the returned restore puts back exactly what was there.
  *
  * @returns the restore, which the boot's dispose (and its failure path) runs.
  */

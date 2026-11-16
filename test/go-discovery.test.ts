@@ -1,5 +1,6 @@
 /**
- * `go-discovery.ts` — the credential and base-URL precedence policy.
+ * The meter's discovery in `credentials.ts` (`go-discovery.ts` until P10a) —
+ * the credential and base-URL precedence policy.
  *
  * This module decides *which secret goes to which endpoint*: which entry the
  * Go key and gateway come from, how a Zen base URL is rewritten onto the Go
@@ -469,6 +470,19 @@ describe("discoverGoConfig: the provider row's own fields", () => {
         ])
       ).literalKey
     ).toBe("sk-after-ws");
+    // A nested block with neither a usable key nor a usable header key
+    // answers no literal, rather than the last unusable value it read.
+    for (const options of [
+      {},
+      { apiKey: "", headers: { "x-api-key": "  " } },
+    ]) {
+      expect(
+        discoverGoConfig(
+          composition([registryEntry("opencode-go", { options })])
+        ).literalKey,
+        JSON.stringify(options)
+      ).toBeUndefined();
+    }
   });
 
   it("ignores an options block that is not a record", () => {

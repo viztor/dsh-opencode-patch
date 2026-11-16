@@ -30,26 +30,29 @@ import { purgeRemote } from "./contracts/purge.ts";
 import { storeRemote } from "./contracts/store.ts";
 import { usageRemote } from "./contracts/usage.ts";
 import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
-import { captureStoreFor, createCredentials } from "./credentials.ts";
+import {
+  captureStoreFor,
+  createCredentials,
+  resolveGoBaseURL,
+} from "./credentials.ts";
 import { recordDebug } from "./debug.ts";
-import { patchFetch } from "./fetch-patch.ts";
-import { resolveGoBaseURL } from "./go-discovery.ts";
 import { installDescribeGraft } from "./host/describe-graft.ts";
+import {
+  decorateModelDiscovery,
+  type DiscoveryClaim,
+} from "./host/discovery.ts";
 import { installGlobalFetch } from "./host/global-fetch.ts";
 import { installRemoteService } from "./host/remote.ts";
 import { installRouteClaim } from "./host/route-claim.ts";
 import { LEGACY_NAME, LEGACY_PKG } from "./identity.ts";
-import {
-  decorateModelDiscovery,
-  type DiscoveryClaim,
-} from "./models-discovery.ts";
 import { OpencodeStoreService } from "./opencode-store-service.ts";
 import { ModelPurgeService } from "./purge-service.ts";
+import { callHeadersFor } from "./request/headers.ts";
+import { patchFetch } from "./request/patch-fetch.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
 import { GoUsageService } from "./usage.ts";
 import { isFunctionLike, isRecord } from "./utils/guards.ts";
-import { planeHeadersFor, projectHeaderOf } from "./utils/request-shape.ts";
 
 /** Tell a row still configured under the pre-rename id/package to update. */
 const logRenameNotice = (ctx: CordisContext): void => {
@@ -168,44 +171,6 @@ const installFetchPatch = (
     }
   );
 };
-
-/**
- * The plane headers of the current turn, written per call by the plane
- * adapter's `prepareHeaders` (OC5): the values the stream hook derived for the
- * turn, from the one table the fetch patch writes from. A request outside any
- * turn the plugin decorated, or on another plugin's plane, gets none, and the
- * turn is marked so the fetch patch leaves what was set here alone.
- *
- * @param als - the turn store the stream hook fills.
- * @param config - the plugin's settings.
- * @returns the writer `installRouteClaim` hands the adapter.
- */
-export const callHeadersFor =
-  (als: AsyncLocalStorage<ActiveTurnState>, config: ResolvedPluginConfig) =>
-  (headers: Headers): void => {
-    const state = als.getStore();
-    if (state === undefined || state.foreign === true) {
-      return;
-    }
-    for (const [name, value] of planeHeadersFor({
-      org: config.credentialOrg,
-      origin: config.injectOriginHeaders
-        ? {
-            client: config.originClient,
-            project: config.injectProject
-              ? projectHeaderOf(state.project)
-              : undefined,
-            request: state.requestValue,
-          }
-        : undefined,
-      parent: state.parentValue,
-      relay: !state.provider.startsWith("opencode"),
-      session: state.value,
-    })) {
-      headers.set(name, value);
-    }
-    state.perCall = true;
-  };
 
 /**
  * Capture turn state (session id, project, parent) on every streamed turn,

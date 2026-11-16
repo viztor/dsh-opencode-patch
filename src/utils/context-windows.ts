@@ -8,7 +8,7 @@
  * worse: the gateway refuses a request the composer thought would fit. A
  * measured window is therefore read ahead of the catalog's, and behind
  * anything the user declared (`plane-model.ts`'s precedence). Settings'
- * discovery rows (`models-discovery.ts`) read it in the catalog's place in
+ * discovery rows (`host/discovery.ts`) read it in the catalog's place in
  * each of their field orders: ahead of pi's window on a plane the plugin
  * serves, and still behind it on a route pi-ai serves from pi's own row.
  *

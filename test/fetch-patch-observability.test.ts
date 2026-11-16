@@ -7,6 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { freeZenModel } from "./support/catalogs.ts";
 import {
   OPENCODE_UA,
   SESSION_HEADER,
@@ -235,6 +236,51 @@ describe("patchFetch · observability", () => {
     expect(await named("{not-json")).toBe("");
     expect(await named(Buffer.from("{}", "utf-8"))).toBe("");
     expect(await named("")).toBe("");
+
+    // The names read a string body only: a Buffer the fallback leaves alone
+    // (a paid model) names none of the tools it carries, though the
+    // fallback's reader could decode it.
+    expect(
+      await named(
+        Buffer.from(
+          JSON.stringify({ model: "gpt-5-paid", tools: [{ name: "read" }] })
+        )
+      )
+    ).toBe("");
+  });
+
+  it("a body that is neither a string nor a Buffer is sent as it came and named as no tools", async () => {
+    // No reader of the body takes a plain Uint8Array: the fallback leaves it
+    // as it came, and the debug entry names no tools rather than guessing.
+    const entries: Record<string, unknown>[] = [];
+    const { capture, mockFetch } = createCaptureFetch();
+    const body = new Uint8Array(
+      Buffer.from(
+        JSON.stringify({
+          model: freeZenModel(),
+          tools: [{ name: "read" }],
+        })
+      )
+    );
+    const als = new AsyncLocalStorage<ActiveTurnState>();
+    await als.run(
+      { provider: "opencode", value: openCodeSessionIdFor("bytes") },
+      async () => {
+        await patchFetch(mockFetch, als, resolveConfig(), {
+          debug: (entry) => {
+            entries.push(entry);
+          },
+        })("https://opencode.ai/zen/v1/responses", {
+          body,
+          headers: { authorization: "Bearer sk-bytes" },
+          method: "POST",
+        });
+      }
+    );
+    expect(capture.init?.body).toBe(body);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.bodySource).toBe("init");
+    expect(entries[0]?.toolNames).toBe("");
   });
 
   it("the debug entry carries org, request and user agent as null when the request has none", async () => {

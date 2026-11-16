@@ -372,11 +372,24 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // The store and resolver were at 100 too until P10a merged the
+        // meter's discovery and key resolution in from go-discovery.ts
+        // (127/128 statements and 102/104 branches there), which brought two
+        // branches no case drove. One was reachable: the implicit else of
+        // `usableCredential(fromOptHeaders)` in `readProviderRow`, a provider
+        // row whose `options` carry neither a usable `apiKey` nor a usable
+        // header key, now driven by `test/go-discovery.test.ts`. What is left
+        // is `result.status !== "fulfilled"` in `resolveGoKeyForRef` (its
+        // statement and branch), unreachable because `readCredentialsResolver`
+        // wraps the service so it never rejects: measured at 252/253
+        // statements, 226/227 branches, 46/46 functions and 250/251 lines
+        // (99.6 / 99.55 / 100 / 99.6) and set just below, so one more
+        // uncovered item fails.
         "src/credentials.ts": {
-          statements: 100,
-          branches: 100,
+          statements: 99.5,
+          branches: 99.5,
           functions: 100,
-          lines: 100,
+          lines: 99.5,
         },
         // The one write to `globalThis.fetch` (P6): every branch is a disposal
         // order, a third party on top, or a fetch missing at install or at
@@ -448,9 +461,16 @@ export default defineConfig({
         // - fetch-patch.ts: the debug entry's `session:
         //   headers.get(SESSION_HEADER) ?? null` after the patch set the
         //   header.
+        // P10a moved `callHeadersFor` (covered: 8 statements, 8 branches) to
+        // `request/headers.ts`, leaving lifecycle.ts at 42/43 statements,
+        // 14/17 branches, 13/13 functions and 40/41 lines (97.67 / 82.35 /
+        // 100 / 97.56): the same three unreachable branches in a smaller file.
+        // It split fetch-patch.ts into the stages under `src/request/` (each
+        // held below), and the debug entry's `?? null` is now patch-fetch.ts's
+        // one uncovered branch, 27 of 28.
         "src/lifecycle.ts": {
-          statements: 98,
-          branches: 87.9,
+          statements: 97.6,
+          branches: 82.3,
           functions: 100,
           lines: 97.5,
         },
@@ -460,9 +480,39 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        "src/fetch-patch.ts": {
+        // The fetch patch's stages (P10a), split out of fetch-patch.ts: the
+        // claim, the body read once, the credential and the headers, every
+        // branch a claim rule, a body shape, a fill source or a header writer,
+        // so all of them are covered; and the composition, just below its
+        // measurement (100 / 96.42 / 100 / 100) for the debug entry's
+        // `session: headers.get(SESSION_HEADER) ?? null`, named above.
+        "src/request/claim.ts": {
           statements: 100,
-          branches: 99,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/request/body.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/request/credential.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/request/headers.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        "src/request/patch-fetch.ts": {
+          statements: 100,
+          branches: 96,
           functions: 100,
           lines: 100,
         },

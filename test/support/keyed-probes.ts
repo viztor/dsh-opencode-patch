@@ -171,7 +171,7 @@ export const PROBE_SESSION_ID = openCodeSessionIdFor("keyed-probe");
 
 /**
  * The identity headers the plugin's fetch patch sets on an OpenCode plane
- * (`src/fetch-patch.ts`): its user agent, the origin client, the project
+ * (`src/request/headers.ts`): its user agent, the origin client, the project
  * (`global` outside a workspace), and the session id under both session
  * headers.
  *

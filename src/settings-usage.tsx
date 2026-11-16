@@ -33,7 +33,8 @@ import {
   findRemoteCall,
   unwrapRemote,
 } from "./settings-remote.ts";
-import { formatRelativeReset, getWindowState, resetLabel } from "./usage-ui.ts";
+import { getWindowState } from "./usage-state.ts";
+import { formatRelativeReset, resetLabel } from "./usage-time.ts";
 import { isRecord } from "./utils/guards.ts";
 import { backoffOver, retryUntilAnswered } from "./utils/retry.ts";
 import { formatUsd } from "./utils/usd.ts";

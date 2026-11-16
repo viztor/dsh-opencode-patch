@@ -1,6 +1,7 @@
 /**
- * `go-discovery.ts` — how a Zen base URL is rewritten onto the Go plane, and
- * which base the meter reads.
+ * The meter's discovery in `credentials.ts` (`go-discovery.ts` until P10a) —
+ * how a Zen base URL is rewritten onto the Go plane, and which base the meter
+ * reads.
  *
  * @module test/go-discovery-base-url.test
  */

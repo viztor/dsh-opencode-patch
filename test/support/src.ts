@@ -3,7 +3,7 @@
  *
  * The package's public barrel is the host's contract — `apply`, `Config`,
  * `inject`, `name` and the config types — and nothing else, and P10a
- * moves modules into subject folders. A test that names a `src` path breaks on
+ * moved modules into subject folders. A test that names a `src` path breaks on
  * every such move, so this file is the one place that knows where things live:
  * each name is re-exported from the module that DEFINES it, never through the
  * public barrel. `test/architecture.test.ts` enforces both halves.
@@ -106,6 +106,7 @@ export type {
 // contracts/usage.ts
 export {
   parseAccountRef,
+  parseFailure,
   parseGoUsage,
   parseUsageQuery,
   parseUsageReading,
@@ -143,37 +144,25 @@ export {
   captureStoreFor,
   createCaptureStore,
   createCredentials,
+  discoverGoConfig,
+  effectiveGoKeyRef,
+  resolveGoApiKey,
+  resolveGoBaseURL,
+  resolveGoKeyForRef,
   resolveOpencodeStoreKey,
+  resolveZenCreditInfo,
+  toGoBaseURL,
 } from "../../src/credentials.ts";
 export type {
   CaptureStore,
   CredentialInputs,
+  DiscoveredGoConfig,
   FetchCredentials,
   FillDecision,
 } from "../../src/credentials.ts";
 
 // debug.ts
 export { recordDebug } from "../../src/debug.ts";
-
-// fetch-patch.ts
-export {
-  hasSessionHeader,
-  isOpenCodeRequest,
-  patchFetch,
-} from "../../src/fetch-patch.ts";
-export type { FetchPatchHooks } from "../../src/fetch-patch.ts";
-
-// go-discovery.ts
-export {
-  discoverGoConfig,
-  effectiveGoKeyRef,
-  resolveGoApiKey,
-  resolveGoBaseURL,
-  resolveGoKeyForRef,
-  resolveZenCreditInfo,
-  toGoBaseURL,
-} from "../../src/go-discovery.ts";
-export type { DiscoveredGoConfig } from "../../src/go-discovery.ts";
 
 // go-limits-data.ts
 export { GO_MODEL_LIMITS } from "../../src/go-limits-data.ts";
@@ -192,6 +181,15 @@ export {
   graftPlaneEntries,
   installDescribeGraft,
 } from "../../src/host/describe-graft.ts";
+
+// host/discovery.ts
+export {
+  complementDiscoveredModels,
+  decorateModelDiscovery,
+  type DiscoveryClaim,
+  mergeDiscoveredModels,
+  resolveDiscoveryProvider,
+} from "../../src/host/discovery.ts";
 
 // host/host-modules.ts
 export {
@@ -250,7 +248,7 @@ export {
 } from "../../src/key-capture.ts";
 
 // lifecycle.ts
-export { apply, callHeadersFor } from "../../src/lifecycle.ts";
+export { apply } from "../../src/lifecycle.ts";
 
 // models-catalog.ts
 export {
@@ -275,15 +273,6 @@ export {
   specOn,
 } from "../../src/models-catalog.ts";
 
-// models-discovery.ts
-export {
-  complementDiscoveredModels,
-  decorateModelDiscovery,
-  type DiscoveryClaim,
-  mergeDiscoveredModels,
-  resolveDiscoveryProvider,
-} from "../../src/models-discovery.ts";
-
 // opencode-paths.ts
 export {
   opencodeDatabaseFile,
@@ -306,6 +295,22 @@ export {
   ModelPurgeService,
   stripRetiredReferences,
 } from "../../src/purge-service.ts";
+
+// request/claim.ts
+export {
+  hasSessionHeader,
+  isOpenCodeRequest,
+} from "../../src/request/claim.ts";
+
+// request/body.ts
+export { maybeInjectCoreTools } from "../../src/request/body.ts";
+
+// request/headers.ts
+export { callHeadersFor } from "../../src/request/headers.ts";
+
+// request/patch-fetch.ts
+export { patchFetch } from "../../src/request/patch-fetch.ts";
+export type { FetchPatchHooks } from "../../src/request/patch-fetch.ts";
 
 // session-cost.ts
 export {
@@ -406,13 +411,22 @@ export {
   DUMMY_READ_TOOL,
   DUMMY_READ_TOOL_FUNCTION,
   isCoreToolModel,
-  maybeInjectCoreTools,
   RESPONSES_PATH,
 } from "../../src/tool-fallback.ts";
 
 // turn-store.ts
 export { withStore } from "../../src/turn-store.ts";
 export type { ActiveTurnState } from "../../src/turn-store.ts";
+
+// usage-copy.ts
+export {
+  CONSOLE_URL,
+  describeUsage,
+  GO_PLAN_URL,
+} from "../../src/usage-copy.ts";
+
+// usage-css.ts
+export { STYLES } from "../../src/usage-css.ts";
 
 // usage-panel.tsx
 export { UsagePanel, UsageTrigger } from "../../src/usage-panel.tsx";
@@ -428,22 +442,18 @@ export type {
   SnapshotStore,
 } from "../../src/usage-pill.tsx";
 
-// usage-ui.ts
+// usage-state.ts
 export {
   CIRCUMFERENCE,
-  CONSOLE_URL,
-  describeUsage,
-  formatRelativeReset,
   getAffectingWindow,
   getWindowColorFor,
-  GO_PLAN_URL,
   matchesAny,
-  parseFailure,
-  resetLabel,
   ringGeometry,
-  STYLES,
-} from "../../src/usage-ui.ts";
-export type { RelativeReset } from "../../src/usage-ui.ts";
+} from "../../src/usage-state.ts";
+
+// usage-time.ts
+export { formatRelativeReset, resetLabel } from "../../src/usage-time.ts";
+export type { RelativeReset } from "../../src/usage-time.ts";
 
 // usage.ts
 export { GoUsageService } from "../../src/usage.ts";
