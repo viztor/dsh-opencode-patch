@@ -292,10 +292,9 @@ describe(
       const request = { provider: "opencode" };
       type Settled = { ok: unknown } | { error: unknown };
       const settled = (promise: Promise<unknown>): Promise<Settled> =>
-        promise.then(
-          (ok) => ({ ok }),
-          (error: unknown) => ({ error })
-        );
+        promise
+          .then((ok): Settled => ({ ok }))
+          .catch((error: unknown): Settled => ({ error }));
       let calls:
         | {
             control: Promise<Settled>;

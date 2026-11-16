@@ -1320,10 +1320,9 @@ describe(
 
     type Settled = { ok: unknown } | { error: unknown };
     const settledOf = (promise: Promise<unknown>): Promise<Settled> =>
-      promise.then(
-        (ok) => ({ ok }),
-        (error: unknown) => ({ error })
-      );
+      promise
+        .then((ok): Settled => ({ ok }))
+        .catch((error: unknown): Settled => ({ error }));
 
     /** The host's own `discoverModels`, unwrapped: the prototype's, on `llm`. */
     const hostDiscover =
