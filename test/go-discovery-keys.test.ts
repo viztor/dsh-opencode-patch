@@ -1,7 +1,8 @@
 /**
- * `go-discovery.ts` — the key ladder: which credential source each `keySource`
- * policy lets win, which reference a lookup is asked for, the Zen credit
- * check, and the gaps characterised while pinning the policy.
+ * The meter's discovery in `credentials.ts` (`go-discovery.ts` until P10a) —
+ * the key ladder: which credential source each `keySource` policy lets win,
+ * which reference a lookup is asked for, the Zen credit check, and the gaps
+ * characterised while pinning the policy.
  *
  * Offline and deterministic: every case restores `process.env` and the
  * captured-key store in `afterEach`.

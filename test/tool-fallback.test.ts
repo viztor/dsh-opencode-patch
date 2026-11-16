@@ -1,16 +1,19 @@
 /**
- * `tool-fallback.ts` — the free-tier `read`/`bash` schema fallback.
+ * The free-tier `read`/`bash` schema fallback.
  *
  * The Zen gateway rejects a free-tier `/responses` body that lacks `read` and
- * `bash` in `tools`, so this module injects both — but only when they are
- * genuinely missing, and only for a model the marker matches.
+ * `bash` in `tools`, so the fallback injects both — but only when they are
+ * genuinely missing, and only for a model the marker matches. The cases drive
+ * `maybeInjectCoreTools` in `src/request/body.ts`, a wrapper over
+ * `applyCoreTools`: the same body reader and gate the fetch patch runs, over
+ * `tool-fallback.ts`'s `injectCoreToolsInto`.
  *
  * The cases are weighted toward the paths that must leave a body alone: one
  * that already declares both schemas, one for a paid model, one that is not
  * JSON, one that is not a re-readable string/Buffer, and any path that is not
  * `/responses`. Every one of those is a silent rewrite if it ever fires by
- * accident, because the only caller compares references — `patchFetch` swaps
- * the body exactly when the returned value is not the one it passed in.
+ * accident, because the patch compares references — `withSentBody` swaps the
+ * body exactly when the one the stage answers is not `body.raw`.
  *
  * @module test/tool-fallback.test
  */

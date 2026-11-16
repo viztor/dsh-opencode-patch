@@ -2,7 +2,7 @@
  * Host-side service that queries OpenCode Go usage statistics without
  * exposing credentials to the client, plus its Typert remote registration.
  *
- * Credential and gateway resolution live in `go-discovery.ts` (shared with
+ * Credential and gateway resolution live in `credentials.ts` (shared with
  * the `apply()` wiring); this module owns the service lifecycle, the quota
  * fetch, and the typed errors the client meter reacts to.
  *
@@ -34,7 +34,7 @@ import {
   resolveGoApiKey,
   resolveZenCreditInfo,
   toGoBaseURL,
-} from "./go-discovery.ts";
+} from "./credentials.ts";
 import { GO_MODEL_LIMITS } from "./go-limits-data.ts";
 import { allowanceFor, type ModelAllowance } from "./go-limits.ts";
 import { markRemote } from "./host/remote.ts";

@@ -97,7 +97,7 @@ The user sees a single OpenCode provider per plane and a single model list. Noth
 | One list | A plane lists the models its entry declares, and the whole catalog when it declares none (D3). A model's protocol is not part of what the user picks, so it cannot fall out of sync with the picker. |
 | Computed from data | `provider_npm` → protocol → base, rebuilt whenever the plane entry changes. Nothing is stored, so a catalog refresh changes routing with no migration. |
 | Registered by the plugin, configured in pi-ai | The plane entries stay in `llm-pi-ai`'s `providers` block; the plugin claims the two routes and leaves every other route to pi-ai. |
-| One place adds the headers | `fetch-patch.ts` writes the origin proof, the session id and the project attribution for every claimed route, so those do not vary by protocol. |
+| One place adds the headers | `request/headers.ts` writes the origin proof, the session id and the project attribution for every claimed route, so those do not vary by protocol. |
 
 Two guards keep the invisible half honest, because **a mechanism that silently drops a model looks exactly like a model that does not exist**:
 
@@ -115,7 +115,7 @@ Four sources, in a fixed order, because they answer different questions:
 | `src/catalog-data.ts` (bundled shim) | "what can I offer before any network call?" | cold start, offline |
 | models.dev | "what is this model's canonical spec, price and display name?" | SWR refresh |
 | Gateway `/models` | "what does **this account** actually have?" | per listing request |
-| `models-discovery.ts` | "what should `discoverModels` answer?" | per discovery call |
+| `host/discovery.ts` | "what should `discoverModels` answer?" | per discovery call |
 
 **The merge is additive, and it never drops a row it cannot explain.** Adapter rows are preserved; canonical rows are appended when a model is missing; a row is omitted only when the registry itself marks it `status: "deprecated"`, a fact rather than a guess. Display names and prices come from models.dev, because a gateway listing carries ids and little else.
 
@@ -137,9 +137,9 @@ What belongs here is only the part that is a routing consequence: the meter is a
 | :-- | :-- |
 | Which protocol and endpoint a model is served on | `utils/protocols.ts`, `utils/plane-model.ts`, `utils/plane-profile.ts` |
 | Serving the planes | `host/route-claim.ts`, `host/plane-provider.ts`, `host/describe-graft.ts` |
-| Catalog merge | `models-catalog.ts`, `models-discovery.ts`, `catalog-data.ts` |
+| Catalog merge | `models-catalog.ts`, `host/discovery.ts`, `catalog-data.ts` |
 | Allowance table | `go-limits-data.ts` (generated) |
-| Credentials and the `/usage` endpoint | `go-discovery.ts`, `key-capture.ts` |
+| Credentials and the `/usage` endpoint | `credentials.ts`, `key-capture.ts` |
 | The usage Host service | `usage.ts`, `contracts/usage.ts` |
-| Meter state / views / logic | `usage-pill.tsx`, `usage-panel.tsx`, `usage-ui.ts` |
+| Meter state / views / logic | `usage-pill.tsx`, `usage-panel.tsx`, `usage-state.ts`, `usage-copy.ts`, `usage-time.ts`, `usage-css.ts` |
 | Settings card and its summary | `settings-card.tsx`, `settings-usage.tsx` |

@@ -13,13 +13,11 @@
  * the declared list (or the plane's catalog for an entry that declares none,
  * which this wrapper does not decide).
  *
- * @module dsh-opencode-patch/models-discovery
+ * @module dsh-opencode-patch/host/discovery
  */
 
-import type { ResolvedPluginConfig } from "./config.ts";
-import type { CordisContext } from "./cordis-context.ts";
-import { patchMethod } from "./host/patch-method.ts";
-import type { RouteClaim } from "./host/route-claim.ts";
+import type { ResolvedPluginConfig } from "../config.ts";
+import type { CordisContext } from "../cordis-context.ts";
 import {
   type CatalogModelSpec,
   type CatalogProvider,
@@ -27,16 +25,18 @@ import {
   findModelSpecOn,
   isDeprecatedModelOn,
   liveCatalogOn,
-} from "./models-catalog.ts";
+} from "../models-catalog.ts";
 import {
   MEASURED_CONTEXT_WINDOWS,
   type MeasuredWindows,
   measuredWindowFor,
-} from "./utils/context-windows.ts";
-import { isRecord } from "./utils/guards.ts";
-import { PLANE_OF_ROUTE, planeOfPlaneRoute } from "./utils/planes.ts";
-import { isPlaneRoute, isServableSdk } from "./utils/protocols.ts";
-import { planeForUrl } from "./utils/request-shape.ts";
+} from "../utils/context-windows.ts";
+import { isRecord } from "../utils/guards.ts";
+import { PLANE_OF_ROUTE, planeOfPlaneRoute } from "../utils/planes.ts";
+import { isPlaneRoute, isServableSdk } from "../utils/protocols.ts";
+import { planeForUrl } from "../utils/request-shape.ts";
+import { patchMethod } from "./patch-method.ts";
+import type { RouteClaim } from "./route-claim.ts";
 
 /**
  * The patch sites this module installs, one id each. Two activations of the

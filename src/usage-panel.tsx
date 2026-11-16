@@ -16,18 +16,10 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
-import type { GoUsage, UsageWindow } from "./contracts/usage.ts";
-import {
-  BREAKDOWN_WINDOWS,
-  CONSOLE_URL,
-  formatRelativeReset,
-  resetLabel,
-  getWindowState,
-  WINDOW_STATE_COLOR,
-  panelActions,
-  RADIUS,
-  type UsageFailure,
-} from "./usage-ui.ts";
+import type { GoUsage, UsageFailure, UsageWindow } from "./contracts/usage.ts";
+import { BREAKDOWN_WINDOWS, CONSOLE_URL, panelActions } from "./usage-copy.ts";
+import { getWindowState, RADIUS, WINDOW_STATE_COLOR } from "./usage-state.ts";
+import { formatRelativeReset, resetLabel } from "./usage-time.ts";
 import { formatUsd } from "./utils/usd.ts";
 
 /**

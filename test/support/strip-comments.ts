@@ -22,7 +22,7 @@
  * One blind spot remains, and it is narrow: a line INSIDE a multi-line string
  * or template literal that begins with `/*` and is closed by a later real
  * `*\/` is blanked as a comment, along with the lines between. The CSS
- * comments inside `src/usage-ui.ts`'s template literal are that shape, and are
+ * comments inside `src/usage-css.ts`'s template literal are that shape, and are
  * harmless because they are comments.
  *
  * Line breaks are kept, so a `file:line` computed on the result is true.

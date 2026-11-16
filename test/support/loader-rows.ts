@@ -1,5 +1,5 @@
 /**
- * Loader rows and credential services, shaped the way `go-discovery.ts` reads
+ * Loader rows and credential services, shaped the way `credentials.ts` reads
  * them, served on a real cordis `Context`.
  *
  * The rows are what a test means; the context they are served on is the one a
@@ -7,10 +7,11 @@
  * the `loader` property only as a fallback, which a real plugin context never
  * takes (property access without `inject` throws), so each helper provides
  * `loader` (and `credentials`) on `new Context()` and the cases drive the arm
- * a real host takes. Shared by the `go-discovery*` files and the usage
- * service's (`usage-fixture.ts`). Deliberately malformed shapes (`{ loader:
- * null }`, a non-callable `entries`) stay literal in the files that pass them,
- * as direct inputs to the reader.
+ * a real host takes. Shared by the `go-discovery*` files (the meter's
+ * discovery, in `credentials.ts`) and the usage service's
+ * (`usage-fixture.ts`). Deliberately malformed shapes (`{ loader: null }`, a
+ * non-callable `entries`) stay literal in the files that pass them, as direct
+ * inputs to the reader.
  *
  * @module test/support/loader-rows
  */

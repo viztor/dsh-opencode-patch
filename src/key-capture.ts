@@ -8,8 +8,9 @@
  * root (`credentials.ts`), and what counts as a credential at all is
  * `utils/credential-policy.ts`'s.
  *
- * Split out of `go-discovery.ts`, which keeps the *plan* side (which endpoint,
- * which key reference, and the policy that orders the two sources). The seam is
+ * Split out of the meter's discovery (now in `credentials.ts`), which keeps the
+ * *plan* side (which endpoint, which key reference, and the policy that orders
+ * the two sources). The seam is
  * deliberate: everything here is about a credential value, nothing here knows
  * what a provider row or a base URL looks like.
  *

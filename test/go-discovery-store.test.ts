@@ -1,6 +1,6 @@
 /**
- * `go-discovery.ts` — the installation's own store, and where it sits in the
- * key ladder.
+ * The meter's discovery in `credentials.ts` (`go-discovery.ts` until P10a) —
+ * the installation's own store, and where it sits in the key ladder.
  *
  * @module test/go-discovery-store.test
  */

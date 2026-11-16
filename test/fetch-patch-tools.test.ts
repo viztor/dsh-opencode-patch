@@ -31,6 +31,7 @@ import {
 } from "./test-helpers.ts";
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_GO_API_KEY;
@@ -369,5 +370,243 @@ describe("patchFetch · core tools", () => {
     expect(entries.at(-1)?.toolNames).toBe(
       [DUMMY_READ_TOOL.name, DUMMY_BASH_TOOL.name].join(",")
     );
+  });
+});
+
+/**
+ * One claimed request through a fresh patch with no credential anywhere, a
+ * capture fetch and a debug hook: what went on the wire, what the debug entry
+ * said, and every `console.warn` line, so one body can be read by all three of
+ * its readers (the free-model check, the fallback, the debug names) at once.
+ */
+const sendKeyless = async (
+  url: string,
+  body: BodyInit,
+  shape: "init" | "request" = "init"
+): Promise<{
+  entry: Record<string, unknown> | undefined;
+  init: RequestInit | undefined;
+  warned: string[];
+  wire: string | undefined;
+}> => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const als = new AsyncLocalStorage<ActiveTurnState>();
+  const entries: Record<string, unknown>[] = [];
+  const { capture, mockFetch: record } = createCaptureFetch();
+  let sentInput: RequestInfo | URL | undefined;
+  const mockFetch = (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    sentInput = input;
+    return record(input, init);
+  };
+  const patched = patchFetch(mockFetch, als, resolveConfig(), {
+    debug: (entry) => {
+      entries.push(entry);
+    },
+  });
+  try {
+    await als.run(
+      { provider: "opencode", value: openCodeSessionIdFor("one-body") },
+      async () => {
+        await (shape === "request"
+          ? patched(new Request(url, { body, method: "POST" }))
+          : patched(url, { body, method: "POST" }));
+      }
+    );
+    // The text that reached the wire, off whichever half carried it. Read
+    // with `text()`, which parses nothing, so a parse count stays the patch's.
+    const own = capture.init?.body;
+    let wire: string | undefined;
+    if (typeof own === "string") {
+      wire = own;
+    } else if (sentInput instanceof Request) {
+      wire = await sentInput.clone().text();
+    }
+    return {
+      entry: entries.at(-1),
+      init: capture.init,
+      warned: warn.mock.calls.map((args) => args.map(String).join(" ")),
+      wire,
+    };
+  } finally {
+    warn.mockRestore();
+  }
+};
+
+describe("patchFetch · one body, three readers", () => {
+  const completions = "https://opencode.ai/zen/v1/chat/completions";
+
+  it("a Buffer body is rewritten by the fallback and still reported as a missing credential", async () => {
+    // The readers disagree about a Buffer on purpose: the fallback decodes
+    // one, while the free-model check and the debug names read strings only.
+    // So a free model sent as a Buffer is still reported as missing a key,
+    // and the names the entry records are the rewritten string's.
+    const { entry, init, warned } = await sendKeyless(
+      completions,
+      Buffer.from(JSON.stringify({ messages: [], model: freeZenModel() }))
+    );
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain("no credential resolved for opencode");
+    expect(typeof init?.body).toBe("string");
+    const wire = parseJsonBody(init?.body) as Record<string, unknown>;
+    expect(toolNamesOf(wire)).toEqual(["read", "bash"]);
+    expect(wire.tool_choice).toBe("none");
+    expect(entry?.bodySource).toBe("init");
+    expect(entry?.toolNames).toBe("read,bash");
+  });
+
+  it("one string body answers the free-model check, the fallback and the debug entry alike", async () => {
+    const sent = JSON.stringify({ messages: [], model: freeZenModel() });
+    const free = await sendKeyless(completions, sent);
+    expect(free.warned, "a free model needs no key").toEqual([]);
+    expect(free.init?.body).not.toBe(sent);
+    expect(toolNamesOf(parseJsonBody(free.init?.body))).toEqual([
+      "read",
+      "bash",
+    ]);
+    expect(headerOf(free.init, "content-length")).toBe(
+      String(Buffer.byteLength(free.init?.body as string))
+    );
+    expect(free.entry?.toolNames).toBe("read,bash");
+
+    // A body none of them can read: not free, sent as it came, no names.
+    const unreadable = "{not-json";
+    const broken = await sendKeyless(completions, unreadable);
+    expect(broken.warned).toHaveLength(1);
+    expect(broken.warned[0]).toContain("no credential resolved for opencode");
+    expect(broken.init?.body).toBe(unreadable);
+    expect(broken.entry?.toolNames).toBe("");
+  });
+
+  it.each(["init", "request"] as const)(
+    "a claimed request's body is parsed once (body on the %s)",
+    async (shape) => {
+      // All three readers run here: no credential (the free-model check),
+      // the fallback on (its default), and a debug hook (the names). The
+      // count takes in the rewritten wire text too, so the debug names going
+      // back to parsing what was sent is a second parse, not a pass. DSH
+      // sends the body on a Request, so that shape is run as well.
+      const sent = JSON.stringify({ messages: [], model: freeZenModel() });
+      const parse = vi.spyOn(JSON, "parse");
+      const { entry, warned, wire } = await sendKeyless(
+        completions,
+        sent,
+        shape
+      );
+      // Taken before the restore, which clears the record.
+      const parsed = [...parse.mock.calls];
+      parse.mockRestore();
+      expect(warned).toEqual([]);
+      expect(entry?.toolNames).toBe("read,bash");
+      expect(entry?.bodySource).toBe(shape);
+      expect(wire, "the fallback rewrote the body").toBeDefined();
+      expect(wire).not.toBe(sent);
+      expect(
+        parsed.filter(([text]) => text === sent || text === wire),
+        "the request's own text and the text it went out as"
+      ).toHaveLength(1);
+    }
+  );
+
+  it("a keyed request no reader needs is never parsed", async () => {
+    // The parse is lazy as well as single: with a key on the wire there is no
+    // free-model check, with no debug hook there are no names, and off the
+    // fallback's routes (or with it switched off) nothing else asks. Each key
+    // goes on the header its route reads.
+    const sendKeyed = async (
+      url: string,
+      headers: Record<string, string>,
+      config: Parameters<typeof resolveConfig>[0] = {}
+    ): Promise<{
+      init: RequestInit | undefined;
+      parsed: unknown[][];
+      sent: string;
+    }> => {
+      const sent = JSON.stringify({ messages: [], model: freeZenModel() });
+      const als = new AsyncLocalStorage<ActiveTurnState>();
+      const { capture, mockFetch } = createCaptureFetch();
+      const patched = patchFetch(mockFetch, als, resolveConfig(config));
+      const parse = vi.spyOn(JSON, "parse");
+      try {
+        await als.run(
+          { provider: "opencode", value: "ses_keyed" },
+          async () => {
+            await patched(url, { body: sent, headers, method: "POST" });
+          }
+        );
+        return { init: capture.init, parsed: [...parse.mock.calls], sent };
+      } finally {
+        parse.mockRestore();
+      }
+    };
+    const messages = await sendKeyed("https://opencode.ai/zen/v1/messages", {
+      "x-api-key": "sk-test-keyed",
+    });
+    const offRoute = await sendKeyed(
+      completions,
+      { authorization: "Bearer sk-test-keyed" },
+      { injectCoreTools: false }
+    );
+    for (const [label, run] of [
+      ["/messages", messages],
+      ["/chat/completions, the fallback off", offRoute],
+    ] as const) {
+      // Claimed, so the readers were there to skip: the patch set the session.
+      expect(headerOf(run.init, SESSION_HEADER), label).toBe("ses_keyed");
+      expect(run.init?.body, `${label}: sent as it came`).toBe(run.sent);
+      expect(
+        run.parsed.filter(([text]) => text === run.sent),
+        `${label}: no parse of the body`
+      ).toEqual([]);
+    }
+    // The answer already known: the same keyed body with the fallback on is
+    // read by it, once, so the spy does see the patch's parse.
+    const fallbackOn = await sendKeyed(completions, {
+      authorization: "Bearer sk-test-keyed",
+    });
+    expect(
+      fallbackOn.parsed.filter(([text]) => text === fallbackOn.sent)
+    ).toHaveLength(1);
+  });
+
+  it("a body the fallback does not rewrite goes out with no content-length of the patch's", async () => {
+    // The length is written only beside a rewritten body: an un-rewritten
+    // one goes as it came, and the length its transport computes is the
+    // right one.
+    const paid = JSON.stringify({
+      messages: [],
+      model: "gpt-5-paid",
+      tools: [{ name: "read" }],
+    });
+    const off = async (): Promise<RequestInit | undefined> => {
+      const als = new AsyncLocalStorage<ActiveTurnState>();
+      const { capture, mockFetch } = createCaptureFetch();
+      const patched = patchFetch(
+        mockFetch,
+        als,
+        resolveConfig({ injectCoreTools: false })
+      );
+      await als.run({ provider: "opencode", value: "ses_off" }, async () => {
+        await patched(completions, {
+          body: JSON.stringify({ messages: [], model: freeZenModel() }),
+          method: "POST",
+        });
+      });
+      return capture.init;
+    };
+    const switchedOff = await off();
+    const paidSent = await sendKeyless(completions, paid);
+    const unreadable = await sendKeyless(completions, "{not-json");
+    const cases: [string, RequestInit | undefined][] = [
+      ["the fallback switched off", switchedOff],
+      ["a paid model", paidSent.init],
+      ["an unreadable body", unreadable.init],
+    ];
+    for (const [label, init] of cases) {
+      expect(headerOf(init, "content-length"), label).toBeNull();
+    }
+    expect(paidSent.init?.body, "the paid body went as it came").toBe(paid);
   });
 });

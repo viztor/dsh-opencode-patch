@@ -1262,7 +1262,7 @@ describe("keyed probes · the CI wiring", () => {
     for (const path of [
       "README.md",
       "docs/redirect-planes.md",
-      "src/fetch-patch.ts",
+      "src/request/patch-fetch.ts",
       "src/hostile.ts",
       "src/utils/plane-model.test.ts",
       // Named as left out in the tier step: covered offline and nightly.
@@ -1517,7 +1517,8 @@ describe("the e2e-host job · its pull-request scope", () => {
     for (const path of [
       "src/host/route-claim.ts",
       "src/lifecycle.ts",
-      "src/fetch-patch.ts",
+      "src/request/patch-fetch.ts",
+      "src/host/discovery.ts",
       "test/e2e/host/probe-plugin.mjs",
       "test/e2e/host-binary.e2e.ts",
       "test/support/host.ts",
@@ -1536,6 +1537,12 @@ describe("the e2e-host job · its pull-request scope", () => {
       "package.json",
       "src/catalog-data.ts",
       "src/utils/plane-model.ts",
+      // Near misses for the two folder prefixes: a sibling file or folder
+      // that only starts with the folder's name is not in it.
+      "src/request.ts",
+      "src/requests/x.ts",
+      "src/utils/request-shape.ts",
+      "src/hosts/x.ts",
       "test/support/e2e-env.ts.bak",
       "test/e2e-env.test.ts",
       "patches/pi.patch",

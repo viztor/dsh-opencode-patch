@@ -373,3 +373,47 @@ export const usageRemote = defineRemote(USAGE_NAMESPACE, {
     result: usageReading,
   },
 });
+
+/**
+ * A failed usage read, normalized from whatever the Host remote threw.
+ *
+ * `configured === false` is the "no credential at all" state: a configuration
+ * fact rather than a fault, which the meter renders as nothing instead of an
+ * unavailable state the user cannot act on.
+ */
+export interface UsageFailure {
+  configured?: boolean;
+  message?: string;
+  retainPrevious: boolean;
+  /** Why the read failed; `auth` is a rejected credential, not an outage. */
+  reason?: string;
+  source?: string;
+}
+
+/** Normalize a Host remote rejection into a {@link UsageFailure}. */
+export const parseFailure = (error: unknown): UsageFailure => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "opencode-go/usage-unavailable"
+  ) {
+    const details =
+      "details" in error && isRecord(error.details) ? error.details : {};
+    return {
+      ...(details.configured === false ? { configured: false } : {}),
+      message:
+        "message" in error && typeof error.message === "string"
+          ? error.message
+          : undefined,
+      reason: typeof details.reason === "string" ? details.reason : undefined,
+      retainPrevious:
+        details.retryable === true && details.retainPrevious === true,
+      source: typeof details.source === "string" ? details.source : undefined,
+    };
+  }
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    retainPrevious: false,
+  };
+};
