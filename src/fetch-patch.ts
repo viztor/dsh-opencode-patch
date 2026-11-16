@@ -453,7 +453,8 @@ export const patchFetch = (
     let requestToSend = input;
 
     // 4. Core tool schema fallback for free-tier /responses models, over the
-    // body read above.
+    // body read above; a toolless chat-completions body also gets
+    // `tool_choice: "none"`.
     let finalBody = bodyToPatch;
     if (bodyToPatch !== undefined) {
       const newBody = maybeInjectCoreTools(url, bodyToPatch, headers, {
@@ -504,9 +505,15 @@ export const patchFetch = (
     // A revision remapped it to 400 here, so DSH's classifier would stop reading
     // it as AUTH. That was the wrong trade: it rewrote a status the gateway
     // chose, and the user asked for the opposite — keep the 403, keep the real
-    // message. `classifyPiAiError` will label a 403 "AUTH", and that is the
-    // classifier's reading; the message under it is the gateway's and is
-    // accurate, which is what matters. Do not rewrite what the gateway said.
+    // message. Do not rewrite what the gateway said. The CODE is a separate
+    // matter, and not decided here: `classifyPiAiError` labels a 403 "AUTH",
+    // and the conversation replaces an AUTH failure's message with "API key is
+    // invalid" (both channels' `dsh-client-ui-chat`), so on the planes
+    // `PlaneAdapter` finishes the gateway's typed refusals as `FREE_TIER` or
+    // `MODEL_UNAVAILABLE` with these words, and this status except on
+    // Google-protocol models, whose failure text carries none
+    // (`src/utils/gateway-refusal.ts`). pi-ai's own routes keep the bridge's
+    // reading.
     //
     // Measured 403 shapes on this gateway, none of them about a credential:
     //   FreeTierError  "…can only be used from within OpenCode…"

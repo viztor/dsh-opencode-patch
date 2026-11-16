@@ -306,6 +306,14 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // The gateway's refusals (P-R3): every branch is one refusal type or
+        // one text shape.
+        "src/utils/gateway-refusal.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // The plane routes' host half, measured rather than aspirational: what
         // is left uncovered are guards for host shapes no composition offers.
         "src/host/route-claim.ts": {

@@ -35,12 +35,14 @@ import {
   SESSION_AFFINITY_HEADER,
   SESSION_HEADER,
   clearCapturedApiKeys,
+  DUMMY_READ_TOOL_FUNCTION,
   isOpenCodeSessionId,
   newOpenCodeMessageId,
   openCodeSessionIdFor,
   patchFetch,
   resolveConfig,
 } from "../support/src.ts";
+import { toolNamesOf } from "../test-helpers.ts";
 import { startMockGateway, type MockGateway } from "./gateway-server.ts";
 import {
   firstSpecFor,
@@ -286,6 +288,63 @@ describe("the request shape per configuration", () => {
     );
     expect(names).toContain("read");
     expect(names).toContain("bash");
+  });
+
+  it("a free completions turn with no tools reaches the gateway with read, bash and tool_choice none", async () => {
+    const response = await als.run(sessionTurn(), () =>
+      post(
+        patchedWith(resolveConfig()),
+        `${gateway.origin}/zen/v1/chat/completions`,
+        { messages: [{ content: "hi", role: "user" }], model: FREE }
+      )
+    );
+    expect(response.status).toBe(200);
+    const body = recorded().body as Record<string, unknown>;
+    expect(body.tool_choice).toBe("none");
+    expect(toolNamesOf(body)).toEqual(["read", "bash"]);
+  });
+
+  it("replaces an empty-schema read on a free completions turn instead of sending two", async () => {
+    const response = await als.run(sessionTurn(), () =>
+      post(
+        patchedWith(resolveConfig()),
+        `${gateway.origin}/zen/v1/chat/completions`,
+        {
+          messages: [{ content: "hi", role: "user" }],
+          model: FREE,
+          tools: [
+            {
+              function: {
+                name: "read",
+                parameters: { properties: {}, type: "object" },
+              },
+              type: "function",
+            },
+          ],
+        }
+      )
+    );
+    expect(response.status).toBe(200);
+    const body = recorded().body as Record<string, unknown>;
+    expect(toolNamesOf(body)).toEqual(["read", "bash"]);
+    // The shell is gone and the full schema stands in its place.
+    expect((body.tools as unknown[])[0]).toEqual(DUMMY_READ_TOOL_FUNCTION);
+    // The request brought a tool of its own, so no tool_choice is set.
+    expect("tool_choice" in body).toBe(false);
+  });
+
+  it("gives a Responses turn the tools and never a tool_choice", async () => {
+    const response = await als.run(sessionTurn(), () =>
+      post(
+        patchedWith(resolveConfig({ freeModelMarker: "*" })),
+        responsesUrl(),
+        responsesBody(PAID)
+      )
+    );
+    expect(response.status).toBe(200);
+    const body = recorded().body as Record<string, unknown>;
+    expect(toolNamesOf(body)).toEqual(["read", "bash"]);
+    expect("tool_choice" in body).toBe(false);
   });
 
   it("sends no credential and warns when none resolves", async () => {

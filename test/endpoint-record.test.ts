@@ -215,7 +215,7 @@ describe("endpoint record · the table", () => {
   });
 });
 
-describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13)", () => {
+describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13, OC6, OC8, OC9)", () => {
   it("prints the System One family on one line, a shape it did not reach as not sent", () => {
     expect(
       systemOneLine([
@@ -276,9 +276,36 @@ describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13
     expect(lines[6]).toBe(
       "| `opencode` | `x-opencode-project: <folder name>` | L5 | — | not sent |"
     );
-    expect(lines.at(-1)).toBe(
+    // `reasoning-none` is no longer the last variant: the console study's
+    // rows follow it.
+    expect(
+      lines.find((line) =>
+        line.startsWith('| `opencode-go` | `reasoning_effort: "none"` |')
+      )
+    ).toBe(
       '| `opencode-go` | `reasoning_effort: "none"` | L10 | — | no-model |'
     );
+    // A keyless row says so in its label, and a keyed row does not: the
+    // label is tied to the `keyed` switch for every printed row, not read
+    // off one row picked by its own label. The table prints VARIANT_ROWS
+    // in order, so each row is checked against the variant it prints.
+    const printed = lines.slice(4);
+    expect(printed).toHaveLength(VARIANT_ROWS.length);
+    const keyless = VARIANT_ROWS.map(([plane, variant], index) => {
+      const row = printed[index];
+      expect(row?.startsWith(`| \`${plane}\` | ${variant.label} |`)).toBe(true);
+      expect(row?.includes("no key")).toBe(variant.keyed === false);
+      return variant.keyed === false ? `${plane} ${variant.id}` : undefined;
+    }).filter((row) => row !== undefined);
+    // The known answer: three free rows on each plane.
+    expect(keyless).toEqual([
+      "opencode free-baseline",
+      "opencode session-raw-free",
+      "opencode ua-harness-free",
+      "opencode-go free-baseline",
+      "opencode-go session-raw-free",
+      "opencode-go ua-harness-free",
+    ]);
     expect(
       VARIANT_ROWS.map(([plane, variant]) => `${plane} ${variant.id}`)
     ).toEqual(
@@ -290,7 +317,7 @@ describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13
 
   it("prints every keyed 429's Retry-After, absent included, with nothing that could break the line", () => {
     expect(retryAfterLine([])).toBe(
-      "`Retry-After` on a keyed 429: no 429 was answered."
+      "`Retry-After` on a keyed 429: no keyed 429 was answered."
     );
     expect(
       retryAfterLine([

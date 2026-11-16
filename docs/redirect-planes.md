@@ -216,48 +216,48 @@ The root shape is the provider-level base `models.opencode.ai` declared for each
 How to read a cell. Each is the verdict, then the HTTP status:
 
 - **Keyless** (no credential; one PAID model per plane and protocol): `path-gone` is a 404, the path does not exist; `path-exists` is a 401 or 403, or a 400 that is not about the model; `model-gone` is a 410, a 400 "Model is unavailable", or a refusal of type `ModelDeprecated` at any status (read before the 404, so a withdrawn model never reads as a gone path); `redirected` is a 3xx, which no probe follows, and its cell names the path it pointed at (`redirected (308 → /…)`); `other` is anything else; `no-model` means the live catalog had no paid model for the protocol, so nothing was sent.
-- **Every table** (a probe is retried once after a 429, a 5xx or no answer): `rate-limited` is a 429 on the last attempt, or a 429 and then no answer — the gateway's measured rate-limit hang; `transport-error` is no answer on the last attempt, unless an earlier one was a 429 (no answer after a 5xx or a busy upstream is `transport-error` too: only the 429 hang is measured).
+- **Every table** (a probe is retried once after a 429 other than the usage cap, a 5xx or no answer): `rate-limited` is a rate-limit 429 on the last attempt, or a 429 and then no answer — the gateway's measured rate-limit hang; `transport-error` is no answer on the last attempt, unless an earlier one was a 429 (no answer after a 5xx or a busy upstream is `transport-error` too: only the 429 hang is measured); the free tier's usage cap, a `429 FreeUsageLimitError`, is `free-usage-limited` on every table, never retried and never `rate-limited`.
 - **Free** (one free completions model, keyless, on the default completions path): `served` or `free-tier-gated` (a `403 FreeTierError`: the free tier parsed the request) pass; `rate-limited` skips, and so does `free-usage-limited`, a `429 FreeUsageLimitError` — the tier's usage cap refusing the caller, which is the gate's decision rather than a rate limit, so it is neither retried nor read as served (L3 in the plan's lessons); `wrong-format`, `auth-required`, `path-gone`, `redirected`, `other` (a 500 or 502 included) and `transport-error` fail; `model-gone` and `upstream-busy` (a 503, a 529 or a 5xx whose body names an overload: the free model is the one keyless request that reaches the upstream) move on to the next free model — `model-gone` being a 410, a 400 "Model is unavailable", or a refusal of type `ModelDeprecated` at any status (measured as a 400 for a model the catalog still listed); when every candidate moved on, a busy one among them skips, and the line names that busy candidate's model and status; three retired ones fail; `not run` means the run never reached the probe.
-- **Keyed** (the plane's own key, in the header the protocol reads, with the identity headers the fetch patch puts on a turn, its user agent included; on Go that is `OPENCODE_GO_API_KEY`, the key a Go entry naming `apiKeyEnv: OPENCODE_GO_API_KEY` sends — README step 3 — not the Zen key a Go entry without it sends, which these probes do not measure, nor a plane entry another plugin owns, D27, which pi-ai sends with that plugin's credential and none of these headers): `served` is a 2xx; `path-exists` a 400 about the content; `wrong-protocol` a `400 ModelProtocolUnsupported`; `auth-refused` a 401 or 403 with the key; `session-refused` the request's session refused (`MissingSessionID`, or a `FreeTierError` on a paid model); `account` no funds or a model the account may not use, which shows the key was read and the path exists, but nothing about whether the path serves the protocol or the model; `path-gone` a 404 whose body names no model, and `model-gone` a refusal of type `ModelDeprecated` at any status, a 410, a 400 "Model is unavailable" or a 404 whose body names a model — Anthropic's `not_found_error` with a `model: …` message, `model_not_found`, or Gemini's `models/<id> is not found`; Anthropic's bare `not_found_error`, which every Anthropic 404 carries, is `path-gone` (a keyed request can reach the upstream); `upstream-busy` a 503, a 529 or a 5xx whose body names an overload — the upstream was busy, or the gateway's front answered before reading the request, so like a rate limit it neither fails nor passes a plane, and never counts as a shape accepting the request; `redirected` and `other` as keyless, a 500 or 502 included; `no-key` means the run had no key for that plane.
+- **Keyed** (the plane's own key, in the header the protocol reads, with the identity headers the fetch patch puts on a turn, its user agent included; on Go that is `OPENCODE_GO_API_KEY`, the key a Go entry naming `apiKeyEnv: OPENCODE_GO_API_KEY` sends — README step 3 — not the Zen key a Go entry without it sends, which these probes do not measure, nor a plane entry another plugin owns, D27, which pi-ai sends with that plugin's credential and none of these headers): `served` is a 2xx; `path-exists` a 400 about the content; `wrong-protocol` a `400 ModelProtocolUnsupported`; `auth-refused` a 401 or 403 with the key; `session-refused` the request's session refused (`MissingSessionID`, or a `FreeTierError` on a paid model); `free-usage-limited` a `429 FreeUsageLimitError`, the free tier's usage cap, which only a keyless free row meets and which, like a rate limit, neither fails nor passes a plane (L3); `account` no funds or a model the account may not use, which shows the key was read and the path exists, but nothing about whether the path serves the protocol or the model; `path-gone` a 404 whose body names no model, and `model-gone` a refusal of type `ModelDeprecated` at any status, a 410, a 400 "Model is unavailable" or a 404 whose body names a model — Anthropic's `not_found_error` with a `model: …` message, `model_not_found`, or Gemini's `models/<id> is not found`; Anthropic's bare `not_found_error`, which every Anthropic 404 carries, is `path-gone` (a keyed request can reach the upstream); `upstream-busy` a 503, a 529 or a 5xx whose body names an overload — the upstream was busy, or the gateway's front answered before reading the request, so like a rate limit it neither fails nor passes a plane, and never counts as a shape accepting the request; `redirected` and `other` as keyless, a 500 or 502 included; `no-key` means the run had no key for that plane.
 - `*` marks a cell the default family dispatches to (`TODAY_DISPATCH`), `†` one `endpoint: legacy` dispatches to (`LEGACY_DISPATCH`), and `not sent` a cell the run did not reach.
 
-Three records sit beside the tables, each measured and never asserted (the plan's lessons L4, L5, L9, L10 and L13; P6 and P-R3 act on them):
+Three records sit beside the tables, each measured and never asserted (the plan's lessons L4, L5, L9, L10 and L13, and the console study's OC6, OC8 and OC9, whose rows feed an owner's OC6 decision, the session derivation's OC9 and P6's OC8):
 
 - **System One** (keyless, the Zen plane only, no model named): TypeSafe's classification protocol on its three shapes, `/zen/v1/systemone`, `/inference/v1/systemone` and `/inference/systemone/v1/systemone`, read as the keyless matrix reads a cell. The plugin serves no classifier, so nothing dispatches there.
-- **Keyed variants** (each plane's default completions cell with its own key): the probe identity (no `x-opencode-request`, `x-opencode-project: global`) beside one change each — a minted `x-opencode-request` in the client's `msg_` shape, `x-opencode-project` as a folder name and as a 40-hex digest — and a paid completions model that reasons, sent with no `reasoning_effort` and with `"none"`. Each answer is read as a keyed cell.
-- **`Retry-After`**: the header of every keyed 429, matrix and variants alike, or `absent`.
+- **Keyed variants** (each plane's default completions cell with its own key): the probe identity (no `x-opencode-request`, `x-opencode-project: global`) beside one change each — a minted `x-opencode-request` in the client's `msg_` shape, `x-opencode-project` as a folder name and as a 40-hex digest — and a paid completions model that reasons, sent with no `reasoning_effort` and with `"none"`. Beside them, the console study's rows: a raw session id (the host's own `session-<uuid>`, with a tail outside the `ses_` band, not a `ses_` id) under both session headers (OC9), the session-only header set, `x-opencode-session` without `x-opencode-client`, `x-opencode-project` or `x-opencode-session-id` (OC8), and the harness's own `User-Agent` in place of the CLI's (OC6); and a free completions model sent with NO key and the body the plugin's free turn sends (`read`, `bash`, `tool_choice: "none"`), as the probe identity, with a raw session id, and with the harness's `User-Agent` — the only keyless requests in the keyed tier. Each answer is read as a keyed cell, recorded and never asserted. On a keyless row, `auth-refused` means the gateway's key gate answered a request that carried no key (L8's `401` "Invalid API key" for a session id it reads as malformed among them), not that a key was refused, `session-refused` is the free tier's `FreeTierError`, and `free-usage-limited` is the tier's usage cap: a row that answers `free-usage-limited` reached the usage gate only, so it measured nothing about OC6, OC9 or L7, and a `session-refused` on the raw-session or harness-`User-Agent` free row is OC9's or OC6's answer only when the free baseline beside it answered otherwise. The free baseline is also L7's live evidence for `tool_choice: "none"`, which the mock gateway does not judge: a `path-exists` (a 400 about the body) or `other` there, on a plane with a free model, points at it first. `auth-refused`, `free-usage-limited` or `rate-limited` mean the gateway answered before it judged the field, and a `session-refused` cannot tell a gate that stopped counting the tools from one that refuses the request outright (the README records the free tier refusing even the official client's full request), so after any of them L7 is still unmeasured. The row's body is in the job log's console table, not here.
+- **`Retry-After`**: the header of every keyed 429, matrix and variants alike, or `absent`. The keyless free rows and the free tier's usage cap are left out: neither is a keyed rate limit.
 
 The CI `e2e` job writes these tables to its run summary and to the `endpoint-families` artifact (`test/support/endpoint-record.ts` formats them). A run's tables are pasted here with their date and run link; they are never hand-written, and `test/endpoint-record.test.ts` holds this section to the formatter's columns and row order.
 
-### Keyless · pending the first CI run
+### Keyless · measured 2026-11-14 (UTC) · [run 43542273415](https://github.com/viztor/dsh-opencode-patch/actions/runs/43542273415)
 
 | Plane | Protocol | Model | `/zen(/go)/v1` (legacy) | `/inference(/go)/v1` (root) | `/inference(/go)/{openai,anthropic,google}/…` (modern) |
 | :-- | :-- | :-- | :-- | :-- | :-- |
-| `opencode` | `openai-completions` | pending | pending † | pending | pending * |
-| `opencode` | `openai-responses` | pending | pending † | pending | pending * |
-| `opencode` | `anthropic-messages` | pending | pending † | pending | pending * |
-| `opencode` | `google-generative-ai` | pending | pending † | pending | pending * |
-| `opencode-go` | `openai-completions` | pending | pending † | pending | pending * |
-| `opencode-go` | `openai-responses` | pending | pending † | pending | pending * |
-| `opencode-go` | `anthropic-messages` | pending | pending † | pending | pending * |
-| `opencode-go` | `google-generative-ai` | pending | pending | pending | pending * † |
+| `opencode` | `openai-completions` | `minimax-m3` | path-exists (401) † | path-exists (401) | path-exists (401) * |
+| `opencode` | `openai-responses` | `gpt-5.3-codex-spark` | path-exists (401) † | path-exists (401) | path-exists (401) * |
+| `opencode` | `anthropic-messages` | `claude-opus-4-5` | path-exists (401) † | path-exists (401) | path-exists (401) * |
+| `opencode` | `google-generative-ai` | `gemini-3.7-flash` | path-exists (401) † | path-exists (401) | path-exists (401) * |
+| `opencode-go` | `openai-completions` | `mimo-v2.5-pro` | path-exists (400) † | path-exists (400) | path-exists (400) * |
+| `opencode-go` | `openai-responses` | `muse-spark-1.3-contributor` | path-exists (400) † | path-exists (400) | path-exists (400) * |
+| `opencode-go` | `anthropic-messages` | `minimax-m3` | path-exists (400) † | path-exists (400) | path-exists (400) * |
+| `opencode-go` | `google-generative-ai` | `gemini-4-argon` | path-gone (404) | path-exists (400) | path-exists (400) * † |
 
-Free model on `/inference/openai/v1/chat/completions`: pending the first CI run.
+Free model on `/inference/openai/v1/chat/completions`: `flint-40b-free` → free-usage-limited (429).
 
-System One on the Zen plane, keyless (nothing dispatches there): pending the first CI run.
+System One on the Zen plane, keyless (nothing dispatches there): `/zen/v1/systemone` (legacy) → path-exists (400); `/inference/v1/systemone` (root) → path-exists (400); `/inference/systemone/v1/systemone` (modern) → path-exists (400).
 
-### Keyed · pending the first CI run
+### Keyed · measured 2026-11-14 (UTC) · [run 43542273415](https://github.com/viztor/dsh-opencode-patch/actions/runs/43542273415)
 
 | Plane | Protocol | Model | `/zen(/go)/v1` (legacy) | `/inference(/go)/v1` (root) | `/inference(/go)/{openai,anthropic,google}/…` (modern) |
 | :-- | :-- | :-- | :-- | :-- | :-- |
-| `opencode` | `openai-completions` | pending | pending † | pending | pending * |
-| `opencode` | `openai-responses` | pending | pending † | pending | pending * |
-| `opencode` | `anthropic-messages` | pending | pending † | pending | pending * |
-| `opencode` | `google-generative-ai` | pending | pending † | pending | pending * |
-| `opencode-go` | `openai-completions` | pending | pending † | pending | pending * |
-| `opencode-go` | `openai-responses` | pending | pending † | pending | pending * |
-| `opencode-go` | `anthropic-messages` | pending | pending † | pending | pending * |
-| `opencode-go` | `google-generative-ai` | pending | pending | pending | pending * † |
+| `opencode` | `openai-completions` | `minimax-m3` | account (403) † | account (403) | account (403) * |
+| `opencode` | `openai-responses` | `gpt-5.3-codex-spark` | account (403) † | account (403) | account (403) * |
+| `opencode` | `anthropic-messages` | `claude-opus-4-5` | account (403) † | account (403) | account (403) * |
+| `opencode` | `google-generative-ai` | `gemini-3.7-flash` | account (403) † | account (403) | account (403) * |
+| `opencode-go` | `openai-completions` | `mimo-v2.5-pro` | model-gone (410) † | model-gone (410) | model-gone (410) * |
+| `opencode-go` | `openai-responses` | `muse-spark-1.3-contributor` | served (200) † | served (200) | served (200) * |
+| `opencode-go` | `anthropic-messages` | `minimax-m3` | served (200) † | served (200) | served (200) * |
+| `opencode-go` | `google-generative-ai` | `gemini-4-argon` | path-gone (404) | served (200) | served (200) * † |
 
 ### Keyed variants · pending the first CI run
 
@@ -269,11 +269,25 @@ System One on the Zen plane, keyless (nothing dispatches there): pending the fir
 | `opencode` | `x-opencode-project: <40 hex>` | L5 | pending | pending |
 | `opencode` | a reasoning model, no `reasoning_effort` | L10 | pending | pending |
 | `opencode` | `reasoning_effort: "none"` | L10 | pending | pending |
+| `opencode` | a raw session id (the host's `session-<uuid>`, not `ses_…`) | OC9 | pending | pending |
+| `opencode` | `x-opencode-session` only: no `x-opencode-client`, `x-opencode-project` or `x-opencode-session-id` | OC8 | pending | pending |
+| `opencode` | the harness's `User-Agent` | OC6 | pending | pending |
+| `opencode` | a free model, no key: the probe identity and the free turn's body | OC6, OC9 | pending | pending |
+| `opencode` | a free model, no key: a raw session id | OC9 | pending | pending |
+| `opencode` | a free model, no key: the harness's `User-Agent` | OC6 | pending | pending |
 | `opencode-go` | the probe identity: no `x-opencode-request`, `x-opencode-project: global` | L4, L5 | pending | pending |
 | `opencode-go` | `x-opencode-request: msg_…` | L4 | pending | pending |
 | `opencode-go` | `x-opencode-project: <folder name>` | L5 | pending | pending |
 | `opencode-go` | `x-opencode-project: <40 hex>` | L5 | pending | pending |
 | `opencode-go` | a reasoning model, no `reasoning_effort` | L10 | pending | pending |
 | `opencode-go` | `reasoning_effort: "none"` | L10 | pending | pending |
+| `opencode-go` | a raw session id (the host's `session-<uuid>`, not `ses_…`) | OC9 | pending | pending |
+| `opencode-go` | `x-opencode-session` only: no `x-opencode-client`, `x-opencode-project` or `x-opencode-session-id` | OC8 | pending | pending |
+| `opencode-go` | the harness's `User-Agent` | OC6 | pending | pending |
+| `opencode-go` | a free model, no key: the probe identity and the free turn's body | OC6, OC9 | pending | pending |
+| `opencode-go` | a free model, no key: a raw session id | OC9 | pending | pending |
+| `opencode-go` | a free model, no key: the harness's `User-Agent` | OC6 | pending | pending |
 
-`Retry-After` on a keyed 429: pending the first CI run.
+The variants table waits for the first run on the formatter that carries the console study's rows. [Run 43542273415](https://github.com/viztor/dsh-opencode-patch/actions/runs/43542273415) measured the twelve lesson rows under the formatter before them, so its variants table is not pasted here; the plan's P-R3 entry quotes its L10 pair. Its `Retry-After` line, which covers its keyed table and those twelve rows:
+
+`Retry-After` on a keyed 429: no 429 was answered.

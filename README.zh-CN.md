@@ -229,7 +229,7 @@ Zen 的 provider 级 SDK 是 `@ai-sdk/openai-compatible`。models.dev **只在�
 | **网关请求** | 注入客户端来源头（默认开启） | `on` | 在网关流量上注入 `x-opencode-client`（以及来源请求头集合） |
 | **网关请求** | 附带工作区项目标识（默认开启） | `on` | 用当前文件夹名标记 `x-opencode-project`；关闭则省略该请求头 |
 | **模型与免费额度** | 用 OpenCode 官方目录补全列表（默认开启） | `on` | 让网关 `/models` 列表带上完整目录，并把目录提供给设置页的模型发现。本身**不会**往选择器里添加模型——选择器显示你声明的模型；条目未声明任何模型时显示该平面的目录，此开关不改变这两者。要声明更多，请在 OpenCode 平面上使用 **Settings → Models → Fetch**：它会提供 pi 的列表以及 pi 缺少的目录模型，选用一行并保存即完成声明。已声明模型自身的信息（上下文、模态、思考档位）始终来自你的模型行与目录，与此开关无关 |
-| **模型与免费额度** | 自动补全核心工具（默认开启） | `on` | 补上免费层 `/responses` 请求体所需的 `read` + `bash` schema |
+| **模型与免费额度** | 自动补全核心工具（默认开启） | `on` | 补上免费层 `/responses` 与 Chat Completions 请求体所需的 `read` + `bash` schema，替换以空 schema 声明的 `read` 或 `bash`，并给没有自带工具的免费 Chat Completions 请求体加上 `tool_choice: "none"` |
 | **配额计量** | 开启输入区用量计量（默认开启） | `on` | 在输入框停靠栏挂载实时计量表——Go 额度环，或 Zen 会话消耗 |
 | **账户与端点** | API 端点 | `auto` | 请求发往哪个端点家族：**自动**（同新端点） · **旧端点**（`zen/v1`、`zen/go/v1`） · **新端点**（按协议的 `inference/{openai,anthropic,google}/…`，Go 为 `inference/go/…`） |
 | **账户与端点** | 凭据来源 | `auto` | 多个密钥同时可用时以哪个为准：**自动** · **优先实时请求** · **优先已声明密钥** |
@@ -405,12 +405,14 @@ OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harnes
 - **在 Console 的路由上，Settings → Models → Fetch 就是 `llm-pi-ai` 自己的列表。** 不会往里添加任何目录模型；`llm-pi-ai` 重启期间，获取会像 `llm-pi-ai` 自己那样失败，而不是回答目录；与之并列的你自己的平面条目仍会得到目录中的模型。
 - **日志对每条路由说明一次**，并指出是凭据域还是请求头：`… dsh-opencode-patch leaves the route opencode to pi-ai`。
 - **同名的密钥两边都会读到。** 只有凭据服务按域隔离，启动环境不隔离。环境中导出的 `OPENCODE_API_KEY`（或 `OPENCODE_GO_API_KEY`）会被本插件的计量和你自己的平面读取，也会被 `llm-pi-ai` 用于没有指定自己密钥的 Console 路由。请把工作区令牌保留在 Console 安装步骤给它的名字下，本插件从不读取这个名字。
+- **工作区的策略约束每个回合和每次工具调用**，包括本插件的平面：Console 工作区允许或禁止的内容，对一个回合都适用，无论哪个插件服务它的路由。
+- **Console 的安装步骤会把导出的 `OPENCODE_API_KEY` 当作它自己的凭据**，优先于它的登录。如果两者都用，请不要在运行 Console 安装步骤的 shell 中导出 `OPENCODE_API_KEY`，或给平面一个自己的密钥引用（让 `apiKeyEnv` 指向另一个变量，例如 `OPENCODE_ZEN_API_KEY`）。使用自己的引用时，Go 计量的 Zen 余额检查在 Zen 回合运行之前仍读取 `OPENCODE_API_KEY`，所以在此之前会显示 Zen 余额未配置。
 
 ## 🛠 故障排查
 
 | 症状 | 可能原因 | 解决方法 |
 | :-- | :-- | :-- |
-| 免费模型报 `403 FreeTierError` | 网关的门槛不在请求里：用真实账号、它的会话令牌、它的当前组织以及官方客户端发送的全部请求头实测，免费层模型仍返回 `403` | 上面三个注入开关（**恢复 User-Agent**、**注入客户端来源头**、**自动补全核心工具**）仍值得保持开启——它们让流量可被识别，并恢复工具定义——但单靠它们打不开免费层。付费模型配上密钥即可使用；排除了什么、如何排除，见 [docs/opencode-1.19-api.md](./docs/opencode-1.19-api.md) |
+| 免费模型报 `403 FreeTierError` | 网关的门槛不在请求里：用真实账号、它的会话令牌、它的当前组织以及官方客户端发送的全部请求头实测，免费层模型仍返回 `403` | 上面三个注入开关（**恢复 User-Agent**、**注入客户端来源头**、**自动补全核心工具**）仍值得保持开启——它们让流量可被识别，并恢复工具定义——但单靠它们打不开免费层。付费模型配上密钥即可使用；排除了什么、如何排除，见 [docs/opencode-1.19-api.md](./docs/opencode-1.19-api.md)。在本插件服务的平面上，这样的回合以 `FREE_TIER` 失败，并带有网关的原话，以及它的状态码（Google 协议的模型除外，其失败文本不带状态码） |
 | `400 MissingSessionID` | 未附带会话请求头 | 确认 `dsh-opencode-patch` 已列入 profile 的 `dsh.profile.bundles` |
 | Auto Review 报 `TRANSPORT: Connection error` | 更新后宿主进程未重启 | 停止并重启 `dsh web`，让新的 `lib/index.mjs` 加载 |
 | Go 模型始终不显示额度环 | **重启 `dsh web`，然后查看浏览器控制台**——插件通过 `link:` 加载，`lib/index.mjs` 只在进程启动时读取一次，仅刷新页面仍运行旧的宿主代码；计量会报告它的哪条路径没有返回 | 控制台会指出原因：`no remote to mount on`、带异常的 `did not mount`、`still waiting for remote.opencodeGoUsage`、列出其实际暴露键的 `no opencodeGoUsage service on the remote`，或带返回内容的 `the answer is not a usage shape`。缺失或无法路由的凭据只是几个原因之一：在 `opencode-go` 条目上写明 `apiKeyEnv: OPENCODE_GO_API_KEY` 并在 DSH Credentials 中存储该密钥 |
@@ -438,6 +440,7 @@ OpenCode 官方的 Console 插件（`npx @opencode/console setup deepseek-harnes
 - **Google 思考控制由宿主的 pi 自己决定。** Gemini 请求携带思考**档位**还是 token **预算**，由宿主的 pi 决定，插件不再自行推导。1.4.3 发布的改写（#130）——在 pi 未列出 `gemini-4-argon` 的宿主上为它发送档位——已移除。所有受支持宿主的 pi（npm 安装以及两个通道的桌面应用）都是 `1.3.0` 或更高版本，会列出该模型，因此其回合携带档位；在 pi 为 `1.1.0` 的宿主（`0.2.1` 的 rc 桌面应用，已不再是受支持的通道构建）上，每个 `gemini-4-argon` 回合携带的都是网关会拒绝的思考预算。
 - **`@viztor/dsh-opencode` 已弃用，但仍在发布。** 它是一个转导出 `dsh-opencode-patch` 的薄包装，所以用旧名的安装照常解析；registry 上标记为弃用并指向正式名称。新安装请用 `dsh-opencode-patch` 或 `@viztor/dsh-opencode-patch`。
 - **其他插件拥有的路由留给它自己。** 当 `llm-pi-ai` 的配置行在本插件不解析凭据的凭据域中解析凭据，或者平面条目带有 `x-opencode-plugin` 请求头时（OpenCode Console 安装步骤写入的正是这种形状），该平面由 `llm-pi-ai` 而不是本插件服务，本插件的请求头、密钥与计量都不碰它的流量。在已发布的 1.x 中，这类路由上被本插件转到其隐藏的 Responses、Messages 或 Google 路由的轮次用本插件的凭据解析，因拿不到 Console 的令牌而失败，其余轮次则带上本插件的请求头，其密钥也被记录下来供计量使用；见[与 OpenCode Console 同时安装](#与-opencode-console-同时安装)。
+- **网关的拒绝如实报告。** 在本插件服务的平面上，`FreeTierError`（403）或 `FreeUsageLimitError`（429）现在以 `FREE_TIER` 结束回合，`RegionError`、`ModelDeprecated` 或 `ModelProtocolUnsupported` 以 `MODEL_UNAVAILABLE` 结束，各自带有网关的原话，以及它的状态码（Google 协议的模型除外，其失败文本不带状态码）。过去对话对这些 403 显示“API 密钥无效”（API key is invalid），对用量上限显示“当前请求的额度已用尽”（Request quota exhausted.），网关的消息被丢弃。与被替换的代码一样，这两个新代码都不在宿主的可重试集合中，所以被拒绝的回合仍不会被重发。没有自带工具的免费 Chat Completions 回合现在在免费层的 `read` 与 `bash` 之外带上 `tool_choice: none`，以空 schema 声明的 `read` 或 `bash` 会被完整的定义替换。
 
 ## 📜 兼容性与验证
 

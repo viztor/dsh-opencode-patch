@@ -239,7 +239,8 @@ const fixtureReply = (
   status: 200,
 });
 
-const errorReply = (
+/** A refusal in the gateway's `{ error: { message, type } }` shape. */
+export const errorReply = (
   status: number,
   message: string,
   type: string
@@ -350,7 +351,8 @@ const matchRoute = (path: string): RouteMatch | undefined => {
 const SESSION_BAND_MIN = 0xfc0;
 const SESSION_BAND_MAX = 0xffe;
 
-const FREE_TIER_MESSAGE =
+/** The gateway's own words in a `FreeTierError`. */
+export const FREE_TIER_MESSAGE =
   "OpenCode's free tier can only be used from within OpenCode. Download it at https://opencode.ai and keep building.";
 
 /** The low twelve bits of a session id, or `undefined` when it is not one. */

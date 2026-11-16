@@ -19,8 +19,16 @@
  * `docs/engineering-notes.md`), which would read as "the path parsed it" and
  * measure nothing.
  *
+ * The variants ({@link KEYED_VARIANTS}) also carry the console study's rows
+ * (OC6, OC8, OC9): a raw session id, the session-only header set, the
+ * harness's own User-Agent, and three rows on a free model sent with NO key,
+ * inside the keyed tier, which are the only cells here without a credential.
+ *
  * Pure: no environment read and no fetch — the tier takes the variable's
- * VALUE, and a key comes in as an argument. It reaches `src` only through the
+ * VALUE, and a key comes in as an argument. The one exception is read only
+ * when a cell is built, never at import: the OC6 rows' User-Agent is the
+ * installed dsh-llm's attribution ({@link harnessUserAgent}), which on the rc
+ * channel reads `DSH_USER_AGENT_SUFFIX`, as the host's own does. It reaches `src` only through the
  * test door (`./src.ts`), as `./keyless-matrix.ts` does, for the user agent a
  * turn carries and the SDK → protocol table the L10 variant's model is chosen
  * by, so the identity the live suite sends is defined here once
@@ -31,6 +39,8 @@
  *
  * @module test/support/keyed-probes
  */
+import { attributionHeaders } from "@deepseek-ai/dsh-llm";
+
 import {
   type AttemptVerdict,
   type MatrixCell,
@@ -40,6 +50,7 @@ import {
   LEGACY_DISPATCH,
   TODAY_DISPATCH,
   isFreeSpec,
+  isFreeUsageLimit,
   isModelDeprecated,
   isUpstreamBusy,
   matrixUrl,
@@ -47,6 +58,8 @@ import {
 } from "./keyless-matrix.ts";
 import {
   type CatalogModelSpec,
+  DUMMY_BASH_TOOL_FUNCTION,
+  DUMMY_READ_TOOL_FUNCTION,
   OPENCODE_UA,
   openCodeSessionIdFor,
   protocolForSdk,
@@ -223,6 +236,7 @@ export const keyedCell = (
 export type KeyedVerdict =
   | "account"
   | "auth-refused"
+  | "free-usage-limited"
   | "model-gone"
   | "other"
   | "path-exists"
@@ -264,6 +278,11 @@ const MODEL_NOT_FOUND =
  * - `rate-limited` is a 429, and `account` the account rather than the path:
  *   no funds, or a model the account may not use. Neither says anything about
  *   the shape.
+ * - `free-usage-limited` is a `429 FreeUsageLimitError` ({@link
+ *   isFreeUsageLimit}): the free tier's usage cap refusing the caller, which
+ *   is the gate's decision rather than a rate limit (lesson L3). Only a
+ *   keyless free row meets it — a paid keyed cell never does — and like a
+ *   rate limit it neither fails nor passes a plane ({@link planeOutcome}).
  * - `session-refused` is the request's session refused (`MissingSessionID`, a
  *   `FreeTierError` on a paid model): the probe did not look like the plugin,
  *   so it measured nothing about the path.
@@ -304,7 +323,7 @@ export const classifyKeyedProbe = (answer: {
     return "model-gone";
   }
   if (status === 429) {
-    return "rate-limited";
+    return isFreeUsageLimit(bodyText) ? "free-usage-limited" : "rate-limited";
   }
   if (
     status === 402 ||
@@ -652,21 +671,68 @@ export const PROBE_PROJECTS = {
   folder: "my-app",
 } as const;
 
+/**
+ * The raw session id the OC9 rows send: the shape the host mints for a
+ * conversation, `session-<v4 uuid>` (dsh-api-session-controller's
+ * `createMinted`, `session-${randomUUID()}`), the turn's `sessionId` the
+ * plugin derives its `ses_` id from (`src/session.ts`). Deliberately NOT a `ses_` id, so the row measures
+ * whether the gateway takes an id the plugin did not derive.
+ *
+ * Constant, so a run is reproducible, and chosen to sit OUTSIDE the session
+ * band the gateway admits for a `ses_` id (low twelve bits 0xFC0..0xFFE,
+ * `src/utils/session-id.ts`): its last three hex digits are 0x001, as a random
+ * id's almost always are, so a pass cannot come from a crafted in-band tail.
+ */
+export const PROBE_RAW_SESSION_ID =
+  "session-3b1f0c9e-5a2d-4c7e-9f10-a5c3d2e1f001";
+
+/**
+ * The User-Agent the OC6 rows send: the harness's own attribution, which
+ * pi-ai applies to every provider request after every contributor
+ * (`attributionHeaders()` from the installed dsh-llm, so it names the
+ * channel's version). Read when a cell is built, not at import: on the rc
+ * channel the attribution reads `DSH_USER_AGENT_SUFFIX` and throws on a value
+ * that is not a token, which must not break a file that only imports this
+ * module.
+ *
+ * @returns the installed dsh-llm's `user-agent`.
+ */
+export const harnessUserAgent = (): string => {
+  const value = attributionHeaders()["user-agent"];
+  if (value === undefined) {
+    throw new Error("the installed dsh-llm's attribution names no user-agent");
+  }
+  return value;
+};
+
 /** One keyed variant of the default completions cell. */
 export interface KeyedVariant {
   readonly id:
     | "baseline"
+    | "free-baseline"
     | "project-digest"
     | "project-folder"
     | "reasoning-default"
     | "reasoning-none"
-    | "request-id";
+    | "request-id"
+    | "session-only"
+    | "session-raw"
+    | "session-raw-free"
+    | "ua-harness"
+    | "ua-harness-free";
   /** The lesson in `docs/improvement-plan.md` it measures. */
   readonly lesson: string;
   /** What it changes, as the record's Probe column prints it. */
   readonly label: string;
-  /** Which model it sends: the matrix's representative, or a reasoning one. */
-  readonly model: "reasoning" | "representative";
+  /**
+   * Which model it sends: the matrix's representative, a reasoning one, or
+   * a free one ({@link freeCompletionsModel}).
+   */
+  readonly model: "free" | "reasoning" | "representative";
+  /** `false`: sent with no credential header, the plugin's free turn. */
+  readonly keyed?: false;
+  /** Identity headers removed from the probe identity. */
+  readonly omit?: readonly string[];
   /** Headers set over the probe identity. */
   readonly headers?: Readonly<Record<string, string>>;
   /** Fields set over the keyed body. */
@@ -675,7 +741,9 @@ export interface KeyedVariant {
 
 /**
  * The variants the keyed suite sends on each plane's default completions
- * cell, recorded and never asserted (P-R2 measures; P6 and P-R3 decide):
+ * cell, recorded and never asserted: the lessons' rows feed P6 (L4, L5) and
+ * the L10 follow-up, and the console study's rows an owner's OC6 decision,
+ * the session derivation's OC9 and P6's OC8:
  *
  * - L4 — `x-opencode-request`. The plugin sends a minted message id on every
  *   turn, and one community plugin reports any value refused; the baseline
@@ -688,8 +756,24 @@ export interface KeyedVariant {
  *   offer Off on plain completions models. Its own baseline sends the same
  *   model with no effort, so the pair differs in the one field.
  *
+ * - OC9 — a raw session id: the host's own conversation id
+ *   ({@link PROBE_RAW_SESSION_ID}, `session-<uuid>`) under
+ *   both session headers instead of the derived `ses_` one, whether the
+ *   gateway takes an id the plugin did not shape.
+ * - OC8 — the session-only header set: the probe identity without
+ *   `x-opencode-client`, `x-opencode-project` and `x-opencode-session-id`,
+ *   which is what a turn that only carries pi's own session header sends.
+ * - OC6 — the harness's User-Agent ({@link harnessUserAgent}) in place of
+ *   the CLI's.
+ * - The free rows (OC6, OC9): a free completions model sent with NO key and
+ *   the body the plugin's free turn sends ({@link freeTurnBody}), as the
+ *   probe identity, with a raw session id, and with the harness's
+ *   User-Agent.
+ *
  * Lesson L9, `Retry-After`, is read off every keyed 429 instead
- * ({@link retryAfterOf}).
+ * ({@link retryAfterOf}); a keyless free row's 429 is not a keyed one, so
+ * the suite leaves it off that line. No row sends the vendor's `x-opencode-plugin`
+ * marker: that header is another plugin's.
  */
 export const KEYED_VARIANTS: readonly KeyedVariant[] = [
   {
@@ -733,6 +817,61 @@ export const KEYED_VARIANTS: readonly KeyedVariant[] = [
     lesson: "L10",
     model: "reasoning",
   },
+  {
+    headers: {
+      "x-opencode-session": PROBE_RAW_SESSION_ID,
+      "x-opencode-session-id": PROBE_RAW_SESSION_ID,
+    },
+    id: "session-raw",
+    label: "a raw session id (the host's `session-<uuid>`, not `ses_…`)",
+    lesson: "OC9",
+    model: "representative",
+  },
+  {
+    id: "session-only",
+    label:
+      "`x-opencode-session` only: no `x-opencode-client`, `x-opencode-project` or `x-opencode-session-id`",
+    lesson: "OC8",
+    model: "representative",
+    omit: ["x-opencode-client", "x-opencode-project", "x-opencode-session-id"],
+  },
+  {
+    get headers(): Readonly<Record<string, string>> {
+      return { "user-agent": harnessUserAgent() };
+    },
+    id: "ua-harness",
+    label: "the harness's `User-Agent`",
+    lesson: "OC6",
+    model: "representative",
+  },
+  {
+    id: "free-baseline",
+    keyed: false,
+    label: "a free model, no key: the probe identity and the free turn's body",
+    lesson: "OC6, OC9",
+    model: "free",
+  },
+  {
+    headers: {
+      "x-opencode-session": PROBE_RAW_SESSION_ID,
+      "x-opencode-session-id": PROBE_RAW_SESSION_ID,
+    },
+    id: "session-raw-free",
+    keyed: false,
+    label: "a free model, no key: a raw session id",
+    lesson: "OC9",
+    model: "free",
+  },
+  {
+    get headers(): Readonly<Record<string, string>> {
+      return { "user-agent": harnessUserAgent() };
+    },
+    id: "ua-harness-free",
+    keyed: false,
+    label: "a free model, no key: the harness's `User-Agent`",
+    lesson: "OC6",
+    model: "free",
+  },
 ];
 
 /**
@@ -755,6 +894,49 @@ export const reasoningCompletionsModel = (
       !isDeprecated(spec.id)
   )?.id;
 
+/**
+ * The free completions model the keyless rows send: the first catalog row
+ * that speaks completions, is free and is not deprecated.
+ *
+ * @param specs - the plane's catalog slice.
+ * @param isDeprecated - which ids the catalog retired (default: none).
+ * @returns the id, or `undefined` when the slice has none.
+ */
+export const freeCompletionsModel = (
+  specs: readonly CatalogModelSpec[],
+  isDeprecated: (id: string) => boolean = () => false
+): string | undefined =>
+  specs.find(
+    (spec) =>
+      protocolForSdk(spec.provider_npm) === "openai-completions" &&
+      isFreeSpec(spec) &&
+      !isDeprecated(spec.id)
+  )?.id;
+
+/**
+ * The body the plugin's free completions turn sends: the keyed body,
+ * streamed, with the free tier's `read` and `bash` and `tool_choice: "none"`
+ * (`src/tool-fallback.ts`).
+ *
+ * @param model - the free model.
+ */
+export const freeTurnBody = (
+  model: string
+): Readonly<Record<string, unknown>> => ({
+  ...keyedBody("openai-completions", model),
+  stream: true,
+  tool_choice: "none",
+  tools: [DUMMY_READ_TOOL_FUNCTION, DUMMY_BASH_TOOL_FUNCTION],
+});
+
+/** The probe identity without the headers a variant omits. */
+const identityWithout = (
+  omit: readonly string[] = []
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    Object.entries(PROBE_IDENTITY).filter(([name]) => !omit.includes(name))
+  );
+
 /** One variant, ready to send: a keyed cell and the variant it carries. */
 export interface VariantCell extends MatrixCell {
   readonly variant: KeyedVariant;
@@ -763,18 +945,22 @@ export interface VariantCell extends MatrixCell {
 /**
  * The variants' cells for one plane: each one the plane's default
  * completions cell (the modern family) made keyed ({@link keyedCell}) and
- * then changed by exactly the variant's headers or body fields. A variant
- * with no model keeps no body: it is never sent.
+ * then changed by exactly the variant's headers or body fields. A keyless
+ * row (`keyed: false`) carries the identity and no credential, and the free
+ * turn's body ({@link freeTurnBody}). A variant with no model keeps no body:
+ * it is never sent.
  *
  * @param plane - the plane.
  * @param models.representative - the matrix's completions model.
  * @param models.reasoning - {@link reasoningCompletionsModel}'s.
+ * @param models.free - {@link freeCompletionsModel}'s.
  * @param key - the plane's key.
  * @returns one cell per {@link KEYED_VARIANTS} entry, in order.
  */
 export const keyedVariantCells = (
   plane: MatrixPlane,
   models: {
+    readonly free?: string | undefined;
     readonly reasoning: string | undefined;
     readonly representative: string | undefined;
   },
@@ -782,19 +968,25 @@ export const keyedVariantCells = (
 ): VariantCell[] =>
   KEYED_VARIANTS.map((variant) => {
     const model = models[variant.model];
-    const keyed = keyedCell(
-      {
-        body: undefined,
-        family: "modern",
-        headers: { "content-type": "application/json" },
-        method: "POST",
-        model,
-        plane,
-        protocol: "openai-completions",
-        url: matrixUrl(plane, "openai-completions", "modern", model),
-      },
-      key
-    );
+    const cell: MatrixCell = {
+      body: undefined,
+      family: "modern",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      model,
+      plane,
+      protocol: "openai-completions",
+      url: matrixUrl(plane, "openai-completions", "modern", model),
+    };
+    const identity = identityWithout(variant.omit);
+    const keyed: MatrixCell =
+      variant.keyed === false
+        ? {
+            ...cell,
+            body: model === undefined ? undefined : freeTurnBody(model),
+            headers: { ...cell.headers, ...identity },
+          }
+        : keyedCell(cell, key, identity);
     return {
       ...keyed,
       body:
@@ -811,7 +1003,10 @@ export const keyedVariantCells = (
  * value of every attempt answered 429, or `null` for one that carried none.
  * The host can honour a provider's delay (dsh-llm's `providerRetryAfterMs`)
  * but its pi bridge never fills it; whether the gateway sends one decides
- * whether P-R3 should.
+ * whether the plugin should. The free tier's usage cap ({@link
+ * isFreeUsageLimit}) is left out: it is not a rate limit (L3), and a turn it
+ * refuses finishes as `FREE_TIER`, which nothing retries, so its delay is not
+ * L9's question.
  *
  * @param attempts - each attempt's answer, `undefined` for one that got none.
  * @returns one entry per 429, in order; empty when none was answered.
@@ -820,5 +1015,7 @@ export const retryAfterOf = (
   attempts: readonly (ProbeAnswer | undefined)[]
 ): (string | null)[] =>
   attempts.flatMap((answer) =>
-    answer?.status === 429 ? [answer.retryAfter ?? null] : []
+    answer?.status === 429 && !isFreeUsageLimit(answer.bodyText)
+      ? [answer.retryAfter ?? null]
+      : []
   );

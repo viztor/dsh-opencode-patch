@@ -281,6 +281,166 @@ describe("plane-provider · the adapter", () => {
   });
 });
 
+describe("plane-provider · the gateway's refusals (L2)", () => {
+  const FREE_TIER =
+    '403: {"message":"OpenCode\'s free tier can only be used from within OpenCode","type":"FreeTierError"}';
+  const DEPRECATED =
+    '410 {"type":"error","error":{"type":"ModelDeprecated","message":"Model m has been deprecated."}}';
+
+  /** A text delta, then a finish failing with `failure`. */
+  const turnFailing = (
+    failure: unknown,
+    delta: object,
+    state: { closed: boolean }
+  ) =>
+    async function* gen(): AsyncGenerator {
+      try {
+        yield delta;
+        yield { reason: { failure, kind: "error" }, type: "finish" };
+      } finally {
+        state.closed = true;
+      }
+    };
+
+  /** The plane adapter over a fake `PiAiAdapter` whose turns are `gen`'s. */
+  const fakeBase = (
+    gen: () => AsyncGenerator,
+    prepared?: unknown
+  ): {
+    prepareCall: (provider: string, model: string) => Promise<unknown>;
+    stream: (options: unknown) => AsyncIterable<unknown>;
+  } =>
+    createPlaneAdapter({
+      auth: {} as never,
+      effortNames: () => ({}),
+      modules: {
+        libraries: { root: "r", version: "v" },
+        piAi: {
+          PiAiAdapter: class {
+            prepareCall(): Promise<unknown> {
+              return Promise.resolve(
+                prepared ?? { model: {}, stream: () => gen() }
+              );
+            }
+
+            stream(): AsyncIterable<unknown> {
+              return gen();
+            }
+          },
+        },
+      } as unknown as HostModules,
+      profiles: () => new Map(),
+      resolveApiKey: async () => "k",
+    }) as never;
+
+  const collect = async (chunks: unknown): Promise<unknown[]> => {
+    const out: unknown[] = [];
+    for await (const chunk of chunks as AsyncIterable<unknown>) {
+      out.push(chunk);
+    }
+    return out;
+  };
+
+  const failureOf = (chunk: unknown): unknown =>
+    (chunk as { reason: { failure: unknown } }).reason.failure;
+
+  it("a prepared call's stream finishes the gateway's FreeTierError as FREE_TIER with its status and words, and passes every other chunk through as the same object", async () => {
+    const delta = { text: "hi", type: "text-delta" };
+    const state = { closed: false };
+    const adapter = fakeBase(
+      turnFailing({ code: "AUTH", message: FREE_TIER }, delta, state)
+    );
+    const prepared = (await adapter.prepareCall("opencode", "m")) as {
+      stream: (options: unknown) => unknown;
+    };
+    const chunks = await collect(prepared.stream({}));
+    expect(chunks[0]).toBe(delta);
+    expect(failureOf(chunks[1])).toEqual({
+      code: "FREE_TIER",
+      message: FREE_TIER,
+      status: 403,
+    });
+  });
+
+  it("adapter.stream finishes the same way, and on both paths a consumer that stops early still closes the host's stream", async () => {
+    const state = { closed: false };
+    const adapter = fakeBase(
+      turnFailing(
+        { code: "PI_AI_ERROR", message: DEPRECATED },
+        { type: "text-delta" },
+        state
+      )
+    );
+    const chunks = await collect(adapter.stream({}));
+    expect(failureOf(chunks[1])).toEqual({
+      code: "MODEL_UNAVAILABLE",
+      message: DEPRECATED,
+      status: 410,
+    });
+    expect(state.closed).toBe(true);
+    const early = { closed: false };
+    const prepared = (await fakeBase(
+      turnFailing({ code: "AUTH", message: FREE_TIER }, {}, early)
+    ).prepareCall("opencode", "m")) as {
+      stream: (options: unknown) => AsyncIterable<unknown>;
+    };
+    // What a `for await` that breaks after the first chunk does.
+    const iterator = prepared.stream({})[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.value).toEqual({});
+    await iterator.return?.(undefined);
+    expect(early.closed).toBe(true);
+    // The same early stop on `adapter.stream` itself.
+    const direct = { closed: false };
+    const directStream = fakeBase(
+      turnFailing({ code: "AUTH", message: FREE_TIER }, {}, direct)
+    ).stream({});
+    const streamed = directStream[Symbol.asyncIterator]();
+    const head = await streamed.next();
+    expect(head.value).toEqual({});
+    expect(direct.closed).toBe(false);
+    await streamed.return?.(undefined);
+    expect(direct.closed).toBe(true);
+  });
+
+  it("keeps an aborted finish, an unmatched failure, a prepared call it cannot read and a stream that is not one as they were", async () => {
+    const aborted = {
+      reason: {
+        failure: { code: "ABORTED", message: FREE_TIER },
+        kind: "aborted",
+      },
+      type: "finish",
+    };
+    const unmatched = {
+      reason: {
+        failure: { code: "AUTH", message: "401: Invalid API key" },
+        kind: "error",
+      },
+      type: "finish",
+    };
+    async function* gen(): AsyncGenerator {
+      yield aborted;
+      yield unmatched;
+    }
+    const chunks = await collect(fakeBase(gen).stream({}));
+    expect(chunks[0]).toBe(aborted);
+    expect(chunks[1]).toBe(unmatched);
+    // A prepared call that is not a record, or carries no stream function.
+    expect(await fakeBase(gen, "odd").prepareCall("opencode", "m")).toBe("odd");
+    expect(
+      await fakeBase(gen, { model: {}, stream: 5 }).prepareCall("opencode", "m")
+    ).toEqual({ model: {}, stream: 5 });
+    // A stream function that answers no iterable answers what it answered.
+    const odd = (await fakeBase(gen, {
+      model: {},
+      stream: () => "not a stream",
+    }).prepareCall("opencode", "m")) as {
+      stream: (options: unknown) => unknown;
+    };
+    expect(odd.stream({})).toBe("not a stream");
+  });
+});
+
 describe("plane-provider · planeAuth (pi-ai's auth.ts, restated)", () => {
   const recordKeyFor = (id: string): string => `llm-pi-ai/${id}`;
   const withService = (service: unknown) => ({

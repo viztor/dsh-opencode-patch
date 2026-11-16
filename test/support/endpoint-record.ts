@@ -193,7 +193,9 @@ export const VARIANT_ROWS: readonly (readonly [MatrixPlane, KeyedVariant])[] = (
 
 /**
  * The keyed variants' dated table: one row per plane and variant, the
- * variant's model and what the default completions cell answered.
+ * variant's model and what the default completions cell answered. It holds
+ * the lessons' rows (L4, L5, L10) and the console study's (OC6, OC8, OC9),
+ * the free model's keyless rows among them.
  *
  * @param record.date - the UTC date of the run, `YYYY-MM-DD`.
  * @param record.run - the run's {@link runReference}.
@@ -233,8 +235,10 @@ const headerValue = (value: string): string =>
   value.replaceAll(/[^\w ,:.+-]/gu, "").slice(0, 40);
 
 /**
- * The `Retry-After` line (lesson L9): every keyed 429 and the delay it named,
- * or that none was answered.
+ * The `Retry-After` line (lesson L9): every keyed rate-limit 429 and the delay
+ * it named, or that none was answered. The keyless free rows and the free
+ * tier's usage cap never reach it (`retryAfterOf`, and the live suite's
+ * keyless branch), so the empty case says what it counted.
  *
  * @param entries - each 429's cell name and its `Retry-After`, `null` when
  *   it carried none.
@@ -244,7 +248,7 @@ export const retryAfterLine = (
   entries: readonly { readonly cell: string; readonly value: string | null }[]
 ): string =>
   entries.length === 0
-    ? "`Retry-After` on a keyed 429: no 429 was answered."
+    ? "`Retry-After` on a keyed 429: no keyed 429 was answered."
     : `\`Retry-After\` on a keyed 429: ${entries
         .map(
           ({ cell, value }) =>
