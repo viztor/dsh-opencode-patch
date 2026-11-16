@@ -1319,10 +1319,9 @@ describe(
 
     type Settled = { ok: unknown } | { error: unknown };
     const settledOf = (promise: Promise<unknown>): Promise<Settled> =>
-      promise.then(
-        (ok) => ({ ok }),
-        (error: unknown) => ({ error })
-      );
+      promise
+        .then((ok): Settled => ({ ok }))
+        .catch((error: unknown): Settled => ({ error }));
 
     /** The host's own `discoverModels`, unwrapped: the prototype's, on `llm`. */
     const hostDiscover =
@@ -1443,7 +1442,7 @@ describe(
         }
         // Non-vacuous: on the stepped-aside planes P3's complement would have
         // appended catalog ids pi-ai does not list (Zen has some on every
-        // cell; the newest cell's pi lists every Go catalog model).
+        // cell; which Go ids a cell's pi lacks moves with the catalog).
         expect(gaps).toBeGreaterThan(0);
         for (const plane of shape.taken) {
           // The known answer: a plane the claim takes is P3's complement.
