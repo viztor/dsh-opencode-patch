@@ -8,21 +8,15 @@
  */
 
 import {
-  parseStoreInspection,
-  STORE_NAMESPACE,
+  storeRemote,
   type OpencodeStoreInspection,
-} from "./opencode-store-contract.ts";
-import { remoteNamespace, remoteNamespaceOf } from "./settings-remote.ts";
-import { isRecord } from "./utils/guards.ts";
+} from "./contracts/store.ts";
+import { callRemote, type RemoteOutcome } from "./settings-remote.ts";
 
 export type StoreInspectOutcome =
   | { readonly kind: "inspected"; readonly inspection: OpencodeStoreInspection }
   | { readonly kind: "unavailable" }
   | { readonly kind: "failed"; readonly message: string };
-
-const namespaceOf = (scope: unknown) =>
-  remoteNamespaceOf(scope, STORE_NAMESPACE) ??
-  remoteNamespace(isRecord(scope) ? scope.remote : undefined, STORE_NAMESPACE);
 
 /**
  * Ask the host to inspect the local OpenCode installation.
@@ -33,42 +27,34 @@ const namespaceOf = (scope: unknown) =>
 export const inspectStore = async (
   scope: unknown
 ): Promise<StoreInspectOutcome> => {
-  const namespace = namespaceOf(scope);
-  const call = namespace?.inspect;
-  if (typeof call !== "function") {
-    console.warn(
-      "[dsh-opencode-patch] store inspection: no opencodeStore service on the remote"
-    );
-    return { kind: "unavailable" };
-  }
+  let outcome: RemoteOutcome<OpencodeStoreInspection>;
   try {
-    const answer: unknown = await call();
-    if (isRecord(answer) && answer.ok === false) {
-      // The remote's own failure, said in its own words rather than as a shape
-      // error about the envelope it arrived in.
-      const { error } = answer;
-      return {
-        kind: "failed",
-        message:
-          isRecord(error) && typeof error.message === "string"
-            ? error.message
-            : "the host could not inspect the installation",
-      };
-    }
-    const value = isRecord(answer) && "value" in answer ? answer.value : answer;
-    const inspection: OpencodeStoreInspection | undefined =
-      parseStoreInspection(value);
-    if (inspection === undefined) {
-      return {
-        kind: "failed",
-        message: "host returned an invalid inspection shape",
-      };
-    }
-    return { inspection, kind: "inspected" };
+    outcome = await callRemote(scope, storeRemote, "inspect");
   } catch (error: unknown) {
     return {
       kind: "failed",
       message: error instanceof Error ? error.message : String(error),
     };
   }
+  if (outcome.kind === "unavailable") {
+    console.warn(
+      "[dsh-opencode-patch] store inspection: no opencodeStore service on the remote"
+    );
+    return { kind: "unavailable" };
+  }
+  if (outcome.kind === "refused") {
+    // The remote's own failure, said in its own words rather than as a
+    // shape error about the envelope it arrived in.
+    return {
+      kind: "failed",
+      message: outcome.reason ?? "the host could not inspect the installation",
+    };
+  }
+  if (outcome.kind === "invalid") {
+    return {
+      kind: "failed",
+      message: "host returned an invalid inspection shape",
+    };
+  }
+  return { inspection: outcome.value, kind: "inspected" };
 };

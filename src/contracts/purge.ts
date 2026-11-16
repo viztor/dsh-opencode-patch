@@ -5,13 +5,12 @@
  * rather than in either side means the two cannot drift, and the bundle rule
  * (a client module reaches nothing host-only) is satisfied by construction.
  *
- * @module dsh-opencode-patch/purge-contract
+ * @module dsh-opencode-patch/contracts/purge
  */
 
-import type {
-  RemoteResult,
-  TypertRemoteContribution,
-} from "@deepseek-ai/dsh-typert-protocol";
+import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
+
+import { defineRemote, remoteValue } from "./remote.ts";
 
 /**
  * Where a retired model id was found.
@@ -93,14 +92,6 @@ export const parsePurgeResult = (value: unknown): PurgeResult | undefined => {
   return { catalogRead, removed: rows };
 };
 
-/** The wire codec for one purge result, in the shape `usageCodec` uses. */
-const purgeResultCodec = {
-  create: () => ({ parse: parsePurgeResult }),
-  mode: "strict" as const,
-  schema: { parse: parsePurgeResult },
-  typeSymbol: "dsh-opencode-patch#PurgeResult",
-};
-
 /**
  * The purge namespace, as a contribution the client mounts.
  *
@@ -108,23 +99,12 @@ const purgeResultCodec = {
  * mounts the Service and the card asks `remote.opencodeModelPurge.purge`; a
  * Remote is only reachable when a contribution carrying its descriptor was
  * mounted on the client, so the row reported "unavailable" for a host that had
- * the service all along. Same shape as `usageRemote`, and the card mounts both
- * under one package name.
+ * the service all along. Same builder as `usageRemote`, and the card mounts
+ * every contract under one package name (`REMOTE_CONTRACTS`).
  */
-export const purgeRemote: TypertRemoteContribution = {
-  descriptors: [
-    {
-      id: "dsh-opencode-patch#opencodeModelPurge/purge",
-      invocation: { kind: "direct" },
-      method: "purge",
-      namespace: PURGE_NAMESPACE,
-      parameters: [],
-      result: purgeResultCodec,
-      service: PURGE_NAMESPACE,
-    },
-  ],
-  package: "dsh-opencode-patch",
-};
+export const purgeRemote = defineRemote(PURGE_NAMESPACE, {
+  purge: { result: remoteValue("PurgeResult", parsePurgeResult) },
+});
 
 /** The one failure a purge reports: the profile cannot be rewritten here. */
 export const PURGE_UNAVAILABLE = "opencode/purge-unavailable";

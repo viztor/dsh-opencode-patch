@@ -533,6 +533,23 @@ describe("architecture · the client bundle reaches nothing host-only", () => {
     expect(graph.has("config.ts")).toBe(false);
   });
 
+  it("walks into the remote contracts, so the rules below cover them (P9)", () => {
+    // The contracts are client-safe by construction, and the bundle loads
+    // every one of them: the walker must resolve a nested folder for the
+    // HOST_ONLY and process.env rules to be seen to apply.
+    const graph = clientGraph();
+    for (const file of [
+      "contracts/all.ts",
+      "contracts/purge.ts",
+      "contracts/remote.ts",
+      "contracts/store.ts",
+      "contracts/usage.ts",
+    ]) {
+      expect(graph.has(file), file).toBe(true);
+    }
+    expect(graph.has("utils/guards.ts")).toBe(true);
+  });
+
   it("imports no node built-in, no cordis runtime and no pi", () => {
     const violations: string[] = [];
     for (const [file, source] of clientGraph()) {
@@ -562,6 +579,70 @@ describe("architecture · the client bundle reaches nothing host-only", () => {
       'import { readFileSync } from "node:fs";\nimport type { X } from "node:os";';
     expect(runtimeImportsOf(planted)).toEqual(["node:fs"]);
     expect(HOST_ONLY.some((rule) => rule.matches("node:fs"))).toBe(true);
+  });
+});
+
+describe("architecture · one remote seam (P9)", () => {
+  /**
+   * Each spelling the seam owns lives in one module: the Remote marker's key
+   * in `host/remote.ts` (`markRemote`), the envelope reads in
+   * `settings-remote.ts` (the one unwrap), and the usage namespace's literal
+   * in `contracts/usage.ts` (`USAGE_NAMESPACE`). Tripwires for the spellings
+   * they name, as P7's scans are: comments are stripped first, and a read
+   * spelled another way (a destructured `ok`, a computed key) escapes them.
+   */
+  const RULES: readonly {
+    readonly name: string;
+    readonly owner: string;
+    readonly matches: (source: string) => boolean;
+  }[] = [
+    {
+      matches: (source) =>
+        source.includes("@deepseek-ai/dsh-typert-protocol/remote-methods"),
+      name: "the Remote marker key",
+      owner: "host/remote.ts",
+    },
+    {
+      matches: (source) =>
+        /"value"\s+in\b|\.ok\s*===\s*false|typeof\s+[\w.]+\.ok\s*===\s*"boolean"/u.test(
+          source
+        ),
+      name: "an envelope read",
+      owner: "settings-remote.ts",
+    },
+    {
+      matches: (source) => source.includes('"opencodeGoUsage"'),
+      name: "the usage namespace literal",
+      owner: "contracts/usage.ts",
+    },
+  ];
+
+  it("flags a planted spelling of each, so a pass means something", () => {
+    const [marker, envelope, namespace] = RULES;
+    expect(
+      marker?.matches(
+        'const KEY = "@deepseek-ai/dsh-typert-protocol/remote-methods";'
+      )
+    ).toBe(true);
+    expect(envelope?.matches('if ("value" in answer) {}')).toBe(true);
+    expect(envelope?.matches("if (res.ok === false) {}")).toBe(true);
+    expect(envelope?.matches('if (typeof res.ok === "boolean") {}')).toBe(true);
+    expect(envelope?.matches("const { ok } = res;")).toBe(false);
+    expect(
+      namespace?.matches('remoteNamespaceOf(ctx, "opencodeGoUsage")')
+    ).toBe(true);
+    expect(namespace?.matches("remote.opencodeGoUsage.read")).toBe(false);
+    // And a comment is not code.
+    expect(
+      namespace?.matches(stripComments('// "opencodeGoUsage"\nconst a = 1;'))
+    ).toBe(false);
+  });
+
+  it.each(RULES)("$name occurs in $owner only", ({ matches, owner }) => {
+    const holders = filesUnder(SRC_DIR).filter((file) =>
+      matches(stripComments(readFileSync(join(SRC_DIR, file), "utf8")))
+    );
+    expect(holders).toEqual([owner]);
   });
 });
 

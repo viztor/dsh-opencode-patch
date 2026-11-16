@@ -395,6 +395,14 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // The contract builder (P9): every branch driven by
+        // test/remote-define.test.ts, so 100.
+        "src/contracts/remote.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         "src/host/describe-graft.ts": {
           statements: 100,
           branches: 94,

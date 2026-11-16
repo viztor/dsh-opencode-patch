@@ -140,6 +140,6 @@ What belongs here is only the part that is a routing consequence: the meter is a
 | Catalog merge | `models-catalog.ts`, `models-discovery.ts`, `catalog-data.ts` |
 | Allowance table | `go-limits-data.ts` (generated) |
 | Credentials and the `/usage` endpoint | `go-discovery.ts`, `key-capture.ts` |
-| The usage Host service | `usage.ts`, `usage-contract.ts` |
+| The usage Host service | `usage.ts`, `contracts/usage.ts` |
 | Meter state / views / logic | `usage-pill.tsx`, `usage-panel.tsx`, `usage-ui.ts` |
 | Settings card and its summary | `settings-card.tsx`, `settings-usage.tsx` |

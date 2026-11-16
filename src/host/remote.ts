@@ -1,7 +1,8 @@
 /**
- * The one installer for the plugin's remote services: the usage meter's
- * `opencodeGoUsage`, the card's `opencodeModelPurge` and its `opencodeStore`
- * inspection.
+ * The host half of the plugin's remote services: `markRemote`, which declares
+ * a service's Remote methods from its contract, and `installRemoteService`,
+ * the one installer for the usage meter's `opencodeGoUsage`, the card's
+ * `opencodeModelPurge` and its `opencodeStore` inspection.
  *
  * Three rules shape it, and each replaced a copy that got one of them wrong.
  *
@@ -65,6 +66,54 @@ export interface RemoteContract {
     readonly method: string;
   }[];
 }
+
+/**
+ * Prototype key `remoteMethods()` reads Remote markers from. A plain string
+ * constant in the protocol package (index.ts:140); not re-exported, so this is
+ * the one copy of it.
+ */
+const REMOTE_METHOD_DESCRIPTOR_KEY =
+  "@deepseek-ai/dsh-typert-protocol/remote-methods";
+
+/**
+ * Declare a service's Remote methods, one per contract method, in the
+ * contract's order: exactly what `@Remote()` does.
+ *
+ * The decorator cannot be used: this build transform is oxc/rolldown based and
+ * rejects TC39 decorator syntax outright ("SyntaxError: Invalid or unexpected
+ * token"), and `esbuild: { target: "esnext" }` is ignored by it. The decorator
+ * has no magic — it registers an instance initializer calling
+ * `mark(prototype, method, invocation)`, and `mark` only writes this one
+ * property. `remoteMethods()` reads it straight off the prototype, so writing
+ * it directly is equivalent. Swap for the decorator once the transform accepts
+ * one.
+ *
+ * The type makes a contract method the class does not implement a compile
+ * error, so the marker cannot declare a method the gateway would then find
+ * missing.
+ *
+ * @param Service - the service class; its prototype carries the marker.
+ * @param contract - the contract whose methods the service answers.
+ */
+export const markRemote = <Methods extends string>(
+  Service: abstract new (
+    ...args: never[]
+  ) => Record<NoInfer<Methods>, (...args: never[]) => Promise<unknown>>,
+  contract: RemoteContract & { readonly methods: Record<Methods, unknown> }
+): void => {
+  Object.defineProperty(Service.prototype, REMOTE_METHOD_DESCRIPTOR_KEY, {
+    configurable: true,
+    value: Object.freeze({
+      version: 1,
+      methods: Object.freeze(
+        contract.descriptors.map(({ method }) => ({
+          method,
+          invocation: { kind: "direct" },
+        }))
+      ),
+    }),
+  });
+};
 
 /** The one service and namespace a contract's descriptors all name. */
 interface Target {

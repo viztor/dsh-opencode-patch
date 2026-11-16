@@ -132,3 +132,86 @@ describe("inspectStore", () => {
     });
   });
 });
+
+describe("inspectStore: the envelope shapes, pinned before the remote seam", () => {
+  it("names a refusal with no reason, an empty ok envelope, and accepts a value without ok", async () => {
+    for (const refusal of [{ ok: false }, { error: {}, ok: false }]) {
+      await expect(
+        inspectStore(scopeWith(async () => refusal))
+      ).resolves.toEqual({
+        kind: "failed",
+        message: "the host could not inspect the installation",
+      });
+    }
+    await expect(
+      inspectStore(scopeWith(async () => ({ ok: true })))
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "host returned an invalid inspection shape",
+    });
+    await expect(
+      inspectStore(scopeWith(async () => ({ value: { found: false } })))
+    ).resolves.toEqual({ inspection: { found: false }, kind: "inspected" });
+  });
+
+  it("names the missing service on the console, once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(inspectStore({ remote: {} })).resolves.toEqual({
+        kind: "unavailable",
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "[dsh-opencode-patch] store inspection: no opencodeStore service on the remote"
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("calls the inspection with no argument, as its descriptor declares none", async () => {
+    const inspect = vi.fn(async () => ({ ok: true, value: { found: false } }));
+    await inspectStore(scopeWith(inspect));
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(inspect.mock.calls[0]).toHaveLength(0);
+  });
+});
+
+describe("inspectStore: the one unwrap (P9), on shapes the host does not send", () => {
+  // The gateway answers a refusal as `{ ok: false, error: RemoteError }`; an
+  // envelope-level `message` or a string `error` is a shape only a test
+  // builds. The one unwrap reads every caller's refusal the same way, so the
+  // store now shows those words rather than its default sentence.
+  it("unifies an envelope message and a string error into the refusal's reason", async () => {
+    await expect(
+      inspectStore(scopeWith(async () => ({ message: "read-only", ok: false })))
+    ).resolves.toEqual({ kind: "failed", message: "read-only" });
+    await expect(
+      inspectStore(scopeWith(async () => ({ error: "no sqlite", ok: false })))
+    ).resolves.toEqual({ kind: "failed", message: "no sqlite" });
+  });
+
+  // On the base, `scope.remote` was read unguarded when `ctx.get` missed, so a
+  // getter that throws there rejected the inspection. The seam reads it inside
+  // a guard: no remote, so "unavailable" with its console line. The host never
+  // builds this scope (every caller's scope declares `remote` in `inject`).
+  it("reads a throwing remote getter as no service when ctx.get misses", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const scope = {
+        get: () => {},
+        get remote(): never {
+          throw new Error('cannot get property "remote" without inject');
+        },
+      };
+      await expect(inspectStore(scope)).resolves.toEqual({
+        kind: "unavailable",
+      });
+      expect(warn).toHaveBeenCalledWith(
+        "[dsh-opencode-patch] store inspection: no opencodeStore service on the remote"
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

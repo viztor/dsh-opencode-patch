@@ -15,14 +15,20 @@
  * @module test/remote-service.test
  */
 import { Context, type Fiber } from "@deepseek-ai/cordis";
-import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+import {
+  remoteMethods,
+  TypertRemoteService,
+} from "@deepseek-ai/dsh-typert-protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { logLines } from "./support/cordis-wait.ts";
 import {
   type CordisContext,
+  defineRemote,
   installRemoteService,
+  markRemote,
   type RemoteContract,
+  remoteValue,
 } from "./support/src.ts";
 
 interface ProbeOptions {
@@ -598,5 +604,88 @@ describe("installRemoteService · stand-in compositions", () => {
       writable: true,
     });
     expect({ ...view }).toEqual({ value: "a" });
+  });
+});
+
+describe("markRemote", () => {
+  const KEY = "@deepseek-ai/dsh-typert-protocol/remote-methods";
+  const text = remoteValue("Text", (value: unknown) =>
+    typeof value === "string" ? value : undefined
+  );
+
+  /**
+   * A fresh service class answering two methods, one per case, so no case
+   * reads a marker another case wrote.
+   */
+  const markedClass = () =>
+    class Marked extends TypertRemoteService {
+      constructor(ctx: unknown) {
+        super(ctx as never, "markedRemote");
+      }
+
+      second(): Promise<string> {
+        return Promise.resolve("second");
+      }
+
+      first(): Promise<string> {
+        return Promise.resolve("first");
+      }
+    };
+
+  it("declares the contract's methods, in the contract's order, as the host's reader sees them", () => {
+    const Marked = markedClass();
+    markRemote(
+      Marked,
+      defineRemote("markedRemote", {
+        first: { result: text },
+        second: { result: text },
+      })
+    );
+    expect(remoteMethods(new Marked(new Context()))).toEqual([
+      { invocation: { kind: "direct" }, method: "first" },
+      { invocation: { kind: "direct" }, method: "second" },
+    ]);
+    const descriptor = Reflect.getOwnPropertyDescriptor(Marked.prototype, KEY);
+    expect(descriptor).toMatchObject({
+      configurable: true,
+      enumerable: false,
+      writable: false,
+    });
+    const value = descriptor?.value as {
+      methods: unknown;
+      version: unknown;
+    };
+    expect(value.version).toBe(1);
+    expect(Object.isFrozen(value)).toBe(true);
+    expect(Object.isFrozen(value.methods)).toBe(true);
+  });
+
+  it("replaces the list when marked again with another contract", () => {
+    const Marked = markedClass();
+    const methodsOf = () =>
+      remoteMethods(new Marked(new Context())).map(({ method }) => method);
+    markRemote(
+      Marked,
+      defineRemote("markedRemote", {
+        first: { result: text },
+        second: { result: text },
+      })
+    );
+    expect(methodsOf()).toEqual(["first", "second"]);
+    markRemote(
+      Marked,
+      defineRemote("markedRemote", { second: { result: text } })
+    );
+    expect(methodsOf()).toEqual(["second"]);
+  });
+
+  it("refuses, at compile time, a contract method the class does not implement", () => {
+    const Marked = markedClass();
+    const missing = defineRemote("markedRemote", { third: { result: text } });
+    // @ts-expect-error -- `Marked` has no `third`: the marker would declare a method the gateway cannot call
+    markRemote(Marked, missing);
+    expect(
+      remoteMethods(new Marked(new Context())).map(({ method }) => method)
+    ).toEqual(["third"]);
   });
 });

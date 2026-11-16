@@ -16,7 +16,7 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
-import type { GoUsage, UsageWindow } from "./usage-contract.ts";
+import type { GoUsage, UsageWindow } from "./contracts/usage.ts";
 import {
   BREAKDOWN_WINDOWS,
   CONSOLE_URL,

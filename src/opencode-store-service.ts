@@ -21,11 +21,13 @@ import os from "node:os";
 
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 
-import { opencodeDatabasePath } from "./opencode-paths.ts";
 import {
   STORE_NAMESPACE,
+  storeRemote,
   type OpencodeStoreInspection,
-} from "./opencode-store-contract.ts";
+} from "./contracts/store.ts";
+import { markRemote } from "./host/remote.ts";
+import { opencodeDatabasePath } from "./opencode-paths.ts";
 import { inspectOpencodeStore } from "./opencode-store.ts";
 import { isRecord } from "./utils/guards.ts";
 
@@ -94,29 +96,4 @@ const defaultStorePath = (): string =>
     os.tmpdir()
   );
 
-/**
- * Prototype key `remoteMethods()` reads Remote markers from — the same constant
- * `usage.ts` and `purge-service.ts` spell out, because the protocol package does
- * not re-export it.
- */
-const REMOTE_METHOD_DESCRIPTOR_KEY =
-  "@deepseek-ai/dsh-typert-protocol/remote-methods";
-
-/**
- * Declare `inspect` as a Remote method. See `usage.ts` for why the decorator
- * cannot be used in this build: the oxc/rolldown transform rejects TC39 decorator
- * syntax outright, and the marker it would write is a plain property.
- */
-Object.defineProperty(
-  OpencodeStoreService.prototype,
-  REMOTE_METHOD_DESCRIPTOR_KEY,
-  {
-    configurable: true,
-    value: Object.freeze({
-      version: 1,
-      methods: Object.freeze([
-        { method: "inspect", invocation: { kind: "direct" } },
-      ]),
-    }),
-  }
-);
+markRemote(OpencodeStoreService, storeRemote);

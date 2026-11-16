@@ -19,6 +19,16 @@ import {
 import type { KeySourcePolicy } from "./config-values.ts";
 import { DEFAULT_USAGE_BASE_URL } from "./config.ts";
 import {
+  parseAccountRef,
+  parseGoUsage,
+  USAGE_NAMESPACE,
+  usageRemote,
+  type GoUsage,
+  type ModelAllowanceSnapshot,
+  type UsageQuery,
+  type UsageWindow,
+} from "./contracts/usage.ts";
+import {
   discoverGoConfig,
   effectiveGoKeyRef,
   resolveGoApiKey,
@@ -27,6 +37,7 @@ import {
 } from "./go-discovery.ts";
 import { GO_MODEL_LIMITS } from "./go-limits-data.ts";
 import { allowanceFor, type ModelAllowance } from "./go-limits.ts";
+import { markRemote } from "./host/remote.ts";
 import { OPENCODE_PATCH_USER_AGENT } from "./identity.ts";
 import { type CatalogPlane, findModelSpecOn } from "./models-catalog.ts";
 import {
@@ -34,14 +45,6 @@ import {
   getSessionUsage,
   type SessionUsageSnapshot,
 } from "./session-cost.ts";
-import {
-  parseAccountRef,
-  parseGoUsage,
-  type GoUsage,
-  type ModelAllowanceSnapshot,
-  type UsageQuery,
-  type UsageWindow,
-} from "./usage-contract.ts";
 import { isRecord } from "./utils/guards.ts";
 import { planeForRoute, planeOfPlaneRoute } from "./utils/planes.ts";
 import { isZenProvider } from "./utils/request-shape.ts";
@@ -91,7 +94,7 @@ const zenOverflowUsage = (
   query?: UsageQuery
 ): GoUsage => {
   // The three windows are a TYPE FLOOR, not a reading — see `quotaUnavailable`
-  // in usage-contract.ts for why the panel must not render them. Filling them
+  // in contracts/usage.ts for why the panel must not render them. Filling them
   // with 0% and a reset time of "now" is the only way to satisfy the shape
   // without inventing a number, and the flag is what stops them being drawn.
   const resetsAt = new Date().toISOString();
@@ -266,7 +269,7 @@ export class GoUsageService extends TypertRemoteService {
       throw new TypeError("GoUsageService requires a Cordis context object");
     }
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `TypertRemoteService` takes cordis `Context`, whose types ship only from the Harness installation and are not nameable from this package; the object guard above is the runtime check this cast stands in for.
-    super(ctx as never, "opencodeGoUsage");
+    super(ctx as never, USAGE_NAMESPACE);
     this.options = options;
   }
 
@@ -475,34 +478,6 @@ export class GoUsageService extends TypertRemoteService {
   }
 }
 
-/**
- * Prototype key `remoteMethods()` reads Remote markers from. A plain string
- * constant in the protocol package (index.ts:140); not re-exported.
- */
-const REMOTE_METHOD_DESCRIPTOR_KEY =
-  "@deepseek-ai/dsh-typert-protocol/remote-methods";
-
-/**
- * Declare `read` and `readAccount` as Remote methods — exactly what
- * `@Remote()` does.
- *
- * The decorator cannot be used: this build transform is oxc/rolldown based and
- * rejects TC39 decorator syntax outright ("SyntaxError: Invalid or unexpected
- * token"), and `esbuild: { target: "esnext" }` is ignored by it. The decorator has
- * no magic — it registers an instance initializer calling
- * `mark(prototype, method, invocation)`, and `mark` only writes this one property.
- * `remoteMethods()` reads it straight off the prototype, so writing it directly
- * is equivalent. Swap for the decorator once the transform accepts one.
- */
-Object.defineProperty(GoUsageService.prototype, REMOTE_METHOD_DESCRIPTOR_KEY, {
-  configurable: true,
-  value: Object.freeze({
-    version: 1,
-    methods: Object.freeze([
-      { method: "read", invocation: { kind: "direct" } },
-      // A sibling plugin's account page reads through this spelling, and this
-      // root-mounted instance is the one the gateway resolves for the namespace.
-      { method: "readAccount", invocation: { kind: "direct" } },
-    ]),
-  }),
-});
+// `read`, and the `readAccount` a sibling plugin's account page reads
+// through: this root-mounted instance is the one the gateway resolves.
+markRemote(GoUsageService, usageRemote);

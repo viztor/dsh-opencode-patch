@@ -46,7 +46,7 @@ To maintain long-term stability and prevent regressions, the codebase enforces s
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 1. Domain Models (Pure Types & Constants)                              │
 │    • src/config-values.ts: Pure coercion readers & constants           │
-│    • src/usage-contract.ts: Quota reading envelopes & status enums     │
+│    • src/contracts/usage.ts: Quota reading envelopes & status enums    │
 │    • src/login-contract.ts: OAuth grant records & service codecs       │
 │    • src/catalog-data.ts: Static catalog schema definitions            │
 │    (Zero dependencies, shared safely across Host and Web Client)       │

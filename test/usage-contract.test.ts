@@ -1,5 +1,5 @@
 /**
- * `usage-contract.ts` — the Go usage wire shape and the Typert descriptor.
+ * `contracts/usage.ts` — the Go usage wire shape and the Typert descriptor.
  *
  * `usage.test.ts` pins the happy path through this module; this file pins what
  * it *rejects* and what it *drops*. That is the half that decides whether a
@@ -13,9 +13,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type GoUsage,
   parseAccountRef,
   parseGoUsage,
   parseUsageQuery,
+  parseUsageReading,
+  type SessionUsageSnapshot,
 } from "./support/src.ts";
 
 /** One well-formed quota window, with a single field overridden. */
@@ -346,5 +349,145 @@ describe("parseAccountRef", () => {
         "Invalid OpenCode Go account reference"
       );
     }
+  });
+});
+
+describe("parseUsageReading, the client's reading parser", () => {
+  it("keeps a well-formed allowance as exactly its three fields", () => {
+    const reading = parseUsageReading(
+      threeWindows({
+        allowance: { extra: "dropped", go: 12, goPlus: 48, model: "Go X" },
+      })
+    );
+    expect(reading.allowance).toEqual({ go: 12, goPlus: 48, model: "Go X" });
+    expect(Object.keys(reading.allowance ?? {}).toSorted()).toEqual([
+      "go",
+      "goPlus",
+      "model",
+    ]);
+  });
+
+  it.each([
+    { go: 12, goPlus: 48 },
+    { go: 12, model: "Go X" },
+    { goPlus: 48, model: "Go X" },
+    { go: Number.NaN, goPlus: 48, model: "Go X" },
+    { go: 12, goPlus: Number.POSITIVE_INFINITY, model: "Go X" },
+    { go: "12", goPlus: 48, model: "Go X" },
+    { go: 12, goPlus: 48, model: 7 },
+    "Go X",
+  ])("drops an allowance that is not one: %j", (allowance) => {
+    expect(
+      Object.hasOwn(parseUsageReading(threeWindows({ allowance })), "allowance")
+    ).toBe(false);
+  });
+
+  it("keeps quotaUnavailable only when it is true", () => {
+    expect(
+      parseUsageReading(threeWindows({ quotaUnavailable: true }))
+        .quotaUnavailable
+    ).toBe(true);
+    for (const quotaUnavailable of [false, "true", 1]) {
+      expect(
+        Object.hasOwn(
+          parseUsageReading(threeWindows({ quotaUnavailable })),
+          "quotaUnavailable"
+        )
+      ).toBe(false);
+    }
+  });
+
+  it("keeps the session's plane spend, only with a kept session and only in its own type", () => {
+    const kept = parseUsageReading(
+      threeWindows({
+        session: {
+          ...fullSession(),
+          planeCostFormatted: "$1.25",
+          planeSpendUsd: 1.25,
+        },
+      })
+    );
+    expect(kept.session?.planeCostFormatted).toBe("$1.25");
+    expect(kept.session?.planeSpendUsd).toBe(1.25);
+
+    const mistyped = parseUsageReading(
+      threeWindows({
+        session: {
+          ...fullSession(),
+          planeCostFormatted: 1,
+          planeSpendUsd: "1",
+        },
+      })
+    );
+    expect(Object.hasOwn(mistyped.session ?? {}, "planeCostFormatted")).toBe(
+      false
+    );
+    expect(Object.hasOwn(mistyped.session ?? {}, "planeSpendUsd")).toBe(false);
+
+    // A session the vendor whitelist drops (no `costFormatted`) is not
+    // rebuilt from its plane spend alone.
+    const dropped = parseUsageReading(
+      threeWindows({ session: { planeCostFormatted: "$1", totalTokens: 1 } })
+    );
+    expect(Object.hasOwn(dropped, "session")).toBe(false);
+  });
+
+  it("throws the vendor parser's own TypeError for what is not a reading", () => {
+    for (const bad of [
+      42,
+      undefined,
+      threeWindows({ rolling: windowRow({ percent: -1 }) }),
+      threeWindows({ weekly: windowRow({ resetsAt: "soon" }) }),
+      threeWindows({ monthly: undefined }),
+    ]) {
+      let expected: unknown;
+      try {
+        parseGoUsage(bad);
+      } catch (error) {
+        expected = error;
+      }
+      expect(expected).toBeInstanceOf(TypeError);
+      expect(() => parseUsageReading(bad)).toThrow(
+        (expected as TypeError).message
+      );
+    }
+  });
+
+  it("answers every complete reading the Host sends as itself", () => {
+    // `Required` so a field added to either type without a reading rule fails
+    // to compile here, or reads back different.
+    const session: Required<SessionUsageSnapshot> = {
+      activeModel: "go-model-x",
+      activeModelName: "Go Model X",
+      activeRateFormatted: "$1 / $2 per 1M",
+      cacheReadTokens: 5,
+      costByPlane: { go: 0.25, zen: 0.5 },
+      costFormatted: "$0.75",
+      costUsd: 0.75,
+      freeModel: true,
+      inputTokens: 100,
+      modelsUsed: ["go-model-x"],
+      outputTokens: 200,
+      planeCostFormatted: "$0.25",
+      planeSpendUsd: 0.25,
+      totalTokens: 305,
+      turns: 2,
+    };
+    const full: Required<GoUsage> = {
+      allowance: { go: 12, goPlus: 48, model: "Go Model X" },
+      monthly: { percent: 14, resetsAt: "2026-11-07T00:55:00Z", status: "ok" },
+      quotaUnavailable: true,
+      rolling: { percent: 0, resetsAt: "2026-10-09T06:00:00Z", status: "ok" },
+      session,
+      source: "opencode-go",
+      weekly: {
+        percent: 100,
+        resetsAt: "2026-10-12T00:00:00Z",
+        status: "rate-limited",
+      },
+      zenOverflow: true,
+    };
+    expect(parseUsageReading(full)).toEqual(full);
+    expect(parseUsageReading(parseUsageReading(full))).toEqual(full);
   });
 });

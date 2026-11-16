@@ -10,13 +10,8 @@
  * @module dsh-opencode-patch/settings-purge
  */
 
-import {
-  parsePurgeResult,
-  PURGE_NAMESPACE,
-  type PurgeResult,
-} from "./purge-contract.ts";
-import { remoteNamespace, remoteNamespaceOf } from "./settings-remote.ts";
-import { isRecord } from "./utils/guards.ts";
+import { purgeRemote, type PurgeResult } from "./contracts/purge.ts";
+import { callRemote, type RemoteOutcome } from "./settings-remote.ts";
 
 /** What one click produced, in a shape the card can render without guessing. */
 export type PurgeOutcome =
@@ -24,13 +19,12 @@ export type PurgeOutcome =
   | { readonly kind: "unavailable" }
   | { readonly kind: "failed"; readonly message: string };
 
-/** The Remote's namespace, read through the shared guard (see settings-remote). */
-const namespaceOf = (scope: unknown) =>
-  remoteNamespaceOf(scope, PURGE_NAMESPACE) ??
-  remoteNamespace(isRecord(scope) ? scope.remote : undefined, PURGE_NAMESPACE);
-
 /**
  * Ask the host to purge, once.
+ *
+ * Through the one unwrap (`callRemote`): the host's own failure comes first,
+ * in its own words, and the result is PARSED by the contract's whitelist,
+ * never cast.
  *
  * @param scope - the settings scope the card was rendered with.
  * @returns the outcome; never throws.
@@ -38,52 +32,32 @@ const namespaceOf = (scope: unknown) =>
 export const purgeDeprecatedModels = async (
   scope: unknown
 ): Promise<PurgeOutcome> => {
-  const namespace = namespaceOf(scope);
-  const call = namespace?.purge;
-  if (typeof call !== "function") {
-    console.warn(
-      "[dsh-opencode-patch] purge: no opencodeModelPurge service on the remote"
-    );
-    return { kind: "unavailable" };
-  }
+  let outcome: RemoteOutcome<PurgeResult>;
   try {
-    const answer: unknown = await call();
-    const value = isRecord(answer) && "value" in answer ? answer.value : answer;
-    // **The host's own failure comes first.** The host answers a failure as
-    // `{ ok: false, … }`, and reading that as "not a purge result" replaced the
-    // message that says WHY with a sentence about shape — which tells the reader
-    // nothing they can act on. The remote protocol sends `{ ok: false, error }`
-    // with `error` a serialized `RemoteError`, so its `message` is read too.
-    if (isRecord(value) && value.ok === false) {
-      const { error, message: said } = value;
-      let message = "the host refused the purge";
-      if (typeof said === "string") {
-        message = said;
-      } else if (typeof error === "string") {
-        message = error;
-      } else if (isRecord(error)) {
-        const { message: reason } = error;
-        if (typeof reason === "string") {
-          message = reason;
-        }
-      }
-      return { kind: "failed", message };
-    }
-    // And the result is PARSED, not cast: the contract's whitelist is the
-    // client's only statement about what it is told, and a cast is no statement
-    // at all.
-    const result = parsePurgeResult(value);
-    if (result === undefined) {
-      return {
-        kind: "failed",
-        message: "the host answered something that is not a purge result",
-      };
-    }
-    return { kind: "purged", result };
+    outcome = await callRemote(scope, purgeRemote, "purge");
   } catch (error: unknown) {
     return {
       kind: "failed",
       message: error instanceof Error ? error.message : String(error),
     };
   }
+  if (outcome.kind === "unavailable") {
+    console.warn(
+      "[dsh-opencode-patch] purge: no opencodeModelPurge service on the remote"
+    );
+    return { kind: "unavailable" };
+  }
+  if (outcome.kind === "refused") {
+    return {
+      kind: "failed",
+      message: outcome.reason ?? "the host refused the purge",
+    };
+  }
+  if (outcome.kind === "invalid") {
+    return {
+      kind: "failed",
+      message: "the host answered something that is not a purge result",
+    };
+  }
+  return { kind: "purged", result: outcome.value };
 };

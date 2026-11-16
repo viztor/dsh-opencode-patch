@@ -11,10 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   applySettingsPage as apply,
+  type GoUsage,
   LEGACY_NS,
   NS,
   PKG,
   SCOPED_PKG,
+  type SessionUsageSnapshot,
 } from "./support/src.ts";
 
 describe("settings-page: apply & slots", () => {
@@ -432,6 +434,57 @@ describe("settings-page: apply & slots", () => {
     });
   });
 
+  it("reads a meter scope whose `get` misses and whose `remote` getter throws as no usage service", () => {
+    // The caller-level half of `findRemoteCall`'s guard. The base read
+    // `remoteNamespaceOf(meterScope, …) ?? remoteNamespace(meterScope.remote, …)`
+    // with the right side unguarded, so this scope threw out of the dock
+    // injector. The meter scope is its own object: the root context keeps a
+    // plain `remote`, so the mount's own read is not what is under test.
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+    let remoteReads = 0;
+    const slots = {
+      inject: (_name: string, fn: () => void) => fn(),
+      register: (entry: Record<string, unknown>) => {
+        if (entry.name === "conversation.input.right") {
+          dockInjector = entry.inject as (s: unknown) => unknown;
+        }
+      },
+    };
+    const meterScope = {
+      get: () => {},
+      modelDirectories: { directoryFor: () => ({ store: {} }) },
+      slots,
+      get remote(): never {
+        remoteReads += 1;
+        throw new TypeError('cannot get property "remote" without inject');
+      },
+    };
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      inject: (_deps: string[], callback: (scope: unknown) => unknown) =>
+        callback(meterScope),
+      remote: {},
+      slots,
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(() => apply(ctx as never)).not.toThrow();
+      expect(dockInjector).toBeTypeOf("function");
+      let answer: unknown;
+      expect(() => {
+        answer = dockInjector?.("session");
+      }).not.toThrow();
+      expect(answer).toMatchObject({
+        reason: expect.stringContaining("no usage service"),
+      });
+      // The getter was actually reached: the case exercises the guard, not a
+      // path that never read `remote`.
+      expect(remoteReads).toBeGreaterThan(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("registers the meter once per slot registry, so a second activation cannot throw", () => {
     // The host may run a plugin's client entry more than once in a page's life.
     // The slot registry THROWS on a duplicate id
@@ -806,5 +859,124 @@ describe("settings-page: apply & slots", () => {
     };
 
     expect(() => apply(ctx as never)).not.toThrow();
+  });
+});
+
+describe("settings-page: the meter's read, pinned before the remote seam", () => {
+  /** The meter's `readUsage`, over a remote whose `read` is `read`. */
+  const meterOver = (
+    read: () => Promise<unknown>
+  ): ((provider?: string, model?: string) => Promise<unknown>) => {
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: { directoryFor: () => ({ store: {} }) },
+      remote: { opencodeGoUsage: { read } },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.input.right") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+    apply(ctx as never);
+    const injected = dockInjector?.("valid") as {
+      readUsage: (provider?: string, model?: string) => Promise<unknown>;
+    };
+    expect(injected.readUsage).toBeTypeOf("function");
+    return injected.readUsage;
+  };
+
+  /** Every field of a session snapshot, `Required` so a new one must appear. */
+  const session: Required<SessionUsageSnapshot> = {
+    activeModel: "go-model-x",
+    activeModelName: "Go Model X",
+    activeRateFormatted: "$1 / $2 per 1M",
+    cacheReadTokens: 5,
+    costByPlane: { go: 0.25, zen: 0.5 },
+    costFormatted: "$0.75",
+    costUsd: 0.75,
+    freeModel: true,
+    inputTokens: 100,
+    modelsUsed: ["go-model-x"],
+    outputTokens: 200,
+    planeCostFormatted: "$0.25",
+    planeSpendUsd: 0.25,
+    totalTokens: 305,
+    turns: 2,
+  };
+
+  /** Every field of a reading, `Required` for the same reason. */
+  const full: Required<GoUsage> = {
+    allowance: { go: 12, goPlus: 48, model: "Go Model X" },
+    monthly: { percent: 14, resetsAt: "2026-11-07T00:55:00Z", status: "ok" },
+    quotaUnavailable: true,
+    rolling: { percent: 0, resetsAt: "2026-10-09T06:00:00Z", status: "ok" },
+    session,
+    source: "opencode-go",
+    weekly: {
+      percent: 100,
+      resetsAt: "2026-10-12T00:00:00Z",
+      status: "rate-limited",
+    },
+    zenOverflow: true,
+  };
+
+  it("hands the pill a complete reading whole, and an empty envelope as nothing", async () => {
+    const readUsage = meterOver(async () => ({ ok: true, value: full }));
+    await expect(readUsage("opencode-go", "m")).resolves.toEqual(full);
+    const empty = meterOver(async () => ({ ok: true }));
+    await expect(empty()).resolves.toBeUndefined();
+  });
+});
+
+describe("settings-page: the meter's read through the one unwrap (P9), on readings the Host does not send", () => {
+  const reading = {
+    monthly: { percent: 14, resetsAt: "2026-11-07T00:55:00Z", status: "ok" },
+    rolling: { percent: 0, resetsAt: "2026-10-09T06:00:00Z", status: "ok" },
+    weekly: { percent: 28, resetsAt: "2026-10-12T00:00:00Z", status: "ok" },
+  };
+
+  /** The meter's `readUsage`, over a remote whose `read` answers `answer`. */
+  const readUsageOver = (answer: unknown): (() => Promise<unknown>) => {
+    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
+    const ctx = {
+      effect: (fn: () => unknown) => fn(),
+      modelDirectories: { directoryFor: () => ({ store: {} }) },
+      remote: { opencodeGoUsage: { read: async () => answer } },
+      slots: {
+        inject: (_name: string, fn: () => void) => fn(),
+        register: (entry: Record<string, unknown>) => {
+          if (entry.name === "conversation.input.right") {
+            dockInjector = entry.inject as (s: unknown) => unknown;
+          }
+        },
+      },
+    };
+    apply(ctx as never);
+    const injected = dockInjector?.("valid") as {
+      readUsage: () => Promise<unknown>;
+    };
+    return injected.readUsage;
+  };
+
+  it("unifies a valid reading into the whitelisted copy", async () => {
+    await expect(
+      readUsageOver({ ok: true, value: { ...reading, extra: 1 } })()
+    ).resolves.toEqual(reading);
+  });
+
+  it("unifies a bare { value } into its value", async () => {
+    await expect(readUsageOver({ value: reading })()).resolves.toEqual(reading);
+  });
+
+  it("unwraps an invalid bare { value } too, and passes its payload through", async () => {
+    // The pass-through stays until P11; what reaches the pill is the payload,
+    // no longer the `{ value }` that carried it.
+    await expect(readUsageOver({ value: { rolling: {} } })()).resolves.toEqual({
+      rolling: {},
+    });
   });
 });

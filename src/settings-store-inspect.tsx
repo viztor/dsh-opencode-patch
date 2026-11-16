@@ -24,7 +24,7 @@
 import { Button } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
-import type { OpencodeStoreInspection } from "./opencode-store-contract.ts";
+import type { OpencodeStoreInspection } from "./contracts/store.ts";
 import type { Translate } from "./settings-copy.ts";
 import type { StoreInspectOutcome } from "./settings-store.ts";
 
