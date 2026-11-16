@@ -180,11 +180,13 @@ jobs:
       # holds because the install runs none of the cut's code (no dependency
       # build script runs unless something approves it: in the pinned pnpm,
       # an `allowBuilds` entry, a `build` permission or the allow-all in
-      # pnpm-workspace.yaml, a PNPM_CONFIG_* variable, or a CLI flag in this
-      # step or the scripts it runs, the proposer and the rc relock; none
-      # does, and test/host-drift.test.ts names each of those and the older
-      # spellings pnpm 12 ignores), so any build approval is a change to this
-      # step.
+      # pnpm-workspace.yaml, a PNPM_CONFIG_* variable, a CLI flag in this
+      # step or the scripts it runs, the proposer and the rc relock, or a
+      # pnpmfile, whose updateConfig hook can set any of those: one at the
+      # root, or one the workspace, its configDependencies, .npmrc or a flag
+      # names; none does, and test/host-drift.test.ts names each of those
+      # and the older spellings pnpm 12 ignores), so any build approval is a
+      # change to this step.
       - name: plan and write the bump (nightly only)
         id: plan
         if: github.event_name == 'schedule'
@@ -637,8 +639,11 @@ jobs:
   # OIDC endpoint nor secrets, so the step exits with a notice and the keyed
   # cases skip exactly as they do when the tier is `none`, while the keyless
   # cases still check that the endpoints answer. The Console CI token's client
-  # id is public by design: the exchange binds it to the audience and the
-  # GitHub OIDC subject, so the id alone grants nothing.
+  # id is public by design (the exchange binds it to the audience and the
+  # GitHub OIDC subject, so the id alone grants nothing) and it lives in the
+  # `OPENCODE_CONSOLE_CLIENT_ID` repository variable, not here: its `sk_` shape
+  # is indistinguishable from a Checkout.com secret key to a scanner, and a
+  # literal in this file raised a false-positive secret-scanning alert.
   #
   # Both probe suites write a dated table of what each URL shape answered
   # (docs/redirect-planes.md §13); the job appends them to the run summary and
@@ -706,7 +711,7 @@ jobs:
         if: steps.tier.outputs.keyed != 'none'
         env:
           AUDIENCE: https://opencode.ai/console
-          CLIENT_ID: sk_baf57eb6-1b63-4eb7-a538-737dc3aea54d
+          CLIENT_ID: ${{ vars.OPENCODE_CONSOLE_CLIENT_ID }}
         run: |
           # A fork or Dependabot pull request is issued no OIDC endpoint; leave
           # the suite keyless, as its keyed cases already expect.

@@ -97,7 +97,7 @@ To maintain long-term stability and prevent regressions, the codebase enforces s
 
 ### Invariant 1: The Client Bundle Boundary
 
-The Web Client bundle (`lib/client.js`) is loaded inside the user's browser. It must never import Node.js built-ins (`node:fs`, `node:sqlite`, `node:async_hooks`), Cordis context instances, or secret storage logic. This invariant is continuously verified by `scripts/check.ts` and `test/client-bundle.test.ts`.
+The Web Client bundle (`lib/client.js`) is loaded inside the user's browser. It must never import Node.js built-ins (`node:fs`, `node:sqlite`, `node:async_hooks`), Cordis context instances, or secret storage logic. This invariant is enforced by `test/architecture.test.ts`'s client-bundle block ("the client bundle reaches nothing host-only"), which walks the entry's import graph and fails on a node built-in, the cordis runtime, pi or `process.env`. `scripts/check.ts` only loads the installed client bundle in its consumer install and holds its size tripwire, and `test/client-bundle.test.ts` checks the bundle's registration with the web client loader; neither scans an import.
 
 ### Invariant 2: The Hard Rule on Local Machine Paths
 
@@ -127,11 +127,7 @@ Full implementation parity is locked by a multi-layered automated test matrix:
 2. **Gateway Contract Mock Suites (`test/mock/*.mock.ts`)**:
    - Strict HTTP wire contract tests verifying byte-level header injection, SSE chunk streaming, and 401/403/429/502 error emulation.
 3. **Coverage Ratchet Enforcement**:
-   - Coverage thresholds are enforced on every build:
-     - **Statements**: >= 94.5%
-     - **Branches**: >= 89.9%
-     - **Functions**: >= 92.9%
-     - **Lines**: >= 94.5%
+   - Coverage thresholds are enforced on every build; the floors are the ones in `vite.config.ts` (`coverage.thresholds`), not restated here, since a number in prose does not move with the ratchet.
 4. **Bundle Gate & Hard Rule Check**:
    - `test/no-local-paths.test.ts` scans the entire repository and built artifacts for path leakage.
-   - `scripts/check.ts` validates that `lib/client.js` is clean and free of server-side leakage.
+   - `test/architecture.test.ts` walks the client bundle's import graph from its entry and fails on anything host-only; `scripts/check.ts` loads the installed `lib/client.js` (and the host half) in a consumer install and holds the bundle's size tripwire.

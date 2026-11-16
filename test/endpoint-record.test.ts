@@ -285,10 +285,27 @@ describe("endpoint record · the records beside the tables (L4, L5, L9, L10, L13
     ).toBe(
       '| `opencode-go` | `reasoning_effort: "none"` | L10 | — | no-model |'
     );
-    // A keyless row says so in its label.
-    expect(
-      lines.find((line) => line.startsWith("| `opencode` | a free model"))
-    ).toContain("no key");
+    // A keyless row says so in its label, and a keyed row does not: the
+    // label is tied to the `keyed` switch for every printed row, not read
+    // off one row picked by its own label. The table prints VARIANT_ROWS
+    // in order, so each row is checked against the variant it prints.
+    const printed = lines.slice(4);
+    expect(printed).toHaveLength(VARIANT_ROWS.length);
+    const keyless = VARIANT_ROWS.map(([plane, variant], index) => {
+      const row = printed[index];
+      expect(row?.startsWith(`| \`${plane}\` | ${variant.label} |`)).toBe(true);
+      expect(row?.includes("no key")).toBe(variant.keyed === false);
+      return variant.keyed === false ? `${plane} ${variant.id}` : undefined;
+    }).filter((row) => row !== undefined);
+    // The known answer: three free rows on each plane.
+    expect(keyless).toEqual([
+      "opencode free-baseline",
+      "opencode session-raw-free",
+      "opencode ua-harness-free",
+      "opencode-go free-baseline",
+      "opencode-go session-raw-free",
+      "opencode-go ua-harness-free",
+    ]);
     expect(
       VARIANT_ROWS.map(([plane, variant]) => `${plane} ${variant.id}`)
     ).toEqual(

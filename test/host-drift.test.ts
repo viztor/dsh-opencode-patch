@@ -6,7 +6,14 @@
  *
  * @module test/host-drift
  */
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import semver from "semver";
@@ -59,12 +66,37 @@ const APPROVING_KEYS = [
 ] as const;
 
 /**
+ * What loads a pnpmfile, whose `hooks.updateConfig` can set any build
+ * setting, the allow-all included: measured with the pinned pnpm, a root
+ * `.pnpmfile.cjs` or `.pnpmfile.mjs`, or the workspace's `pnpmfile`, turns
+ * every dependency's build on. `configDependencies` installs packages that
+ * can carry one; `globalPnpmfile` is the per-user spelling.
+ */
+const PNPMFILE_KEYS = [
+  "configDependencies",
+  "globalPnpmfile",
+  "pnpmfile",
+] as const;
+
+/** The pnpmfiles pnpm loads from the root on its own. */
+const PNPMFILES = [".pnpmfile.cjs", ".pnpmfile.mjs"] as const;
+
+/**
+ * The {@link PNPMFILES} present in a directory.
+ *
+ * @param root - the directory pnpm would install from.
+ * @returns each root pnpmfile found there, in {@link PNPMFILES} order.
+ */
+const pnpmfilesIn = (root: string): string[] =>
+  PNPMFILES.filter((file) => existsSync(join(root, file)));
+
+/**
  * What turns builds on from inside a script the step runs: the allow-all flag,
- * a build setting passed as `--config.`, or a `PNPM_CONFIG_` variable the
- * script sets for the pnpm it spawns.
+ * a build setting passed as `--config.`, a pnpmfile named on the command
+ * line, or a `PNPM_CONFIG_` variable the script sets for the pnpm it spawns.
  */
 const APPROVING_IN_SCRIPT =
-  /--(?:config\.)?dangerously-allow-all-builds|--config\.(?:allow-builds|permissions|only-built-dependencies|never-built-dependencies)|\bpnpm_config_\w+/iu;
+  /--(?:config\.)?dangerously-allow-all-builds|--(?:global-)?pnpmfile|--config\.(?:allow-builds|permissions|only-built-dependencies|never-built-dependencies)|\bpnpm_config_\w+/iu;
 
 /** An environment variable pnpm reads as a build setting. */
 const APPROVING_ENV =
@@ -78,7 +110,9 @@ const APPROVING_ENV =
  * step's environment (which overrides the workspace's `allowBuilds`), and a
  * CLI flag or `PNPM_CONFIG_` variable in anything the step runs pnpm from
  * (its own shell, the proposer and the rc relock the proposer spawns,
- * `scripts/use-channel.ts`). Then what only older pnpm reads: the rest of
+ * `scripts/use-channel.ts`), and a pnpmfile ({@link PNPMFILES} at the root,
+ * or one {@link PNPMFILE_KEYS} or `.npmrc` names). Then what only older pnpm
+ * reads: the rest of
  * {@link APPROVING_KEYS} in the workspace, every approval in package.json's
  * `pnpm` field, and the npmrc and `npm_config_*` spellings.
  *
@@ -89,6 +123,7 @@ const buildApprovals = (sources: {
   readonly env: Readonly<Record<string, unknown>>;
   readonly manifest: Readonly<Record<string, unknown>>;
   readonly npmrc: string;
+  readonly pnpmfiles: readonly string[];
   readonly scripts: Readonly<Record<string, string>>;
   readonly workspace: Readonly<Record<string, unknown>>;
 }): string[] => {
@@ -104,7 +139,7 @@ const buildApprovals = (sources: {
         found.push(`${where} allowBuilds approves ${name}`);
       }
     }
-    for (const key of APPROVING_KEYS) {
+    for (const key of [...APPROVING_KEYS, ...PNPMFILE_KEYS]) {
       if (config[key] !== undefined) {
         found.push(`${where} sets ${key}`);
       }
@@ -124,10 +159,15 @@ const buildApprovals = (sources: {
     "dangerously-allow-all-builds",
     "never-built-dependencies",
     "only-built-dependencies",
+    "pnpmfile",
+    "global-pnpmfile",
   ]) {
     if (new RegExp(`^\\s*${key}`, "mu").test(sources.npmrc)) {
       found.push(`.npmrc sets ${key}`);
     }
+  }
+  for (const file of sources.pnpmfiles) {
+    found.push(`a pnpmfile is present: ${file}`);
   }
   for (const key of Object.keys(sources.env)) {
     if (APPROVING_ENV.test(key)) {
@@ -613,6 +653,7 @@ describe("host drift · the CI wiring, parsed", () => {
           readFileSync(join(ROOT, "package.json"), "utf8")
         ) as Record<string, unknown>,
         npmrc: existsSync(npmrc) ? readFileSync(npmrc, "utf8") : "",
+        pnpmfiles: pnpmfilesIn(ROOT),
         scripts,
         workspace,
       })
@@ -620,7 +661,8 @@ describe("host drift · the CI wiring, parsed", () => {
     // Known answers: every source is named. The approvals the pinned pnpm
     // acts on (an `allowBuilds` entry, a `build` permission, the allow-all,
     // a PNPM_CONFIG_ variable in the environment or set by a script, both CLI
-    // spellings, in either script), then
+    // spellings, in either script; a pnpmfile at the root, named by the
+    // workspace, its config dependencies, `.npmrc` or a command line), then
     // the spellings only older pnpm reads (the deny-list, empty included,
     // the allow-list, package.json's field, the npmrc line, npm_config_).
     expect(
@@ -636,10 +678,15 @@ describe("host drift · the CI wiring, parsed", () => {
             onlyBuiltDependencies: ["esbuild"],
           },
         },
-        npmrc: "dangerously-allow-all-builds=true\n",
+        npmrc:
+          "dangerously-allow-all-builds=true\npnpmfile=hooks.cjs\nglobal-pnpmfile=global.cjs\n",
+        pnpmfiles: [".pnpmfile.cjs", ".pnpmfile.mjs"],
         scripts: {
           "scripts/propose-host-bump.ts":
             'run("pnpm", ["install", "--dangerously-allow-all-builds"]);',
+          "scripts/regenerate.ts": 'pnpm("install", "--pnpmfile=hooks.cjs");',
+          "scripts/relock.ts":
+            'pnpm("install", "--global-pnpmfile=global.cjs");',
           "scripts/use-channel.ts":
             'pnpm("install", "--config.dangerously-allow-all-builds=true");',
           "the plan step":
@@ -648,7 +695,10 @@ describe("host drift · the CI wiring, parsed", () => {
         workspace: {
           allowBuilds: { esbuild: true, protobufjs: false },
           dangerouslyAllowAllBuilds: true,
+          configDependencies: { hooks: "1.0.0+sha512-0" },
+          globalPnpmfile: "global.cjs",
           neverBuiltDependencies: [],
+          pnpmfile: "hooks/install.cjs",
           permissions: {
             "@google/genai": { build: false },
             esbuild: { build: true },
@@ -659,13 +709,22 @@ describe("host drift · the CI wiring, parsed", () => {
       "pnpm-workspace.yaml allowBuilds approves esbuild",
       "pnpm-workspace.yaml sets dangerouslyAllowAllBuilds",
       "pnpm-workspace.yaml sets neverBuiltDependencies",
+      "pnpm-workspace.yaml sets configDependencies",
+      "pnpm-workspace.yaml sets globalPnpmfile",
+      "pnpm-workspace.yaml sets pnpmfile",
       "package.json pnpm allowBuilds approves esbuild",
       "package.json pnpm sets onlyBuiltDependencies",
       "pnpm-workspace.yaml permissions grant esbuild build",
       ".npmrc sets dangerously-allow-all-builds",
+      ".npmrc sets pnpmfile",
+      ".npmrc sets global-pnpmfile",
+      "a pnpmfile is present: .pnpmfile.cjs",
+      "a pnpmfile is present: .pnpmfile.mjs",
       "the step's environment sets npm_config_dangerously_allow_all_builds",
       "the step's environment sets PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS",
       "scripts/propose-host-bump.ts carries --dangerously-allow-all-builds",
+      "scripts/regenerate.ts carries --pnpmfile",
+      "scripts/relock.ts carries --global-pnpmfile",
       "scripts/use-channel.ts carries --config.dangerously-allow-all-builds",
       "the plan step carries PNPM_CONFIG_ALLOW_BUILDS",
     ]);
@@ -703,6 +762,24 @@ describe("host drift · the CI wiring, parsed", () => {
     expect(job.permissions?.actions).toBe("write");
     expect(job.permissions?.contents).toBe("write");
     expect(job.permissions?.["pull-requests"]).toBe("write");
+  });
+
+  it("finds a root pnpmfile on disk, each spelling pnpm loads, and none in an empty root", () => {
+    const root = mkdtempSync(join(tmpdir(), "host-drift-pnpmfiles-"));
+    try {
+      expect(pnpmfilesIn(root)).toStrictEqual([]);
+      writeFileSync(join(root, ".pnpmfile.mjs"), "export default {};\n");
+      expect(pnpmfilesIn(root)).toStrictEqual([".pnpmfile.mjs"]);
+      writeFileSync(join(root, ".pnpmfile.cjs"), "module.exports = {};\n");
+      expect(pnpmfilesIn(root)).toStrictEqual([
+        ".pnpmfile.cjs",
+        ".pnpmfile.mjs",
+      ]);
+      // The probe reads the directory it is given, not the repository.
+      expect(pnpmfilesIn(join(root, "missing"))).toStrictEqual([]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
   });
 });
 
