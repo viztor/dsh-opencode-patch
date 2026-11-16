@@ -217,8 +217,8 @@ describe(
         })) as Row[];
         expect(idsOf(rows), plane).toEqual(expected(plane));
         // The catalog models this cell's pi does not list include every S0
-        // id the cell's pi cannot place (a newer pi lists more of them: the
-        // newest cell's pi lists every Go catalog model).
+        // id the cell's pi cannot place (a newer pi lists more of them, but
+        // even the newest cell's pi lacks the catalog's newest ids).
         const gap = servable(plane).filter(
           (id) => piKnows(plane, id) === undefined
         );
@@ -569,7 +569,7 @@ describe(
         })) as Row[];
         expect(idsOf(rows), plane).toEqual(pi);
         // A live claim would have offered these (none on a plane whose pi
-        // lists the whole catalog, the newest cell's Go).
+        // lists the whole catalog).
         const gap = servable(plane).filter((id) => !pi.includes(id));
         gaps += gap.length;
         expect(
