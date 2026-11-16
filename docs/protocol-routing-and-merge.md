@@ -12,13 +12,13 @@ OpenCode serves its models on **four different API shapes**, and which one a mod
 | OpenAI **Responses** | `POST /inference/openai/v1/responses` | 32 of 88 | `@ai-sdk/openai` |
 | Anthropic **Messages** | `POST /inference/anthropic/v1/messages` | 18 of 88 | `@ai-sdk/anthropic` |
 | Google **Generative AI** | `POST /inference/google/v1beta/models/<id>:streamGenerateContent` | 10 of 88 | `@ai-sdk/google` |
-| OpenAI **Chat Completions** (as pi files it) | `POST /inference/openai/v1/chat/completions` | 1 of 88 | `@ai-sdk/mistral` |
+| OpenAI **Chat Completions** (the plugin's own rule) | `POST /inference/openai/v1/chat/completions` | 1 of 88 | `@ai-sdk/mistral` |
 
 Counts are the shipped catalog. They are asserted against this table by `catalog-docs.test.ts`, because a count written into prose does not regenerate with the data it counts. Go's endpoints are the same paths under `/inference/go/…`; `endpoint: legacy` sends every protocol to `/zen/v1` (`/zen/go/v1` on Go), except Go's Google, which only the inference family serves.
 
 **"OpenAI" is two of the four served shapes.** Chat Completions and Responses are different wire formats, and a model that needs Responses does not work on the completions endpoint. The gateway does not fall back; it answers `500`. So each model has to be sent to the endpoint its own SDK names, without asking the user to configure anything.
 
-**Mistral is completions (D16).** `@ai-sdk/mistral` was once kept unserved for want of a measured dialect. pi's own installed data files `mistral-large-4` under `openai-completions`, so the plugin follows pi, and no SDK is withheld any more.
+**Mistral is completions (D16).** `@ai-sdk/mistral` was once kept unserved for want of a measured dialect. The plugin's own rule: `PROTOCOL_FOR_SDK` files the SDK as `openai-completions`, on the OpenAI root the catalog's family table places it; which dialect the gateway serves there is unmeasured. No SDK is withheld any more.
 
 ## 2. How a model is served: one route per plane (D13)
 

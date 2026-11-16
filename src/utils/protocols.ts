@@ -9,9 +9,7 @@
  * plugin's own rule, consistent with the vendor catalog's family table,
  * which places that SDK on the OpenAI root
  * (`OPENCODE_FAMILY_API.zen["@ai-sdk/mistral"]` in the generated
- * `catalog-data.ts`). Which dialect the gateway serves there is unmeasured,
- * and rewording the docs' rationale for the row is the plan's P7 item
- * (`docs/improvement-plan.md`).
+ * `catalog-data.ts`). Which dialect the gateway serves there is unmeasured.
  *
  * Every value is a constant or a function of its arguments: this module is in
  * `utils/` and the architecture test holds it to that.

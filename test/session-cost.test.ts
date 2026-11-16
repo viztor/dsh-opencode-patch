@@ -16,7 +16,6 @@ import {
   clearSessionUsageStore,
   describeModel,
   formatModelRate,
-  formatUsd,
   getSessionUsage,
   recordTurnUsage,
 } from "./support/src.ts";
@@ -36,21 +35,6 @@ const GO_FLASH: ModelCostRate = {
 // The accumulator is a module-level map, so each case starts from empty.
 beforeEach(() => {
   clearSessionUsageStore();
-});
-
-describe("formatUsd", () => {
-  it("always reads two decimals, whatever the magnitude", () => {
-    // The tiered formatter (3dp below a cent, 4dp below a tenth) printed
-    // $0.006 on the trigger — precision in the wrong place. A meter is a
-    // gauge, not an invoice, and a number whose LENGTH changes with its value
-    // makes the row shift on every turn.
-    expect(formatUsd(0)).toBe("$0.00");
-    expect(formatUsd(0.00012)).toBe("$0.00");
-    expect(formatUsd(0.0042)).toBe("$0.00");
-    expect(formatUsd(0.006)).toBe("$0.01");
-    expect(formatUsd(0.42)).toBe("$0.42");
-    expect(formatUsd(12.3456)).toBe("$12.35");
-  });
 });
 
 describe("formatModelRate", () => {

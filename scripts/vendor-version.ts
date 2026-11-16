@@ -126,9 +126,10 @@ export const disagreements = (
  * No constant pins that generation: `OPENCODE_CLI_VERSION` is a 1.x version
  * and the plugin sends the 1.x form. A 2.x literal in the tree is therefore a
  * claim about what the CLI sends that nothing checks, the kind of copy this
- * gate exists to keep from drifting. The client-generation table that would
- * pin it is P7's (L6); until then such a literal is a placeholder, never a
- * value.
+ * gate exists to keep from drifting. The client-generation table
+ * (`src/utils/client-generation.ts`, L6) records the 2.x FORMAT, but pins no
+ * 2.x version, so a concrete literal is still a claim; such a literal is a
+ * placeholder, never a value.
  *
  * @param found - each 2.x-form literal, with the files that say it.
  * @returns the messages, one per literal.

@@ -12,12 +12,15 @@ import { describe, expect, it } from "vitest";
 import {
   ANTHROPIC_VERSION,
   authHeaderFor,
-  catalogPlaneForRoute,
   gatewayPlaneFor,
   headerSourceOf,
   isGoPlaneUrl,
   isZenProvider,
   modelIdOf,
+  OPENCODE_CLI_VERSION,
+  OPENCODE_PATCH_USER_AGENT,
+  OPENCODE_USER_AGENT,
+  planeForRoute,
   planeHeadersFor,
   pluginMarkerOn,
   requestUrlOf,
@@ -45,7 +48,7 @@ describe("request-shape · isZenProvider", () => {
     expect(isZenProvider()).toBe(false);
   });
 
-  it("agrees with catalogPlaneForRoute on every route the plugin serves", () => {
+  it("agrees with planeForRoute on every route the plugin serves", () => {
     // The defect was these two predicates disagreeing; a route added to or
     // renamed in either reader must not let them drift apart again. The
     // set is bounded on purpose: outside OpenCode routes the two differ by
@@ -62,9 +65,7 @@ describe("request-shape · isZenProvider", () => {
     ];
     expect(routes.length).toBeGreaterThan(2);
     for (const route of routes) {
-      expect(isZenProvider(route), route).toBe(
-        catalogPlaneForRoute(route) === "zen"
-      );
+      expect(isZenProvider(route), route).toBe(planeForRoute(route) === "zen");
     }
   });
 });
@@ -352,5 +353,14 @@ describe("request-shape · planeHeadersFor, the one table of plane headers", () 
       "x-opencode-session",
       "x-opencode-org-id",
     ]);
+  });
+
+  it("the User-Agent the emulated client sends, and the one the plugin signs with", () => {
+    // The 1.x form, `opencode/<version>` and nothing more; the plugin's own
+    // requests append its name.
+    expect(OPENCODE_USER_AGENT).toBe(`opencode/${OPENCODE_CLI_VERSION}`);
+    expect(OPENCODE_PATCH_USER_AGENT).toBe(
+      `opencode/${OPENCODE_CLI_VERSION} dsh-opencode-patch`
+    );
   });
 });

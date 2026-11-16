@@ -10,6 +10,7 @@
  */
 
 import type { CatalogPlane } from "./models-catalog.ts";
+import { formatUsd } from "./utils/usd.ts";
 
 export interface ModelCostRate {
   cache_read?: number;
@@ -87,22 +88,6 @@ interface MutableSessionUsage {
 
 const sessionStore = new Map<string, MutableSessionUsage>();
 
-/**
- * Format a USD dollar amount, always two decimals.
- *
- * The precision used to tier by magnitude — three decimals below a cent, four
- * below a tenth of one — and the owner read `$0.006` on the trigger and called
- * it too much precision in the wrong place. A meter is a gauge, not an
- * invoice: `$0.01` of a real spend is an honest rounding of six tenths of a
- * cent, the same rounding every wallet UI makes. Precision tiers reintroduce
- * the exact thing the panel keeps paying to remove — a number whose LENGTH
- * changes with its value, so the row shifts on every turn. (The allowance
- * table's `formatUsd` in go-limits.ts keeps its own contract: whole dollars
- * drop the cents, because a published $60 total is not the same kind of
- * figure as a metered spend.)
- */
-export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
-
 /** Format model rate per 1M tokens. */
 export const formatModelRate = (
   cost?: ModelCostRate,
@@ -165,7 +150,7 @@ const toSnapshot = (val: MutableSessionUsage): SessionUsageSnapshot => {
     cacheReadTokens: val.cacheReadTokens,
     /** Spend attributed to each billing plane; every turn knows its own. */
     costByPlane: { go: val.costGo, zen: val.costZen },
-    costFormatted: formatUsd(val.costUsd),
+    costFormatted: formatUsd(val.costUsd, "metered"),
     costUsd: val.costUsd,
     ...(val.activeIsFree === true ? { freeModel: true } : {}),
     inputTokens: val.inputTokens,
@@ -217,7 +202,7 @@ export const recordTurnUsage = (
     (tokens.inputTokens ?? 0) + (tokens.outputTokens ?? 0);
 
   const turnRecord: TurnRecord = {
-    costFormatted: formatUsd(turnCost),
+    costFormatted: formatUsd(turnCost, "metered"),
     costUsd: turnCost,
     inputTokens: tokens.inputTokens ?? 0,
     ...(isFree ? { isFree: true } : {}),

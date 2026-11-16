@@ -22,7 +22,8 @@ import {
 import { DEFAULT_GATEWAY_URLS } from "./config.ts";
 import type { ModelCostRate } from "./session-cost.ts";
 import { isRecord } from "./utils/guards.ts";
-import { isGoPlaneUrl } from "./utils/request-shape.ts";
+import { type Plane, planeForRoute } from "./utils/planes.ts";
+import { isGoPlaneUrl, planeForUrl } from "./utils/request-shape.ts";
 
 // The catalog data is part of this module's public surface (and of the
 // package's, via `index.ts`), so re-export it rather than making callers
@@ -33,7 +34,7 @@ export {
   type CatalogModelSpec,
 } from "./catalog-data.ts";
 
-export type CatalogProvider = "go" | "zen";
+export type CatalogProvider = Plane;
 
 /**
  * The registry this plugin actually fetches: the OpenCode catalog, served from
@@ -437,20 +438,11 @@ const extractSpecs = (
   return results;
 };
 
-/** Which of the two catalogs a model id should be read from. */
-export type CatalogPlane = "go" | "zen";
-
 /**
- * The plane a route's models come from.
- *
- * `opencode-go` is the subscription plane, and so is an `opencode-go-*` relay
- * route; everything else this plugin knows about (`opencode`) is Zen.
+ * Which of the two catalogs a model id should be read from: a plane. A route's
+ * plane is `planeForRoute`'s (`utils/planes.ts`), the one table.
  */
-export const catalogPlaneForRoute = (route: unknown): CatalogPlane =>
-  route === "opencode-go" ||
-  (typeof route === "string" && route.startsWith("opencode-go-"))
-    ? "go"
-    : "zen";
+export type CatalogPlane = Plane;
 
 /**
  * The spec a given PLANE declares for a model.
@@ -491,10 +483,42 @@ export const findModelSpecOn = (
  *   ("prices a turn at the rate of the plane its route belongs to").
  *
  * The plane has to come from the route in play; this function is the fallback
- * for a model the plane's OWN row does not describe.
+ * for a model the plane's OWN row does not describe, and {@link specOn} reads
+ * the two in that order.
  */
 export const findModelSpec = (modelId: string): CatalogModelSpec | undefined =>
   activeGoCatalog.get(modelId) ?? activeZenCatalog.get(modelId);
+
+/**
+ * The spec a plane declares for a model, and the plane-blind one for a model
+ * the plane's own row does not describe: the one lookup the request path, the
+ * core-tool fallback and the turn's price share.
+ *
+ * Not for a reading that must say "this plane has no price": the meter's
+ * prospective price reads {@link findModelSpecOn} alone, so a Zen route never
+ * shows a Go price.
+ *
+ * @param plane - the plane in play.
+ * @param modelId - the model id.
+ * @returns the plane's row, else the plane-blind row, else `undefined`.
+ */
+export const specOn = (
+  plane: CatalogPlane,
+  modelId: string
+): CatalogModelSpec | undefined =>
+  findModelSpecOn(plane, modelId) ?? findModelSpec(modelId);
+
+/**
+ * {@link specOn} for the plane a ROUTE's models come from (`planeForRoute`).
+ *
+ * @param route - the route id in play.
+ * @param modelId - the model id.
+ * @returns the spec, as {@link specOn} answers it.
+ */
+export const specFor = (
+  route: unknown,
+  modelId: string
+): CatalogModelSpec | undefined => specOn(planeForRoute(route), modelId);
 
 /**
  * Safely parse raw models.dev JSON data for both opencode-go and opencode providers.
@@ -547,7 +571,7 @@ export const parseModelsDevCatalog = (data: unknown): ParsedCatalogs => {
  * @param id - the model id to test.
  * @returns whether the registry has retired it.
  */
-export const isDeprecatedModelOn = (plane: "go" | "zen", id: string): boolean =>
+export const isDeprecatedModelOn = (plane: Plane, id: string): boolean =>
   (plane === "go" ? deprecatedGoIds : deprecatedZenIds).has(id);
 
 /**
@@ -706,6 +730,20 @@ export const getLiveZenCatalog = (
   fetchFn: typeof fetch = globalThis.fetch
 ): readonly CatalogModelSpec[] => readLiveCatalog(activeZenCatalog, fetchFn);
 
+/**
+ * The current catalog of one plane: {@link getLiveGoCatalog} or
+ * {@link getLiveZenCatalog}, whose revalidation it keeps.
+ *
+ * @param plane - the plane.
+ * @param fetchFn - fetch implementation to use for background refresh; absent,
+ *   theirs applies.
+ */
+export const liveCatalogOn = (
+  plane: Plane,
+  fetchFn?: typeof fetch
+): readonly CatalogModelSpec[] =>
+  plane === "go" ? getLiveGoCatalog(fetchFn) : getLiveZenCatalog(fetchFn);
+
 /** Legacy alias for getLiveGoCatalog. */
 export const getLiveCatalog = getLiveGoCatalog;
 
@@ -797,8 +835,7 @@ export const enrichModelsResponse = async (
   // listing, against the deployment's own gateway markers; asking
   // `isGoModelsListingUrl` again applied the DEFAULT markers, so a relay's
   // `/zen/go/v1/models` was answered with the Zen catalog.
-  const isGo = isGoPlaneUrl(url);
-  const catalog = isGo ? getLiveGoCatalog(fetchFn) : getLiveZenCatalog(fetchFn);
+  const catalog = liveCatalogOn(planeForUrl(url), fetchFn);
   const catalogById = new Map(catalog.map((m) => [m.id, m]));
   const merged = new Map<string, Record<string, unknown>>();
 

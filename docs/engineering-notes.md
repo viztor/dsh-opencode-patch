@@ -456,7 +456,7 @@ So the round that "fixed the tool schemas" renamed `filePath` to `path` and adde
 Other deltas the comparison establishes, none of them acted on yet:
 
 - `x-opencode-request` **is** sent by 1.19.5 (the user message id) and was dropped in 2.x. This plugin omitted it for a round — the turn store held no message id — and now sends one minted per turn in the same shape; the section below records how and why.
-- `x-session-affinity` and `X-Session-Id` are **not** sent for `opencode*` providers in 1.19.5 — they are the other branch, for relays. This plugin sends them on every claimed request.
+- `x-session-affinity` and `X-Session-Id` are **not** sent for `opencode*` providers in 1.19.5 — they are the other branch, for relays. This plugin sent them on every claimed request when this was written; it now sends them on a relay only, as `CLIENT_GENERATIONS["1.x"]` (`src/utils/client-generation.ts`) records.
 - `User-Agent` is `opencode/<version>` in 1.19.5, and `opencode/<channel>/<version>/<client>` in 2.x. The plugin sends `opencode/1.19.5 ai-sdk/provider-utils/… runtime/bun/…`, which is neither.
 - Chat bodies use `max_tokens` in 1.19.5 and `max_completion_tokens` in 2.x.
 - `b3` is absent in **both** generations, and `traceparent` appears only under `experimental.openTelemetry` — so neither belongs in the plugin's request on the evidence available.

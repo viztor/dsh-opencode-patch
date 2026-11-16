@@ -32,9 +32,8 @@ import { extractApiKeyFromHeaders } from "./key-capture.ts";
 import {
   type CatalogPlane,
   enrichModelsResponse,
-  findModelSpec,
-  findModelSpecOn,
   isModelsListingUrl,
+  specOn,
 } from "./models-catalog.ts";
 import {
   isOpenCodeSessionId,
@@ -51,7 +50,7 @@ import {
   authHeaderFor,
   gatewayPlaneFor,
   headerSourceOf,
-  isGoPlaneUrl,
+  planeForUrl,
   planeHeadersFor,
   pluginMarkerOn,
   projectHeaderOf,
@@ -99,7 +98,7 @@ const isFreeModelBody = (
     // has to be the plane's. The plane-agnostic lookup searches Go first, which
     // today agrees with the plane-aware one for every model in the catalog, and
     // is wrong the day it does not.
-    const spec = findModelSpecOn(plane, model) ?? findModelSpec(model);
+    const spec = specOn(plane, model);
     return spec?.is_free === true;
   } catch {
     return false;
@@ -345,7 +344,7 @@ export const patchFetch = (
         //
         // A body the check cannot read answers "not free", which is the safe
         // side - the warning is the status quo, not a new failure.
-        !isFreeModelBody(bodyToPatch, isGoPlaneUrl(url) ? "go" : "zen")
+        !isFreeModelBody(bodyToPatch, planeForUrl(url))
       ) {
         warnedNoCredential.add(plane);
         const { consulted } = decision;

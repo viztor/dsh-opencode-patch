@@ -25,6 +25,7 @@ import {
   findModelSpecOn,
   isDeprecatedModelOn,
   isServableSdk,
+  type MeasuredWindows,
   mergeDiscoveredModels,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
@@ -872,6 +873,116 @@ describe("decorateModelDiscovery", () => {
     stop?.();
 
     expect(llm.discoverModels).toBe(foreign);
+  });
+});
+
+describe("the discovery rows' measured window (L11)", () => {
+  const ID = "window-probe";
+  /** A seeded table: a Zen row for the probe, and a Go row for the same id. */
+  const seeded = (zen: number, go: number): MeasuredWindows => ({
+    go: { [ID]: { evidence: "test", measured: "2026-11-16", window: go } },
+    zen: { [ID]: { evidence: "test", measured: "2026-11-16", window: zen } },
+  });
+  const zenOnly = (window: number): MeasuredWindows => ({
+    go: {},
+    zen: { [ID]: { evidence: "test", measured: "2026-11-16", window } },
+  });
+  /**
+   * Land a live row for the probe on each plane, with a window of its own:
+   * 128k on Zen, 96k on Go.
+   */
+  const seedCatalog = async (): Promise<void> => {
+    await refreshCatalog(
+      vi.fn().mockResolvedValue(
+        Response.json({
+          "opencode-go": {
+            api: "https://opencode.ai/zen/go/v1",
+            models: {
+              [ID]: {
+                limit: { context: 96_000 },
+                name: "Window Probe",
+                provider: { npm: "@ai-sdk/anthropic" },
+              },
+            },
+          },
+          opencode: {
+            api: "https://opencode.ai/zen/v1",
+            models: {
+              [ID]: {
+                limit: { context: 128_000 },
+                name: "Window Probe",
+                provider: { npm: "@ai-sdk/openai" },
+              },
+            },
+          },
+        })
+      ) as unknown as typeof fetch,
+      true
+    );
+  };
+  const windowOf = (rows: ReturnType<typeof mergeDiscoveredModels>): unknown =>
+    rows.find((row) => row.id === ID)?.contextWindow;
+
+  it("catalog-first (a plane the plugin serves): the measured window beats the catalog's and pi's", async () => {
+    await seedCatalog();
+    // The premise: the catalog and pi each answer a window of their own.
+    expect(findModelSpecOn("zen", ID)?.context_window).toBe(128_000);
+    const pi = [{ contextWindow: 200_000, id: ID }];
+    expect(windowOf(complementDiscoveredModels(pi, "zen"))).toBe(128_000);
+    expect(
+      windowOf(complementDiscoveredModels(pi, "zen", zenOnly(64_000)))
+    ).toBe(64_000);
+    // A catalog row pi did not list reads it too.
+    expect(
+      windowOf(complementDiscoveredModels([], "zen", zenOnly(64_000)))
+    ).toBe(64_000);
+  });
+
+  it("pi-first (a route pi-ai serves): pi's window still wins, and the measured one beats the catalog's", async () => {
+    await seedCatalog();
+    expect(
+      windowOf(
+        mergeDiscoveredModels(
+          [{ contextWindow: 200_000, id: ID }],
+          "zen",
+          zenOnly(64_000)
+        )
+      )
+    ).toBe(200_000);
+    expect(
+      windowOf(mergeDiscoveredModels([{ id: ID }], "zen", zenOnly(64_000)))
+    ).toBe(64_000);
+  });
+
+  it("reads the row of the plane asked about, never the other plane's", async () => {
+    await seedCatalog();
+    const goOnly: MeasuredWindows = { go: seeded(1, 32_000).go, zen: {} };
+    expect(windowOf(complementDiscoveredModels([], "zen", goOnly))).toBe(
+      128_000
+    );
+    expect(
+      windowOf(complementDiscoveredModels([], "zen", seeded(64_000, 32_000)))
+    ).toBe(64_000);
+    expect(windowOf(mergeDiscoveredModels([{ id: ID }], "zen", goOnly))).toBe(
+      128_000
+    );
+    // The Go arm, at both of rowFrom's call sites, so a plane fixed to either
+    // value turns a case red: the premise is Go's own catalog window, 96k.
+    expect(findModelSpecOn("go", ID)?.context_window).toBe(96_000);
+    expect(
+      windowOf(complementDiscoveredModels([], "go", seeded(64_000, 32_000)))
+    ).toBe(32_000);
+    expect(
+      windowOf(complementDiscoveredModels([], "go", zenOnly(64_000)))
+    ).toBe(96_000);
+    expect(
+      windowOf(
+        mergeDiscoveredModels([{ id: ID }], "go", seeded(64_000, 32_000))
+      )
+    ).toBe(32_000);
+    expect(
+      windowOf(mergeDiscoveredModels([{ id: ID }], "go", zenOnly(64_000)))
+    ).toBe(96_000);
   });
 });
 

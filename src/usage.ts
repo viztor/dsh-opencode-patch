@@ -28,15 +28,9 @@ import {
 import { GO_MODEL_LIMITS } from "./go-limits-data.ts";
 import { allowanceFor, type ModelAllowance } from "./go-limits.ts";
 import { OPENCODE_PATCH_USER_AGENT } from "./identity.ts";
-import {
-  type CatalogModelSpec,
-  type CatalogPlane,
-  catalogPlaneForRoute,
-  findModelSpecOn,
-} from "./models-catalog.ts";
+import { type CatalogPlane, findModelSpecOn } from "./models-catalog.ts";
 import {
   describeModel,
-  formatUsd,
   getSessionUsage,
   type SessionUsageSnapshot,
 } from "./session-cost.ts";
@@ -49,7 +43,9 @@ import {
   type UsageWindow,
 } from "./usage-contract.ts";
 import { isRecord } from "./utils/guards.ts";
+import { planeForRoute, planeOfPlaneRoute } from "./utils/planes.ts";
 import { isZenProvider } from "./utils/request-shape.ts";
+import { formatUsd } from "./utils/usd.ts";
 
 const USAGE_MAX_BYTES = 1024 * 1024;
 
@@ -129,7 +125,7 @@ const attachSession = (
   if (session === undefined) {
     return undefined;
   }
-  const plane = catalogPlaneForRoute(query?.provider ?? "");
+  const plane = planeForRoute(query?.provider ?? "");
   const selected = query?.model;
   const isProspective =
     selected !== undefined &&
@@ -149,7 +145,9 @@ const attachSession = (
   if (!isProspective) {
     return withPlaneSpend(nameModel(session, plane), plane);
   }
-  const spec = catalogFor(plane, selected);
+  // The asking route's plane ONLY: a price the other plane charges is not
+  // this route's, and "—" is the honest answer for a plane with no row.
+  const spec = findModelSpecOn(plane, selected);
   return withPlaneSpend(
     nameModel(
       describeModel(
@@ -180,15 +178,9 @@ const withPlaneSpend = (
   plane: CatalogPlane
 ): SessionUsageSnapshot => ({
   ...snapshot,
-  planeCostFormatted: formatUsd(snapshot.costByPlane[plane]),
+  planeCostFormatted: formatUsd(snapshot.costByPlane[plane], "metered"),
   planeSpendUsd: snapshot.costByPlane[plane],
 });
-
-/** The catalog spec for a model, or `undefined` when the catalog has none. */
-const catalogFor = (
-  plane: CatalogPlane,
-  model: string
-): CatalogModelSpec | undefined => findModelSpecOn(plane, model);
 
 /**
  * Fill in the display name, which a recorded turn never carries.
@@ -211,7 +203,7 @@ const nameModel = (
   ) {
     return snapshot;
   }
-  const spec = catalogFor(plane, model);
+  const spec = findModelSpecOn(plane, model);
   return spec === undefined
     ? snapshot
     : { ...snapshot, activeModelName: spec.name };
@@ -247,7 +239,7 @@ const attachAllowance = (
   // The catalog's spelling of the model, when it knows it. A model the catalog
   // does not describe keeps the id the picker gave — an id is still better than
   // another model's name.
-  const name = catalogFor("go", model)?.name ?? model;
+  const name = findModelSpecOn("go", model)?.name ?? model;
   return { go: row.go, goPlus: row.goPlus, model: name };
 };
 
@@ -322,7 +314,7 @@ export class GoUsageService extends TypertRemoteService {
 
     if (key === undefined || key.length === 0) {
       const zenInfo = await resolveZenCreditInfo(this.ctx);
-      if (zenInfo.isConfigured || targetProvider === "opencode") {
+      if (zenInfo.isConfigured || planeOfPlaneRoute(targetProvider) === "zen") {
         return zenOverflowUsage(randomUUID(), sessionId, query);
       }
       this.identity = undefined;

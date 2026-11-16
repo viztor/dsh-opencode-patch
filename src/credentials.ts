@@ -46,6 +46,7 @@ import {
   usableKey,
 } from "./utils/credential-policy.ts";
 import { isRecord } from "./utils/guards.ts";
+import { planeOfPlaneRoute } from "./utils/planes.ts";
 
 /** What the gateway's answer says about the key a request carried. */
 export type KeyOutcome = "accepted" | "refused";
@@ -464,9 +465,9 @@ export const createCredentials = (
       // Only a known gateway plane may ask for its own variable: a configured
       // provider can also claim other URLs, which take the Zen one, as they
       // always have.
+      // A URL on a plane decides alone; with none, the exact route does.
       const declaredName =
-        plane === "opencode-go" ||
-        (plane.length === 0 && provider === "opencode-go")
+        planeOfPlaneRoute(plane.length === 0 ? provider : plane) === "go"
           ? "OPENCODE_GO_API_KEY"
           : "OPENCODE_API_KEY";
       const declared = environment(declaredName);

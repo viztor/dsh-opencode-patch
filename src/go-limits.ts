@@ -79,14 +79,6 @@ export const allowanceFor = (
   model: string
 ): ModelAllowance | undefined => limits.get(model.trim().toLowerCase());
 
-/** Unknown allowances (including NaN serialized as null) are never dollar values. */
-export const formatUsd = (value: unknown): string => {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    return "—";
-  }
-  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
-};
-
 /**
  * Normalize a doc-table row label to a model id.
  *

@@ -18,6 +18,7 @@
 
 import { isPlaceholderApiKey } from "./utils/credential-policy.ts";
 import { isRecord } from "./utils/guards.ts";
+import { planeOfPlaneRoute } from "./utils/planes.ts";
 import { gatewayPlaneFor } from "./utils/request-shape.ts";
 
 /** Account tiers a captured credential can belong to. */
@@ -61,21 +62,14 @@ export const tierForRequest = (url?: string, provider?: string): KeyTier => {
     // not in `/inference/openai/v1`, so the ZEN openai family was filed under
     // no account at all. A key filed under the wrong account is worse than one
     // filed under none: it is used, and it is the wrong one.
-    const plane = gatewayPlaneFor(url);
-    if (plane === "opencode-go") {
-      return "go";
-    }
-    if (plane === "opencode") {
-      return "zen";
+    const onUrl = planeOfPlaneRoute(gatewayPlaneFor(url));
+    if (onUrl !== undefined) {
+      return onUrl;
     }
   }
-  if (provider === "opencode-go") {
-    return "go";
-  }
-  if (provider === "opencode") {
-    return "zen";
-  }
-  return "unknown";
+  // Only the two exact routes name a plane; a relay or a renamed route is a
+  // hint the URL above did not confirm.
+  return planeOfPlaneRoute(provider) ?? "unknown";
 };
 
 const readHeaderString = (

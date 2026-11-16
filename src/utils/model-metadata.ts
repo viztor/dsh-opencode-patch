@@ -186,7 +186,9 @@ export const reasoningFor = (
   const reasoningEfforts: Record<string, string | null> =
     offEffort === undefined ? {} : { off: offEffort };
   const efforts: { id: string; name: string }[] =
-    off || offWire !== undefined ? [{ id: "off", name: "Off" }] : [];
+    off || offWire !== undefined
+      ? [{ id: "off", name: effortName("off") }]
+      : [];
   for (const level of levels) {
     reasoningEfforts[level] = level;
     efforts.push({ id: level, name: toggle ? "On" : effortName(level) });

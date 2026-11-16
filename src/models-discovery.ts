@@ -25,13 +25,18 @@ import {
   type CatalogProvider,
   DSH_SUPPORTED_MODALITIES,
   findModelSpecOn,
-  getLiveGoCatalog,
-  getLiveZenCatalog,
   isDeprecatedModelOn,
+  liveCatalogOn,
 } from "./models-catalog.ts";
+import {
+  MEASURED_CONTEXT_WINDOWS,
+  type MeasuredWindows,
+  measuredWindowFor,
+} from "./utils/context-windows.ts";
 import { isRecord } from "./utils/guards.ts";
+import { PLANE_OF_ROUTE, planeOfPlaneRoute } from "./utils/planes.ts";
 import { isPlaneRoute, isServableSdk } from "./utils/protocols.ts";
-import { isGoPlaneUrl } from "./utils/request-shape.ts";
+import { planeForUrl } from "./utils/request-shape.ts";
 
 /**
  * The patch sites this module installs, one id each. Two activations of the
@@ -136,15 +141,22 @@ const rowFrom = (
   candidate: DiscoveryCandidate | undefined,
   spec: CatalogModelSpec | undefined,
   id: string,
-  order: FieldOrder = "pi-first"
+  plane: CatalogProvider,
+  order: FieldOrder,
+  measured: MeasuredWindows
 ): DiscoveredRow => {
   const catalogFirst = order === "catalog-first";
   const name = catalogFirst
     ? (spec?.name ?? candidate?.name)
     : (candidate?.name ?? spec?.name);
+  // A measured window takes the catalog's place in either order (L11): ahead
+  // of the catalog's own window, and so ahead of pi's in catalog-first, but
+  // still behind pi's in pi-first, where pi-ai serves the route from pi's row.
+  const catalogWindow =
+    measuredWindowFor(plane, id, measured) ?? spec?.context_window;
   const contextWindow = catalogFirst
-    ? (spec?.context_window ?? candidate?.contextWindow)
-    : (candidate?.contextWindow ?? spec?.context_window);
+    ? (catalogWindow ?? candidate?.contextWindow)
+    : (candidate?.contextWindow ?? catalogWindow);
   const maxTokens = catalogFirst
     ? (spec?.max_output_tokens ?? candidate?.maxTokens)
     : (candidate?.maxTokens ?? spec?.max_output_tokens);
@@ -191,11 +203,9 @@ export const resolveDiscoveryProvider = (
       marker.length > 0 && normalizedBaseURL.includes(marker.toLowerCase())
   );
 
-  if (provider === "opencode-go") {
-    return "go";
-  }
-  if (provider === "opencode") {
-    return "zen";
+  const onRoute = planeOfPlaneRoute(provider);
+  if (onRoute !== undefined) {
+    return onRoute;
   }
   if (!isGateway || baseURL === undefined) {
     return undefined;
@@ -204,7 +214,7 @@ export const resolveDiscoveryProvider = (
   // Go plane's base is the `inference` family (`…/inference/go/openai/v1`), and
   // a substring check that does not know that path attributes a Go discovery
   // request to the ZEN catalog.
-  return isGoPlaneUrl(baseURL) ? "go" : "zen";
+  return planeForUrl(baseURL);
 };
 
 /**
@@ -214,7 +224,8 @@ export const resolveDiscoveryProvider = (
 const adapterRows = (
   discovered: unknown,
   provider: CatalogProvider,
-  order: FieldOrder
+  order: FieldOrder,
+  measured: MeasuredWindows
 ): DiscoveredRow[] => {
   const seen = new Set<string>();
   const merged: DiscoveredRow[] = [];
@@ -238,7 +249,9 @@ const adapterRows = (
           candidate,
           findModelSpecOn(provider, candidate.id),
           candidate.id,
-          order
+          provider,
+          order,
+          measured
         )
       );
     }
@@ -267,8 +280,9 @@ const adapterRows = (
  */
 export const mergeDiscoveredModels = (
   discovered: unknown,
-  provider: CatalogProvider
-): DiscoveredRow[] => adapterRows(discovered, provider, "pi-first");
+  provider: CatalogProvider,
+  measured: MeasuredWindows = MEASURED_CONTEXT_WINDOWS
+): DiscoveredRow[] => adapterRows(discovered, provider, "pi-first", measured);
 
 /**
  * Settings' fetch on a plane the plugin serves: pi's rows first, in pi's
@@ -282,15 +296,17 @@ export const mergeDiscoveredModels = (
  *
  * @param discovered - pi-ai's answer, or `[]` when it has none.
  * @param plane - the catalog plane the route serves.
+ * @param measured - the measured windows (L11); the shipped table by default.
  * @returns the rows, each id once, in the Remote's shape.
  */
 export const complementDiscoveredModels = (
   discovered: unknown,
-  plane: CatalogProvider
+  plane: CatalogProvider,
+  measured: MeasuredWindows = MEASURED_CONTEXT_WINDOWS
 ): DiscoveredRow[] => {
-  const rows = adapterRows(discovered, plane, "catalog-first");
+  const rows = adapterRows(discovered, plane, "catalog-first", measured);
   const seen = new Set(rows.map((row) => row.id));
-  const catalog = plane === "go" ? getLiveGoCatalog() : getLiveZenCatalog();
+  const catalog = liveCatalogOn(plane);
   for (const spec of catalog) {
     if (
       seen.has(spec.id) ||
@@ -300,7 +316,9 @@ export const complementDiscoveredModels = (
       continue;
     }
     seen.add(spec.id);
-    rows.push(rowFrom(undefined, spec, spec.id, "catalog-first"));
+    rows.push(
+      rowFrom(undefined, spec, spec.id, plane, "catalog-first", measured)
+    );
   }
   return rows;
 };
@@ -359,7 +377,7 @@ const servedPlane = (
   ) {
     return undefined;
   }
-  return request.provider === "opencode-go" ? "go" : "zen";
+  return PLANE_OF_ROUTE[request.provider];
 };
 
 /**
