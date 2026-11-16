@@ -27,7 +27,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { GoUsage } from "../src/usage-contract.ts";
+import type { GoUsage } from "../src/contracts/usage.ts";
 import {
   MIN_FEEDBACK_MS,
   UsagePill,

@@ -6,7 +6,7 @@
  * @module dsh-opencode-patch/usage-ui
  */
 
-import type { GoUsage, UsageWindow } from "./usage-contract.ts";
+import type { GoUsage, UsageWindow } from "./contracts/usage.ts";
 import { isRecord } from "./utils/guards.ts";
 import { isZenProvider } from "./utils/request-shape.ts";
 

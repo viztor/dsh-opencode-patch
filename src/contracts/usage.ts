@@ -2,16 +2,17 @@
  * Remote contract and validation for OpenCode Go account usage. A Typert remote,
  * so the host fetches with server-side credentials and never exposes the key.
  *
- * @module dsh-opencode-patch/usage-contract
+ * @module dsh-opencode-patch/contracts/usage
  */
 
-import type {
-  RemoteResult,
-  TypertRemoteContribution,
-} from "@deepseek-ai/dsh-typert-protocol";
+import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
 
-import type { SessionUsageSnapshot } from "./session-cost.ts";
-import { isRecord } from "./utils/guards.ts";
+import type { SessionUsageSnapshot } from "../session-cost.ts";
+import { isRecord } from "../utils/guards.ts";
+import { defineRemote, remoteValue } from "./remote.ts";
+
+/** The remote namespace the host mounts the usage service under. */
+export const USAGE_NAMESPACE = "opencodeGoUsage";
 
 /** The active model's published monthly allowance, resolved on the Host. */
 export interface ModelAllowanceSnapshot {
@@ -229,12 +230,61 @@ declare module "@deepseek-ai/dsh-typert-protocol" {
   }
 }
 
-const usageCodec = {
-  create: () => ({ parse: parseGoUsage }),
-  mode: "strict" as const,
-  schema: { parse: parseGoUsage },
-  typeSymbol: "dsh-opencode-patch#GoUsage",
+/** The allowance the Host attached, kept only as the three fields it names. */
+const parseAllowance = (raw: unknown): ModelAllowanceSnapshot | undefined => {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const { go, goPlus, model } = raw;
+  return typeof go === "number" &&
+    Number.isFinite(go) &&
+    typeof goPlus === "number" &&
+    Number.isFinite(goPlus) &&
+    typeof model === "string"
+    ? { go, goPlus, model }
+    : undefined;
 };
+
+/**
+ * Validate a reading the HOST answered, for the client that renders it.
+ *
+ * {@link parseGoUsage} is the whitelist for the VENDOR's payload, and the Host
+ * adds to what it parsed: the allowance, the overflow floor's
+ * `quotaUnavailable`, and this route's plane spend on the session. All of them
+ * are rendered, so the client's parser is a superset: the vendor whitelist,
+ * plus those fields, each kept only in the shape the Host sends it.
+ *
+ * @param value - the reading, as the remote answered it.
+ * @returns the reading; throws `parseGoUsage`'s TypeError when it is not one.
+ */
+export const parseUsageReading = (value: unknown): GoUsage => {
+  if (!isRecord(value)) {
+    return parseGoUsage(value);
+  }
+  const usage = parseGoUsage(value);
+  const allowance = parseAllowance(value.allowance);
+  const raw = isRecord(value.session) ? value.session : {};
+  const { planeCostFormatted, planeSpendUsd } = raw;
+  return {
+    ...usage,
+    ...(allowance === undefined ? {} : { allowance }),
+    ...(value.quotaUnavailable === true ? { quotaUnavailable: true } : {}),
+    ...(usage.session === undefined
+      ? {}
+      : {
+          session: {
+            ...usage.session,
+            ...(typeof planeCostFormatted === "string"
+              ? { planeCostFormatted }
+              : {}),
+            ...(typeof planeSpendUsd === "number" ? { planeSpendUsd } : {}),
+          },
+        }),
+  };
+};
+
+/** One codec for both reads: the reading parser, which the client unwraps with. */
+const usageReading = remoteValue("GoUsage", parseUsageReading);
 
 /**
  * What the caller may tell the Host about the meter it is rendering.
@@ -288,12 +338,7 @@ export const parseUsageQuery = (value?: unknown): UsageQuery => {
   };
 };
 
-const usageQueryCodec = {
-  create: () => ({ parse: parseUsageQuery }),
-  mode: "strict" as const,
-  schema: { parse: parseUsageQuery },
-  typeSymbol: "dsh-opencode-patch#UsageQuery",
-};
+const usageQuery = remoteValue("UsageQuery", parseUsageQuery);
 
 /**
  * An account reference, as the sibling `dsh-opencode-go` account manager spells
@@ -312,52 +357,19 @@ export const parseAccountRef = (value: unknown): string => {
   return value;
 };
 
-const accountRefCodec = {
-  create: () => ({ parse: parseAccountRef }),
-  mode: "strict" as const,
-  schema: { parse: parseAccountRef },
-  typeSymbol: "dsh-opencode-patch#AccountRef",
-};
+const accountRef = remoteValue("AccountRef", parseAccountRef);
 
-export const usageRemote: TypertRemoteContribution = {
-  descriptors: [
-    {
-      id: "dsh-opencode-patch#opencodeGoUsage/read",
-      invocation: { kind: "direct" },
-      method: "read",
-      namespace: "opencodeGoUsage",
-      parameters: [
-        {
-          // The query is optional: a caller that knows nothing still gets the
-          // default route and the latest session.
-          acceptsUndefined: true,
-          codec: usageQueryCodec,
-          name: "query",
-          source: "json",
-          wire: "query",
-        },
-      ],
-      result: usageCodec,
-      service: "opencodeGoUsage",
-    },
-    {
-      // The sibling `dsh-opencode-go` account page reads through this spelling;
-      // the reading is the one for the account this plugin's route selects.
-      id: "dsh-opencode-patch#opencodeGoUsage/readAccount",
-      invocation: { kind: "direct" },
-      method: "readAccount",
-      namespace: "opencodeGoUsage",
-      parameters: [
-        {
-          codec: accountRefCodec,
-          name: "ref",
-          source: "json",
-          wire: "ref",
-        },
-      ],
-      result: usageCodec,
-      service: "opencodeGoUsage",
-    },
-  ],
-  package: "dsh-opencode-patch",
-};
+export const usageRemote = defineRemote(USAGE_NAMESPACE, {
+  read: {
+    // The query is optional: a caller that knows nothing still gets the
+    // default route and the latest session.
+    parameters: [{ name: "query", optional: true, value: usageQuery }],
+    result: usageReading,
+  },
+  // The sibling `dsh-opencode-go` account page reads through this spelling;
+  // the reading is the one for the account this plugin's route selects.
+  readAccount: {
+    parameters: [{ name: "ref", value: accountRef }],
+    result: usageReading,
+  },
+});

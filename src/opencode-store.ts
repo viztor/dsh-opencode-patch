@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
-import type { OpencodeStoreInspection } from "./opencode-store-contract.ts";
+import type { OpencodeStoreInspection } from "./contracts/store.ts";
 import { isRecord } from "./utils/guards.ts";
 
 /** A credential as the installation stores it, minus everything unused. */

@@ -352,8 +352,19 @@ try {
  * style's rationale comment, which used to live in the host-only
  * `session-cost.ts`. Source and its comments, not a dependency — the client
  * measured 141010 bytes against the old line, from 139148 on the base.
+ *
+ * Raised 140 -> 146 KB when P9 gave the remotes one seam: the client now
+ * carries the contract builder (`src/contracts/remote.ts`, which derives every
+ * descriptor and codec), the one unwrap with its lookup and call
+ * (`findRemoteCall`, `unwrapRemote`, `callRemote` in `src/settings-remote.ts`)
+ * and the usage reading parser, replacing four hand-written unwraps and three
+ * descriptor literals. Source and its comments, not a dependency (the bundle
+ * still requires only react and the UI primitives) — the client measured
+ * 146953 bytes against the old line, from 143074 on the base. 146 rather
+ * than 144 keeps the ~3 KB of room this line is meant to have; at 144 the
+ * bundle sat under a kilobyte below it.
  */
-const CLIENT_BUDGET = 140 * 1024;
+const CLIENT_BUDGET = 146 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

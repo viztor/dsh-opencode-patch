@@ -22,14 +22,17 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
+import {
+  USAGE_NAMESPACE,
+  usageRemote,
+  type GoUsage,
+} from "./contracts/usage.ts";
 import type { Translate } from "./settings-copy.ts";
 import {
   callUsageRead,
-  isRemoteCall,
-  remoteNamespace,
-  remoteNamespaceOf,
+  findRemoteCall,
+  unwrapRemote,
 } from "./settings-remote.ts";
-import type { GoUsage, UsageWindow } from "./usage-contract.ts";
 import { formatRelativeReset, getWindowState, resetLabel } from "./usage-ui.ts";
 import { isRecord } from "./utils/guards.ts";
 import { backoffOver, retryUntilAnswered } from "./utils/retry.ts";
@@ -53,20 +56,6 @@ const WINDOWS = [
   { copy: "usage_weekly", key: "weekly" },
   { copy: "usage_monthly", key: "monthly" },
 ] as const;
-
-/** Whether a value is one window, as the Host's contract defines it. */
-const isWindow = (value: unknown): value is UsageWindow =>
-  isRecord(value) &&
-  typeof value.percent === "number" &&
-  typeof value.resetsAt === "string" &&
-  (value.status === "ok" || value.status === "rate-limited");
-
-/** Whether a value is a quota reading. The windows are what this page renders. */
-export const isGoUsage = (value: unknown): value is GoUsage =>
-  isRecord(value) &&
-  isWindow(value.rolling) &&
-  isWindow(value.weekly) &&
-  isWindow(value.monthly);
 
 /**
  * Read the Go plane's quota through the Host service.
@@ -98,50 +87,37 @@ export const readGoUsage = async (
     );
     return undefined;
   }
-  // Through the context first: `remote.<ns>` is a service property, so an
-  // undeclared read THROWS and the guard answers `undefined` — the same answer as
-  // "no service". `ctx.get` does not consult `inject`, which is what makes a
-  // namespace this bundle mounts itself readable at all.
-  const namespace =
-    remoteNamespaceOf(scope, "opencodeGoUsage") ??
-    remoteNamespace(remote, "opencodeGoUsage");
-  if (namespace === undefined) {
+  // Through the context first (`findRemoteCall`): `remote.<ns>` is a service
+  // property, so an undeclared read THROWS and the guard answers `undefined` —
+  // the same answer as "no service". `ctx.get` does not consult `inject`,
+  // which is what makes a namespace this bundle mounts itself readable at all.
+  const found = findRemoteCall(scope, usageRemote, "read");
+  if (found.call === undefined) {
     console.warn(
-      "[dsh-opencode-patch] usage read: no opencodeGoUsage service on the remote",
-      Object.keys(isRecord(remote) ? remote : {})
+      `[dsh-opencode-patch] usage read: no ${USAGE_NAMESPACE} service on the remote`,
+      found.exposed
     );
     return undefined;
   }
-  const call = namespace.read;
-  if (!isRemoteCall(call)) {
-    console.warn(
-      "[dsh-opencode-patch] usage read: no opencodeGoUsage service on the remote",
-      Object.keys(namespace)
-    );
-    return undefined;
+  // Parsed by the contract's reading parser, so the windows are checked as
+  // the Host checks them and only the fields it sends are kept.
+  const answer = unwrapRemote(
+    usageRemote,
+    "read",
+    await callUsageRead(found.call, { provider: "opencode-go" })
+  );
+  if (answer.kind === "refused") {
+    const failure: unknown = answer.error ?? new Error("usage call failed");
+    throw failure;
   }
-  const result: unknown = await callUsageRead(call, {
-    provider: "opencode-go",
-  });
-  if (isRecord(result) && typeof result.ok === "boolean") {
-    if (!result.ok) {
-      throw "error" in result ? result.error : new Error("usage call failed");
-    }
-    const value = "value" in result ? result.value : undefined;
-    if (!isGoUsage(value)) {
-      return undefined;
-    }
-    return value;
-  }
-  const value = isRecord(result) && "value" in result ? result.value : result;
-  if (!isGoUsage(value)) {
+  if (answer.kind === "invalid") {
     console.warn(
       "[dsh-opencode-patch] usage read: the answer is not a usage shape",
-      result
+      answer.value
     );
     return undefined;
   }
-  return value;
+  return answer.value;
 };
 
 /** The status word: which of the three states this reading is in. */

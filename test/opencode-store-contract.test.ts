@@ -1,5 +1,5 @@
 /**
- * `opencode-store-contract.ts` · the inspection's whitelist and its Remote.
+ * `contracts/store.ts` · the inspection's whitelist and its Remote.
  *
  * The contract is the one place a field the host did not mean to send — a
  * token, say — is dropped before it can reach the card, so the whitelist is

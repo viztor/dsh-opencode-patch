@@ -3,12 +3,11 @@
  *
  * Pure data types, no I/O, no context, safely imported by host and client.
  *
- * @module dsh-opencode-patch/opencode-store-contract
+ * @module dsh-opencode-patch/contracts/store
  */
 
-import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
-
-import { isRecord } from "./utils/guards.ts";
+import { isRecord } from "../utils/guards.ts";
+import { defineRemote, remoteValue } from "./remote.ts";
 
 export const STORE_NAMESPACE = "opencodeStore";
 
@@ -110,14 +109,6 @@ export const parseStoreInspection = (
   };
 };
 
-/** The wire codec for one inspection, in the shape `usageCodec` uses. */
-const storeInspectionCodec = {
-  create: () => ({ parse: parseStoreInspection }),
-  mode: "strict" as const,
-  schema: { parse: parseStoreInspection },
-  typeSymbol: "dsh-opencode-patch#OpencodeStoreInspection",
-};
-
 /**
  * The store-inspection namespace, as a contribution the client mounts.
  *
@@ -126,17 +117,8 @@ const storeInspectionCodec = {
  * mounted on the client — the same finding `purgeRemote` records — and this one
  * was not: the host mounted the service, and the row reported "unavailable".
  */
-export const storeRemote: TypertRemoteContribution = {
-  descriptors: [
-    {
-      id: "dsh-opencode-patch#opencodeStore/inspect",
-      invocation: { kind: "direct" },
-      method: "inspect",
-      namespace: STORE_NAMESPACE,
-      parameters: [],
-      result: storeInspectionCodec,
-      service: STORE_NAMESPACE,
-    },
-  ],
-  package: "dsh-opencode-patch",
-};
+export const storeRemote = defineRemote(STORE_NAMESPACE, {
+  inspect: {
+    result: remoteValue("OpencodeStoreInspection", parseStoreInspection),
+  },
+});

@@ -16,6 +16,7 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
+import type { GoUsage } from "./contracts/usage.ts";
 import { SettingsBooleanField } from "./settings-boolean-field.tsx";
 import { SettingsChoiceField } from "./settings-choice-field.tsx";
 import { withBundleCopy, type Translate } from "./settings-copy.ts";
@@ -24,7 +25,6 @@ import type { PurgeOutcome } from "./settings-purge.ts";
 import { StoreInspectRow } from "./settings-store-inspect.tsx";
 import type { StoreInspectOutcome } from "./settings-store.ts";
 import { UsageSummary } from "./settings-usage.tsx";
-import type { GoUsage } from "./usage-contract.ts";
 
 interface CardField {
   invalid: boolean;

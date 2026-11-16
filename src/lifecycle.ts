@@ -26,6 +26,9 @@ import {
   type ResolvedPluginConfig,
   resolveConfig,
 } from "./config.ts";
+import { purgeRemote } from "./contracts/purge.ts";
+import { storeRemote } from "./contracts/store.ts";
+import { usageRemote } from "./contracts/usage.ts";
 import { type CordisContext, readEntryOptions } from "./cordis-context.ts";
 import { captureStoreFor, createCredentials } from "./credentials.ts";
 import { recordDebug } from "./debug.ts";
@@ -40,13 +43,10 @@ import {
   decorateModelDiscovery,
   type DiscoveryClaim,
 } from "./models-discovery.ts";
-import { storeRemote } from "./opencode-store-contract.ts";
 import { OpencodeStoreService } from "./opencode-store-service.ts";
-import { purgeRemote } from "./purge-contract.ts";
 import { ModelPurgeService } from "./purge-service.ts";
 import { createStreamHook } from "./stream-hook.ts";
 import type { ActiveTurnState } from "./turn-store.ts";
-import { usageRemote } from "./usage-contract.ts";
 import { GoUsageService } from "./usage.ts";
 import { isFunctionLike, isRecord } from "./utils/guards.ts";
 import { planeHeadersFor, projectHeaderOf } from "./utils/request-shape.ts";

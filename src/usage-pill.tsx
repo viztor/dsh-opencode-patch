@@ -15,7 +15,7 @@ import React, {
 } from "react";
 
 import { DEFAULT_PROVIDERS } from "./config-values.ts";
-import type { GoUsage } from "./usage-contract.ts";
+import type { GoUsage } from "./contracts/usage.ts";
 import { goQuotaTooltip, UsagePanel, UsageTrigger } from "./usage-panel.tsx";
 import {
   CIRCUMFERENCE,

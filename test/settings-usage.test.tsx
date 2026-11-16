@@ -10,6 +10,8 @@ import type { ReactNode } from "react";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { GoUsage } from "../src/contracts/usage.ts";
+import type { SessionUsageSnapshot } from "../src/session-cost.ts";
 import { zh } from "../src/settings-copy.ts";
 // @vitest-environment jsdom
 import {
@@ -18,7 +20,6 @@ import {
   UsageSummaryView,
   readUntilAnswered,
 } from "../src/settings-usage.tsx";
-import type { GoUsage } from "../src/usage-contract.ts";
 import { findAll, findAllOf } from "./test-helpers.ts";
 
 const t = (key: string): string => zh[key as keyof typeof zh] ?? key;
@@ -393,5 +394,179 @@ describe("settings-usage: reading until the remote answers", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("settings: every reading the Host can send, pinned before the remote seam", () => {
+  const scopeWith = (read: unknown): unknown => ({
+    remote: { opencodeGoUsage: { read } },
+  });
+
+  /**
+   * Every field of a session snapshot, typed `Required` so a field added to
+   * the snapshot without a value here fails to compile.
+   */
+  const session: Required<SessionUsageSnapshot> = {
+    activeModel: "go-model-x",
+    activeModelName: "Go Model X",
+    activeRateFormatted: "$1 / $2 per 1M",
+    cacheReadTokens: 5,
+    costByPlane: { go: 0.25, zen: 0.5 },
+    costFormatted: "$0.75",
+    costUsd: 0.75,
+    freeModel: true,
+    inputTokens: 100,
+    modelsUsed: ["go-model-x"],
+    outputTokens: 200,
+    planeCostFormatted: "$0.25",
+    planeSpendUsd: 0.25,
+    totalTokens: 305,
+    turns: 2,
+  };
+
+  /** Every field of a reading, typed `Required` for the same reason. */
+  const full: Required<GoUsage> = {
+    allowance: { go: 12, goPlus: 48, model: "Go Model X" },
+    monthly: { percent: 14, resetsAt: "2026-11-07T00:55:00Z", status: "ok" },
+    quotaUnavailable: true,
+    rolling: { percent: 0, resetsAt: "2026-10-09T06:00:00Z", status: "ok" },
+    session,
+    source: "opencode-go",
+    weekly: {
+      percent: 100,
+      resetsAt: "2026-10-12T00:00:00Z",
+      status: "rate-limited",
+    },
+    zenOverflow: true,
+  };
+
+  it("keeps every field of a complete reading, enveloped or bare", async () => {
+    await expect(
+      readGoUsage(scopeWith(async () => ({ ok: true, value: full })))
+    ).resolves.toEqual(full);
+    await expect(readGoUsage(scopeWith(async () => full))).resolves.toEqual(
+      full
+    );
+  });
+
+  it("names each empty lookup on the console, with the keys the remote does expose", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(readGoUsage({})).resolves.toBeUndefined();
+      expect(warn).toHaveBeenLastCalledWith(
+        "[dsh-opencode-patch] usage read: the settings scope exposes no remote"
+      );
+      await expect(
+        readGoUsage({ remote: { other: {} } })
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenLastCalledWith(
+        "[dsh-opencode-patch] usage read: no opencodeGoUsage service on the remote",
+        ["other"]
+      );
+      await expect(
+        readGoUsage({ remote: { opencodeGoUsage: { peek: 1 } } })
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenLastCalledWith(
+        "[dsh-opencode-patch] usage read: no opencodeGoUsage service on the remote",
+        ["peek"]
+      );
+      await expect(
+        readGoUsage(scopeWith(async () => 42))
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenLastCalledWith(
+        "[dsh-opencode-patch] usage read: the answer is not a usage shape",
+        42
+      );
+      expect(warn).toHaveBeenCalledTimes(4);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("rejects an error-less refusal with its own sentence, and reads an empty ok envelope as nothing", async () => {
+    const refused: unknown = await readGoUsage(
+      scopeWith(async () => ({ ok: false }))
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(Error);
+    expect((refused as Error).message).toBe("usage call failed");
+    await expect(
+      readGoUsage(scopeWith(async () => ({ ok: true })))
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("settings: the one unwrap (P9), on readings the Host does not send", () => {
+  // The Host's own reading is a fixed point of the contract's reading parser
+  // (test/remote-seam.test.ts); these are the shapes it cannot produce, which
+  // the summary now reads as the parser reads them.
+  const scopeWith = (read: unknown): unknown => ({
+    remote: { opencodeGoUsage: { read } },
+  });
+
+  it("unifies a window the Host would reject into no reading", async () => {
+    for (const window of [
+      { percent: Number.NaN, resetsAt: "2026-10-09T06:00:00Z", status: "ok" },
+      { percent: 10, resetsAt: "soon", status: "ok" },
+    ]) {
+      await expect(
+        readGoUsage(
+          scopeWith(async () => ({
+            ok: true,
+            value: { ...usage(), rolling: window },
+          }))
+        )
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  it("names an enveloped payload that is not a reading on the console, once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(
+        readGoUsage(
+          scopeWith(async () => ({ ok: true, value: { rolling: {} } }))
+        )
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "[dsh-opencode-patch] usage read: the answer is not a usage shape",
+        { rolling: {} }
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("rejects a refusal whose error is null with its own sentence", async () => {
+    const refused: unknown = await readGoUsage(
+      scopeWith(async () => ({ error: null, ok: false }))
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(Error);
+    expect((refused as Error).message).toBe("usage call failed");
+  });
+
+  it("reads the vendor's { usage } wrapped form as the reading it wraps", async () => {
+    const { monthly, rolling, weekly } = usage();
+    await expect(
+      readGoUsage(
+        scopeWith(async () => ({
+          ok: true,
+          value: { usage: { monthly, rolling, weekly } },
+        }))
+      )
+    ).resolves.toEqual({ monthly, rolling, weekly });
+  });
+
+  it("drops a field the contract does not name from a valid reading", async () => {
+    const reading = usage();
+    await expect(
+      readGoUsage(
+        scopeWith(async () => ({ ok: true, value: { ...reading, extra: 1 } }))
+      )
+    ).resolves.toEqual(reading);
+    const read = await readGoUsage(
+      scopeWith(async () => ({ ok: true, value: { ...reading, extra: 1 } }))
+    );
+    expect(Object.hasOwn(read ?? {}, "extra")).toBe(false);
   });
 });

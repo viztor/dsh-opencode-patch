@@ -10,142 +10,125 @@
  * Neither half's own test could see it. `lifecycle.test.ts` asserted the SERVICE
  * mounted; `settings-page.test.tsx` asserted the contribution listed what it
  * listed. Both passed. The bug lived in the gap, so the assertion has to be about
- * the gap: every namespace a service is mounted under must appear in the
- * descriptors the client mounts, and nothing else may.
+ * the gap. Since P9 both halves are built from one list, `REMOTE_CONTRACTS`: the
+ * client's descriptors are its descriptors, and the plugin, mounted on a real
+ * cordis `Context`, must answer every contract with a service carrying exactly
+ * its methods, and mount nothing else. It used to grep `src/` for the services;
+ * it reads the contracts and the mounted services now.
  *
  * @module test/remote-contract.test
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { remoteMethods } from "@deepseek-ai/dsh-typert-protocol";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { describe, expect, it } from "vitest";
-
-import { patchRemote } from "./support/src.ts";
-
-const SRC = join(import.meta.dirname, "..", "src");
-
-/** Every `export const NAME = "value"` in `src/`, so a constant resolves. */
-const exportedStrings = (): Map<string, string> => {
-  const constants = new Map<string, string>();
-  for (const file of readdirSync(SRC).filter((name) => name.endsWith(".ts"))) {
-    const source = readFileSync(join(SRC, file), "utf8");
-    for (const match of source.matchAll(
-      /export const ([A-Z_][A-Z0-9_]*)\s*=\s*"([^"]+)"/gu
-    )) {
-      if (match[1] !== undefined && match[2] !== undefined) {
-        constants.set(match[1], match[2]);
-      }
-    }
-  }
-  return constants;
-};
-
-/** One remote service the host mounts: its file, class and namespace. */
-interface HostService {
-  readonly file: string;
-  readonly className: string;
-  readonly namespace: string;
-}
-
-/**
- * Every remote service the host mounts, with the namespace it mounts under.
- *
- * Read from the source rather than imported: the services publish their
- * namespace through `super(ctx, name)`, and instantiating them needs a cordis
- * context. The name may be a literal or an exported constant, and both resolve:
- * matching only the literal let `opencodeStore` — passed as `STORE_NAMESPACE` —
- * through with no client descriptor, and the card's inspection row could never
- * answer.
- */
-const hostServices = (): HostService[] => {
-  const constants = exportedStrings();
-  const services: HostService[] = [];
-  for (const file of readdirSync(SRC).filter((name) => name.endsWith(".ts"))) {
-    const source = readFileSync(join(SRC, file), "utf8");
-    const className = /export class (\w+) extends TypertRemoteService/u.exec(
-      source
-    )?.[1];
-    const argument =
-      /super\(\s*ctx\s+as\s+never\s*,\s*("([^"]+)"|[A-Z_][A-Z0-9_]*)\s*\)/u.exec(
-        source
-      );
-    if (className === undefined || argument === null) {
-      continue;
-    }
-    const namespace =
-      argument[2] ??
-      constants.get(argument[1] ?? "") ??
-      `unresolved:${argument[1]}`;
-    services.push({ className, file, namespace });
-  }
-  return services.toSorted((a, b) => a.namespace.localeCompare(b.namespace));
-};
-
-const hostNamespaces = (): string[] =>
-  hostServices().map((service) => service.namespace);
+import { disposeMounted, mountPlugin, until } from "./support/composition.ts";
+import {
+  GoUsageService,
+  ModelPurgeService,
+  OpencodeStoreService,
+  parseAccountRef,
+  parsePurgeResult,
+  parseStoreInspection,
+  parseUsageQuery,
+  parseUsageReading,
+  patchRemote,
+  REMOTE_CONTRACTS,
+  usageRemote,
+} from "./support/src.ts";
 
 /** The prototype key `remoteMethods()` reads, as the services spell it. */
 const REMOTE_METHOD_DESCRIPTOR_KEY =
   "@deepseek-ai/dsh-typert-protocol/remote-methods";
 
+afterEach(async () => {
+  await disposeMounted();
+});
+
+/** The service the composition resolves for a namespace, if any. */
+const serviceOn = (
+  ctx: { get: (name: never) => unknown },
+  namespace: string
+): Record<string, unknown> | undefined => {
+  const service: unknown = ctx.get(namespace as never);
+  return typeof service === "object" && service !== null
+    ? (service as Record<string, unknown>)
+    : undefined;
+};
+
 describe("remote contract · host and client agree", () => {
-  it("finds the host namespaces, so the check is not vacuous", () => {
-    // A grep that matches nothing is indistinguishable from a clean result;
-    // these two are the services this plugin mounts today.
-    expect(hostNamespaces()).toContain("opencodeGoUsage");
-    expect(hostNamespaces()).toContain("opencodeModelPurge");
-    expect(hostNamespaces()).toContain("opencodeStore");
-    expect(
-      hostNamespaces().filter((name) => name.startsWith("unresolved:"))
-    ).toEqual([]);
+  it("lists the three contracts, so the checks below are not vacuous", () => {
+    expect(REMOTE_CONTRACTS.map((contract) => contract.namespace)).toEqual([
+      "opencodeGoUsage",
+      "opencodeModelPurge",
+      "opencodeStore",
+    ]);
   });
 
-  it("registers a descriptor for every Remote METHOD each service declares", async () => {
-    // Per method, not per namespace: a namespace with one descriptor and a
-    // second declared method would pass the namespace check and still leave
-    // the second unreachable.
-    const declared = new Set(
-      patchRemote.descriptors.map((d) => `${d.service}.${d.method}`)
+  it("registers exactly the contracts' descriptors on the client", () => {
+    const expected = REMOTE_CONTRACTS.flatMap(
+      (contract) => contract.descriptors
     );
-    const missing: string[] = [];
-    let methods = 0;
-    for (const service of hostServices()) {
-      const module = (await import(join(SRC, service.file))) as Record<
-        string,
-        { prototype: Record<string, unknown> }
-      >;
-      const marker = module[service.className]?.prototype[
-        REMOTE_METHOD_DESCRIPTOR_KEY
-      ] as { methods?: readonly { method: string }[] } | undefined;
-      for (const { method } of marker?.methods ?? []) {
-        methods += 1;
-        if (!declared.has(`${service.namespace}.${method}`)) {
-          missing.push(`${service.namespace}.${method}`);
-        }
+    expect(patchRemote.descriptors).toEqual(expected);
+    for (const [index, descriptor] of patchRemote.descriptors.entries()) {
+      // The contract's own object, not a copy that could drift from it.
+      expect(descriptor).toBe(expected[index]);
+    }
+    expect(patchRemote.package).toBe("dsh-opencode-patch");
+  });
+
+  it("mounts a service for every contract, carrying exactly its methods, each one it can answer", async () => {
+    // Per method, not per namespace: a namespace with one descriptor and a
+    // second declared method would pass a namespace check and still leave the
+    // second unreachable. Read through the host's own `remoteMethods()`.
+    const { ctx } = await mountPlugin({ config: { usageEnabled: true } });
+    for (const contract of REMOTE_CONTRACTS) {
+      await until(
+        () => serviceOn(ctx, contract.namespace) !== undefined,
+        `ctx.get('${contract.namespace}')`
+      );
+      const service = serviceOn(ctx, contract.namespace);
+      expect(
+        (service?.typertRemote as { namespace?: unknown } | undefined)
+          ?.namespace,
+        contract.namespace
+      ).toBe(contract.namespace);
+      expect(
+        remoteMethods(service as never).map(({ method }) => method),
+        contract.namespace
+      ).toEqual(Object.keys(contract.methods));
+      // The marker is written FROM the contract, so the list above is equal by
+      // construction; this is what says the service can answer each method,
+      // should a cast defeat `markRemote`'s compile-time check.
+      for (const method of Object.keys(contract.methods)) {
+        expect(
+          typeof service?.[method],
+          `${contract.namespace}.${method}`
+        ).toBe("function");
       }
     }
-    // Every service declares at least one method, so a marker read that found
-    // nothing would show here rather than as a clean pass.
-    expect(methods).toBeGreaterThanOrEqual(hostServices().length);
-    expect(missing).toEqual([]);
   });
 
-  it("registers a descriptor for every namespace the host mounts", () => {
-    const mounted = new Set(
-      patchRemote.descriptors.map((descriptor) => descriptor.service)
+  it("mounts no remote service outside the contracts", async () => {
+    // A tripwire on the installer's own report, not a proof: every service
+    // `installRemoteService` mounts says it "is reachable with a typertRemote
+    // binding", once, and there must be exactly one such line per contract. A
+    // reworded report fails this loudly; a service mounted some other way
+    // would not be seen.
+    const { lines } = await mountPlugin({ config: { usageEnabled: true } });
+    const reachable = (): string[] =>
+      lines().filter((line) =>
+        /is reachable with a typertRemote binding/u.test(line)
+      );
+    await until(
+      () => reachable().length >= REMOTE_CONTRACTS.length,
+      "every remote service's report"
     );
-    const missing = hostNamespaces().filter((name) => !mounted.has(name));
-    expect(missing).toEqual([]);
-  });
-
-  it("registers nothing the host does not mount", () => {
-    // The other direction: a descriptor for an unmounted service is a namespace
-    // the browser can address and the host cannot answer.
-    const host = new Set(hostNamespaces());
-    const orphaned = [
-      ...new Set(patchRemote.descriptors.map((d) => d.service)),
-    ].filter((name) => !host.has(name));
-    expect(orphaned).toEqual([]);
+    expect(reachable()).toHaveLength(REMOTE_CONTRACTS.length);
+    for (const contract of REMOTE_CONTRACTS) {
+      expect(
+        reachable().filter((line) => line.includes(`${contract.namespace} is`))
+      ).toHaveLength(1);
+    }
   });
 
   it("namespaces every descriptor uniquely and under one package", () => {
@@ -161,6 +144,17 @@ describe("remote contract · host and client agree", () => {
     // account reports the namespace as unusable.
     const ids = patchRemote.descriptors.map((descriptor) => descriptor.id);
     expect(ids).toContain("dsh-opencode-patch#opencodeGoUsage/readAccount");
+  });
+
+  it("parses both usage reads' answers with the reading parser (D5), not the vendor whitelist", () => {
+    // `parseGoUsage` drops `allowance`, `quotaUnavailable` and the session's
+    // plane spend, which the service attaches and the panel renders.
+    expect(usageRemote.methods.read.result.schema.parse).toBe(
+      parseUsageReading
+    );
+    expect(usageRemote.methods.readAccount.result.schema.parse).toBe(
+      parseUsageReading
+    );
   });
 
   it("gives every wire codec one parser, whichever door the runtime takes", () => {
@@ -192,4 +186,182 @@ describe("remote contract · host and client agree", () => {
       expect(codec.typeSymbol).toMatch(/^dsh-opencode-patch#/u);
     }
   });
+});
+
+/** One wire codec, as a descriptor carries it. */
+interface WireCodec {
+  readonly create: () => { readonly parse: unknown };
+  readonly mode: string;
+  readonly schema: { readonly parse: unknown };
+  readonly typeSymbol: string;
+}
+
+/** One descriptor, read as plain data: the fields the pin below names. */
+interface WireDescriptor {
+  readonly id: string;
+  readonly invocation: unknown;
+  readonly method: string;
+  readonly namespace: string;
+  readonly parameters: readonly (Record<string, unknown> & {
+    readonly codec: WireCodec;
+  })[];
+  readonly result: WireCodec;
+  readonly service: string;
+}
+
+/** The client's descriptors, typed as the wire data they are. */
+const wireDescriptors = (): readonly WireDescriptor[] =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the protocol types a descriptor's codecs opaquely; the pin reads them as the plain objects they are
+  patchRemote.descriptors as unknown as readonly WireDescriptor[];
+
+/** A descriptor as plain data, each codec replaced by its `typeSymbol`. */
+const plain = (descriptor: WireDescriptor): Record<string, unknown> => ({
+  ...descriptor,
+  parameters: descriptor.parameters.map((parameter) => ({
+    ...parameter,
+    codec: parameter.codec.typeSymbol,
+  })),
+  result: descriptor.result.typeSymbol,
+});
+
+describe("remote contract · the wire, pinned field for field", () => {
+  it("pins every descriptor field for field, so a rebuilt contract cannot drift", () => {
+    // The descriptors are what the client's gateway mounts and validates
+    // arity against, so a builder that derives them has to answer exactly
+    // these: the same ids, the same one optional parameter, and no
+    // `acceptsUndefined` key on a required one.
+    const descriptors = wireDescriptors();
+    expect(descriptors.map((descriptor) => plain(descriptor))).toEqual([
+      {
+        id: "dsh-opencode-patch#opencodeGoUsage/read",
+        invocation: { kind: "direct" },
+        method: "read",
+        namespace: "opencodeGoUsage",
+        parameters: [
+          {
+            acceptsUndefined: true,
+            codec: "dsh-opencode-patch#UsageQuery",
+            name: "query",
+            source: "json",
+            wire: "query",
+          },
+        ],
+        result: "dsh-opencode-patch#GoUsage",
+        service: "opencodeGoUsage",
+      },
+      {
+        id: "dsh-opencode-patch#opencodeGoUsage/readAccount",
+        invocation: { kind: "direct" },
+        method: "readAccount",
+        namespace: "opencodeGoUsage",
+        parameters: [
+          {
+            codec: "dsh-opencode-patch#AccountRef",
+            name: "ref",
+            source: "json",
+            wire: "ref",
+          },
+        ],
+        result: "dsh-opencode-patch#GoUsage",
+        service: "opencodeGoUsage",
+      },
+      {
+        id: "dsh-opencode-patch#opencodeModelPurge/purge",
+        invocation: { kind: "direct" },
+        method: "purge",
+        namespace: "opencodeModelPurge",
+        parameters: [],
+        result: "dsh-opencode-patch#PurgeResult",
+        service: "opencodeModelPurge",
+      },
+      {
+        id: "dsh-opencode-patch#opencodeStore/inspect",
+        invocation: { kind: "direct" },
+        method: "inspect",
+        namespace: "opencodeStore",
+        parameters: [],
+        result: "dsh-opencode-patch#OpencodeStoreInspection",
+        service: "opencodeStore",
+      },
+    ]);
+
+    // Exact key sets: `toEqual` ignores an `undefined`-valued key, and a
+    // present `acceptsUndefined: undefined` is not the absent key.
+    for (const descriptor of descriptors) {
+      expect(Object.keys(descriptor).toSorted()).toEqual([
+        "id",
+        "invocation",
+        "method",
+        "namespace",
+        "parameters",
+        "result",
+        "service",
+      ]);
+      const codecs = [
+        descriptor.result,
+        ...descriptor.parameters.map((parameter) => parameter.codec),
+      ];
+      for (const codec of codecs) {
+        expect(Object.keys(codec).toSorted()).toEqual([
+          "create",
+          "mode",
+          "schema",
+          "typeSymbol",
+        ]);
+        expect(codec.mode).toBe("strict");
+      }
+    }
+    const [read, readAccount, purge, inspect] = descriptors;
+    expect(Object.keys(readAccount?.parameters[0] ?? {}).toSorted()).toEqual([
+      "codec",
+      "name",
+      "source",
+      "wire",
+    ]);
+
+    // One result codec for both usage reads, and each other parser is the
+    // contract's own. (The usage RESULT parser's identity is not pinned: P9
+    // swaps it for the reading parser, which the wire never runs.)
+    expect(read?.result).toBe(readAccount?.result);
+    expect(read?.parameters[0]?.codec.schema.parse).toBe(parseUsageQuery);
+    expect(readAccount?.parameters[0]?.codec.schema.parse).toBe(
+      parseAccountRef
+    );
+    expect(purge?.result.schema.parse).toBe(parsePurgeResult);
+    expect(inspect?.result.schema.parse).toBe(parseStoreInspection);
+  });
+
+  it.each([
+    { methods: ["read", "readAccount"], Service: GoUsageService },
+    { methods: ["purge"], Service: ModelPurgeService },
+    { methods: ["inspect"], Service: OpencodeStoreService },
+  ])(
+    "pins the Remote marker $Service.name carries, as the host's reader sees it",
+    ({ methods, Service }) => {
+      // The marker `remoteMethods()` reads off the prototype, as `@Remote()`
+      // would write it: non-enumerable, read-only, frozen, version 1.
+      const descriptor = Reflect.getOwnPropertyDescriptor(
+        Service.prototype,
+        REMOTE_METHOD_DESCRIPTOR_KEY
+      );
+      expect(descriptor).toMatchObject({
+        configurable: true,
+        enumerable: false,
+        writable: false,
+      });
+      const value: unknown = descriptor?.value;
+      expect(value).toEqual({
+        version: 1,
+        methods: methods.map((method) => ({
+          method,
+          invocation: { kind: "direct" },
+        })),
+      });
+      expect(Object.keys(value as object)).toEqual(["version", "methods"]);
+      expect(Object.isFrozen(value)).toBe(true);
+      expect(Object.isFrozen((value as { methods: unknown }).methods)).toBe(
+        true
+      );
+    }
+  );
 });

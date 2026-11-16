@@ -75,6 +75,49 @@ export {
 } from "../../src/config.ts";
 export type { PluginConfig, ResolvedPluginConfig } from "../../src/config.ts";
 
+// contracts/all.ts
+export { REMOTE_CONTRACTS } from "../../src/contracts/all.ts";
+
+// contracts/purge.ts
+export {
+  parsePurgeResult,
+  PURGE_NAMESPACE,
+  purgeRemote,
+} from "../../src/contracts/purge.ts";
+
+// contracts/remote.ts
+export {
+  defineRemote,
+  REMOTE_PACKAGE,
+  remoteValue,
+} from "../../src/contracts/remote.ts";
+
+// contracts/store.ts
+export {
+  parseStoreInspection,
+  STORE_NAMESPACE,
+  storeRemote,
+} from "../../src/contracts/store.ts";
+export type {
+  OpencodeStoreAccount,
+  OpencodeStoreInspection,
+} from "../../src/contracts/store.ts";
+
+// contracts/usage.ts
+export {
+  parseAccountRef,
+  parseGoUsage,
+  parseUsageQuery,
+  parseUsageReading,
+  USAGE_NAMESPACE,
+  usageRemote,
+} from "../../src/contracts/usage.ts";
+export type {
+  GoUsage,
+  ModelAllowanceSnapshot,
+  UsageWindow,
+} from "../../src/contracts/usage.ts";
+
 // cordis-context.ts
 export {
   loadHostModules,
@@ -186,7 +229,7 @@ export {
 } from "../../src/host/patch-method.ts";
 
 // host/remote.ts
-export { installRemoteService } from "../../src/host/remote.ts";
+export { installRemoteService, markRemote } from "../../src/host/remote.ts";
 export type { RemoteContract } from "../../src/host/remote.ts";
 
 // identity.ts
@@ -248,17 +291,6 @@ export {
   opencodeRoots,
 } from "../../src/opencode-paths.ts";
 
-// opencode-store-contract.ts
-export {
-  parseStoreInspection,
-  STORE_NAMESPACE,
-  storeRemote,
-} from "../../src/opencode-store-contract.ts";
-export type {
-  OpencodeStoreAccount,
-  OpencodeStoreInspection,
-} from "../../src/opencode-store-contract.ts";
-
 // opencode-store-service.ts
 export { OpencodeStoreService } from "../../src/opencode-store-service.ts";
 
@@ -268,9 +300,6 @@ export {
   readOpencodeCredentials,
   summarizeCredential,
 } from "../../src/opencode-store.ts";
-
-// purge-contract.ts
-export { parsePurgeResult } from "../../src/purge-contract.ts";
 
 // purge-service.ts
 export {
@@ -337,9 +366,12 @@ export { purgeDeprecatedModels } from "../../src/settings-purge.ts";
 
 // settings-remote.ts
 export {
+  callRemote,
   callUsageRead,
+  findRemoteCall,
   remoteNamespace,
   remoteNamespaceOf,
+  unwrapRemote,
 } from "../../src/settings-remote.ts";
 
 // settings-store-inspect.tsx
@@ -381,14 +413,6 @@ export {
 // turn-store.ts
 export { withStore } from "../../src/turn-store.ts";
 export type { ActiveTurnState } from "../../src/turn-store.ts";
-
-// usage-contract.ts
-export {
-  parseAccountRef,
-  parseGoUsage,
-  parseUsageQuery,
-} from "../../src/usage-contract.ts";
-export type { GoUsage } from "../../src/usage-contract.ts";
 
 // usage-panel.tsx
 export { UsagePanel, UsageTrigger } from "../../src/usage-panel.tsx";

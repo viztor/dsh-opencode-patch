@@ -171,3 +171,97 @@ describe("purgeDeprecatedModels: the paths a scope can take", () => {
     }
   });
 });
+
+describe("purgeDeprecatedModels: the envelope shapes, pinned before the remote seam", () => {
+  it("reads a string error as the message, an empty ok envelope as not a result, and a value without ok as the result", async () => {
+    await expect(
+      purgeDeprecatedModels(
+        scopeWith(async () => ({
+          error: "the profile is read-only",
+          ok: false,
+        }))
+      )
+    ).resolves.toEqual({ kind: "failed", message: "the profile is read-only" });
+    await expect(
+      purgeDeprecatedModels(scopeWith(async () => ({ ok: true })))
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host answered something that is not a purge result",
+    });
+    await expect(
+      purgeDeprecatedModels(
+        scopeWith(async () => ({ value: { catalogRead: true, removed: [] } }))
+      )
+    ).resolves.toEqual({
+      kind: "purged",
+      result: { catalogRead: true, removed: [] },
+    });
+  });
+
+  it("names the missing service on the console, once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(purgeDeprecatedModels({ remote: {} })).resolves.toEqual({
+        kind: "unavailable",
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "[dsh-opencode-patch] purge: no opencodeModelPurge service on the remote"
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("calls the purge with no argument, as its descriptor declares none", async () => {
+    // The client gateway validates arity: one argument to a zero-parameter
+    // method is refused before it leaves the browser.
+    const purge = vi.fn(async () => ({
+      ok: true,
+      value: { catalogRead: true, removed: [] },
+    }));
+    await purgeDeprecatedModels(scopeWith(purge));
+    expect(purge).toHaveBeenCalledTimes(1);
+    expect(purge.mock.calls[0]).toHaveLength(0);
+  });
+});
+
+describe("purgeDeprecatedModels: the one unwrap (P9), on shapes the host does not send", () => {
+  // A refusal nested INSIDE `value` is not a refusal the gateway can send: its
+  // `value` is the method's own result. The one unwrap reads the envelope
+  // once, so the nested shape is a payload, and not a purge result.
+  it("unifies a refusal nested inside value into not a purge result", async () => {
+    await expect(
+      purgeDeprecatedModels(
+        scopeWith(async () => ({ value: { message: "x", ok: false } }))
+      )
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host answered something that is not a purge result",
+    });
+  });
+
+  // On the base, `scope.remote` was read unguarded when `ctx.get` missed, so a
+  // getter that throws there rejected the purge. The seam reads it inside a
+  // guard: no remote, so "unavailable" with its console line. The host never
+  // builds this scope (every caller's scope declares `remote` in `inject`).
+  it("reads a throwing remote getter as no service when ctx.get misses", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const scope = {
+        get: () => {},
+        get remote(): never {
+          throw new Error('cannot get property "remote" without inject');
+        },
+      };
+      await expect(purgeDeprecatedModels(scope)).resolves.toEqual({
+        kind: "unavailable",
+      });
+      expect(warn).toHaveBeenCalledWith(
+        "[dsh-opencode-patch] purge: no opencodeModelPurge service on the remote"
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

@@ -16,8 +16,14 @@
  * that holds the whole plugin until it exists, which is what took the meter out
  * once with "web boot: 1 entry did not activate".
  *
+ * It is also where every Remote answer is unwrapped, once, for every caller:
+ * {@link callRemote} finds the call, makes it, and parses the answer with the
+ * contract's own parser ({@link unwrapRemote}).
+ *
  * @module dsh-opencode-patch/settings-remote
  */
+
+import type { RemoteMethod } from "./contracts/remote.ts";
 
 /** One call on a remote namespace, as the seam exposes it. */
 export type RemoteCall = (query?: unknown) => Promise<unknown>;
@@ -157,4 +163,146 @@ export const remoteNamespaceOf = (
   } catch {
     return undefined;
   }
+};
+
+/** A contract, as the unwrap reads it: its namespace and each result parser. */
+interface Contract<Method extends string, Value> {
+  readonly namespace: string;
+  readonly methods: Readonly<Record<Method, RemoteMethod<Value>>>;
+}
+
+/** The call a contract's method resolves to, or the keys found instead. */
+export type FoundCall =
+  | { readonly call: RemoteCall }
+  | { readonly call: undefined; readonly exposed: readonly string[] };
+
+/** The scope's `remote` face, or `undefined` when it is absent or the read throws. */
+const remoteFaceOf = (scope: unknown): unknown => {
+  try {
+    return isObject(scope) ? scope.remote : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Find one method of a contract on the scope: through `ctx.get` first, then
+ * the guarded property (see {@link remoteNamespaceOf}).
+ *
+ * @param scope - the scope the caller was rendered with.
+ * @param contract - the contract; only its namespace is read.
+ * @param method - the method to find.
+ * @returns the call, or the keys the namespace (else the remote) exposes.
+ */
+export const findRemoteCall = (
+  scope: unknown,
+  contract: { readonly namespace: string },
+  method: string
+): FoundCall => {
+  const viaGet = remoteNamespaceOf(scope, contract.namespace);
+  // `scope.remote` is read only when `ctx.get` found nothing, and guarded: a
+  // getter that throws (`cannot get property "remote" without inject`) reads
+  // as no remote, never as a throw out of a slot injector.
+  const remote = viaGet === undefined ? remoteFaceOf(scope) : undefined;
+  const namespace = viaGet ?? remoteNamespace(remote, contract.namespace);
+  const call = namespace?.[method];
+  if (isRemoteCall(call)) {
+    return { call };
+  }
+  return {
+    call: undefined,
+    exposed: Object.keys(namespace ?? (isObject(remote) ? remote : {})),
+  };
+};
+
+/** One answer, unwrapped: the parsed value, the host's refusal, or neither. */
+export type RemoteAnswer<Value> =
+  | { readonly kind: "ok"; readonly value: Value }
+  | {
+      readonly kind: "refused";
+      readonly error: unknown;
+      readonly reason: string | undefined;
+    }
+  | { readonly kind: "invalid"; readonly value: unknown };
+
+/** A refusal's reason: the envelope's `message`, else the error's own words. */
+const reasonOf = ({
+  error,
+  message,
+}: Record<string, unknown>): string | undefined => {
+  if (typeof message === "string") {
+    return message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return isObject(error) && typeof error.message === "string"
+    ? error.message
+    : undefined;
+};
+
+/**
+ * THE one unwrap of a Remote answer. The gateway answers `{ ok, value | error }`;
+ * a bare value, or `{ value }`, is read as the payload. The payload is parsed
+ * with the contract's own result parser: a throw or `undefined` is `invalid`.
+ *
+ * @param contract - the contract the call was made through.
+ * @param method - the method that answered.
+ * @param answer - what the call resolved to.
+ * @returns the answer, unwrapped.
+ */
+export const unwrapRemote = <Method extends string, Value>(
+  contract: Contract<Method, Value>,
+  method: Method,
+  answer: unknown
+): RemoteAnswer<NonNullable<Value>> => {
+  let payload = answer;
+  if (isObject(answer) && typeof answer.ok === "boolean") {
+    if (!answer.ok) {
+      return { error: answer.error, kind: "refused", reason: reasonOf(answer) };
+    }
+    payload = answer.value;
+  } else if (isObject(answer) && "value" in answer) {
+    payload = answer.value;
+  }
+  let value: Value | undefined;
+  try {
+    value = contract.methods[method].result.schema.parse(payload);
+  } catch {
+    value = undefined;
+  }
+  return value === undefined || value === null
+    ? { kind: "invalid", value: payload }
+    : { kind: "ok", value };
+};
+
+/** A call's outcome: its answer, or no call to make. */
+export type RemoteOutcome<Value> =
+  | RemoteAnswer<Value>
+  | { readonly kind: "unavailable"; readonly exposed: readonly string[] };
+
+/**
+ * Find, call and unwrap one method. With no `argument` the call takes NONE:
+ * the client gateway refuses a call whose count differs from the descriptor's.
+ * A rejected call rejects.
+ *
+ * @param scope - the scope the caller was rendered with.
+ * @param contract - the contract to call through.
+ * @param method - the method to call.
+ * @param argument - the one argument, for a method that takes one.
+ * @returns the outcome.
+ */
+export const callRemote = async <Method extends string, Value>(
+  scope: unknown,
+  contract: Contract<Method, Value>,
+  method: Method,
+  argument?: unknown
+): Promise<RemoteOutcome<NonNullable<Value>>> => {
+  const found = findRemoteCall(scope, contract, method);
+  if (found.call === undefined) {
+    return { exposed: found.exposed, kind: "unavailable" };
+  }
+  const answer =
+    argument === undefined ? await found.call() : await found.call(argument);
+  return unwrapRemote(contract, method, answer);
 };

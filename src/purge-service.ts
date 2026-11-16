@@ -31,15 +31,18 @@ import {
 } from "@deepseek-ai/dsh-typert-protocol";
 
 import {
+  PURGE_NAMESPACE,
+  PURGE_UNAVAILABLE,
+  purgeRemote,
+  type PurgeResult,
+  type PurgedModel,
+} from "./contracts/purge.ts";
+import { markRemote } from "./host/remote.ts";
+import {
   didCatalogRefreshSucceed,
   isDeprecatedModelOn,
   refreshCatalog,
 } from "./models-catalog.ts";
-import {
-  PURGE_UNAVAILABLE,
-  type PurgeResult,
-  type PurgedModel,
-} from "./purge-contract.ts";
 import { isRecord } from "./utils/guards.ts";
 import {
   foreignCredentialsRealm,
@@ -239,7 +242,7 @@ export class ModelPurgeService extends TypertRemoteService {
       throw new TypeError("ModelPurgeService requires a Cordis context object");
     }
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `TypertRemoteService` takes cordis `Context`, whose types ship only from the Harness installation; the guard above is the runtime check.
-    super(ctx as never, "opencodeModelPurge");
+    super(ctx as never, PURGE_NAMESPACE);
   }
 
   /**
@@ -376,28 +379,4 @@ export class ModelPurgeService extends TypertRemoteService {
   }
 }
 
-/**
- * Prototype key `remoteMethods()` reads Remote markers from — the same constant
- * `usage.ts` uses, spelled here rather than imported because the protocol
- * package does not re-export it.
- */
-const REMOTE_METHOD_DESCRIPTOR_KEY =
-  "@deepseek-ai/dsh-typert-protocol/remote-methods";
-
-/**
- * Declare `purge` as a Remote method. See `usage.ts` for why the decorator
- * cannot be used in this build.
- */
-Object.defineProperty(
-  ModelPurgeService.prototype,
-  REMOTE_METHOD_DESCRIPTOR_KEY,
-  {
-    configurable: true,
-    value: Object.freeze({
-      version: 1,
-      methods: Object.freeze([
-        { method: "purge", invocation: { kind: "direct" } },
-      ]),
-    }),
-  }
-);
+markRemote(ModelPurgeService, purgeRemote);

@@ -15,20 +15,20 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 
 import { DEFAULT_PROVIDERS, readStringList } from "./config-values.ts";
-import { storeRemote } from "./opencode-store-contract.ts";
-import { purgeRemote } from "./purge-contract.ts";
+import { REMOTE_CONTRACTS } from "./contracts/all.ts";
+import { USAGE_NAMESPACE, usageRemote } from "./contracts/usage.ts";
 import { OpencodeCard } from "./settings-card.tsx";
 import { en, withBundleCopy, zh, type CopyKey } from "./settings-copy.ts";
 import { SPECS } from "./settings-fields.ts";
 import { purgeDeprecatedModels } from "./settings-purge.ts";
 import {
   callUsageRead,
-  remoteNamespace,
+  findRemoteCall,
   remoteNamespaceOf,
+  unwrapRemote,
 } from "./settings-remote.ts";
 import { inspectStore } from "./settings-store.ts";
 import { readGoUsage } from "./settings-usage.tsx";
-import { usageRemote } from "./usage-contract.ts";
 import { UsagePill } from "./usage-pill.tsx";
 import { isRecord } from "./utils/guards.ts";
 
@@ -62,11 +62,7 @@ export const patchRemote = {
   // Typert enforces a unique package name per
   // contribution, so mounting them separately with the same package throws
   // "already registered" and drops the remote entirely.
-  descriptors: [
-    ...usageRemote.descriptors,
-    ...purgeRemote.descriptors,
-    ...storeRemote.descriptors,
-  ],
+  descriptors: REMOTE_CONTRACTS.flatMap((contract) => contract.descriptors),
   package: PKG,
 };
 
@@ -147,11 +143,11 @@ const mountRemote = (
       // indistinguishable from a working mount: the surface reads
       // `remote.<namespace>`, finds nothing, and reports "no usage service" —
       // the same sentence a host with no service at all produces.
-      if (remoteNamespaceOf(ctx, "opencodeGoUsage") === undefined) {
+      if (remoteNamespaceOf(ctx, USAGE_NAMESPACE) === undefined) {
         const face = isRecord(ctx.remote) ? Object.keys(ctx.remote) : [];
         console.warn(
           `[dsh-opencode-patch] ${what}: the mount settled but ` +
-            `remote.opencodeGoUsage is still unreachable; the remote exposes ` +
+            `remote.${USAGE_NAMESPACE} is still unreachable; the remote exposes ` +
             `[${face.join(", ")}]`
         );
       }
@@ -436,17 +432,15 @@ export const apply = (ctx: ClientContext): void => {
       // is refused for a namespace this bundle mounts itself, and the refusal is
       // indistinguishable from "no service". Measured: `property read: false;
       // ctx.get('remote.opencodeGoUsage'): object`.
-      const usage =
-        remoteNamespaceOf(meterScope, "opencodeGoUsage") ??
-        remoteNamespace(meterScope.remote, "opencodeGoUsage");
-      if (typeof usage?.read !== "function") {
+      const found = findRemoteCall(meterScope, usageRemote, "read");
+      if (found.call === undefined) {
         return {
-          reason: "no usage service: remote.opencodeGoUsage.read is missing",
+          reason: `no usage service: remote.${USAGE_NAMESPACE}.read is missing`,
         };
       }
       // Captured once, narrowed by the guard above: the read stays reachable
       // from the meter closure without re-testing the namespace per call.
-      const { read } = usage;
+      const { call: read } = found;
       const markers = usageMarkers();
       // The id the Host must price; the pill also names the active provider,
       // which is how the Host knows which account is on screen.
@@ -458,24 +452,29 @@ export const apply = (ctx: ClientContext): void => {
           provider?: string,
           model?: string
         ): Promise<unknown> => {
-          const res: unknown = await callUsageRead(read, {
-            ...(provider === undefined || provider.length === 0
-              ? {}
-              : { provider }),
-            ...(model === undefined || model.length === 0 ? {} : { model }),
-            ...(meterSessionId.length === 0
-              ? {}
-              : { sessionId: meterSessionId }),
-          });
-          // Narrow `ok` to a boolean so the branch reads as truthiness; the lint
-          // config rejects coercing an `unknown` in the condition.
-          if (isRecord(res) && typeof res.ok === "boolean") {
-            if (res.ok) {
-              return "value" in res ? res.value : undefined;
-            }
-            throw "error" in res ? res.error : undefined;
+          const answer = unwrapRemote(
+            usageRemote,
+            "read",
+            await callUsageRead(read, {
+              ...(provider === undefined || provider.length === 0
+                ? {}
+                : { provider }),
+              ...(model === undefined || model.length === 0 ? {} : { model }),
+              ...(meterSessionId.length === 0
+                ? {}
+                : { sessionId: meterSessionId }),
+            })
+          );
+          if (answer.kind === "refused") {
+            // `undefined` when the envelope carried no error: the pill's
+            // `parseFailure` renders that as the generic unavailable state.
+            throw answer.error;
           }
-          return res;
+          // An answer the reading parser rejects passes through as it came:
+          // the meter never validated, and test/settings-page.test.tsx pins
+          // the pass-through. Rejecting it changes a pinned answer, so it is a
+          // `fix:` for a later phase, not this refactor.
+          return answer.value;
         },
         // The dictionary and every `Intl` formatter must agree on the
         // language: `t` selects the words, `getLocale` feeds the dates and
