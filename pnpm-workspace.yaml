@@ -5,8 +5,8 @@ allowBuilds:
   "@google/genai": false
   protobufjs: false
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
-  vite-plus: 1.4.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.5.0
+  vite-plus: 1.5.0
 # pnpm refuses any version published inside the last 24h (its default
 # `minimumReleaseAge`), and the pi seam this repo follows rides fresh cuts:
 # the 0.2.2-rc.2 cluster the rc lockfile installs was hours old when it was
@@ -34,7 +34,6 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-timeout@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
   - "@deepseek-ai/dsh-typert-protocol@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
   - "@deepseek-ai/dsh-util-crypto@0.2.1-alpha.5 || 0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
-  - ultracite@8.1.0
   - "@deepseek-ai/dsh-client-store@0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
   - "@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.4 || 0.2.2-alpha.2 || 0.2.2-rc.2"
   - "@deepseek-ai/dsh-app-boot@0.2.2-rc.2"
