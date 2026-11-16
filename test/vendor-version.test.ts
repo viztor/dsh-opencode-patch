@@ -15,10 +15,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   bareLiteral,
+  CLI_GENERATION_LITERAL,
+  CLI_LITERAL,
   disagreements,
   GENERATED_TABLES,
   pinnedVersion,
+  pinVerdict,
+  publishedCli,
   scansFile,
+  unpinnedGenerationClaims,
 } from "../scripts/vendor-version.ts";
 
 /**
@@ -136,5 +141,93 @@ describe("which files the copy scan reads", () => {
   it("skips a file no copy can live in", () => {
     expect(scansFile("docs/media/hero.svg")).toBe(false);
     expect(scansFile("lib/client.js")).toBe(false);
+  });
+});
+
+describe("the registry's dist-tags", () => {
+  /** Snapshot versions as the registry carries them: `0.0.0-<tag>-<stamp>`. */
+  const DEV = ["0.0.0", "dev", "202611092046"].join("-");
+  const NEXT = ["0.0.0", "next", "202606270058"].join("-");
+
+  it("reads the registry's dist-tags: the pinned line's latest, the snapshot builds (listed, never classified), and a latest that left the line", () => {
+    expect(
+      publishedCli({
+        dev: DEV,
+        latest: PINNED,
+        "latest-1": "1.1.4",
+        next: NEXT,
+      })
+    ).toStrictEqual({ snapshots: { dev: DEV, next: NEXT }, stable: PINNED });
+    // No usable `latest`: nothing published is read as current.
+    expect(publishedCli({})).toBeUndefined();
+    expect(
+      publishedCli({ latest: ["0.0.0", "dev", "1"].join("-") })
+    ).toBeUndefined();
+    expect(publishedCli(null)).toBeUndefined();
+    expect(publishedCli("1.2.3")).toBeUndefined();
+    // A tag is registry data, never a pattern: one with regex metacharacters
+    // neither throws nor matches loosely.
+    const plusPlus = ["0.0.0", "c++", "202611092046"].join("-");
+    const paren = ["0.0.0", "a(b", "1"].join("-");
+    expect(
+      publishedCli({
+        // As a pattern, `a.b` would read `axb`'s snapshot as its own.
+        "a.b": ["0.0.0", "axb", "1"].join("-"),
+        "a(b": paren,
+        "c++": plusPlus,
+        latest: PINNED,
+      })
+    ).toStrictEqual({
+      snapshots: { "a(b": paren, "c++": plusPlus },
+      stable: PINNED,
+    });
+
+    expect(
+      pinVerdict(PINNED, { snapshots: {}, stable: PINNED })
+    ).toBeUndefined();
+    const bump = pinVerdict(PINNED, { snapshots: {}, stable: stale("6") });
+    expect(bump).toMatch(/bump OPENCODE_CLI_VERSION/u);
+    // `latest` left the pinned major: the format the User-Agent claims moved
+    // with it, so the answer is not a version bump.
+    const generation = pinVerdict(PINNED, { snapshots: {}, stable: "2.0.0" });
+    expect(generation).toMatch(/generation/u);
+    expect(generation).not.toMatch(/bump OPENCODE_CLI_VERSION/u);
+  });
+
+  it("sees the 2.x User-Agent form, once, and calls it an unpinned claim", () => {
+    // Assembled: a concrete 2.x-form literal in this file would be a claim the
+    // copy scan fails on.
+    const ua = ["opencode", "dev", DEV, "cli"].join("/");
+    const generation = [...ua.matchAll(CLI_GENERATION_LITERAL)];
+    expect(generation).toHaveLength(1);
+    expect(generation[0]?.slice(1)).toStrictEqual(["dev", DEV, "cli"]);
+    expect([...ua.matchAll(CLI_LITERAL)]).toHaveLength(0);
+    // The bare scan of a series never reads a version inside the 2.x form.
+    const series = ["0", "0", "1"].join(".");
+    expect([...ua.matchAll(bareLiteral(series))]).toHaveLength(0);
+
+    const legacy = `opencode/${PINNED}`;
+    expect([...legacy.matchAll(CLI_LITERAL)]).toHaveLength(1);
+    expect([...legacy.matchAll(CLI_GENERATION_LITERAL)]).toHaveLength(0);
+
+    // A stale 1.x copy followed by another segment is still a 1.x copy, and
+    // the gate reports it.
+    const segmented = `ua opencode/${stale("3")}/cli and opencode/${stale("2")}/`;
+    const found = [...segmented.matchAll(CLI_LITERAL)].map((match) => match[1]);
+    expect(found).toStrictEqual([stale("3"), stale("2")]);
+    expect([...segmented.matchAll(CLI_GENERATION_LITERAL)]).toHaveLength(0);
+    expect(
+      disagreements(PINNED, new Map([[stale("3"), ["docs/x.md"]]]), new Map())
+    ).toStrictEqual([{ files: ["docs/x.md"], version: stale("3") }]);
+
+    const placeholder = "opencode/<channel>/<version>/<client>";
+    expect([...placeholder.matchAll(CLI_LITERAL)]).toHaveLength(0);
+    expect([...placeholder.matchAll(CLI_GENERATION_LITERAL)]).toHaveLength(0);
+
+    const claims = unpinnedGenerationClaims(new Map([[ua, ["docs/x.md"]]]));
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toContain("docs/x.md");
+    expect(claims[0]).toContain("no constant pins");
+    expect(unpinnedGenerationClaims(new Map())).toStrictEqual([]);
   });
 });

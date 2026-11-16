@@ -7,8 +7,12 @@ version: 2
 updates:
   # The release path. A stale action here is how a tag silently stops producing a
   # publish, and the workflow would still be green.
+  # Every directory that pins an action: the workflows (read from `/`) and the
+  # composite setup action every job runs, whose pins nothing else would see.
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/setup
     schedule:
       interval: weekly
       day: monday
@@ -54,8 +58,9 @@ updates:
         dependency-type: development
       dependencies:
         dependency-type: production
-      # A toolchain upgrade that fails `scripts/check.ts`'s toolchain guards is
-      # expected; so is one that rewrites the lockfile wholesale.
+      # A toolchain upgrade that fails the toolchain guards in
+      # `test/toolchain.test.ts` is expected; so is one that rewrites the
+      # lockfile wholesale.
       tooling:
         patterns:
           - vite-plus
@@ -72,8 +77,9 @@ updates:
       # resolves, pinned per channel. A pull request from here would move one of
       # them, land red on `test/harness-channel.test.ts`, and take its whole
       # group with it. The nightly `host-drift` job reports when either channel
-      # moves, and P-T3 (a later phase) turns that report into the bump. Every
-      # update type is ignored; `test/harness-channel.test.ts` holds both rules.
+      # moves and proposes the bump itself, as a `chore/host-bump` pull
+      # request. Every update type is ignored; `test/harness-channel.test.ts`
+      # holds both rules.
       - dependency-name: "@deepseek-ai/*"
       - dependency-name: "@earendil-works/pi-ai"
       # React stays at 18: the bundles this plugin ships are host-bound, so a

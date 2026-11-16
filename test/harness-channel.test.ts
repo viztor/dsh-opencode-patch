@@ -41,6 +41,7 @@ import { describe, expect, it } from "vitest";
 import { parse, parseAllDocuments } from "yaml";
 
 import { channelManifest, pinFor } from "../scripts/channel-manifest.ts";
+import { README_HELD_FIELDS } from "../scripts/host-bump.ts";
 import { floorOf } from "../scripts/host-drift.ts";
 import {
   type Channel,
@@ -150,11 +151,14 @@ describe("harness channel alignment · the READMEs' support policy", () => {
       // The paragraph that follows names the suite's installs.
       const installs = lines.slice(at + 1).find((line) => line !== "") ?? "";
       for (const channel of Object.keys(CHANNELS) as Channel[]) {
-        const { dsh, piFloor, piRange } = CHANNELS[channel];
-        for (const value of [dsh, piRange, piFloor]) {
-          expect(policy, `${channel} ${value}`).toContain(`\`${value}\``);
+        // The fields the nightly bump's body says this case holds.
+        const record = CHANNELS[channel];
+        for (const field of README_HELD_FIELDS) {
+          expect(policy, `${channel} ${field}`).toContain(
+            `\`${record[field]}\``
+          );
         }
-        expect(installs, `${channel} install`).toContain(`\`${dsh}\``);
+        expect(installs, `${channel} install`).toContain(`\`${record.dsh}\``);
       }
     });
   }

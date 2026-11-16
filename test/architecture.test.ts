@@ -8,8 +8,9 @@
  *
  * So the membership test is a property: **a utility is a function of its
  * arguments.** No context, no globals, no I/O. This test is what makes that true
- * rather than aspirational — it fails the build, the way `scripts/check.ts`
- * already fails it for a client module reaching host-only code.
+ * rather than aspirational — it fails the build, the way this file's "the
+ * client bundle reaches nothing host-only" block already fails it for a
+ * client module reaching host-only code.
  *
  * @module test/architecture.test
  */

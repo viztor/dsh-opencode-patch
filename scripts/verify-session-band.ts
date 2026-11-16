@@ -30,77 +30,20 @@
  *
  * Run: node --experimental-strip-types scripts/verify-session-band.ts
  *
+ * It prints "CONFIRMED" only when every measured fact is the one the
+ * explanation predicts (`bandVerdict` in `session-band.ts`, the pure half);
+ * otherwise it prints one `MISMATCH:` line per fact and exits 1.
+ *
  * @module scripts/verify-session-band
  */
 
 import { openCodeSessionIdFor } from "../src/session.ts";
+import { type BandFact, bandFacts, bandVerdict } from "./session-band.ts";
 
-/**
- * Faithful port of upstream `packages/opencode/src/id/id.ts`, both directions.
- *
- * The bitwise shift/mask and the `BigInt(...)` calls are deliberate: this is a
- * byte-for-byte port of the vendor's arithmetic, and the point of the script is
- * that it reproduces THEIR output rather than a rewritten approximation. The
- * lint rules that object are disabled for exactly this file and this reason.
- */
-/* oxlint-disable eslint/no-bitwise, unicorn/prefer-bigint-literals -- port of the vendor's arithmetic */
-let lastTimestamp = 0;
-let counter = 0;
-
-const upstreamCreate = (
-  prefix: string,
-  timestamp: number,
-  direction: "ascending" | "descending"
-): string => {
-  if (timestamp !== lastTimestamp) {
-    lastTimestamp = timestamp;
-    counter = 0;
-  }
-  counter += 1;
-
-  const raw = BigInt(timestamp) * BigInt(0x1000) + BigInt(counter);
-  const now = direction === "descending" ? ~raw : raw;
-  const timeBytes = Buffer.alloc(6);
-  for (let i = 0; i < 6; i += 1) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff));
-  }
-  return `${prefix}_${timeBytes.toString("hex")}`;
-};
-/* oxlint-enable eslint/no-bitwise, unicorn/prefer-bigint-literals -- port ends here */
-
-/** The low twelve bits: the last three hex characters of the 12-hex time. */
-const low12 = (id: string): number =>
-  Number.parseInt(id.slice(4, 16), 16) % 0x1000;
-
-const BAND_LO = 0xfc0;
-const BAND_HI = 0xffe;
-const inBand = (low: number): boolean => low >= BAND_LO && low <= BAND_HI;
-
-/** One id per millisecond, which is what a real client mints. */
-const onePerMillisecond = (direction: "ascending" | "descending"): number[] => {
-  const lows: number[] = [];
-  for (let i = 0; i < 200_000; i += 1) {
-    lows.push(low12(upstreamCreate("ses", 1_750_000_000_000 + i, direction)));
-  }
-  return lows;
-};
-
-/** Several ids inside ONE millisecond: `counter` climbs, so the residue moves. */
-const withinOneMillisecond = (): number[] => {
-  lastTimestamp = 0;
-  counter = 0;
-  const lows: number[] = [];
-  for (let i = 0; i < 80; i += 1) {
-    lows.push(low12(upstreamCreate("ses", 1_750_000_000_000, "descending")));
-  }
-  return lows;
-};
-
-const report = (label: string, lows: readonly number[]): void => {
-  const banded = lows.filter(inBand).length;
+const report = (label: string, { inBand, lows, total }: BandFact): void => {
   const distinct = [...new Set(lows)].toSorted((a, b) => a - b);
   console.log(`\n── ${label} ──`);
-  console.log(`samples             : ${lows.length}`);
+  console.log(`samples             : ${total}`);
   console.log(
     `distinct low-12     : ${distinct
       .slice(0, 6)
@@ -110,45 +53,40 @@ const report = (label: string, lows: readonly number[]): void => {
     }`
   );
   console.log(
-    `in band [fc0,ffe]   : ${banded} (${((banded / lows.length) * 100).toFixed(2)}%)`
+    `in band [fc0,ffe]   : ${inBand} (${((inBand / total) * 100).toFixed(2)}%)`
   );
 };
 
+const facts = bandFacts({
+  derive: (sessionId) => openCodeSessionIdFor(sessionId),
+  oursSamples: 50_000,
+  samples: 200_000,
+});
+
 report(
   "upstream, ASCENDING — the branch the first version of this script modelled",
-  onePerMillisecond("ascending")
+  facts.ascending
 );
 report(
   "upstream, DESCENDING — the branch sessions actually use",
-  onePerMillisecond("descending")
+  facts.descending
 );
 
-const within = withinOneMillisecond();
+const within = facts.withinOneMs;
 console.log("\n── upstream, descending, 80 ids inside ONE millisecond ──");
 console.log(
-  `low-12 runs 0x${Math.max(...within).toString(16)} → 0x${Math.min(...within).toString(16)}`
+  `low-12 runs 0x${Math.max(...within.lows).toString(16)} → 0x${Math.min(...within.lows).toString(16)}`
 );
 console.log(
-  `in band             : ${within.filter(inBand).length} of ${within.length} — the <64 that fit`
+  `in band             : ${within.inBand} of ${within.total} — the <64 that fit`
 );
 
-const ours: number[] = [];
-for (let i = 0; i < 50_000; i += 1) {
-  ours.push(low12(openCodeSessionIdFor(`band-check-${i}`)));
-}
-report("this plugin's derivation", ours);
+report("this plugin's derivation", facts.ours);
 
 console.log("\n── verdict ──");
-console.log(
-  "CONFIRMED. The band is real, and it is a CONSEQUENCE of minting descending:"
-);
-console.log(
-  "the vendor's own construction puts a session's low twelve bits at 0xFFF - counter,"
-);
-console.log(
-  "which is inside [0xfc0, 0xffe] for any client minting fewer than 64 ids per"
-);
-console.log(
-  "millisecond. This plugin mints ONE id per session, so its counter is 1 and its"
-);
-console.log("low twelve bits are 0xFFE. No clamp is involved anywhere.");
+// The verdict is the pure half's (`bandVerdict`): the script only prints it.
+const verdict = bandVerdict(facts);
+for (const line of verdict.lines) {
+  console.log(line);
+}
+process.exitCode = verdict.exit;

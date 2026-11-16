@@ -282,7 +282,9 @@ describe("UsageTrigger", () => {
     );
 
     const [tooltip] = findAllOf(tree, new Set(["Tooltip"]));
-    expect(tooltip).toBeDefined();
+    if (tooltip === undefined) {
+      throw new Error("no Tooltip in the trigger's tree");
+    }
     expect(tooltip.props.label).toBe("90% of Weekly used");
     // The clone's target: the button, not this component.
     expect(childrenOf(tooltip)).toContain(firstOf(tree, "button"));

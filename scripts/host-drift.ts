@@ -32,7 +32,9 @@
  *
  * Every function here is a function of its arguments - the registry's answers
  * are data handed in - so `test/host-drift.test.ts` holds every rule with known
- * answers. The CLI fetches the packuments and prints one warning per line.
+ * answers. `readChannel` is the one reading: the report (`hostDrift`, printed
+ * by `scripts/report-host-drift.ts`, one warning per line) and the nightly bump
+ * proposal (`scripts/host-bump.ts`) are both built on it.
  *
  * @module scripts/host-drift
  */
@@ -205,6 +207,134 @@ export const channelBuild = (
     : { tag: newest[0], version: newest[1] };
 };
 
+/** Every record field a bump can move, in the order the report reads them. */
+export const BUMP_FIELDS = [
+  "distTag",
+  "dsh",
+  "piRange",
+  "piFloor",
+  "pi",
+  ...FAMILY_DECLARERS.map(({ field }) => field),
+] as const satisfies readonly (keyof DriftRecord)[];
+
+/** A record field a bump can move: dsh's line, pi's three and the family. */
+export type BumpField =
+  | "distTag"
+  | "dsh"
+  | "pi"
+  | "piFloor"
+  | "piRange"
+  | FamilyField;
+
+/**
+ * What the registry says about one field of a channel's record, or why a
+ * field could not be read. `label` is how the report names the field.
+ */
+export type ChannelFinding =
+  | {
+      readonly field: BumpField;
+      readonly found: string;
+      readonly kind: "value";
+      readonly label: string;
+    }
+  | { readonly kind: "unread"; readonly message: string };
+
+/**
+ * What the registry says about every field of one channel's record, in the
+ * report's order: one `value` finding per field it read (equal to the record
+ * or not), and one `unread` finding per answer it could not read (no
+ * dist-tag, no declaring package at that version, no declared range, nothing
+ * in the pi range). The drift report prints the values that differ and every
+ * unread; the bump proposal (`scripts/host-bump.ts`) reads the same findings,
+ * so the two can never disagree about what moved.
+ *
+ * @param record - the channel's record.
+ * @param registry - the packuments, one per role.
+ * @returns the findings; a `distTag` value is carried but never printed alone.
+ */
+export const readChannel = (
+  record: DriftRecord,
+  registry: RegistryView
+): readonly ChannelFinding[] => {
+  const findings: ChannelFinding[] = [];
+  const value = (field: BumpField, label: string, found: string): void => {
+    findings.push({ field, found, kind: "value", label });
+  };
+  const unread = (message: string): void => {
+    findings.push({ kind: "unread", message });
+  };
+  const build = channelBuild(registry.dsh["dist-tags"] ?? {}, record);
+  if (build === undefined) {
+    const line = lineOf(record.dsh);
+    unread(
+      `${REGISTRY_PACKAGES.dsh} has no '${record.distTag}' dist-tag${line === undefined ? "" : ` and no build on the ${line} line`}; nothing compared`
+    );
+    return findings;
+  }
+  const tagged = build.version;
+  value("distTag", "the dist-tag", build.tag);
+  value("dsh", `${REGISTRY_PACKAGES.dsh}@${build.tag}`, tagged);
+  const bridge = registry.bridge.versions?.[tagged];
+  if (bridge === undefined) {
+    unread(
+      `${REGISTRY_PACKAGES.bridge}@${tagged} is not published; the ranges were not compared`
+    );
+    return findings;
+  }
+  const declared = declaredRanges(bridge);
+
+  const piRange = declared[REGISTRY_PACKAGES.pi];
+  if (piRange === undefined) {
+    unread(
+      `${REGISTRY_PACKAGES.bridge}@${tagged} declares no ${REGISTRY_PACKAGES.pi}`
+    );
+  } else {
+    value("piRange", "the bridge's pi range", piRange);
+    const floor = floorOf(piRange);
+    if (floor !== undefined) {
+      value("piFloor", "the pi range's floor", floor);
+    }
+    const pi = newestIn(registry.pi, piRange);
+    if (pi === undefined) {
+      unread(`no published ${REGISTRY_PACKAGES.pi} satisfies ${piRange}`);
+    } else {
+      value("pi", `the newest pi ${piRange} resolves`, pi);
+    }
+  }
+
+  const floors: Partial<Record<FamilyField, string>> = {};
+  for (const { declarer, field, name } of FAMILY_DECLARERS) {
+    const at = declarer === "cordis" ? floors.cordis : tagged;
+    const declarerName = REGISTRY_PACKAGES[declarer];
+    if (at === undefined) {
+      unread(`no ${declarerName} floor was read; ${name} was not compared`);
+      continue;
+    }
+    const manifest = registry[declarer].versions?.[at];
+    if (manifest === undefined) {
+      unread(
+        `${declarerName}@${at} is not published; ${name} was not compared`
+      );
+      continue;
+    }
+    const range = declaredRanges(manifest)[name];
+    if (range === undefined) {
+      unread(`${declarerName}@${at} declares no ${name}`);
+      continue;
+    }
+    const floor = floorOf(range);
+    if (floor === undefined) {
+      unread(
+        `${declarerName}@${at} declares ${name} ${range}, which has no floor`
+      );
+      continue;
+    }
+    floors[field] = floor;
+    value(field, `the floor of ${name} ${range}`, floor);
+  }
+  return findings;
+};
+
 /**
  * One line per field where the registry and a channel's record disagree, each
  * naming the channel, the field, the record's value and the registry's. An
@@ -215,92 +345,18 @@ export const channelBuild = (
 export const hostDrift = (
   records: Readonly<Record<string, DriftRecord>>,
   registry: RegistryView
-): string[] => {
-  const lines: string[] = [];
-  for (const [channel, record] of Object.entries(records)) {
-    const say = (field: string, recorded: string, found: string): void => {
-      lines.push(
-        `${channel}: ${field} is ${found} on the registry; the record says ${recorded}`
-      );
-    };
-    const build = channelBuild(registry.dsh["dist-tags"] ?? {}, record);
-    if (build === undefined) {
-      const line = lineOf(record.dsh);
-      lines.push(
-        `${channel}: ${REGISTRY_PACKAGES.dsh} has no '${record.distTag}' dist-tag${line === undefined ? "" : ` and no build on the ${line} line`}; nothing compared`
-      );
-      continue;
-    }
-    const tagged = build.version;
-    if (tagged !== record.dsh) {
-      say(`${REGISTRY_PACKAGES.dsh}@${build.tag}`, record.dsh, tagged);
-    }
-    const bridge = registry.bridge.versions?.[tagged];
-    if (bridge === undefined) {
-      lines.push(
-        `${channel}: ${REGISTRY_PACKAGES.bridge}@${tagged} is not published; the ranges were not compared`
-      );
-      continue;
-    }
-    const declared = declaredRanges(bridge);
-
-    const piRange = declared[REGISTRY_PACKAGES.pi];
-    if (piRange === undefined) {
-      lines.push(
-        `${channel}: ${REGISTRY_PACKAGES.bridge}@${tagged} declares no ${REGISTRY_PACKAGES.pi}`
-      );
-    } else {
-      if (piRange !== record.piRange) {
-        say("the bridge's pi range", record.piRange, piRange);
+): string[] =>
+  Object.entries(records).flatMap(([channel, record]) =>
+    readChannel(record, registry).flatMap((finding) => {
+      if (finding.kind === "unread") {
+        return [`${channel}: ${finding.message}`];
       }
-      const floor = floorOf(piRange);
-      if (floor !== undefined && floor !== record.piFloor) {
-        say("the pi range's floor", record.piFloor, floor);
-      }
-      const pi = newestIn(registry.pi, piRange);
-      if (pi === undefined) {
-        lines.push(
-          `${channel}: no published ${REGISTRY_PACKAGES.pi} satisfies ${piRange}`
-        );
-      } else if (pi !== record.pi) {
-        say(`the newest pi ${piRange} resolves`, record.pi, pi);
-      }
-    }
-
-    const floors: Partial<Record<FamilyField, string>> = {};
-    for (const { declarer, field, name } of FAMILY_DECLARERS) {
-      const at = declarer === "cordis" ? floors.cordis : tagged;
-      const declarerName = REGISTRY_PACKAGES[declarer];
-      if (at === undefined) {
-        lines.push(
-          `${channel}: no ${declarerName} floor was read; ${name} was not compared`
-        );
-        continue;
-      }
-      const manifest = registry[declarer].versions?.[at];
-      if (manifest === undefined) {
-        lines.push(
-          `${channel}: ${declarerName}@${at} is not published; ${name} was not compared`
-        );
-        continue;
-      }
-      const range = declaredRanges(manifest)[name];
-      if (range === undefined) {
-        lines.push(`${channel}: ${declarerName}@${at} declares no ${name}`);
-        continue;
-      }
-      const floor = floorOf(range);
-      if (floor === undefined) {
-        lines.push(
-          `${channel}: ${declarerName}@${at} declares ${name} ${range}, which has no floor`
-        );
-        continue;
-      }
-      floors[field] = floor;
-      if (floor !== record[field]) {
-        say(`the floor of ${name} ${range}`, record[field], floor);
-      }
-    }
-  }
-  return lines;
-};
+      const recorded = record[finding.field];
+      // The dist-tag is named in the dsh line's label, never on its own.
+      return finding.field === "distTag" || finding.found === recorded
+        ? []
+        : [
+            `${channel}: ${finding.label} is ${finding.found} on the registry; the record says ${recorded}`,
+          ];
+    })
+  );

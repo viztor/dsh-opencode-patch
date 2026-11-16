@@ -9,9 +9,17 @@
  * Two things are checked, and they fail for different reasons:
  *
  *  1. the constant, read from `src/identity.ts`, against the published CLI -
- *     `latest`, which is the 1.x line this plugin claims;
+ *     `latest` among the registry's dist-tags, which is the 1.x line this
+ *     plugin claims. A `latest` that left the pinned major is named as a
+ *     generation change, not a bump: the 2.x line sends another User-Agent
+ *     format (`opencode/<channel>/<version>/<client>`). The snapshot builds
+ *     under dist-tags (`0.0.0-<tag>-<stamp>`: the 2.x line's `dev`, `next`
+ *     and `beta`, and many older 1.x feature branches) are listed as not
+ *     claimed, with no format asserted for any of them;
  *  2. every other copy in the tree, against the constant - a copy that drifts
- *     from the constant is stale even when the constant is current.
+ *     from the constant is stale even when the constant is current - and no
+ *     literal in the 2.x form at all, since no constant pins that generation
+ *     (a concrete one is a claim nothing checks; write the placeholder).
  *
  * The copy scan reads two forms, because a copy is not always prefixed: the
  * `opencode/<version>` literal, and a bare (or `v`-prefixed) literal of the
@@ -33,16 +41,23 @@
  *
  * A failure prints one `error: <cause>` line first (the detail after it), so a
  * CI step that only warns can quote the cause rather than guess it.
+ *
+ * `--registry <url>` reads another registry (default the public one), which
+ * is how the mock suite serves it a known answer.
  */
 
 import { readdir, readFile } from "node:fs/promises";
 
 import {
   bareLiteral,
+  CLI_GENERATION_LITERAL,
   CLI_LITERAL as LITERAL,
   disagreements,
   pinnedVersion,
+  pinVerdict,
+  publishedCli,
   scansFile,
+  unpinnedGenerationClaims,
 } from "./vendor-version.ts";
 
 /** Where a copy may appear; `scansFile` decides which files under them are read. */
@@ -50,12 +65,23 @@ const ROOTS = ["src", "test", "docs", "scripts", "README.md"];
 
 const CONSTANT_FILE = "src/identity.ts";
 
-/** Every literal version found, and the files that say it. */
-const literals = async (pattern: RegExp): Promise<Map<string, string[]>> => {
+const flag = process.argv.indexOf("--registry");
+const REGISTRY = (
+  flag === -1 ? "https://registry.npmjs.org" : (process.argv[flag + 1] ?? "")
+).replace(/\/+$/u, "");
+
+/**
+ * Every literal found, keyed by `key` (the version, by default), and the
+ * files that say it.
+ */
+const literals = async (
+  pattern: RegExp,
+  key: (match: RegExpMatchArray) => string = (match) => match[1] ?? ""
+): Promise<Map<string, string[]>> => {
   const found = new Map<string, string[]>();
   const record = (path: string, text: string): void => {
     for (const match of text.matchAll(pattern)) {
-      const version = match[1] ?? "";
+      const version = key(match);
       found.set(version, [...(found.get(version) ?? []), path]);
     }
   };
@@ -97,6 +123,14 @@ const main = async (): Promise<void> => {
       `these copies do not say ${pinned}, which is what ${CONSTANT_FILE} declares:\n${detail}`
     );
   }
+  const claims = unpinnedGenerationClaims(
+    await literals(CLI_GENERATION_LITERAL, (match) => match[0])
+  );
+  if (claims.length > 0) {
+    throw new Error(
+      `these User-Agent literals use the 2.x form, which no constant pins:\n${claims.map((claim) => `  ${claim}`).join("\n")}`
+    );
+  }
   if (process.argv.includes("--copies")) {
     process.stdout.write(
       `ok   ${[...copies.values()].flat().length} copy/copies and ${[...mentions.values()].flat().length} bare mention/mentions say ${pinned}, as ${CONSTANT_FILE} does (registry not asked)\n`
@@ -104,24 +138,29 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  const response = await fetch("https://registry.npmjs.org/opencode-ai/latest");
+  const response = await fetch(`${REGISTRY}/-/package/opencode-ai/dist-tags`);
   if (!response.ok) {
     throw new Error(`the registry answered ${response.status} for opencode-ai`);
   }
-  const published = ((await response.json()) as { version?: string }).version;
+  const published = publishedCli(await response.json());
   if (published === undefined) {
-    throw new Error("the registry response carried no version");
-  }
-  if (pinned !== published) {
-    const files = [
-      ...new Set([...copies.values(), ...mentions.values()].flat()),
-    ];
     throw new Error(
-      `pinned opencode/${pinned}, published opencode/${published} - bump OPENCODE_CLI_VERSION, and the ${files.length > 0 ? files.join(", ") : "docs"}`
+      "the registry's dist-tags carried no x.y.z `latest` for opencode-ai"
     );
+  }
+  const files = [...new Set([...copies.values(), ...mentions.values()].flat())];
+  const verdict = pinVerdict(pinned, published, files);
+  if (verdict !== undefined) {
+    throw new Error(verdict);
   }
   process.stdout.write(
     `ok   opencode/${pinned} is the published version, and ${[...copies.values()].flat().length} copy/copies and ${[...mentions.values()].flat().length} bare mention/mentions agree\n`
+  );
+  const snapshots = Object.entries(published.snapshots);
+  process.stdout.write(
+    snapshots.length === 0
+      ? "note no snapshot build is published under a dist-tag\n"
+      : `note snapshot builds under dist-tags, their generation and User-Agent format not read from the tag (not claimed): ${snapshots.map(([tag, version]) => `${tag} ${version}`).join(", ")}\n`
   );
 };
 

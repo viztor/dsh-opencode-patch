@@ -19,12 +19,26 @@ import { join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { secretsIn } from "../scripts/package-checks.ts";
 import { CARD_FIELDS } from "./support/src.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 
-/** Directories a third party can read: the tree, plus the build output. */
-const SCANNED = ["src", "test", "docs", "scripts", "lib", "channels"];
+/**
+ * Directories a third party can read: the tree, the workflows that run on a
+ * public runner and print their own text into a public log, plus the build
+ * output.
+ */
+const SCANNED = [
+  "src",
+  "test",
+  "docs",
+  "scripts",
+  "lib",
+  "channels",
+  "locale",
+  ".github",
+];
 const SCANNED_FILES = [
   "AGENTS.md",
   "CONTRIBUTING.md",
@@ -37,6 +51,14 @@ const SCANNED_FILES = [
 /** A home prefix followed by a name that is not the rule's placeholder. */
 const LOCAL_PATH =
   /(?:\/Users\/|\/home\/|C:\\Users\\|C:\/Users\/)(?!you(?:\/|\\|["'`\s]|$)|<name>)[A-Za-z0-9._-]+/gu;
+
+/**
+ * A directory that exists on one kind of machine only: Homebrew's prefixes.
+ * Not a home directory, so it leaks no name, but a script that puts one on
+ * PATH works on the machine it was written on and nowhere else, and says
+ * which machine that was.
+ */
+const MACHINE_PATH = /\/opt\/homebrew\b|\/usr\/local\/Cellar\b/gu;
 
 const walk = async (dir: string): Promise<string[]> => {
   let entries: string[];
@@ -55,19 +77,30 @@ const walk = async (dir: string): Promise<string[]> => {
     const info = await stat(full);
     if (info.isDirectory()) {
       found.push(...(await walk(full)));
-    } else if (/\.(?:ts|tsx|js|mjs|md|json|ya?ml)$/u.test(entry)) {
+    } else if (/\.(?:ts|tsx|js|mjs|md|json|ya?ml|sh)$/u.test(entry)) {
       found.push(full);
     }
   }
   return found;
 };
 
+/** Every file the scans read: the named root files and each walked directory. */
+const scannedFiles = async (): Promise<string[]> => {
+  const files = SCANNED_FILES.map((name) => join(ROOT, name));
+  for (const dir of SCANNED) {
+    files.push(...(await walk(join(ROOT, dir))));
+  }
+  return files;
+};
+
 describe("the hard rule: no local path leaves the machine", () => {
-  it("finds no home directory in the tree or the build output", async () => {
-    const files = SCANNED_FILES.map((name) => join(ROOT, name));
-    for (const dir of SCANNED) {
-      files.push(...(await walk(join(ROOT, dir))));
-    }
+  it("finds no home directory or machine path in the tree, .github and shell scripts included", async () => {
+    const files = await scannedFiles();
+    // Known answers: the walk reaches the workflows and the shell scripts,
+    // so a scan that skipped either could not pass by reading nothing.
+    const walked = files.map((file) => relative(ROOT, file));
+    expect(walked).toContain(".github/workflows/ci.yml");
+    expect(walked).toContain("scripts/capture-ui.sh");
 
     const offenders: string[] = [];
     for (const file of files) {
@@ -83,8 +116,10 @@ describe("the hard rule: no local path leaves the machine", () => {
       } catch {
         continue;
       }
-      for (const match of text.matchAll(LOCAL_PATH)) {
-        offenders.push(`${relative(ROOT, file)}: ${match[0]}`);
+      for (const pattern of [LOCAL_PATH, MACHINE_PATH]) {
+        for (const match of text.matchAll(pattern)) {
+          offenders.push(`${relative(ROOT, file)}: ${match[0]}`);
+        }
       }
     }
 
@@ -113,6 +148,66 @@ describe("the hard rule: no local path leaves the machine", () => {
     for (const sample of forbidden) {
       expect(sample.match(LOCAL_PATH), sample).not.toBeNull();
     }
+    // Built from parts: this file is scanned for the machine paths too.
+    expect(
+      ["", "opt", "homebrew", "bin"].join("/").match(MACHINE_PATH)
+    ).not.toBeNull();
+    expect("/usr/local/bin".match(MACHINE_PATH)).toBeNull();
+  });
+});
+
+describe("no credential in the tree (moved from check.ts)", () => {
+  it("names each key shape and nothing that only resembles one", () => {
+    // Assembled at run time: a whole canary in this file would be a credential
+    // the scan below has to find.
+    const parts = {
+      a: "sk-ant-",
+      g: "ghp_",
+      m: "monid_live_",
+      t: "sk-tinyfish-",
+    };
+    const found = [
+      `${parts.m}AbCdEf1234567890`,
+      `${parts.t}Pm-QkiaUloPEyNN`,
+      `${parts.g}abcdefghijklmnopqrstuvwxyz0123456789`,
+      `${parts.a}api03-AbCdEf1234567890`,
+    ];
+    for (const sample of found) {
+      expect(secretsIn(sample), sample.slice(0, 6)).toHaveLength(1);
+    }
+    for (const sample of [
+      parts.m,
+      parts.t,
+      "$OPENCODE_GO_API_KEY",
+      "Authorization: Bearer <key>",
+    ]) {
+      expect(secretsIn(sample), sample).toStrictEqual([]);
+    }
+  });
+
+  it("finds none in the tree, the root files included", async () => {
+    const files = await scannedFiles();
+    for (const entry of await readdir(ROOT)) {
+      const full = join(ROOT, entry);
+      const info = await stat(full);
+      if (
+        info.isFile() &&
+        /\.(?:ts|js|mjs|md|json|ya?ml)$/u.test(entry) &&
+        !files.includes(full)
+      ) {
+        files.push(full);
+      }
+    }
+    // Non-vacuous: the walk read the tree, not an empty directory.
+    expect(files.length).toBeGreaterThan(100);
+    const hits: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, "utf8");
+      for (const what of secretsIn(text)) {
+        hits.push(`${relative(ROOT, file)}: ${what}`);
+      }
+    }
+    expect(hits).toStrictEqual([]);
   });
 });
 
