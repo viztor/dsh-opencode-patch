@@ -324,6 +324,21 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     reasoning_options: [{ type: "effort", values: ["none", "high"] }],
   },
   {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "hy4-flash-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 65_536,
+    name: "Hy4 flash Free",
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: ["none", "high"] }],
+  },
+  {
     context_window: 1_024_000,
     cost: {
       cache_read: 0.042,
@@ -593,6 +608,26 @@ export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [
     reasoning_options: [
       { type: "toggle" },
       { type: "effort", values: ["low", "medium", "xhigh"] },
+      { type: "budget_tokens" },
+    ],
+  },
+  {
+    context_window: 1_000_000,
+    cost: {
+      cache_read: 0.075,
+      cache_write: 1.875,
+      input: 1.5,
+      output: 4.5,
+    },
+    id: "qwen4-max",
+    input_modalities: ["text", "image"],
+    max_output_tokens: 262_144,
+    name: "Qwen4 Max",
+    provider_npm: "@ai-sdk/anthropic",
+    reasoning: true,
+    reasoning_options: [
+      { type: "toggle" },
+      { type: "effort", values: ["low", "high", "xhigh"] },
       { type: "budget_tokens" },
     ],
   },
@@ -1716,6 +1751,21 @@ export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [
     name: "Grok Build 0.1",
     provider_npm: "@ai-sdk/openai",
     reasoning: true,
+  },
+  {
+    context_window: 1_048_576,
+    cost: {
+      cache_read: 0,
+      input: 0,
+      output: 0,
+    },
+    id: "hy4-flash-free",
+    input_modalities: ["text", "image"],
+    is_free: true,
+    max_output_tokens: 65_536,
+    name: "Hy4 flash Free",
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: ["none", "high"] }],
   },
   {
     context_window: 262_144,
