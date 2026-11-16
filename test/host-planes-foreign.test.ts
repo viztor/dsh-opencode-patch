@@ -1443,7 +1443,7 @@ describe(
         }
         // Non-vacuous: on the stepped-aside planes P3's complement would have
         // appended catalog ids pi-ai does not list (Zen has some on every
-        // cell; the newest cell's pi lists every Go catalog model).
+        // cell; which Go ids a cell's pi lacks moves with the catalog).
         expect(gaps).toBeGreaterThan(0);
         for (const plane of shape.taken) {
           // The known answer: a plane the claim takes is P3's complement.
