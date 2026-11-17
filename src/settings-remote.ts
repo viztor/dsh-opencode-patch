@@ -177,7 +177,7 @@ export type FoundCall =
   | { readonly call: undefined; readonly exposed: readonly string[] };
 
 /** The scope's `remote` face, or `undefined` when it is absent or the read throws. */
-const remoteFaceOf = (scope: unknown): unknown => {
+export const remoteFaceOf = (scope: unknown): unknown => {
   try {
     return isObject(scope) ? scope.remote : undefined;
   } catch {

@@ -19,7 +19,6 @@ const baseProps = (
 ): BooleanFieldProps => ({
   disabled: false,
   hint: "the hint",
-  id: "plugin-config-opencode-usageEnabled",
   invalid: false,
   invalidLabel: "invalid!",
   label: "Usage",
@@ -68,7 +67,6 @@ describe("SettingsBooleanField", () => {
     const shell = firstOf(tree, "SettingsFieldShell");
     expect(shell.props.disabled).toBe(true);
     expect(shell.props.hint).toBe("the hint");
-    expect(shell.props.id).toBe("plugin-config-opencode-usageEnabled");
     expect(shell.props.invalid).toBe(false);
     expect(shell.props.invalidLabel).toBe("invalid!");
     expect(shell.props.label).toBe("Usage");

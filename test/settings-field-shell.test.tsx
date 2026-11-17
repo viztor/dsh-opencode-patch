@@ -28,7 +28,6 @@ const baseProps = (
   children: CONTROL,
   disabled: false,
   hint: "the hint",
-  id: "plugin-config-opencode-usageEnabled",
   invalid: false,
   invalidLabel: "invalid!",
   label: "Usage",
@@ -44,9 +43,14 @@ describe("SettingsFieldShell", () => {
     expect(collectText(SettingsFieldShell(baseProps()))).toContain(CONTROL);
   });
 
-  it("labels the control with the field id", () => {
-    const label = firstOf(SettingsFieldShell(baseProps()), "label");
-    expect(label.props.htmlFor).toBe("plugin-config-opencode-usageEnabled");
+  it("shows the field's label without a `for` aimed at an id no control carries", () => {
+    // The Switch takes no id and the SegmentedControl ids only its tabs, so a
+    // `<label for={id}>` dangled; each control names itself through its own
+    // `label`. A label aimed at the selected tab would rename that tab.
+    const tree = SettingsFieldShell(baseProps());
+    expect(findAll(tree, "label")).toHaveLength(0);
+    const label = firstOf(tree, "span");
+    expect(label.props.className).toBe("dsh-oc-card-field-label");
     expect(label.props.children).toBe("Usage");
   });
 
@@ -81,17 +85,17 @@ describe("SettingsFieldShell", () => {
     expect(text).not.toContain("the hint");
   });
 
-  it("paints the message line with host tokens", () => {
-    // Same trap as the enum control: an invented variable name resolves to
-    // nothing and its hard-coded fallback then ignores the theme.
-    const colorOf = (element: TestElement): unknown =>
-      (element.props.style as { color?: unknown }).color;
-    expect(colorOf(firstOf(SettingsFieldShell(baseProps()), "p"))).toBe(
-      "var(--dsw-alias-label-tertiary)"
+  it("marks the message line as a message, and as invalid while the draft is", () => {
+    // The colours are the card's sheet's (`settings-css.ts`): which token each
+    // class is drawn in is pinned on the mounted card (card-rendered-tokens),
+    // and host-tokens holds every token the sheet names to the host's own.
+    const classOf = (element: TestElement): unknown => element.props.className;
+    expect(classOf(firstOf(SettingsFieldShell(baseProps()), "p"))).toBe(
+      "dsh-oc-card-field-message"
     );
     expect(
-      colorOf(firstOf(SettingsFieldShell(baseProps({ invalid: true })), "p"))
-    ).toBe("var(--dsw-alias-state-error-primary)");
+      classOf(firstOf(SettingsFieldShell(baseProps({ invalid: true })), "p"))
+    ).toBe("dsh-oc-card-field-message dsh-oc-card-field-message-invalid");
   });
 
   it("renders no message when there is neither a hint nor an invalid draft", () => {

@@ -26,12 +26,24 @@ vi.mock(
   () => import("./support/ui-primitives.ts")
 );
 
+import { OpencodeCard } from "../src/settings-card.tsx";
 import { en } from "../src/settings-copy.ts";
 import {
   inspectLine,
   StoreInspectRow,
 } from "../src/settings-store-inspect.tsx";
 import type { StoreInspectOutcome } from "../src/settings-store.ts";
+import { declaredStyle } from "./support/declared-style.ts";
+
+/** A writable form shell, for mounting the whole card. */
+const CARD_SHELL = {
+  available: true,
+  dirty: false,
+  failed: false,
+  invalid: false,
+  saving: false,
+  writable: true,
+};
 
 const t = (key: string): string =>
   (en as unknown as Record<string, string>)[key] ?? key;
@@ -270,7 +282,10 @@ describe("settings-store-inspect: the row", () => {
     }
   });
 
-  it("renders a problem note in the host's warning text colour", async () => {
+  it("shows an unavailable store as a warning line (re-mounted through the card)", async () => {
+    // Mounted through the card rather than alone: the row is styled by the
+    // card's sheet, which the card renders, so the row on its own is unstyled
+    // markup. That is the surface a reader sees.
     const { act } = await import("react");
     const { createRoot } = await import("react-dom/client");
 
@@ -280,10 +295,18 @@ describe("settings-store-inspect: the row", () => {
     try {
       act(() => {
         root.render(
-          createElement(StoreInspectRow, {
-            onInspect: () =>
+          createElement(OpencodeCard, {
+            discard: () => {},
+            edit: () => {},
+            getLocale: () => "en",
+            inspectStore: () =>
               Promise.resolve<StoreInspectOutcome>({ kind: "unavailable" }),
+            resetField: () => {},
+            save: () => {},
             t,
+            useOpencodeCard: (selector) =>
+              selector({ fields: {}, shell: CARD_SHELL }),
+            view: "page",
           })
         );
       });
@@ -307,7 +330,9 @@ describe("settings-store-inspect: the row", () => {
           d.querySelector("div") === null
       );
       expect(note, "the note must be rendered").toBeDefined();
-      expect(note?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+      expect(declaredStyle(note, "color")).toBe(
+        "var(--dsw-alias-state-warn-label)"
+      );
     } finally {
       act(() => {
         root.unmount();

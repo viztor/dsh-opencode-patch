@@ -15,6 +15,7 @@
  */
 
 import {
+  Button,
   IconInfoOutlineRegular,
   IconRefreshOutlineRegular,
   StateDot,
@@ -31,27 +32,15 @@ import type { Translate } from "./settings-copy.ts";
 import {
   callUsageRead,
   findRemoteCall,
+  remoteFaceOf,
   unwrapRemote,
 } from "./settings-remote.ts";
 import { getWindowState } from "./usage-state.ts";
 import { formatRelativeReset, resetLabel } from "./usage-time.ts";
-import { isRecord } from "./utils/guards.ts";
 import { backoffOver, retryUntilAnswered } from "./utils/retry.ts";
 import { formatUsd } from "./utils/usd.ts";
 
 /** The three windows, in the order the panel lists them. */
-/**
- * The refresh button's spin, as a standalone declaration.
- *
- * The meter's stylesheet defines the same animation; this copy is here so the
- * settings summary does not depend on the meter being mounted.
- */
-const SPIN_KEYFRAMES = `
-@keyframes dsh-oc-spin {
-  to { transform: rotate(360deg); }
-}
-`;
-
 const WINDOWS = [
   { copy: "usage_rolling", key: "rolling" },
   { copy: "usage_weekly", key: "weekly" },
@@ -78,26 +67,26 @@ export const readGoUsage = async (
   // `scope.remote.opencodeGoUsage`. Cordis guards property access by name and
   // THROWS for a namespace this bundle never declared in `inject`, and an
   // optional chain cannot catch a throw — so the direct read takes the whole
-  // settings card down, which is what "the meter is not shown" was. The meter's
-  // own injector was fixed for exactly this; this call site was not, and that is
-  // the second fix this now does not need.
-  const remote = isRecord(scope) ? scope.remote : undefined;
-  if (remote === undefined) {
-    console.warn(
-      "[dsh-opencode-patch] usage read: the settings scope exposes no remote"
-    );
-    return undefined;
-  }
-  // Through the context first (`findRemoteCall`): `remote.<ns>` is a service
-  // property, so an undeclared read THROWS and the guard answers `undefined` —
-  // the same answer as "no service". `ctx.get` does not consult `inject`,
-  // which is what makes a namespace this bundle mounts itself readable at all.
+  // settings card down, which is what "the meter is not shown" was.
+  //
+  // Through the context first (`findRemoteCall`): `ctx.get` does not consult
+  // `inject`, which is what makes a namespace this bundle mounts itself
+  // readable at all, and `scope.remote` is read only when it misses, inside a
+  // guard — the meter's lookup order. Reading `scope.remote` first, unguarded,
+  // made a throwing getter reject this read, and a scope with no `remote`
+  // property miss a namespace `ctx.get` resolves.
   const found = findRemoteCall(scope, usageRemote, "read");
   if (found.call === undefined) {
-    console.warn(
-      `[dsh-opencode-patch] usage read: no ${USAGE_NAMESPACE} service on the remote`,
-      found.exposed
-    );
+    if (remoteFaceOf(scope) === undefined) {
+      console.warn(
+        "[dsh-opencode-patch] usage read: the settings scope exposes no remote"
+      );
+    } else {
+      console.warn(
+        `[dsh-opencode-patch] usage read: no ${USAGE_NAMESPACE} service on the remote`,
+        found.exposed
+      );
+    }
     return undefined;
   }
   // Parsed by the contract's reading parser, so the windows are checked as
@@ -147,7 +136,8 @@ export interface UsageSummaryViewProps {
 
 /**
  * The summary itself: pure, so a test can invoke it and read the tree without
- * mounting — the same contract the meter's panel keeps.
+ * mounting — the same contract the meter's panel keeps. Styled by the card's
+ * sheet (`settings-css.ts`), which the card renders around it.
  */
 export const UsageSummaryView = ({
   locale,
@@ -161,99 +151,50 @@ export const UsageSummaryView = ({
     WINDOWS.some(({ key }) => usage[key].status === "rate-limited");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {/*
-        The spinner's own keyframes. The meter's stylesheet carries them, and
-        that stylesheet is rendered by the METER — so the settings summary's
-        refresh button turned only while the meter happened to be on screen.
-        The animation is the same one (the same name, the same 0.9s cycle), so
-        the two declarations agree; and a duplicate `@keyframes` of the same name
-        is the last one that wins, which is the same animation either way.
-      */}
-      <style>{SPIN_KEYFRAMES}</style>
-      <div
-        style={{
-          alignItems: "baseline",
-          display: "flex",
-          justifyContent: "space-between",
-        }}
-      >
-        <span
-          style={{
-            alignItems: "center",
-            display: "inline-flex",
-            fontSize: 12,
-            fontWeight: 600,
-            gap: 4,
-          }}
-        >
+    <div className="dsh-oc-card-summary">
+      <div className="dsh-oc-card-summary-head">
+        <span className="dsh-oc-card-summary-title">
           {t("usageSummaryTitle")}
           {/*
             The note is an explanation, so it lives behind this affordance — the
             same rule the composer panel's billing note follows. A paragraph
             under the rows made the caveat the loudest thing on a summary that
-            is meant to be read at a glance. Inline styles because this surface
-            has no stylesheet: the meter's classes are not rendered here.
+            is meant to be read at a glance. A DOM node inside the Tooltip, which
+            clones its child: a component would ignore the handlers.
           */}
           <Tooltip label={t("usageSummaryNote")} portal side="top">
-            <span
-              style={{
-                color: "var(--dsw-alias-label-tertiary)",
-                cursor: "help",
-                display: "inline-flex",
-              }}
-              tabIndex={0}
-            >
+            <span className="dsh-oc-card-info" tabIndex={0}>
               <IconInfoOutlineRegular size={13} />
             </span>
           </Tooltip>
         </span>
-        <div
-          style={{
-            alignItems: "center",
-            display: "inline-flex",
-            gap: 6,
-          }}
-        >
-          <span
-            style={{ color: "var(--dsw-alias-label-secondary)", fontSize: 11 }}
-          >
+        <div className="dsh-oc-card-summary-status">
+          <span className="dsh-oc-card-summary-status-text">
             {statusText(t, usage, limited, refreshing)}
           </span>
+          {/*
+            The host's ghost Button with its icon. While a read is in flight it
+            is disabled, and the card's sheet turns the glyph off that state —
+            the same animation the meter's sheet declares, so it turns with no
+            meter on the page.
+          */}
           {onRefresh !== undefined && (
-            <button
+            <Button
               aria-label={refreshing ? t("usageRefreshing") : t("usageRetry")}
+              className="dsh-oc-card-refresh"
               disabled={refreshing}
+              icon={
+                <IconRefreshOutlineRegular
+                  className="dsh-oc-card-refresh-icon"
+                  size={11}
+                />
+              }
               onClick={() => {
                 void onRefresh();
               }}
-              style={{
-                alignItems: "center",
-                background: "transparent",
-                border: "none",
-                borderRadius: 4,
-                color: "var(--dsw-alias-label-secondary)",
-                cursor: refreshing ? "default" : "pointer",
-                display: "inline-flex",
-                height: 18,
-                justifyContent: "center",
-                opacity: refreshing ? 0.6 : 1,
-                padding: 2,
-                width: 18,
-              }}
-              type="button"
-            >
-              <span
-                style={{
-                  animation: refreshing
-                    ? "dsh-oc-spin 0.9s linear infinite"
-                    : undefined,
-                  display: "inline-flex",
-                }}
-              >
-                <IconRefreshOutlineRegular size={11} />
-              </span>
-            </button>
+              size="sm"
+              variant="ghost"
+            />
           )}
         </div>
       </div>
@@ -262,47 +203,20 @@ export const UsageSummaryView = ({
         WINDOWS.map(({ copy, key }) => {
           const window = usage[key];
           return (
-            <div
-              key={key}
-              style={{
-                alignItems: "center",
-                display: "flex",
-                fontSize: 11,
-                gap: 8,
-              }}
-            >
+            <div className="dsh-oc-card-summary-row" key={key}>
               <StateDot state={getWindowState(window)} />
-              <span style={{ flex: "0 0 46px" }}>{t(copy)}</span>
-              <span
-                style={{
-                  color: "var(--dsw-alias-label-secondary)",
-                  flex: 1,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <span className="dsh-oc-card-summary-label">{t(copy)}</span>
+              <span className="dsh-oc-card-summary-detail">
                 {`${window.percent}% ${t("usageSummaryUsed")} · ${resetLabel(
                   formatRelativeReset(window.resetsAt, locale),
                   t
                 )}`}
               </span>
               {/* What is LEFT, held out on the right the way the console does. */}
-              <span
-                style={{
-                  fontVariantNumeric: "tabular-nums",
-                  fontWeight: 600,
-                  textAlign: "right",
-                }}
-              >
+              <span className="dsh-oc-card-summary-left">
                 {`${Math.max(0, 100 - window.percent)}%`}
               </span>
-              <span
-                style={{
-                  color: "var(--dsw-alias-label-tertiary)",
-                  flex: "0 0 26px",
-                }}
-              >
+              <span className="dsh-oc-card-summary-remaining">
                 {t("usageSummaryRemaining")}
               </span>
             </div>
@@ -310,9 +224,7 @@ export const UsageSummaryView = ({
         })}
 
       {usage?.allowance !== undefined && (
-        <div
-          style={{ color: "var(--dsw-alias-label-secondary)", fontSize: 11 }}
-        >
+        <div className="dsh-oc-card-summary-allowance">
           {`${t("usageSummaryAllowance")} ${usage.allowance.model} · ${t(
             "goTier"
           )} ${formatUsd(usage.allowance.go, "allowance")} · ${t("goPlusTier")} ${formatUsd(usage.allowance.goPlus, "allowance")}`}

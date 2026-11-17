@@ -8,6 +8,7 @@
  * @module dsh-opencode-patch/usage-pill
  */
 
+import { useDismissOnOutsidePointer } from "@deepseek-ai/dsh-client-ui-primitives";
 import React, {
   useEffect,
   useRef,
@@ -27,7 +28,7 @@ import { goQuotaTooltip, UsagePanel, UsageTrigger } from "./usage-panel.tsx";
 import {
   CIRCUMFERENCE,
   getAffectingWindow,
-  getWindowColorFor,
+  getRingState,
   matchesAny,
   ringGeometry,
 } from "./usage-state.ts";
@@ -92,9 +93,13 @@ export interface UsagePillProps {
   /**
    * Read the quota, and optionally name the model the picker is on so the Host
    * can price the rate for THAT model — the snapshot alone describes the model
-   * that ran the last turn.
+   * that ran the last turn. `undefined` is an empty envelope: no reading yet,
+   * which clears an earlier reading and draws nothing.
    */
-  readUsage: (provider?: string, model?: string) => Promise<GoUsage>;
+  readUsage: (
+    provider?: string,
+    model?: string
+  ) => Promise<GoUsage | undefined>;
   /** Whether to show accumulated session spend and the active model's rate. */
   t: (key: string) => string;
 }
@@ -139,7 +144,7 @@ const ActiveUsage = ({
   const [snapshot, setSnapshot] = useState<{
     reader: typeof readUsage;
     updatedAt: number;
-    usage: GoUsage;
+    usage: GoUsage | undefined;
   } | null>(null);
   const [failed, setFailed] = useState<{
     failure: UsageFailure;
@@ -183,7 +188,7 @@ const ActiveUsage = ({
           setSnapshot((previous) =>
             previous?.reader === readUsage &&
             failure.retainPrevious &&
-            typeof previous.usage.source === "string" &&
+            typeof previous.usage?.source === "string" &&
             previous.usage.source === failure.source
               ? previous
               : null
@@ -234,28 +239,23 @@ const ActiveUsage = ({
     };
   }, [readUsage, provider, model]);
 
+  // A press outside the pill closes the panel: the host's own dismissal, which
+  // listens for `pointerdown`, so a touch or a pen closes it too. The panel
+  // renders inside the root, so the root is the whole popover.
+  useDismissOnOutsidePointer(root, open, setOpen);
+
+  // Escape is ours: the host's hook handles no keys.
   useEffect(() => {
     if (!open) {
       return noop;
     }
-    const click = (event: MouseEvent): void => {
-      if (
-        root.current !== null &&
-        event.target instanceof Node &&
-        !root.current.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    };
     const key = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         setOpen(false);
       }
     };
-    document.addEventListener("mousedown", click);
     document.addEventListener("keydown", key);
     return () => {
-      document.removeEventListener("mousedown", click);
       document.removeEventListener("keydown", key);
     };
   }, [open]);
@@ -307,10 +307,9 @@ const ActiveUsage = ({
   // measurement is decoration.)
   const isFree = usage?.session?.freeModel === true;
   // `undefined` affecting means the first read is still in flight; success is
-  // the neutral assumption, and the ring refills the moment data lands.
-  const ringColor = isFree
-    ? "var(--dsw-alias-label-tertiary)"
-    : getWindowColorFor(affecting);
+  // the neutral assumption, and the ring refills the moment data lands. The
+  // sheet strokes `idle` in the tertiary label token.
+  const ringState = isFree ? "idle" : getRingState(affecting);
 
   const strokeDasharray = isFree
     ? `0 ${CIRCUMFERENCE}`
@@ -380,7 +379,7 @@ const ActiveUsage = ({
           setOpen((prev) => !prev);
         }}
         open={open}
-        ringColor={ringColor}
+        ringState={ringState}
         strokeDasharray={strokeDasharray}
         t={t}
         tooltipLabel={tooltipLabel}

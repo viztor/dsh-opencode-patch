@@ -20,7 +20,7 @@ import {
   UsageSummaryView,
   readUntilAnswered,
 } from "../src/settings-usage.tsx";
-import { findAll, findAllOf } from "./test-helpers.ts";
+import { findAllOf } from "./test-helpers.ts";
 
 const t = (key: string): string => zh[key as keyof typeof zh] ?? key;
 
@@ -97,24 +97,6 @@ describe("settings: Go usage summary", () => {
       usage: undefined,
     });
     expect(text(refreshing)).toContain(t("usageRefreshing"));
-  });
-
-  it("carries the spinner's own keyframes, so it turns without the meter", () => {
-    // The meter's stylesheet defines the animation, and that stylesheet is
-    // rendered by the METER — so the settings summary's refresh button turned
-    // only while the meter happened to be on screen. The summary carries its own
-    // declaration, and it is the same animation.
-    const refreshing = UsageSummaryView({
-      locale: "zh",
-      refreshing: true,
-      t,
-      usage: undefined,
-    });
-    const styles = findAll(refreshing, "style")
-      .map((node) => String(node.props.children))
-      .join("\n");
-    expect(styles).toContain("@keyframes dsh-oc-spin");
-    expect(styles).toContain("rotate(360deg)");
   });
 
   it("states the monthly allowance as a total, for both tiers", () => {
@@ -219,6 +201,40 @@ describe("settings: reading the quota through the Host", () => {
     await expect(
       readGoUsage({ remote: throwingRemote })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("settings: the summary's lookup, guarded as the meter's is", () => {
+  it("reads a scope whose remote getter throws as no remote, and finds the service through ctx.get when the property is absent", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // (a) `ctx.get` misses and the `remote` getter throws, as cordis does
+      // for a property read without `inject`: no remote, said so, no throw.
+      const missing: unknown = undefined;
+      const throwing = {
+        get: (): unknown => missing,
+        get remote(): unknown {
+          throw new TypeError('cannot get property "remote" without inject');
+        },
+      };
+      await expect(readGoUsage(throwing)).resolves.toBeUndefined();
+      expect(warn).toHaveBeenLastCalledWith(
+        "[dsh-opencode-patch] usage read: the settings scope exposes no remote"
+      );
+
+      // (b) No `remote` property at all, and `ctx.get` resolves the
+      // namespace: the read goes through it, as the meter's does.
+      const valid = usage();
+      const viaGet = {
+        get: (name: string) =>
+          name === "remote.opencodeGoUsage"
+            ? { read: async () => ({ ok: true, value: valid }) }
+            : undefined,
+      };
+      await expect(readGoUsage(viaGet)).resolves.toEqual(valid);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

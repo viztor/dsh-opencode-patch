@@ -7,7 +7,11 @@ import assert from "node:assert/strict";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { COMPONENT_BY_KIND, controlsInOrder } from "./support/card-tree.ts";
+import {
+  COMPONENT_BY_KIND,
+  controlsInOrder,
+  fieldOf,
+} from "./support/card-tree.ts";
 import {
   applySettingsPage as apply,
   CARD_FIELDS,
@@ -143,11 +147,9 @@ describe("settings-page: OpencodeCard rendering", () => {
     expect(choiceFields.length).toBe(2);
     expect(valueFields.length).toBe(0);
     const choiceFieldsById = new Map(
-      choiceFields.map((field) => [String(field.props.id), field])
+      choiceFields.map((field) => [fieldOf(field), field])
     );
-    const choiceField = choiceFieldsById.get(
-      "plugin-config-opencode-keySource"
-    );
+    const choiceField = choiceFieldsById.get("keySource");
     assert.ok(choiceField, "expected a keySource SettingsChoiceField");
     // The enum's choices are copy-resolved before they reach the control.
     expect(
@@ -156,9 +158,7 @@ describe("settings-page: OpencodeCard rendering", () => {
       )
     ).toEqual([...KEY_SOURCE_POLICIES]);
     // The endpoint family's choices, from the same table `config-values` exports.
-    const endpointField = choiceFieldsById.get(
-      "plugin-config-opencode-endpoint"
-    );
+    const endpointField = choiceFieldsById.get("endpoint");
     assert.ok(endpointField, "expected an endpoint SettingsChoiceField");
     expect(
       (endpointField.props.options as { label: string; value: string }[]).map(
@@ -168,16 +168,16 @@ describe("settings-page: OpencodeCard rendering", () => {
 
     // No config-only knob may appear as a control: the simplified UI has to stay
     // simplified, and an override must not become editable by accident.
-    const renderedIds = [...boolFields, ...choiceFields].map((f) => f.props.id);
+    const renderedFields = [...boolFields, ...choiceFields].map(fieldOf);
     for (const { field } of CONFIG_ONLY_FIELDS) {
-      expect(renderedIds).not.toContain(`plugin-config-opencode-${field}`);
+      expect(renderedFields).not.toContain(field);
     }
 
-    // Test boolean field edit, addressed by id rather than by position: the
+    // Test boolean field edit, addressed by field rather than by position: the
     // render order is the card's own decision, and a positional read breaks the
     // moment a field moves between sections.
     const userAgentField = boolFields.find(
-      (field) => field.props.id === "plugin-config-opencode-injectUserAgent"
+      (field) => fieldOf(field) === "injectUserAgent"
     );
     assert.ok(
       userAgentField,
@@ -306,8 +306,8 @@ describe("settings-page: OpencodeCard rendering", () => {
     const controls = controlsInOrder(tree);
 
     // The card's field list is the register's, so it cannot drift again.
-    expect(controls.map((f) => f.props.id)).toEqual(
-      CARD_FIELDS.map((entry) => `plugin-config-opencode-${entry.field}`)
+    expect(controls.map(fieldOf)).toEqual(
+      CARD_FIELDS.map((entry) => entry.field)
     );
     // The control kind follows the register's `kind`, not a second list.
     expect(controls.map((f) => elementName(f.type))).toEqual(
@@ -338,8 +338,8 @@ describe("settings-page: OpencodeCard rendering", () => {
     // Regression guard: it was declared in the spec register and translated
     // (en + zh) but omitted from the card's hand-written JSX, so the switch
     // documented in the README could not be reached from the UI.
-    const ids = controlsInOrder(renderPage(mountCard())).map((f) => f.props.id);
-    expect(ids).toContain("plugin-config-opencode-enrichModels");
+    const fields = controlsInOrder(renderPage(mountCard())).map(fieldOf);
+    expect(fields).toContain("enrichModels");
   });
 
   it("renders one heading per group, in register order", () => {
@@ -349,16 +349,17 @@ describe("settings-page: OpencodeCard rendering", () => {
     expect(headings.map((heading) => heading.props.label)).toEqual(
       groups.map((group) => en[group])
     );
-    // Only the first heading drops the separator rule.
-    expect(headings.map((heading) => heading.props.first)).toEqual(
-      groups.map((_, index) => index === 0)
-    );
+    // The separator rule above every heading after the first is the card's
+    // sheet's, pinned on the mounted card (card-rendered-tokens).
   });
 
   it("wires each control's edit and reset back to the form model", () => {
-    // The card hands the host an id, a label and two callbacks per control. The
-    // ids and labels were asserted; the callbacks were not, so a control could
-    // render perfectly and do nothing.
+    // The card hands each control a label and two callbacks (and a choice
+    // field an id). The callbacks went unasserted once, so a control could
+    // render perfectly and do nothing. Every control is driven, and each must
+    // edit and reset the field it is keyed by: that ties `fieldOf` (the React
+    // key) to what the control does, so the order, config-only and
+    // enrichModels pins above, which read the key, read the edited field.
     const edit = vi.fn();
     const resetField = vi.fn();
     const state = {
@@ -384,12 +385,22 @@ describe("settings-page: OpencodeCard rendering", () => {
       view: "page",
     });
 
-    const [first] = controlsInOrder(tree);
-    const name = CARD_FIELDS[0]?.field ?? "";
-    assert.ok(first, "expected at least one control");
-    (first.props.onEdit as (text: string) => void)("draft");
-    (first.props.onReset as () => void)();
-    expect(edit).toHaveBeenCalledWith(name, "draft");
-    expect(resetField).toHaveBeenCalledWith(name);
+    const controls = controlsInOrder(tree);
+    // Every register entry rendered, so the loop below cannot pass over none.
+    expect(controls.map(fieldOf)).toEqual(
+      CARD_FIELDS.map((entry) => entry.field)
+    );
+    for (const control of controls) {
+      edit.mockClear();
+      resetField.mockClear();
+      (control.props.onEdit as (text: string) => void)("draft");
+      (control.props.onReset as () => void)();
+      expect(edit.mock.calls, fieldOf(control)).toEqual([
+        [fieldOf(control), "draft"],
+      ]);
+      expect(resetField.mock.calls, fieldOf(control)).toEqual([
+        [fieldOf(control)],
+      ]);
+    }
   });
 });

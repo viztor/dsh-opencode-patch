@@ -20,7 +20,7 @@ import {
   describeUsage,
   formatRelativeReset,
   getAffectingWindow,
-  getWindowColorFor,
+  getRingState,
   isZenProvider,
   matchesAny,
   parseFailure,
@@ -499,13 +499,11 @@ describe("usage-pill: derived copy & failure parsing", () => {
     // A free model has no allowance to run out of; the plan's monthly limit is
     // a fact about money the user is not spending. Red would say "you are out"
     // against a bill that cannot be charged.
-    // The colour decision reads the WINDOW, not the free flag — the pill
+    // The state decision reads the WINDOW, not the free flag — the pill
     // combines the two, so here it is the window side that is pinned: unchanged
-    // for every state the plan can be in.
-    // The TOKEN decides the colour; a fallback may follow it, so these assert
-    // which token won rather than its exact string. The fallback is what keeps
-    // the paint right in a scope where the host's theme declares no variable.
-    const limited = getWindowColorFor(
+    // for every state the plan can be in. Which token each state is stroked in
+    // is the sheet's, pinned on the mounted meter (usage-pill-mount).
+    const limited = getRingState(
       getAffectingWindow(
         createMockUsage({
           monthly: {
@@ -516,13 +514,9 @@ describe("usage-pill: derived copy & failure parsing", () => {
         })
       )
     );
-    expect(limited).toMatch(/^var\(--dsw-alias-state-error-primary[,)]/u);
-    expect(getWindowColorFor()).toMatch(
-      /^var\(--dsw-alias-state-success-primary[,)]/u
-    );
-    expect(getWindowColorFor(getAffectingWindow(createMockUsage()))).toMatch(
-      /^var\(--dsw-alias-state-success-primary[,)]/u
-    );
+    expect(limited).toBe("error");
+    expect(getRingState()).toBe("done");
+    expect(getRingState(getAffectingWindow(createMockUsage()))).toBe("done");
   });
 
   it("names the account in the header, so the title never moves", () => {

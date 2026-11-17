@@ -10,7 +10,6 @@
  */
 
 import {
-  Button,
   SettingsForm,
   type SettingsFormShell,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -18,9 +17,11 @@ import React from "react";
 
 import type { PurgeReview } from "./contracts/purge.ts";
 import type { GoUsage } from "./contracts/usage.ts";
+import { ActionRow, OutcomeLine } from "./settings-action-row.tsx";
 import { SettingsBooleanField } from "./settings-boolean-field.tsx";
 import { SettingsChoiceField } from "./settings-choice-field.tsx";
 import { withBundleCopy, type Translate } from "./settings-copy.ts";
+import { CARD_STYLES } from "./settings-css.ts";
 import { CARD_FIELDS, type CardFieldSpec } from "./settings-fields.ts";
 import type { PurgeOutcome, ReviewOutcome } from "./settings-purge.ts";
 import { StoreInspectRow } from "./settings-store-inspect.tsx";
@@ -38,27 +39,13 @@ interface CardState {
   shell: SettingsFormShell;
 }
 
-/** Section heading between register groups; `first` drops the separator rule. */
-const GroupHeading: React.FC<{ first: boolean; label: string }> = (props) => (
-  <div
-    style={{
-      borderTop: props.first
-        ? undefined
-        : "0.5px solid var(--dsw-alias-border-l2)",
-      marginTop: props.first ? undefined : "10px",
-      paddingTop: "6px",
-    }}
-  >
-    <span
-      style={{
-        color: "var(--dsw-alias-label-caption)",
-        fontSize: "12px",
-        fontWeight: 600,
-        letterSpacing: "0.02em",
-      }}
-    >
-      {props.label}
-    </span>
+/**
+ * Section heading between register groups. The sheet draws the separator rule
+ * on every heading after the first, so the heading needs no position prop.
+ */
+const GroupHeading: React.FC<{ label: string }> = (props) => (
+  <div className="dsh-oc-card-group">
+    <span className="dsh-oc-card-group-label">{props.label}</span>
   </div>
 );
 
@@ -149,21 +136,6 @@ export const unservedLine = (
   };
 };
 
-/** One outcome line under an action, in the warn colour when it warns. */
-const OutcomeLine: React.FC<{ line: string; warn: boolean }> = (props) => (
-  <div
-    style={{
-      color: props.warn
-        ? "var(--dsw-alias-state-warn-label)"
-        : "var(--dsw-alias-label-caption)",
-      fontSize: 12,
-      marginTop: 6,
-    }}
-  >
-    {props.line}
-  </div>
-);
-
 const PurgeRow: React.FC<{
   onPurge: () => Promise<PurgeOutcome>;
   onReview?: () => Promise<ReviewOutcome>;
@@ -225,46 +197,17 @@ const PurgeRow: React.FC<{
   const { onRemoveUnserved } = props;
 
   return (
-    <div
-      style={{
-        borderBottom: "0.5px solid var(--dsw-alias-border-l2)",
-        marginBottom: 16,
-        paddingBottom: 14,
-      }}
-    >
-      <div
-        style={{
-          alignItems: "center",
-          display: "flex",
-          gap: 12,
-          justifyContent: "space-between",
+    <div className="dsh-oc-card-section">
+      <ActionRow
+        action={props.t("purgeAction")}
+        busy={state.busy}
+        busyAction={props.t("purgeBusy")}
+        hint={props.t("purgeHint")}
+        onAction={() => {
+          void run();
         }}
-      >
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>
-            {props.t("purgeTitle")}
-          </div>
-          <div
-            style={{
-              color: "var(--dsw-alias-label-caption)",
-              fontSize: 12,
-              marginTop: 2,
-            }}
-          >
-            {props.t("purgeHint")}
-          </div>
-        </div>
-        <Button
-          disabled={state.busy}
-          onClick={() => {
-            void run();
-          }}
-          size="sm"
-          variant="outline"
-        >
-          {state.busy ? props.t("purgeBusy") : props.t("purgeAction")}
-        </Button>
-      </div>
+        title={props.t("purgeTitle")}
+      />
       {state.line !== undefined && (
         <OutcomeLine line={state.line} warn={state.warn === true} />
       )}
@@ -275,44 +218,17 @@ const PurgeRow: React.FC<{
         step before removing the plugin, which the hint says.
       */}
       {lines.unserved !== undefined && onRemoveUnserved !== undefined && (
-        <div style={{ marginTop: 12 }}>
-          <div
-            style={{
-              alignItems: "center",
-              display: "flex",
-              gap: 12,
-              justifyContent: "space-between",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>
-                {props.t("unservedTitle")}
-              </div>
-              <div
-                style={{
-                  color: "var(--dsw-alias-label-caption)",
-                  fontSize: 12,
-                  marginTop: 2,
-                }}
-              >
-                {props.t("unservedHint")}
-              </div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>{lines.unserved}</div>
-            </div>
-            <Button
-              disabled={removal.busy}
-              onClick={() => {
-                void remove(onRemoveUnserved);
-              }}
-              size="sm"
-              variant="outline"
-            >
-              {removal.busy
-                ? props.t("unservedBusy")
-                : props.t("unservedAction")}
-            </Button>
-          </div>
-        </div>
+        <ActionRow
+          action={props.t("unservedAction")}
+          busy={removal.busy}
+          busyAction={props.t("unservedBusy")}
+          detail={lines.unserved}
+          hint={props.t("unservedHint")}
+          onAction={() => {
+            void remove(onRemoveUnserved);
+          }}
+          title={props.t("unservedTitle")}
+        />
       )}
       {lines.piUnread !== undefined && onRemoveUnserved !== undefined && (
         <OutcomeLine line={lines.piUnread} warn />
@@ -384,7 +300,10 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
   const staged = (name: string): CardField =>
     state.fields[name] ?? { invalid: false, overridden: false, text: "" };
 
-  /** Chrome shared by every control: id, edit/reset wiring, staged state. */
+  /**
+   * A choice's chrome: the id its segments are named after, edit/reset wiring,
+   * staged state.
+   */
   const field = (name: string) => ({
     disabled,
     id: `plugin-config-opencode-${name}`,
@@ -400,12 +319,14 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
     ...staged(name),
   });
 
-  /** The subset a toggle needs: no placeholder, but the same invalid contract. */
+  /**
+   * The subset a toggle needs: no id (the Switch takes none, and the shell
+   * renders no `for`), but the same invalid contract.
+   */
   const boolField = (name: string) => {
     const { invalid, overridden, text: draft } = staged(name);
     return {
       disabled,
-      id: `plugin-config-opencode-${name}`,
       invalid,
       invalidLabel: t("invalidText"),
       onEdit: (text: string) => {
@@ -450,30 +371,22 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
   };
 
   return (
-    // The host's own font, named explicitly rather than inherited. A plugin card
-    // rendered into the settings page inherits from whatever wraps it, and what
-    // wraps it does not set the family - so the text fell back to the browser's
-    // default and read as a different typeface from the rest of the interface.
-    // The token is the host's; the fallback is `inherit`, which is what happened
-    // before, so naming it cannot make a correct container worse.
-    <div style={{ fontFamily: "var(--dsw-font-family, inherit)" }}>
+    // The host's own font, named by the sheet (`settings-css.ts`) rather than
+    // inherited: what wraps a plugin card does not set the family.
+    <div className="dsh-oc-card">
+      {/*
+        The card's own stylesheet, rendered as an element of its tree so React
+        removes it with the card; nothing is appended to `document.head`. Every
+        row below is styled by it, the store row and the summary included.
+      */}
+      <style>{CARD_STYLES}</style>
       {/*
         The quota readout sits ABOVE the form and is deliberately NOT a floating
         card: this is a settings page, so it borrows the page's own row language
         (flat, hairline separator) rather than the composer popover's material.
       */}
       {props.readUsage !== undefined && (
-        <div
-          style={{
-            borderBottom: "0.5px solid var(--dsw-alias-border-l2)",
-            // Room to breathe: these blocks are three different things - who is
-            // signed in, what the quota is, and the form - and 12px made them
-            // read as one crowded column, with the hairline doing all the
-            // separating.
-            marginBottom: 20,
-            paddingBottom: 16,
-          }}
-        >
+        <div className="dsh-oc-card-section dsh-oc-card-section-usage">
           <UsageSummary
             getLocale={props.getLocale}
             readUsage={props.readUsage}
@@ -494,15 +407,7 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
         reads its row once, at apply: said once, above the form, rather than in
         every control's hint.
       */}
-      <div
-        style={{
-          color: "var(--dsw-alias-label-caption)",
-          fontSize: 12,
-          marginBottom: 8,
-        }}
-      >
-        {t("appliesOnReapply")}
-      </div>
+      <div className="dsh-oc-card-note">{t("appliesOnReapply")}</div>
       <SettingsForm
         labels={formLabels(t)}
         onDiscard={props.discard}
@@ -534,7 +439,6 @@ export const OpencodeCard: React.FC<CardProps> = (props: CardProps) => {
           return startsGroup
             ? [
                 <GroupHeading
-                  first={index === 0}
                   key={`group-${entry.group}`}
                   label={t(entry.group)}
                 />,

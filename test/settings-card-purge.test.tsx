@@ -22,6 +22,7 @@ import {
   unservedLine,
 } from "../src/settings-card.tsx";
 import { en } from "../src/settings-copy.ts";
+import { declaredStyle } from "./support/declared-style.ts";
 
 /**
  * The host's primitives are NOT importable in a test process.
@@ -338,7 +339,9 @@ describe("settings-card: the states that only exist after an interaction", () =>
       const line = [...host.querySelectorAll("div")].find((d) =>
         (d.textContent ?? "").startsWith(en.purgeFailed)
       );
-      expect(line?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+      expect(declaredStyle(line, "color")).toBe(
+        "var(--dsw-alias-state-warn-label)"
+      );
     } finally {
       cleanup();
     }
@@ -362,7 +365,9 @@ describe("settings-card: the states that only exist after an interaction", () =>
       const line = [...host.querySelectorAll("div")].find((d) =>
         (d.textContent ?? "").startsWith(en.purgeNothing)
       );
-      expect(line?.style.color).toBe("var(--dsw-alias-label-caption)");
+      expect(declaredStyle(line, "color")).toBe(
+        "var(--dsw-alias-label-caption)"
+      );
     } finally {
       cleanup();
     }
@@ -615,7 +620,9 @@ describe("settings-card: the ids pi cannot serve, beside the purge row", () => {
         (d) => d.textContent === en.unservedPiUnreadReview
       );
       expect(line, "the pi-unread caption").toBeDefined();
-      expect(line?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+      expect(declaredStyle(line, "color")).toBe(
+        "var(--dsw-alias-state-warn-label)"
+      );
     } finally {
       cleanup();
     }
@@ -674,7 +681,9 @@ describe("settings-card: the ids pi cannot serve, beside the purge row", () => {
         (d.textContent ?? "").startsWith(en.catalogLastError)
       );
       expect(line?.textContent).toBe(`${en.catalogLastError}: offline`);
-      expect(line?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+      expect(declaredStyle(line, "color")).toBe(
+        "var(--dsw-alias-state-warn-label)"
+      );
     } finally {
       cleanup();
     }

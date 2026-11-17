@@ -7,17 +7,36 @@
  *
  * @module test/settings-page.test
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  type InjectedReadUsage,
+  injectedReadUsage,
+} from "./support/meter-injector.ts";
 import {
   applySettingsPage as apply,
   type GoUsage,
   LEGACY_NS,
   NS,
+  parseFailure,
   PKG,
   SCOPED_PKG,
   type SessionUsageSnapshot,
 } from "./support/src.ts";
+
+// A spy a failed expectation never reached the restore of would stay
+// installed for the rest of the file, and hide every later diagnostic.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** The meter's `readUsage`, over a remote whose `read` is `read`. */
+const meterOver = (read: () => Promise<unknown>): InjectedReadUsage =>
+  injectedReadUsage(apply, read);
+
+/** The meter's `readUsage`, over a remote whose `read` answers `answer`. */
+const readUsageOver = (answer: unknown): InjectedReadUsage =>
+  meterOver(async () => answer);
 
 describe("settings-page: apply & slots", () => {
   it("registers dictionaries for modern and legacy namespaces without throwing", () => {
@@ -296,8 +315,13 @@ describe("settings-page: apply & slots", () => {
     // No scope in this context: the meter falls back to the claimed routes.
     expect(injected.meterProviders).toEqual(["opencode", "opencode-go"]);
 
-    const val = await injected.readUsage();
-    expect(val).toEqual({ test: 123 });
+    // A payload the reading parser rejects is a failed read, not a reading:
+    // the pill draws the typed failure rather than rendering `{ test: 123 }`.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(injected.readUsage()).rejects.toMatchObject({
+      code: "opencode-go/usage-unavailable",
+    });
+    warn.mockRestore();
     // No `locale` service in this context: the meter's translator falls back to
     // the English dictionary rather than echoing a key — the bundle ships its
     // own dictionaries, so a missing locale service costs the language, not the
@@ -357,9 +381,10 @@ describe("settings-page: apply & slots", () => {
 
   it("sends the provider and conversation id with every usage read", async () => {
     let dockInjector: ((sessionId: unknown) => unknown) | undefined;
-    const remoteUsage = vi
-      .fn()
-      .mockResolvedValue({ ok: true, value: { test: 1 } });
+    // An empty envelope, which the meter reads as no reading yet: this case
+    // is about what the read SENDS, and a payload that is not a reading is
+    // now refused (the case below the pass-through pins).
+    const remoteUsage = vi.fn().mockResolvedValue({ ok: true });
 
     const ctx = {
       effect: (fn: () => unknown) => fn(),
@@ -794,11 +819,13 @@ describe("settings-page: apply & slots", () => {
     // An error-less failure throws undefined — which parseFailure renders as the
     // generic unavailable message rather than crash.
     await expect(injected.readUsage()).rejects.toBeUndefined();
-    // A non-envelope answer passes through untouched: the pill's parseFailure
-    // decides what it means.
-    await expect(injected.readUsage()).resolves.toEqual({
-      notAnEnvelope: true,
+    // A non-envelope answer is no reading: the typed failure, which the pill's
+    // parseFailure draws as the unavailable state.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(injected.readUsage()).rejects.toMatchObject({
+      code: "opencode-go/usage-unavailable",
     });
+    warn.mockRestore();
   });
 
   it("passes the claimed provider routes from the scope to the injector", () => {
@@ -903,32 +930,6 @@ describe("settings-page: apply & slots", () => {
 });
 
 describe("settings-page: the meter's read, pinned before the remote seam", () => {
-  /** The meter's `readUsage`, over a remote whose `read` is `read`. */
-  const meterOver = (
-    read: () => Promise<unknown>
-  ): ((provider?: string, model?: string) => Promise<unknown>) => {
-    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
-    const ctx = {
-      effect: (fn: () => unknown) => fn(),
-      modelDirectories: { directoryFor: () => ({ store: {} }) },
-      remote: { opencodeGoUsage: { read } },
-      slots: {
-        inject: (_name: string, fn: () => void) => fn(),
-        register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.input.right") {
-            dockInjector = entry.inject as (s: unknown) => unknown;
-          }
-        },
-      },
-    };
-    apply(ctx as never);
-    const injected = dockInjector?.("valid") as {
-      readUsage: (provider?: string, model?: string) => Promise<unknown>;
-    };
-    expect(injected.readUsage).toBeTypeOf("function");
-    return injected.readUsage;
-  };
-
   /** Every field of a session snapshot, `Required` so a new one must appear. */
   const session: Required<SessionUsageSnapshot> = {
     activeModel: "go-model-x",
@@ -979,29 +980,6 @@ describe("settings-page: the meter's read through the one unwrap (P9), on readin
     weekly: { percent: 28, resetsAt: "2026-10-12T00:00:00Z", status: "ok" },
   };
 
-  /** The meter's `readUsage`, over a remote whose `read` answers `answer`. */
-  const readUsageOver = (answer: unknown): (() => Promise<unknown>) => {
-    let dockInjector: ((sessionId: unknown) => unknown) | undefined;
-    const ctx = {
-      effect: (fn: () => unknown) => fn(),
-      modelDirectories: { directoryFor: () => ({ store: {} }) },
-      remote: { opencodeGoUsage: { read: async () => answer } },
-      slots: {
-        inject: (_name: string, fn: () => void) => fn(),
-        register: (entry: Record<string, unknown>) => {
-          if (entry.name === "conversation.input.right") {
-            dockInjector = entry.inject as (s: unknown) => unknown;
-          }
-        },
-      },
-    };
-    apply(ctx as never);
-    const injected = dockInjector?.("valid") as {
-      readUsage: () => Promise<unknown>;
-    };
-    return injected.readUsage;
-  };
-
   it("unifies a valid reading into the whitelisted copy", async () => {
     await expect(
       readUsageOver({ ok: true, value: { ...reading, extra: 1 } })()
@@ -1012,11 +990,53 @@ describe("settings-page: the meter's read through the one unwrap (P9), on readin
     await expect(readUsageOver({ value: reading })()).resolves.toEqual(reading);
   });
 
-  it("unwraps an invalid bare { value } too, and passes its payload through", async () => {
-    // The pass-through stays until P11; what reaches the pill is the payload,
-    // no longer the `{ value }` that carried it.
-    await expect(readUsageOver({ value: { rolling: {} } })()).resolves.toEqual({
-      rolling: {},
+  it("unwraps an invalid bare { value } too, and refuses its payload", async () => {
+    // The payload is unwrapped and read; it is not a reading, so the pill gets
+    // the typed failure (P11), never the `{ value }` or the payload itself.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let thrown: unknown;
+    try {
+      await readUsageOver({ value: { rolling: {} } })();
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ code: "opencode-go/usage-unavailable" });
+    // What the pill reads off it: the generic unavailable state, with nothing
+    // kept from an earlier reading.
+    expect(parseFailure(thrown)).toEqual({
+      message: undefined,
+      reason: undefined,
+      retainPrevious: false,
+      source: undefined,
     });
+    expect(warn).toHaveBeenCalledWith(
+      "[dsh-opencode-patch] usage read: the answer is not a usage shape",
+      { rolling: {} }
+    );
+  });
+
+  it("says a foreign shape once per meter, not on every poll, and again after a reading it accepts", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let answer: unknown = { ok: true, value: { test: 123 } };
+    const readUsage = meterOver(async () => answer);
+    const refused = { code: "opencode-go/usage-unavailable" };
+    const said = (): unknown[] =>
+      warn.mock.calls
+        .filter(
+          ([line]) =>
+            line ===
+            "[dsh-opencode-patch] usage read: the answer is not a usage shape"
+        )
+        .map(([, payload]) => payload);
+    await expect(readUsage()).rejects.toMatchObject(refused);
+    await expect(readUsage()).rejects.toMatchObject(refused);
+    await expect(readUsage()).rejects.toMatchObject(refused);
+    expect(said()).toEqual([{ test: 123 }]);
+
+    answer = { ok: true, value: reading };
+    await expect(readUsage()).resolves.toEqual(reading);
+    answer = { ok: true, value: { test: 456 } };
+    await expect(readUsage()).rejects.toMatchObject(refused);
+    expect(said()).toEqual([{ test: 123 }, { test: 456 }]);
   });
 });

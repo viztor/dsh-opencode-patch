@@ -73,7 +73,7 @@ export const STYLES = `
 }
 
 .dsh-oc-usage-trigger.dsh-oc-usage-alert {
-  color: var(--dsw-alias-state-error-primary, #e5484d);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .dsh-oc-usage-ring-track {
@@ -88,6 +88,25 @@ export const STYLES = `
   stroke-width: 2;
   stroke-linecap: round;
   transition: stroke-dasharray 0.3s ease, stroke 0.2s ease;
+}
+
+/* The ring's stroke, keyed on the state the meter answers for: the same three
+   states the kit's StateDot draws, in the same tokens, and idle for a free
+   model, which has nothing to run out of and so is hollow, never red. */
+.dsh-oc-usage-ring-fill[data-state="done"] {
+  stroke: var(--dsw-alias-state-success-primary);
+}
+
+.dsh-oc-usage-ring-fill[data-state="warning"] {
+  stroke: var(--dsw-alias-state-warn-primary);
+}
+
+.dsh-oc-usage-ring-fill[data-state="error"] {
+  stroke: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-oc-usage-ring-fill[data-state="idle"] {
+  stroke: var(--dsw-alias-label-tertiary);
 }
 
 /*
@@ -153,8 +172,8 @@ export const STYLES = `
    * so prominent is the surface elevation, and elevation-panel is a token nobody
    * consumes. Reverted after reading the consumer instead of the name, which is
    * the mistake this file has now paid for twice. */
-  box-shadow: var(--dsw-elevation-prominent, 0 12px 36px rgba(0, 0, 0, 0.28));
-  color: var(--dsw-alias-label-primary, CanvasText);
+  box-shadow: var(--dsw-elevation-prominent);
+  color: var(--dsw-alias-label-primary);
   font-size: 12px;
   line-height: 1.5;
   isolation: isolate;
@@ -237,18 +256,35 @@ export const STYLES = `
    It spans the WHOLE row, starting under the state dot: the 13px indent that
    used to align it with the label left the dot hanging outside the row's own
    bounds, like a list marker, and cost the ruler the width it exists to use. */
+/* The radius is the host's smallest rung: a 2px bar is a pill at any radius of
+   1px or more, and the full-pill token is not one the host's primitives use. */
 .dsh-oc-usage-bar {
   height: 2px;
   margin-top: 4px;
-  border-radius: var(--dsw-radius-full, 999px);
+  border-radius: var(--dsw-radius-xs, 4px);
   background: var(--dsw-alias-border-l4, currentColor);
   overflow: hidden;
 }
 
+/* The width is the reading's, handed over as a custom property; the fill is
+   the window's state, in the same tokens as its dot. */
 .dsh-oc-usage-bar-fill {
   height: 100%;
+  width: var(--dsh-oc-usage-fill);
   border-radius: inherit;
   transition: width 0.3s ease;
+}
+
+.dsh-oc-usage-bar-fill[data-state="done"] {
+  background-color: var(--dsw-alias-state-success-primary);
+}
+
+.dsh-oc-usage-bar-fill[data-state="warning"] {
+  background-color: var(--dsw-alias-state-warn-primary);
+}
+
+.dsh-oc-usage-bar-fill[data-state="error"] {
+  background-color: var(--dsw-alias-state-error-primary);
 }
 
 /* Styling lives in the sheet, not inline: an ad-hoc style prop here would be
@@ -256,7 +292,7 @@ export const STYLES = `
    would either duplicate it or diverge from it. */
 .dsh-oc-usage-limited {
   margin-left: 6px;
-  color: var(--dsw-alias-state-error-primary, #e5484d);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* The footer carries the timestamp AND every action now. The upgrade-plan link had its own
@@ -290,54 +326,33 @@ export const STYLES = `
 .dsh-oc-usage-console:focus-visible {
   outline: none;
   border-radius: var(--dsw-radius-xs, 4px);
-  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #3b82f6));
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 .dsh-oc-usage-updated {
   display: inline-flex;
   align-items: center;
-  /* Tight: the button's own 20px box already carries the breathing room, and
-     the gap was on top of it. The target stays 20px — padding is not what makes
-     this row look empty, and shrinking the hit area to close a gap would trade
-     accessibility for a pixel. */
+  /* Tight: the button's own box already carries the breathing room, and the
+     gap was on top of it. Padding is not what makes this row look empty, and
+     shrinking the hit area to close a gap would trade accessibility for a
+     pixel. */
   gap: 1px;
   min-width: 0;
 }
 
-.dsh-oc-usage-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin: -4px 0;
+/* The refresh is the host's ghost Button at its small size, 28px square here.
+   The negative block margin keeps the footer at the height the old 20px
+   control left it; the element selector lets this placement win over the
+   Button module's own size rule at equal class specificity. Hover, focus and
+   the disabled state are the Button's. */
+button.dsh-oc-usage-refresh {
+  width: 28px;
   padding: 0;
-  border: 0;
-  border-radius: var(--dsw-radius-xs, 4px);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary, currentColor);
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.dsh-oc-usage-refresh:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, currentColor 10%, transparent));
-  color: var(--dsw-alias-label-primary, currentColor);
-}
-
-.dsh-oc-usage-refresh:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #3b82f6));
+  margin: -8px 0;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* The control is busy mid-read; the glyph turns rather than disappearing. */
-.dsh-oc-usage-refresh:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
 .dsh-oc-usage-refresh:disabled .dsh-oc-usage-refresh-icon {
   animation: dsh-oc-spin 0.9s linear infinite;
 }
@@ -346,19 +361,6 @@ export const STYLES = `
   to {
     transform: rotate(360deg);
   }
-}
-
-.dsh-oc-usage-console {
-  color: var(--dsw-alias-link, currentColor);
-  font-size: 11px;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.dsh-oc-usage-console:hover,
-.dsh-oc-usage-console:focus-visible {
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
 }
 
 /*
@@ -371,14 +373,11 @@ export const STYLES = `
 .dsh-oc-usage-warning {
   padding: 7px 9px;
   border-radius: var(--dsw-radius-sm, 8px);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #e5484d) 12%, transparent);
-  color: var(--dsw-alias-state-error-primary, #e5484d);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
   line-height: 1.45;
   margin-top: 8px;
-}
-
-.dsh-oc-usage-warning strong {
 }
 
 /* The detail line is a <p>, whose UA margins would double the padding. */
@@ -392,7 +391,7 @@ export const STYLES = `
   line-height: 1.45;
   padding: 7px 9px;
   border-radius: var(--dsw-radius-sm, 8px);
-  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, #f5a524) 12%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
   color: var(--dsw-alias-label-secondary, inherit);
   margin-top: 4px;
 }

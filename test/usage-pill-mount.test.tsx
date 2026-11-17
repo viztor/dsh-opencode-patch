@@ -28,6 +28,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GoUsage } from "../src/contracts/usage.ts";
+import { apply as applySettingsPage } from "../src/settings-page.tsx";
 import { STYLES } from "../src/usage-css.ts";
 import {
   MIN_FEEDBACK_MS,
@@ -35,6 +36,9 @@ import {
   type ModelDirectoryState,
   type SnapshotStore,
 } from "../src/usage-pill.tsx";
+import { declaredStyle, inlineDeclarations } from "./support/declared-style.ts";
+import { injectedReadUsage } from "./support/meter-injector.ts";
+import { press } from "./support/pointer.ts";
 
 /** A quota reading with one window in each of the states the panel distinguishes. */
 const USAGE: GoUsage = {
@@ -547,7 +551,7 @@ describe("usage-pill: hover, click and dismissal", () => {
     expect(panelOpen()).toBe(false);
   });
 
-  it("closes on a click outside, and stays open for one inside", async () => {
+  it("closes on a press outside, and stays open for one inside", async () => {
     const readUsage = vi.fn().mockResolvedValue(USAGE);
     await renderPill(readUsage);
     const root = element(".dsh-oc-usage-root");
@@ -558,18 +562,25 @@ describe("usage-pill: hover, click and dismissal", () => {
     expect(panelOpen()).toBe(true);
 
     // A press within the pill is the user interacting with it, not a dismissal.
+    // `press` is a whole press, `pointerdown` then `mousedown`, so the pin
+    // holds whichever of the two the dismissal listens for.
     await act(async () => {
-      fireEvent.mouseDown(root);
+      press(root);
     });
     expect(panelOpen()).toBe(true);
 
     await act(async () => {
-      fireEvent.mouseDown(document.body);
+      press(document.body);
     });
     expect(panelOpen()).toBe(false);
   });
 
   it("hands back every document listener it claimed on unmount", async () => {
+    // The first React root in a document adds its own `selectionchange`
+    // listener there and never removes it. Prime that once, before the spies,
+    // so the pairs below are the pill's whatever order the cases run in.
+    render(<span />).unmount();
+    const add = vi.spyOn(document, "addEventListener");
     const remove = vi.spyOn(document, "removeEventListener");
     const readUsage = vi.fn().mockResolvedValue(USAGE);
     const view = await renderPill(readUsage);
@@ -579,11 +590,199 @@ describe("usage-pill: hover, click and dismissal", () => {
     });
     view.unmount();
 
-    const events = remove.mock.calls.map((call) => call[0]);
-    // Both effects' seams have to be returned, or a leaked `visibilitychange`
-    // would keep polling a meter that is already gone.
-    expect(events).toContain("visibilitychange");
-    expect(events).toContain("mousedown");
-    expect(events).toContain("keydown");
+    // Every pair, by type AND listener: a leaked `visibilitychange` would keep
+    // polling a meter that is already gone, and a leaked press listener would
+    // close a panel that no longer exists. Read by identity, so a removal of a
+    // different function under the same type does not count.
+    const added = add.mock.calls.map(([type, listener]) => ({
+      listener,
+      type,
+    }));
+    const removed = remove.mock.calls.map(([type, listener]) => ({
+      listener,
+      type,
+    }));
+    for (const pair of added) {
+      expect(
+        removed.some(
+          (one) => one.type === pair.type && one.listener === pair.listener
+        ),
+        `the ${pair.type} listener is handed back`
+      ).toBe(true);
+    }
+    const types = added.map((pair) => pair.type);
+    expect(types).toContain("visibilitychange");
+    expect(types).toContain("keydown");
+  });
+});
+
+describe("usage-pill: the token each state is drawn in", () => {
+  /** A reading whose every window is `percent`, the rolling one `status`. */
+  const reading = (
+    percent: number,
+    status: "ok" | "rate-limited" = "ok",
+    extra: Partial<GoUsage> = {}
+  ): GoUsage => ({
+    monthly: { percent: 10, resetsAt: "2026-12-01T00:00:00Z", status: "ok" },
+    rolling: { percent, resetsAt: "2026-11-18T00:00:00Z", status },
+    source: "opencode-go",
+    weekly: { percent: 10, resetsAt: "2026-11-20T00:00:00Z", status: "ok" },
+    ...extra,
+  });
+
+  /** The ring's stroke once the reading has landed. */
+  const ringStroke = async (usage: GoUsage): Promise<string> => {
+    await renderPill(vi.fn().mockResolvedValue(usage));
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).not.toBe("");
+    });
+    const stroke = declaredStyle(element(".dsh-oc-usage-ring-fill"), "stroke");
+    cleanup();
+    return stroke;
+  };
+
+  it("the ring and each window's bar are declared in the state's own token", async () => {
+    expect(await ringStroke(reading(42))).toMatch(
+      /^var\(--dsw-alias-state-success-primary[,)]/u
+    );
+    expect(await ringStroke(reading(85))).toMatch(
+      /^var\(--dsw-alias-state-warn-primary[,)]/u
+    );
+    expect(await ringStroke(reading(100, "rate-limited"))).toMatch(
+      /^var\(--dsw-alias-state-error-primary[,)]/u
+    );
+    // A free model has nothing to run out of: the ring is hollow, in the
+    // tertiary label colour, never a state colour.
+    expect(
+      await ringStroke(
+        reading(42, "ok", {
+          session: {
+            costFormatted: "$0.00",
+            freeModel: true,
+            totalTokens: 0,
+          } as never,
+        })
+      )
+    ).toMatch(/^var\(--dsw-alias-label-tertiary[,)]/u);
+
+    // The bars: one per window, each in its own state's token.
+    await renderPill(
+      vi.fn().mockResolvedValue({
+        ...reading(42),
+        weekly: {
+          percent: 85,
+          resetsAt: "2026-11-20T00:00:00Z",
+          status: "ok",
+        },
+      })
+    );
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).toBe("42%");
+    });
+    await act(async () => {
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
+    });
+    const fills = [...document.querySelectorAll(".dsh-oc-usage-bar-fill")];
+    expect(fills).toHaveLength(3);
+    const [rolling, weekly] = fills as [Element, Element];
+    expect(declaredStyle(rolling, "background-color")).toMatch(
+      /^var\(--dsw-alias-state-success-primary[,)]/u
+    );
+    expect(declaredStyle(weekly, "background-color")).toMatch(
+      /^var\(--dsw-alias-state-warn-primary[,)]/u
+    );
+    // The width is the reading's, handed over as the one custom property the
+    // sheet reads; the sheet declares the width from it.
+    expect(
+      (rolling as HTMLElement).style.getPropertyValue("--dsh-oc-usage-fill")
+    ).toBe("42%");
+    expect(declaredStyle(rolling, "width")).toBe("var(--dsh-oc-usage-fill)");
+  });
+
+  it("a window past its allowance fills its bar, never past it", async () => {
+    // The contract refuses a negative percent but admits one above 100.
+    await renderPill(vi.fn().mockResolvedValue(reading(150)));
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).not.toBe("");
+    });
+    await act(async () => {
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
+    });
+    const [rolling] = document.querySelectorAll<HTMLElement>(
+      ".dsh-oc-usage-bar-fill"
+    );
+    expect(rolling?.style.getPropertyValue("--dsh-oc-usage-fill")).toBe("100%");
+  });
+});
+
+describe("usage-pill: styles live in the sheet", () => {
+  it("the open meter declares nothing inline but the bar's custom property", async () => {
+    await renderPill(vi.fn().mockResolvedValue(USAGE));
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).toBe("90%");
+    });
+    await act(async () => {
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
+    });
+    const root = element(".dsh-oc-usage-root");
+    expect(root.querySelectorAll(".dsh-oc-usage-bar-fill")).toHaveLength(3);
+    expect(inlineDeclarations(root)).toEqual([]);
+    for (const fill of root.querySelectorAll<HTMLElement>(
+      ".dsh-oc-usage-bar-fill"
+    )) {
+      expect(
+        [...Array.from({ length: fill.style.length }).keys()].map((index) =>
+          fill.style.item(index)
+        )
+      ).toEqual(["--dsh-oc-usage-fill"]);
+    }
+  });
+});
+
+describe("usage-pill: a reading it cannot read", () => {
+  /**
+   * The meter's `readUsage` as `apply` injects it, over a remote whose `read`
+   * answers `answer`: the join where an unreadable payload used to reach the
+   * pill and throw while it rendered.
+   */
+  const readUsageAnswering = (answer: unknown) =>
+    injectedReadUsage<GoUsage>(applySettingsPage, async () => answer);
+
+  it("an unreadable reading, through the injector apply builds, shows the failure state, never a render throw", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const readUsage = vi.fn(
+      readUsageAnswering({ ok: true, value: { test: 123 } })
+    );
+    await renderPill(readUsage);
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).toBe("!");
+    });
+    await act(async () => {
+      fireEvent.click(element(".dsh-oc-usage-trigger"));
+    });
+    expect(element('[role="alert"]').textContent).toContain("usageUnavailable");
+  });
+
+  it("an empty envelope, then a failure that would keep the previous reading, shows the failure, never a render throw", async () => {
+    // The empty envelope is no reading: nothing to keep, so the failure that
+    // asks to keep one draws "!" rather than reading a source off nothing.
+    const readUsage = vi
+      .fn<(provider?: string) => Promise<GoUsage | undefined>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValue(
+        usageUnavailable({
+          retainPrevious: true,
+          retryable: true,
+          source: "opencode-go",
+        })
+      );
+    await renderPill(readUsage as (provider?: string) => Promise<GoUsage>);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(readUsage).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(element(".dsh-oc-usage-trigger").textContent).toBe("!");
+    });
   });
 });

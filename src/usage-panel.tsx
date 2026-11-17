@@ -7,6 +7,7 @@
  */
 
 import {
+  Button,
   IconInfoOutlineRegular,
   IconRefreshOutlineRegular,
   MenuSurface,
@@ -18,7 +19,7 @@ import React from "react";
 
 import type { GoUsage, UsageFailure, UsageWindow } from "./contracts/usage.ts";
 import { BREAKDOWN_WINDOWS, CONSOLE_URL, panelActions } from "./usage-copy.ts";
-import { getWindowState, RADIUS, WINDOW_STATE_COLOR } from "./usage-state.ts";
+import { getWindowState, RADIUS, type WindowState } from "./usage-state.ts";
 import { formatRelativeReset, resetLabel } from "./usage-time.ts";
 import { formatUsd } from "./utils/usd.ts";
 
@@ -43,6 +44,17 @@ const RefreshIcon = (): React.ReactElement => (
   />
 );
 
+/**
+ * The bar fill's one inline declaration: the reading's share as the custom
+ * property the sheet reads for the width (`usage-css.ts`). Typed rather than
+ * cast, so a misspelt property name is a compile error.
+ */
+const barFill = (
+  percent: number
+): React.CSSProperties & Record<"--dsh-oc-usage-fill", string> => ({
+  "--dsh-oc-usage-fill": `${Math.min(100, Math.max(0, percent))}%`,
+});
+
 /** The ring / Zen pill that opens the panel. */
 export interface UsageTriggerProps {
   displayPercent: number;
@@ -50,8 +62,11 @@ export interface UsageTriggerProps {
   isZen: boolean;
   onClick: () => void;
   open: boolean;
-  /** Stroke colour for the ring, from `getWindowColorFor`. */
-  ringColor: string;
+  /**
+   * The ring's state, from `getRingState`, or `idle` for a free model: the
+   * sheet strokes the ring in that state's token.
+   */
+  ringState: WindowState | "idle";
   /** Pre-computed ring dash array from `ringGeometry()`. */
   strokeDasharray: string;
   t: (key: string) => string;
@@ -86,7 +101,7 @@ export const UsageTrigger = ({
   isZen,
   onClick,
   open,
-  ringColor,
+  ringState,
   strokeDasharray,
   t,
   tooltipLabel,
@@ -124,16 +139,17 @@ export const UsageTrigger = ({
             r={RADIUS}
           />
           {/*
-            Quota colors are CSS custom properties, which do not resolve in SVG
-            presentation attributes — apply the token through `style` instead.
+            The stroke is the sheet's, keyed on the state: a CSS custom
+            property does not resolve in an SVG presentation attribute, and a
+            rule is where the theme's tokens belong.
           */}
           <circle
             className="dsh-oc-usage-ring-fill"
             cx="7"
             cy="7"
+            data-state={ringState}
             r={RADIUS}
             strokeDasharray={strokeDasharray}
-            style={{ stroke: ringColor }}
             transform="rotate(-90 7 7)"
           />
         </svg>
@@ -288,8 +304,10 @@ export const UsagePanel = ({
                           The kit's dot, driven by the state the window IS —
                           done / warning / error — not by a colour string this
                           file used to inline. Its CSS maps the same three
-                          states to the same `--dsw-alias-state-*` tokens the
-                          hand-rolled 6px circle carried, so the look is
+                          states to the same state tokens the hand-rolled 6px
+                          circle carried (`--dsw-alias-state-success-primary`,
+                          `--dsw-alias-state-warn-primary`,
+                          `--dsw-alias-state-error-primary`), so the look is
                           unchanged and the theme owns it again.
                         */}
                         <StateDot state={getWindowState(window)} />
@@ -329,16 +347,17 @@ export const UsagePanel = ({
                       abstraction; a track two pixels tall makes the share
                       legible at a glance and gives the three windows a common
                       ruler — which is what the quota cards used to provide,
-                      before they became rows.
+                      before they became rows. Its fill is the sheet's, keyed
+                      on the window's state; the one value only the reading
+                      knows, the width, is handed over as a custom property
+                      the sheet reads — the idiom the host's own
+                      SegmentedControl uses for its indicator.
                     */}
                     <div className="dsh-oc-usage-bar">
                       <div
                         className="dsh-oc-usage-bar-fill"
-                        style={{
-                          width: `${Math.min(100, Math.max(0, window.percent))}%`,
-                          backgroundColor:
-                            WINDOW_STATE_COLOR[getWindowState(window)],
-                        }}
+                        data-state={getWindowState(window)}
+                        style={barFill(window.percent)}
                       />
                     </div>
                   </div>
@@ -462,15 +481,18 @@ export const UsagePanel = ({
         {updatedAt === null
           ? ""
           : `${t("usageLastUpdated")} ${new Date(updatedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`}
-        <button
+        {/* The host's ghost Button with its icon: hover, focus and the
+            disabled state are the Button's, and the sheet turns the glyph
+            while a read is in flight. */}
+        <Button
           aria-label={refreshing ? t("usageRefreshing") : t("usageRetry")}
           className="dsh-oc-usage-refresh"
           disabled={refreshing}
+          icon={<RefreshIcon />}
           onClick={retry}
-          type="button"
-        >
-          <RefreshIcon />
-        </button>
+          size="sm"
+          variant="ghost"
+        />
       </span>
       {/* Every link lives in the footer now. `升级套餐` used to have its own row,
           between a divider and the spend block, where it read as a section

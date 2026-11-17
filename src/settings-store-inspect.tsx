@@ -21,10 +21,10 @@
  * @module dsh-opencode-patch/settings-store-inspect
  */
 
-import { Button } from "@deepseek-ai/dsh-client-ui-primitives";
 import React from "react";
 
 import type { OpencodeStoreInspection } from "./contracts/store.ts";
+import { ActionRow, OutcomeLine } from "./settings-action-row.tsx";
 import type { Translate } from "./settings-copy.ts";
 import type { StoreInspectOutcome } from "./settings-store.ts";
 
@@ -147,7 +147,8 @@ export interface StoreInspectRowProps {
 }
 
 /**
- * The row itself: a heading, the button, and the report once it lands.
+ * The row itself: a heading, the button, and the report once it lands. Styled
+ * by the card's sheet, which the card renders; on its own it is unstyled.
  *
  * The report is kept after the click rather than cleared, because the question it
  * answers ("what is on this machine?") does not go stale in seconds — and a row
@@ -171,89 +172,27 @@ export const StoreInspectRow: React.FC<StoreInspectRowProps> = (props) => {
   const { report } = state;
 
   return (
-    <div
-      style={{
-        borderBottom: "0.5px solid var(--dsw-alias-border-l2)",
-        marginBottom: 16,
-        paddingBottom: 14,
-      }}
-    >
-      <div
-        style={{
-          alignItems: "center",
-          display: "flex",
-          gap: 12,
-          justifyContent: "space-between",
+    <div className="dsh-oc-card-section">
+      <ActionRow
+        action={props.t("storeInspect")}
+        busy={state.busy}
+        busyAction={props.t("storeInspectBusy")}
+        hint={props.t("storeInspectHint")}
+        onAction={() => {
+          void run();
         }}
-      >
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>
-            {props.t("storeInspectTitle")}
-          </div>
-          <div
-            style={{
-              color: "var(--dsw-alias-label-caption)",
-              fontSize: 12,
-              marginTop: 2,
-            }}
-          >
-            {props.t("storeInspectHint")}
-          </div>
-        </div>
-        <Button
-          disabled={state.busy}
-          onClick={() => {
-            void run();
-          }}
-          size="sm"
-          variant="outline"
-        >
-          {state.busy ? props.t("storeInspectBusy") : props.t("storeInspect")}
-        </Button>
-      </div>
+        title={props.t("storeInspectTitle")}
+      />
       {report !== undefined && (
-        <div style={{ fontSize: 12, marginTop: 8 }}>
+        <div className="dsh-oc-card-report">
           {report.rows.map((row) => (
-            <div
-              key={row.label}
-              style={{
-                display: "flex",
-                gap: 8,
-                padding: "1px 0",
-              }}
-            >
-              <span
-                style={{
-                  color: "var(--dsw-alias-label-caption)",
-                  flex: "0 0 auto",
-                  minWidth: 72,
-                }}
-              >
-                {row.label}
-              </span>
-              <span
-                style={{
-                  color: "var(--dsw-alias-label-secondary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {row.value}
-              </span>
+            <div className="dsh-oc-card-report-row" key={row.label}>
+              <span className="dsh-oc-card-report-label">{row.label}</span>
+              <span className="dsh-oc-card-report-value">{row.value}</span>
             </div>
           ))}
           {report.note !== undefined && (
-            <div
-              style={{
-                color: report.warn
-                  ? "var(--dsw-alias-state-warn-label)"
-                  : "var(--dsw-alias-label-caption)",
-                marginTop: 6,
-              }}
-            >
-              {report.note}
-            </div>
+            <OutcomeLine line={report.note} warn={report.warn} />
           )}
         </div>
       )}

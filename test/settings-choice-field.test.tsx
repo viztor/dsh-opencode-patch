@@ -1,17 +1,18 @@
 /**
  * The card's constrained-choice control, asserted as an element tree.
  *
- * The host ships no enum settings field, so `SettingsChoiceField` renders a
- * native `<select>`. These cases pin the contract `settings-card.tsx` relies
- * on: the draft becomes the selected option, a change emits the option's raw
- * value, and a draft outside the option set still renders without React falling
- * back to the first option (which would silently misreport the stored value).
+ * `SettingsChoiceField` renders the host's `SegmentedControl`. These cases pin
+ * the props the card relies on: the draft is the selected value, a change emits
+ * the option's raw value, and a draft outside the option set is carried on a
+ * segment of its own rather than left unselected (which would silently
+ * misreport the stored value). The mounted behaviour is
+ * `settings-choice-field-mount.test.tsx`'s.
  */
 
 import { describe, expect, it, vi } from "vitest";
 
 import { type ChoiceFieldProps, SettingsChoiceField } from "./support/src.ts";
-import { findAll, firstOf } from "./test-helpers.ts";
+import { firstOf } from "./test-helpers.ts";
 
 const OPTIONS = [
   { label: "Automatic", value: "auto" },
@@ -38,68 +39,57 @@ const baseProps = (
   ...overrides,
 });
 
-const selectOf = (tree: unknown) => firstOf(tree, "select");
+/** The host control the field renders, read off the element tree. */
+const controlOf = (tree: unknown) => firstOf(tree, "SegmentedControl");
 
 describe("SettingsChoiceField", () => {
-  it("renders one option per choice, in order, with the given labels", () => {
-    const select = selectOf(SettingsChoiceField(baseProps()));
-    const rendered = findAll(select, "option").map((option) => ({
-      label: option.props.children,
-      value: option.props.value,
-    }));
-    expect(rendered).toEqual(OPTIONS);
+  it("renders one segment per choice, in order, with the given labels", () => {
+    const control = controlOf(SettingsChoiceField(baseProps()));
+    expect(control.props.options).toEqual(OPTIONS);
+  });
+
+  it("names the control after the field, and ids its segments from the field's id", () => {
+    const control = controlOf(SettingsChoiceField(baseProps()));
+    expect(control.props.label).toBe("Credential Source");
+    expect(control.props.id).toBe("plugin-config-opencode-keySource");
   });
 
   it("selects the option the draft names", () => {
     expect(
-      selectOf(SettingsChoiceField(baseProps({ text: "configured" }))).props
+      controlOf(SettingsChoiceField(baseProps({ text: "configured" }))).props
         .value
     ).toBe("configured");
   });
 
   it("emits the raw option value on change", () => {
     const onEdit = vi.fn<() => void>();
-    const select = selectOf(SettingsChoiceField(baseProps({ onEdit })));
-    const onChange = select.props.onChange as (event: {
-      target: { value: string };
-    }) => void;
+    const control = controlOf(SettingsChoiceField(baseProps({ onEdit })));
+    const onChange = control.props.onChange as (next: string) => void;
 
-    onChange({ target: { value: "request" } });
+    onChange("request");
     expect(onEdit).toHaveBeenLastCalledWith("request");
   });
 
-  it("carries an unrecognised draft on a blank option instead of misreporting it", () => {
-    // A select cannot render a value it has no option for; React would fall
-    // back to the first option and the row would claim "auto" while the stored
-    // value is something else.
-    const tree = SettingsChoiceField(baseProps({ text: "hand-edited" }));
-    const options = findAll(tree, "option");
-    expect(options[0]?.props.value).toBe("hand-edited");
-    expect(options[0]?.props.children).toBeUndefined();
+  it("carries an unrecognised draft on a segment of its own instead of misreporting it", () => {
+    // A segmented control selects by value; with no segment for the draft it
+    // would select none, and the row would read as though nothing were stored.
+    // The carrier comes first and is the selected one, so it is the segment in
+    // the tab order and the arrow keys walk from it to the real choices.
+    const control = controlOf(
+      SettingsChoiceField(baseProps({ text: "hand-edited" }))
+    );
+    const options = control.props.options as typeof OPTIONS;
+    expect(options[0]).toEqual({ label: "hand-edited", value: "hand-edited" });
+    expect(control.props.value).toBe("hand-edited");
     expect(options).toHaveLength(OPTIONS.length + 1);
+    expect(options.slice(1)).toEqual(OPTIONS);
   });
 
-  it("propagates disabled to the select", () => {
+  it("propagates disabled to the control", () => {
     expect(
-      selectOf(SettingsChoiceField(baseProps({ disabled: true }))).props
+      controlOf(SettingsChoiceField(baseProps({ disabled: true }))).props
         .disabled
     ).toBe(true);
-  });
-
-  it("styles the control with host tokens, not invented ones", () => {
-    // The first version of this control used made-up variable names
-    // (--color-bg-elevated, --color-border-default). Those resolve to nothing,
-    // so the hard-coded dark fallbacks rendered instead — dark-theme colours
-    // inside a light theme. The host's only token family is `--dsw-*`.
-    const style = selectOf(SettingsChoiceField(baseProps())).props
-      .style as Record<string, unknown>;
-    const values = Object.values(style).filter(
-      (value): value is string => typeof value === "string"
-    );
-    expect(values.some((value) => value.includes("--dsw-alias-"))).toBe(true);
-    for (const value of values) {
-      expect(value).not.toContain("--color-");
-    }
   });
 
   it("delegates every piece of chrome to the shared shell", () => {
@@ -107,7 +97,6 @@ describe("SettingsChoiceField", () => {
     const shell = firstOf(tree, "SettingsFieldShell");
     expect(shell.props.label).toBe("Credential Source");
     expect(shell.props.hint).toBe("the hint");
-    expect(shell.props.id).toBe("plugin-config-opencode-keySource");
     expect(shell.props.overridden).toBe(true);
   });
 });

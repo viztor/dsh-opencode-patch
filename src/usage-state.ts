@@ -51,14 +51,16 @@ export const matchesAny = (
  *
  * `StateDotState` — the same union `@deepseek-ai/dsh-client-ui-primitives`'
  * `StateDot` takes — reads `done` / `warning` / `error`, and its CSS maps each
- * to the exact `--dsw-alias-state-*` token this file used to inline. Returning
- * the SEMANTIC instead of a colour string is what let the window rows adopt the
- * kit's dot: a hand-rolled 6px circle with an inline `backgroundColor` per
- * state was one more look-alike of a primitive this repo already ships.
+ * to the host's state tokens (`--dsw-alias-state-success-primary`,
+ * `--dsw-alias-state-warn-primary`, `--dsw-alias-state-error-primary`).
+ * Returning the SEMANTIC instead of a colour string is what let the window rows
+ * adopt the kit's dot: a hand-rolled 6px circle with an inline
+ * `backgroundColor` per state was one more look-alike of a primitive this repo
+ * already ships.
  *
- * The ring and the bar keep reading COLOURS off these names (they are strokes
- * and fills, not dots), so the token map below stays the single place the
- * percentage ladder is written down.
+ * The ring and the bar carry the same names as a `data-state` attribute, and
+ * the meter's sheet (`usage-css.ts`) maps each to its token, so the theme owns
+ * those colours too and no colour string is written here.
  */
 export type WindowState = "done" | "warning" | "error";
 
@@ -72,24 +74,12 @@ export const getWindowState = (window: UsageWindow): WindowState => {
   return "done";
 };
 
-/** The state ladder as colours, for strokes and fills the kit does not ship. */
-export const WINDOW_STATE_COLOR: Record<WindowState, string> = {
-  done: "var(--dsw-alias-state-success-primary, #16a34a)",
-  warning: "var(--dsw-alias-state-warn-primary, #f5a524)",
-  error: "var(--dsw-alias-state-error-primary, #e5484d)",
-};
-
-export const getWindowColor = (window: UsageWindow): string =>
-  WINDOW_STATE_COLOR[getWindowState(window)];
-
 /**
- * The ring colour before a window exists — `done`, the neutral assumption;
- * the ring refills the moment data lands.
+ * The ring's state: the affecting window's, and `done` before a window exists
+ * — the neutral assumption; the ring refills the moment data lands.
  */
-export const getWindowColorFor = (affecting?: AffectingWindowResult): string =>
-  affecting === undefined
-    ? WINDOW_STATE_COLOR.done
-    : getWindowColor(affecting.window);
+export const getRingState = (affecting?: AffectingWindowResult): WindowState =>
+  affecting === undefined ? "done" : getWindowState(affecting.window);
 
 export interface AffectingWindowResult {
   key: "monthly" | "rolling" | "weekly";

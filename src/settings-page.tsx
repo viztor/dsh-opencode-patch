@@ -16,7 +16,11 @@ import {
 
 import { DEFAULT_PROVIDERS, readStringList } from "./config-values.ts";
 import { REMOTE_CONTRACTS } from "./contracts/all.ts";
-import { USAGE_NAMESPACE, usageRemote } from "./contracts/usage.ts";
+import {
+  type GoUsage,
+  USAGE_NAMESPACE,
+  usageRemote,
+} from "./contracts/usage.ts";
 import { OpencodeCard } from "./settings-card.tsx";
 import { en, withBundleCopy, zh, type CopyKey } from "./settings-copy.ts";
 import { SPECS } from "./settings-fields.ts";
@@ -449,13 +453,18 @@ export const apply = (ctx: ClientContext): void => {
       // The id the Host must price; the pill also names the active provider,
       // which is how the Host knows which account is on screen.
       const meterSessionId = typeof sessionId === "string" ? sessionId : "";
+      // The pill polls every minute and on every visibility change, so a host
+      // that keeps answering a foreign shape would repeat the line forever.
+      // Said once per injector, and re-armed by a reading the parser accepts,
+      // so a later regression is still reported once.
+      let shapeReported = false;
       return {
         directory,
         ...markers,
         readUsage: async (
           provider?: string,
           model?: string
-        ): Promise<unknown> => {
+        ): Promise<GoUsage | undefined> => {
           const answer = unwrapRemote(
             usageRemote,
             "read",
@@ -474,10 +483,31 @@ export const apply = (ctx: ClientContext): void => {
             // `parseFailure` renders that as the generic unavailable state.
             throw answer.error;
           }
-          // An answer the reading parser rejects passes through as it came:
-          // the meter never validated, and test/settings-page.test.tsx pins
-          // the pass-through. Rejecting it changes a pinned answer, so it is a
-          // `fix:` for a later phase, not this refactor.
+          if (answer.kind === "invalid") {
+            // An empty envelope is no reading yet, and the pill draws nothing
+            // for it, as it always has.
+            if (answer.value === undefined) {
+              return undefined;
+            }
+            // Anything else the reading parser rejects is a failed read, not a
+            // reading: handed to the pill as it came, it threw while the pill
+            // rendered (`getAffectingWindow` reads windows it does not have).
+            // The typed failure is what the pill already draws, "!" and the
+            // unavailable sentence, with nothing kept from an earlier reading.
+            if (!shapeReported) {
+              shapeReported = true;
+              console.warn(
+                "[dsh-opencode-patch] usage read: the answer is not a usage shape",
+                answer.value
+              );
+            }
+            const failure: unknown = {
+              code: "opencode-go/usage-unavailable",
+              details: {},
+            };
+            throw failure;
+          }
+          shapeReported = false;
           return answer.value;
         },
         // The dictionary and every `Intl` formatter must agree on the
