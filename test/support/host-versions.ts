@@ -124,7 +124,7 @@ export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
     cordis: "4.1.0",
     cosmokit: "1.9.0",
     distTag: "next",
-    dsh: "0.2.2-rc.2",
+    dsh: "0.2.2-rc.3",
     graduatesUnder: "latest",
     group: "1.1.0",
     include: "1.1.0",
