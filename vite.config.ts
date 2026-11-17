@@ -20,6 +20,14 @@ export default defineConfig({
     extends: [ultraciteLint],
     ignorePatterns: ["lib/**", "coverage/**"],
     options: {
+      // A warning fails `vp check` and `vp lint`, bare or through a script.
+      // The `check` and `lint` scripts pass `--deny-warnings` as well, meant
+      // to hold the gate if this block ever stops reaching the linter.
+      // test/toolchain.test.ts runs this option (a one-warning fixture fails
+      // a bare `vp check` / `vp lint` and each script's own arguments) and
+      // holds the scripts' flag as text; it does not run the flag without
+      // this option.
+      denyWarnings: true,
       typeAware: true,
       typeCheck: true,
     },

@@ -487,7 +487,7 @@ Harness 按 `alpha` 与 `rc` 两个**通道**发布，它们是平行的发布�
 | **网关** | 默认为 `opencode.ai/inference/{openai,anthropic,google}/…` 与 `inference/go/{openai,anthropic,google}/…`；`endpoint: legacy` 时为 `opencode.ai/zen/v1` 与 `zen/go/v1`（Go 的 Google 仍在 `inference/go/google/v1beta`） |
 | **模型目录** | 由 `models.opencode.ai/api.json` 生成；下线判定直接跟随目录自身的 `status: "deprecated"` 标记，不维护任何手工 id 列表 |
 | **上游 pi** | **不随包携带，也不打补丁。** 平面适配器在运行时加载 harness 已安装的那份 `@earendil-works/pi-ai`，因此 harness 升级不会与本插件锁定的副本产生版本错位；测试套件运行各通道经 npm 解析出的 pi，以及其最低版本 |
-| **验证关卡** | `vp check` 干净、确定性单元与离线网关 mock 套件全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
+| **验证关卡** | `pnpm run check` 干净（零错误、零警告）、确定性单元与离线网关 mock 套件全绿、完整 schema 校验、消费者安装 + 加载（[`scripts/check.ts`](./scripts/check.ts)） |
 
 ---
 

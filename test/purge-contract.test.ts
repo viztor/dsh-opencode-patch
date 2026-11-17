@@ -24,6 +24,28 @@ describe("purge contract · the result codec", () => {
     });
   });
 
+  it("keeps a row's site when it is a string, and drops one that is not", () => {
+    const result = parsePurgeResult({
+      catalogRead: true,
+      removed: [
+        { id: "a", provider: "opencode", site: "summarizer" },
+        { id: "b", provider: "opencode-go", site: 7 },
+        { id: "c", provider: "opencode", site: "elsewhere" },
+      ],
+    });
+    // The codec does not narrow `site` to the `PurgedSite` union today: a
+    // string outside it is kept, as it was before the cast went.
+    expect(result).toEqual({
+      catalogRead: true,
+      removed: [
+        { id: "a", provider: "opencode", site: "summarizer" },
+        { id: "b", provider: "opencode-go" },
+        { id: "c", provider: "opencode", site: "elsewhere" },
+      ],
+    });
+    expect(Object.hasOwn(result?.removed[1] ?? {}, "site")).toBe(false);
+  });
+
   it("accepts an empty result", () => {
     expect(parsePurgeResult({ catalogRead: false, removed: [] })).toEqual({
       catalogRead: false,

@@ -280,6 +280,112 @@ export const scriptsBypassingVp = (
   });
 
 /**
+ * The scripts that must exist and fail on a warning as on an error, whatever
+ * else the manifest holds.
+ */
+export const WARNING_GATED_SCRIPTS: readonly string[] = ["check", "lint"];
+
+/** One `vp check` or `vp lint` invocation, the two that lint. */
+const LINTING_VP = /\bvp\s+(?:check|lint)\b/u;
+
+/** A script's commands, split on `&&`, `||` and `;`. */
+const commandsOf = (script: string): string[] => script.split(/&&|\|\||;/u);
+
+/** Whether one command passes `flag` as a word of its own. */
+const passes = (command: string, flag: string): boolean =>
+  command.trim().split(/\s+/u).includes(flag);
+
+/** One flag word: `-x`, `--name` or `--name=value`, with no shell syntax. */
+const FLAG_WORD = /^--?[\w-]+(?:=[\w.:/-]+)?$/u;
+
+/**
+ * The words after `vp` in a script that is exactly one `vp check` / `vp lint`
+ * invocation followed only by flags, so a test can run that script's own
+ * arguments through `vp` on a fixture.
+ *
+ * An allow-list rather than a list of shell syntax: `vp` silently drops a
+ * stray word when a real path follows it (measured: `vp lint --deny-warnings
+ * '&' src/identity.ts` lints the file and exits 0), so a script such as
+ * `vp check --deny-warnings &`, which backgrounds `vp` and exits 0, would pass
+ * on the fixture while gating nothing. Every word after the command must be a
+ * flag instead.
+ *
+ * @param script - one `package.json` script.
+ * @returns the words, such as `["check", "--deny-warnings"]`; `undefined` for
+ *   any other script: a compound one (`&&`, `||`, `;`, `&`, a newline, a pipe
+ *   or a redirect), a positional argument, another `vp` command or another
+ *   tool.
+ */
+export const soleLintingArgs = (script: string): string[] | undefined => {
+  const words = script.trim().split(/\s+/u);
+  const [tool, command, ...rest] = words;
+  return tool === "vp" &&
+    (command === "check" || command === "lint") &&
+    rest.every((word) => FLAG_WORD.test(word))
+    ? words.slice(1)
+    : undefined;
+};
+
+/**
+ * The scripts held to the warning gate: {@link WARNING_GATED_SCRIPTS}, and
+ * every other script that lints (a `vp check` / `vp lint` invocation without
+ * `--fix`, which edits rather than gates).
+ *
+ * @param scripts - `package.json`'s `scripts`.
+ * @returns the names, the required ones first.
+ */
+export const warningGatedScripts = (
+  scripts: Readonly<Record<string, string | undefined>>
+): string[] => [
+  ...WARNING_GATED_SCRIPTS,
+  ...Object.entries(scripts)
+    .filter(
+      ([name, script]) =>
+        !WARNING_GATED_SCRIPTS.includes(name) &&
+        script !== undefined &&
+        commandsOf(script).some(
+          (command) => LINTING_VP.test(command) && !passes(command, "--fix")
+        )
+    )
+    .map(([name]) => name),
+];
+
+/**
+ * Each gated script that is missing, or lets a lint warning pass: one that
+ * holds no `vp check` / `vp lint` invocation, or holds one without
+ * `--deny-warnings`. `vp` exits 0 on warnings unless that flag is passed, so a
+ * script without it reports a warning and gates nothing.
+ *
+ * The rule reads the flag, not the script's exit status: a script that throws
+ * the linter's status away (`|| true`, a pipe, a later `exit 0`) is not
+ * detected.
+ *
+ * @param scripts - `package.json`'s `scripts`.
+ * @param names - the scripts to hold to the rule; by default
+ *   {@link warningGatedScripts}.
+ * @returns one message per offending script.
+ */
+export const scriptsToleratingWarnings = (
+  scripts: Readonly<Record<string, string | undefined>>,
+  names: readonly string[] = warningGatedScripts(scripts)
+): string[] =>
+  names.flatMap((name) => {
+    const script = scripts[name];
+    if (script === undefined) {
+      return [`no ${name} script`];
+    }
+    const linting = commandsOf(script).filter((command) =>
+      LINTING_VP.test(command)
+    );
+    const gated =
+      linting.length > 0 &&
+      linting.every((command) => passes(command, "--deny-warnings"));
+    return gated
+      ? []
+      : [`the ${name} script lets a lint warning pass: ${script}`];
+  });
+
+/**
  * Every leaf of a locale file as a dotted key path, so two locales can be
  * compared key for key: a key missing from one renders as the raw key.
  *

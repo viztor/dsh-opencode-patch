@@ -31,6 +31,13 @@ import { opencodeDatabasePath } from "./opencode-paths.ts";
 import { inspectOpencodeStore } from "./opencode-store.ts";
 import { isRecord } from "./utils/guards.ts";
 
+/**
+ * Whether an option is a store-path resolver: any callable, as the option is
+ * documented.
+ */
+const isStorePathResolver = (value: unknown): value is () => string =>
+  typeof value === "function";
+
 export class OpencodeStoreService extends TypertRemoteService {
   constructor(ctx: unknown, options?: unknown) {
     if (!isRecord(ctx)) {
@@ -41,10 +48,9 @@ export class OpencodeStoreService extends TypertRemoteService {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `TypertRemoteService` takes cordis `Context`, whose types ship only from the Harness installation; the guard above is the runtime check this cast stands in for.
     super(ctx as never, STORE_NAMESPACE);
     const { resolveStorePath } = isRecord(options) ? options : {};
-    this.resolveStorePath =
-      typeof resolveStorePath === "function"
-        ? (resolveStorePath as () => string)
-        : defaultStorePath;
+    this.resolveStorePath = isStorePathResolver(resolveStorePath)
+      ? resolveStorePath
+      : defaultStorePath;
   }
 
   /**

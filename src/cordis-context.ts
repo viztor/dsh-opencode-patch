@@ -264,6 +264,10 @@ export interface LoaderHost {
 /** The loader surface, as the plugin reads it off its own context. */
 export type LoaderService = LoaderHost["loader"];
 
+/** The loader surface, by the one member the plugin calls unconditionally. */
+const isLoaderService = (value: unknown): value is LoaderService =>
+  isRecord(value) && typeof value.entries === "function";
+
 /**
  * The loader's entry surface, or `undefined` when the context serves none.
  *
@@ -304,10 +308,7 @@ export const loaderOfContext = (ctx: unknown): LoaderService | undefined => {
       return undefined;
     }
   }
-  if (!isRecord(loader) || typeof loader.entries !== "function") {
-    return undefined;
-  }
-  return loader as LoaderService;
+  return isLoaderService(loader) ? loader : undefined;
 };
 
 /** Session metadata resolved from the host SessionRegistry. */

@@ -315,7 +315,7 @@ describe(
         // status event carries.
         if (
           !sameFiber(fiber, current.piFiber) ||
-          old !== UNLOADING ||
+          (old as number) !== UNLOADING ||
           calls !== undefined
         ) {
           return;

@@ -12,8 +12,10 @@
  * executed. The rest are pins on the real files, with no fixture: one unit
  * run per install (evaluated for every event the workflow runs on), the
  * type-check (the check job's command, and the tsx tests in the program
- * `tsc` reads), and the release and nightly wiring `scripts/check.ts` used to
- * hold.
+ * `tsc` reads), the warning gate (CI's check job and the release's verify
+ * job run `pnpm run check`, and publish needs verify with no `if:` of its
+ * own), and the release and
+ * nightly wiring `scripts/check.ts` used to hold.
  *
  * @module test/ci-wiring.test
  */
@@ -382,7 +384,7 @@ describe("ci wiring · the type-check", () => {
     // CI runs no `typecheck` script: `vp check` type-checks, while the lint
     // config's `typeCheck` is on (test/toolchain.test.ts holds that).
     expect(stepsRunning(ci.jobs.check ?? {}, "pnpm run check")).toHaveLength(1);
-    expect(pkg.scripts.check).toBe("vp check");
+    expect(pkg.scripts.check).toBe("vp check --deny-warnings");
     // The program tsc reads, listed: the tsx tests are in it, not just in an
     // include array.
     const listed = spawnSync(
@@ -406,6 +408,42 @@ describe("ci wiring · the type-check", () => {
         file
       ).toBe(true);
     }
+  });
+});
+
+describe("ci wiring · the warning gate", () => {
+  it("a lint warning fails CI and the release, through `pnpm run check`", () => {
+    // test/toolchain.test.ts holds that the script and the lint config fail
+    // on a warning; this holds that both workflows reach that script, and
+    // that nothing publishes without it.
+    for (const [where, job] of [
+      ["ci.yml check", ci.jobs.check],
+      ["release.yml verify", release.jobs.verify],
+    ] as const) {
+      const runs = stepsRunning(job ?? {}, "pnpm run check");
+      expect(runs, where).toHaveLength(1);
+      const step = runs[0]?.step ?? {};
+      // The step can fail its job: the line is the script and nothing after
+      // it (`invokes` would also count `pnpm run check || true`), and neither
+      // the step nor its job is conditional or allowed to fail. GitHub
+      // reports a job its `if:` skipped as a success.
+      expect(runCommands(step), where).toStrictEqual(["pnpm run check"]);
+      expect(step.if, where).toBeUndefined();
+      expect(step["continue-on-error"], where).toBeUndefined();
+      expect(job?.if, where).toBeUndefined();
+      expect(job?.["continue-on-error"], where).toBeUndefined();
+    }
+    // Known answer: the exact-line rule is what tells a swallowed status
+    // apart, which the count above does not.
+    const swallowed = { run: "pnpm run check || true" };
+    expect(stepsRunning({ steps: [swallowed] }, "pnpm run check")).toHaveLength(
+      1
+    );
+    expect(runCommands(swallowed)).not.toStrictEqual(["pnpm run check"]);
+    // `needs` holds publish back only while its own `if:` names no status
+    // function: under `if: always()` it would run after verify failed.
+    expect([release.jobs.publish?.needs].flat()).toContain("verify");
+    expect(release.jobs.publish?.if, "release.yml publish").toBeUndefined();
   });
 });
 

@@ -493,7 +493,7 @@ No known defect of this plugin's is open on a supported host: both channels' lat
 | **Gateways** | `opencode.ai/inference/{openai,anthropic,google}/…` and `inference/go/{openai,anthropic,google}/…` by default; `opencode.ai/zen/v1` and `zen/go/v1` with `endpoint: legacy` (Go's Google stays on `inference/go/google/v1beta`) |
 | **Catalog** | Generated from `models.opencode.ai/api.json`; retirement follows the registry's own `status: "deprecated"` flag, with no hand-maintained id list |
 | **Upstream pi** | **Not bundled, not patched.** The plane adapter loads whatever `@earendil-works/pi-ai` the harness installed, so a harness bump never skews a pinned copy; the suite runs each channel's pi as npm resolves it, and its floor |
-| **Verification gate** | `vp check` clean, the deterministic unit and offline gateway-mock suites green, full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
+| **Verification gate** | `pnpm run check` clean (zero errors and zero warnings), the deterministic unit and offline gateway-mock suites green, full schema validation, consumer install + load ([`scripts/check.ts`](./scripts/check.ts)) |
 
 ---
 
