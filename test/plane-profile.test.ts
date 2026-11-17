@@ -30,6 +30,7 @@ import {
   type PlanePiModel,
   planeEntriesOf,
   planeProfileFor,
+  piUnservedIds,
   withoutPlaneProviders,
 } from "./support/src.ts";
 
@@ -580,5 +581,57 @@ describe("plane-profile · withoutPlaneProviders and the plane readers", () => {
       "opencode-go": { g: 1 },
     });
     expect(planeEntriesOf(raw, [])).toEqual({});
+  });
+});
+
+describe('piUnservedIds: pi-ai\'s "needs an api" rule, mirrored', () => {
+  const pi: readonly PlanePiModel[] = [
+    { api: "a", id: "known" },
+    { api: "b", id: "other" },
+  ];
+  const models = [
+    { id: "known" },
+    { id: "gap" },
+    "bare-gap",
+    { name: "no id" },
+    { id: "gap" },
+  ];
+
+  it.each<[string, unknown, readonly PlanePiModel[], readonly string[]]>([
+    [
+      "each declared id pi lacks, once, in order",
+      { models },
+      pi,
+      ["gap", "bare-gap"],
+    ],
+    [
+      "a route api serves them all",
+      { api: "openai-completions", models },
+      pi,
+      [],
+    ],
+    [
+      "an empty route api is no api",
+      { api: "", models },
+      pi,
+      ["gap", "bare-gap"],
+    ],
+    [
+      "pi's models sharing one api serve them all",
+      { models },
+      [{ api: "a", id: "known" }],
+      [],
+    ],
+    [
+      "an empty pi catalog describes none",
+      { models },
+      [],
+      ["known", "gap", "bare-gap"],
+    ],
+    ["no models", {}, pi, []],
+    ["models that is not a list", { models: "gap" }, pi, []],
+    ["an entry that is not a record", "opencode", pi, []],
+  ])("%s", (_label, entry, catalog, expected) => {
+    expect(piUnservedIds(entry, catalog)).toEqual(expected);
   });
 });

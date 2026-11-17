@@ -40,12 +40,7 @@
  * @module scripts/verify-catalog
  */
 
-import {
-  OPENCODE_FAMILY_API,
-  OPENCODE_GO_CATALOG,
-  OPENCODE_PLANE_API,
-  OPENCODE_ZEN_CATALOG,
-} from "../src/catalog-data.ts";
+import * as catalogData from "../src/catalog-data.ts";
 import {
   getLiveGoCatalog as liveGoCatalog,
   getLiveZenCatalog as liveZenCatalog,
@@ -58,7 +53,7 @@ import { isCoreToolModel } from "../src/tool-fallback.ts";
 import { planeModelFor } from "../src/utils/plane-model.ts";
 import { planeProfileFor } from "../src/utils/plane-profile.ts";
 import { isServableSdk, protocolForSdk } from "../src/utils/protocols.ts";
-import { shimData, shimStale } from "./catalog-shim.ts";
+import { shimData, shimStale, shippedShim } from "./catalog-shim.ts";
 import { generatorArgs, readSource } from "./generator-kit.ts";
 
 const PROBE = process.argv.includes("--probe");
@@ -108,16 +103,12 @@ if (OFFLINE) {
     );
   }
   if (payload !== undefined) {
-    // The generator's own rule, over everything the shim exports: a
-    // difference in any catalog row, plane endpoint or family endpoint is
-    // staleness, and order is not.
+    // The generator's own rule, over everything the shim exports, read
+    // through the generator's own reader: a difference in any catalog row,
+    // plane endpoint, family endpoint or retired id is staleness, and order
+    // is not.
     const live = shimData(parseModelsDevCatalog(JSON.parse(payload)));
-    const shipped = {
-      familyApi: OPENCODE_FAMILY_API,
-      go: OPENCODE_GO_CATALOG,
-      planeApi: OPENCODE_PLANE_API,
-      zen: OPENCODE_ZEN_CATALOG,
-    };
+    const shipped = shippedShim(catalogData);
     if (shimStale(shipped, live)) {
       fail(
         `shim is stale against ${from ?? MODELS_OPENCODE_URL} (run scripts/regenerate-catalog-shim.ts --write)`
@@ -230,7 +221,7 @@ for (const [route, catalog, plane] of [
     catalog,
     endpoint: "auto",
     entry: { models: declared },
-    familyApi: OPENCODE_FAMILY_API[plane],
+    familyApi: catalogData.OPENCODE_FAMILY_API[plane],
     piModels: [],
     resolveRetryPolicy: () => ({}),
     route,
@@ -271,8 +262,8 @@ console.log("\n4. routing");
   const unroutable: string[] = [];
   let served = 0;
   for (const [route, catalog, family] of [
-    ["opencode", getLiveZenCatalog(), OPENCODE_FAMILY_API.zen],
-    ["opencode-go", getLiveGoCatalog(), OPENCODE_FAMILY_API.go],
+    ["opencode", getLiveZenCatalog(), catalogData.OPENCODE_FAMILY_API.zen],
+    ["opencode-go", getLiveGoCatalog(), catalogData.OPENCODE_FAMILY_API.go],
   ] as const) {
     for (const spec of catalog) {
       const { model, error } = planeModelFor({

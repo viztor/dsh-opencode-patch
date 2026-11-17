@@ -111,7 +111,7 @@ describe("settings-page: apply & slots", () => {
     expect(dockRegistrations).toHaveLength(0);
   });
 
-  it("unregisters every alias when the plugin unloads", () => {
+  it("unregisters every alias when the plugin unloads, and joins the purge row's callbacks to their methods", async () => {
     // The registrations above are only half the contract: a reload (or a profile
     // edit that restarts the entry) tears the bundle down, and the card must go
     // with it. Nothing asserted the disposers, so a card that outlived its
@@ -185,6 +185,46 @@ describe("settings-page: apply & slots", () => {
     expect(Object.keys(mount?.hooks as object)).toEqual(["opencodeCard"]);
     for (const action of ["discard", "edit", "resetField", "save"]) {
       expect(typeof mount?.[action]).toBe("function");
+    }
+
+    // The purge row's three callbacks, each joined to its own host method.
+    // The card reads the review on mount, so a review wired to the removal
+    // would rewrite the profile whenever Settings opens: each callback must
+    // reach exactly its method, with no argument. The remote is set after
+    // apply, as the host's mount lands after it, and read per call.
+    const calls: [string, unknown[]][] = [];
+    const answer = (method: string, value: unknown) =>
+      vi.fn(async (...args: unknown[]) => {
+        calls.push([method, args]);
+        return { ok: true, value };
+      });
+    (ctx as Record<string, unknown>).remote = {
+      opencodeModelPurge: {
+        purge: answer("purge", { catalogRead: true, removed: [] }),
+        removeUnserved: answer("removeUnserved", {
+          catalogRead: true,
+          removed: [],
+        }),
+        review: answer("review", { piRead: true, unserved: [] }),
+      },
+    };
+    const call = async (name: string): Promise<{ kind: string }> => {
+      const callback = mount?.[name];
+      if (typeof callback !== "function") {
+        throw new TypeError(`the card's mount has no ${name}`);
+      }
+      return (callback as () => Promise<{ kind: string }>)();
+    };
+    for (const [callback, method, kind] of [
+      ["reviewPurge", "review", "review"],
+      ["removeUnserved", "removeUnserved", "purged"],
+      ["purgeDeprecated", "purge", "purged"],
+    ] as const) {
+      calls.length = 0;
+      // oxlint-disable-next-line no-await-in-loop -- one callback at a time, so each call list is its own.
+      const outcome = await call(callback);
+      expect(outcome.kind, callback).toBe(kind);
+      expect(calls, callback).toEqual([[method, []]]);
     }
 
     teardown?.();

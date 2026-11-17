@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parsePurgeResult } from "./support/src.ts";
+import { parsePurgeResult, parsePurgeReview } from "./support/src.ts";
 
 describe("purge contract · the result codec", () => {
   it("accepts a result and keeps only the fields the card renders", () => {
@@ -48,6 +48,48 @@ describe("purge contract · the result codec", () => {
       { catalogRead: true, removed: [{ id: 1, provider: "opencode" }] },
     ]) {
       expect(parsePurgeResult(value), JSON.stringify(value)).toBeUndefined();
+    }
+  });
+});
+
+describe("purge contract · the review codec", () => {
+  it("keeps only what the card renders", () => {
+    expect(
+      parsePurgeReview({
+        catalogError: "e",
+        more: 1,
+        piRead: true,
+        unserved: [{ extra: 1, id: "a", provider: "opencode", site: "x" }],
+      })
+    ).toEqual({
+      catalogError: "e",
+      piRead: true,
+      unserved: [{ id: "a", provider: "opencode" }],
+    });
+    expect(
+      parsePurgeReview({
+        catalogError: "x".repeat(500),
+        piRead: false,
+        unserved: [],
+      })?.catalogError
+    ).toHaveLength(200);
+    expect(
+      parsePurgeReview({ catalogError: 7, piRead: false, unserved: [] })
+    ).toEqual({ piRead: false, unserved: [] });
+  });
+
+  it("rejects anything that is not a review", () => {
+    for (const value of [
+      undefined,
+      null,
+      "review",
+      { unserved: [] },
+      { piRead: "yes", unserved: [] },
+      { piRead: true, unserved: "nope" },
+      { piRead: true, unserved: [{ provider: "opencode" }] },
+      { piRead: true, unserved: [{ id: 1, provider: "opencode" }] },
+    ]) {
+      expect(parsePurgeReview(value), JSON.stringify(value)).toBeUndefined();
     }
   });
 });

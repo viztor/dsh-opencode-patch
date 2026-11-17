@@ -4,11 +4,14 @@
  * whether the shipped shim is stale against it.
  *
  * Every export the generator writes counts: the two catalogs, the plane
- * endpoints (`OPENCODE_PLANE_API`) and the family endpoints
- * (`OPENCODE_FAMILY_API`). The generator used to compare only the catalogs,
- * so a vendor that moved an endpoint left the shim reporting "current" while
- * the mount read the old address. `verify-catalog.ts` asks the same question
- * through `shimStale`, so the two can never disagree about it.
+ * endpoints (`OPENCODE_PLANE_API`), the family endpoints
+ * (`OPENCODE_FAMILY_API`) and the retired ids (`OPENCODE_DEPRECATED_IDS`).
+ * The generator used to compare only the catalogs, so a vendor that moved an
+ * endpoint left the shim reporting "current" while the mount read the old
+ * address. `verify-catalog.ts` asks the same question through `shimStale`,
+ * and both read what the file exports through one function (`shippedShim`),
+ * so the two can never disagree about it. The whole generated output is one
+ * function too (`rewriteShim`), which the script and its tests share.
  *
  * @module scripts/catalog-shim
  */
@@ -18,8 +21,12 @@ import { stale } from "./generator-kit.ts";
 /** One plane's endpoint per SDK package (`""` is the provider's default). */
 type FamilyApi = Readonly<Record<string, string>>;
 
-/** The four values the shim carries, in the shape `shimStale` compares. */
+/** The retired ids per plane, as the shim carries them. */
+type DeprecatedIds = Readonly<Record<"go" | "zen", readonly string[]>>;
+
+/** The five values the shim carries, in the shape `shimStale` compares. */
 export interface ShimData {
+  readonly deprecated: DeprecatedIds;
   readonly familyApi: Readonly<Record<"go" | "zen", FamilyApi>>;
   readonly go: readonly CatalogModelSpec[];
   readonly planeApi: Readonly<Record<"go" | "zen", string>>;
@@ -29,6 +36,7 @@ export interface ShimData {
 /** What `parseModelsDevCatalog` answers, read-only. */
 export interface ParsedShim {
   readonly api: Readonly<Record<"go" | "zen", string>>;
+  readonly deprecated: DeprecatedIds;
   readonly familyApi: Readonly<Record<"go" | "zen", FamilyApi>>;
   readonly go: readonly CatalogModelSpec[];
   readonly zen: readonly CatalogModelSpec[];
@@ -41,13 +49,21 @@ const TARGET = "catalog-data.ts";
 const byId = (specs: readonly CatalogModelSpec[]): CatalogModelSpec[] =>
   specs.toSorted((a, b) => a.id.localeCompare(b.id));
 
+/** Each plane's retired ids, sorted: their order is not data. */
+const sortedIds = (deprecated: DeprecatedIds): DeprecatedIds => ({
+  go: deprecated.go.toSorted(),
+  zen: deprecated.zen.toSorted(),
+});
+
 /**
  * What a parsed payload makes of the shim.
  *
  * @param parsed - `parseModelsDevCatalog`'s answer.
- * @returns the four values, each catalog sorted by id.
+ * @returns the five values, each catalog sorted by id and each retired list
+ *   sorted.
  */
 export const shimData = (parsed: ParsedShim): ShimData => ({
+  deprecated: sortedIds(parsed.deprecated),
   familyApi: parsed.familyApi,
   go: byId(parsed.go),
   planeApi: parsed.api,
@@ -56,18 +72,65 @@ export const shimData = (parsed: ParsedShim): ShimData => ({
 
 /**
  * Whether the shipped shim is stale against `next`: the one rule
- * (`generator-kit.ts`'s `stale`) over all four values. Row order is the
- * renderer's, so both sides are sorted by id first.
+ * (`generator-kit.ts`'s `stale`) over all five values. Row order is the
+ * renderer's and retired-id order is not data, so both sides are sorted first.
  *
- * @param shipped - what `src/catalog-data.ts` exports.
+ * @param shipped - what `src/catalog-data.ts` exports (`shippedShim`).
  * @param next - what the source makes of it today (`shimData`).
- * @returns whether any of the four differs in data.
+ * @returns whether any of the five differs in data.
  */
 export const shimStale = (shipped: ShimData, next: ShimData): boolean =>
   stale(
-    { ...shipped, go: byId(shipped.go), zen: byId(shipped.zen) },
-    { ...next, go: byId(next.go), zen: byId(next.zen) }
+    {
+      ...shipped,
+      deprecated: sortedIds(shipped.deprecated),
+      go: byId(shipped.go),
+      zen: byId(shipped.zen),
+    },
+    {
+      ...next,
+      deprecated: sortedIds(next.deprecated),
+      go: byId(next.go),
+      zen: byId(next.zen),
+    }
   );
+
+/** One plane's retired ids from an exported value; anything else is none. */
+const idList = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value.filter((id): id is string => typeof id === "string")
+    : [];
+
+/**
+ * What the generated file exports, by name, in the shape `shimStale`
+ * compares: the one reader of `src/catalog-data.ts` both scripts use, so a
+ * new export is added in one place. An absent or malformed
+ * `OPENCODE_DEPRECATED_IDS` (a shim generated before it existed) reads as no
+ * retired id on either plane.
+ *
+ * @param exports - the module namespace of `src/catalog-data.ts`.
+ * @returns the five values.
+ */
+export const shippedShim = (
+  exports: Readonly<Record<string, unknown>>
+): ShimData => {
+  const deprecated: unknown = exports.OPENCODE_DEPRECATED_IDS;
+  const record =
+    typeof deprecated === "object" && deprecated !== null
+      ? (deprecated as Readonly<Record<string, unknown>>)
+      : {};
+  return {
+    deprecated: { go: idList(record.go), zen: idList(record.zen) },
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the generated file's own exports, named by the declarations it writes.
+    familyApi: exports.OPENCODE_FAMILY_API as ShimData["familyApi"],
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+    go: exports.OPENCODE_GO_CATALOG as ShimData["go"],
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+    planeApi: exports.OPENCODE_PLANE_API as ShimData["planeApi"],
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+    zen: exports.OPENCODE_ZEN_CATALOG as ShimData["zen"],
+  };
+};
 
 /** Thousands separators, matching how the file already reads. */
 const numeral = (value: number): string =>
@@ -185,3 +248,89 @@ export const renderFamilyApi = (
   go: ${JSON.stringify(familyApi.go)},
   zen: ${JSON.stringify(familyApi.zen)},
 }`;
+
+/**
+ * The retired ids each plane's registry lists, as the shim carries them.
+ *
+ * Emitted so a cold or offline start knows what the registry had retired when
+ * the shim was generated: pi's installed snapshot still lists such ids, and
+ * without them the discovery merge would offer them until the first refresh.
+ */
+export const renderDeprecated = (deprecated: DeprecatedIds): string =>
+  `{
+  go: ${JSON.stringify(deprecated.go)},
+  zen: ${JSON.stringify(deprecated.zen)},
+}`;
+
+/**
+ * {@link spliceObject} when the `export const NAME: ` anchor exists; otherwise
+ * insert `declaration` immediately before the `export const BEFORE` anchor, so
+ * a shim generated before an export existed gains it from a `--write`, with no
+ * hand edit.
+ *
+ * @param source - the file's text.
+ * @param name - the export to replace or add.
+ * @param declaration - the whole declaration to insert, blank line included.
+ * @param body - the object literal to splice when the export exists.
+ * @param before - the export the new declaration goes in front of.
+ * @returns the rewritten text.
+ */
+export const upsertObject = (
+  source: string,
+  name: string,
+  declaration: string,
+  body: string,
+  before: string
+): string => {
+  if (source.includes(`export const ${name}: `)) {
+    return spliceObject(source, name, body);
+  }
+  const anchor = source.indexOf(`export const ${before}`);
+  if (anchor === -1) {
+    throw new Error(`could not find ${before} in ${TARGET}`);
+  }
+  return `${source.slice(0, anchor)}${declaration}${source.slice(anchor)}`;
+};
+
+/** The retired-ids declaration, as a shim without one gains it. */
+const deprecatedDeclaration = (deprecated: DeprecatedIds): string =>
+  `/**
+ * The ids each plane's registry lists as \`status: "deprecated"\`, sorted: what
+ * a cold or offline start holds as retired until the first refresh lands.
+ */
+export const OPENCODE_DEPRECATED_IDS: Readonly<
+  Record<"go" | "zen", readonly string[]>
+> = ${renderDeprecated(deprecated)};
+
+`;
+
+/**
+ * The whole generated output: `source` with every value the generator owns
+ * replaced by `data`'s, the retired ids added in front of the Go catalog when
+ * the file does not carry them yet.
+ *
+ * @param source - `src/catalog-data.ts` as it stands.
+ * @param data - what the source makes of it today (`shimData`).
+ * @returns the text `--write` writes, before the formatter.
+ */
+export const rewriteShim = (source: string, data: ShimData): string => {
+  let next = splice(source, "OPENCODE_GO_CATALOG", render(data.go));
+  next = splice(next, "OPENCODE_ZEN_CATALOG", render(data.zen));
+  next = spliceObject(
+    next,
+    "OPENCODE_PLANE_API",
+    renderPlaneApi(data.planeApi)
+  );
+  next = spliceObject(
+    next,
+    "OPENCODE_FAMILY_API",
+    renderFamilyApi(data.familyApi)
+  );
+  return upsertObject(
+    next,
+    "OPENCODE_DEPRECATED_IDS",
+    deprecatedDeclaration(data.deprecated),
+    renderDeprecated(data.deprecated),
+    "OPENCODE_GO_CATALOG"
+  );
+};

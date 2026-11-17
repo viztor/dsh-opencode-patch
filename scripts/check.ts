@@ -363,8 +363,19 @@ try {
  * 146953 bytes against the old line, from 143074 on the base. 146 rather
  * than 144 keeps the ~3 KB of room this line is meant to have; at 144 the
  * bundle sat under a kilobyte below it.
+ *
+ * Raised 146 -> 155 KB when P10b gave the purge row its review: the card now
+ * lists the declared ids pi cannot serve and removes them on request (the
+ * review block and its two pure line builders in `src/settings-card.tsx`), the
+ * client carries the review's whitelist parser and two more methods in the
+ * purge contract (`src/contracts/purge.ts`), the three purge calls share one
+ * outcome mapper (`src/settings-purge.ts`), and nine copy keys arrive in
+ * both languages. Source and its comments, not a dependency (the bundle still
+ * requires only react and the UI primitives, and no catalog row reaches it) —
+ * the client measured 156038 bytes against the old line, from 146953 on the
+ * base. 155 keeps about 2.6 KB of the ~3 KB of room this line is meant to have.
  */
-const CLIENT_BUDGET = 146 * 1024;
+const CLIENT_BUDGET = 155 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

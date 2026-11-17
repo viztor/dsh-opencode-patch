@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { registryOf, shippedShimData } from "./support/catalogs.ts";
 import { effectiveConfigOf, sameFiber } from "./support/config-shape.ts";
 import {
   adaptersOf,
@@ -983,17 +984,21 @@ describe(
     /** An id the registry below retires on both planes; pi's catalog has never heard of it. */
     const RETIRED = "retired-fixture-free";
 
-    /** Answer the catalog read with `RETIRED` deprecated, and record the rest. */
+    /**
+     * Answer the catalog read with the shipped world plus `RETIRED` deprecated
+     * on both planes, and record the rest. The shipped rows ride along: a
+     * plane lands only with an active row, and a payload of retired rows alone
+     * would land none.
+     */
     const retiringRegistry = (): void => {
       wire = recordingFetch({
         respond: (request) =>
           request.url.startsWith("https://models.opencode.ai/")
-            ? Response.json({
-                opencode: { models: { [RETIRED]: { status: "deprecated" } } },
-                "opencode-go": {
-                  models: { [RETIRED]: { status: "deprecated" } },
-                },
-              })
+            ? Response.json(
+                registryOf(shippedShimData(), {
+                  retire: { go: [RETIRED], zen: [RETIRED] },
+                })
+              )
             : offlineAuthResponse(),
       });
       vi.stubGlobal("fetch", wire.fetch);
@@ -1221,17 +1226,18 @@ describe(
     };
 
     /**
-     * A live catalog that retires {@link MODEL} on both planes: the plugin's
-     * merge drops a retired id from a plane it serves, so the id says whose
-     * answer Fetch gave.
+     * A live catalog that retires {@link MODEL} on both planes, the shipped
+     * rows beside it: the plugin's merge drops a retired id from a plane it
+     * serves, so the id says whose answer Fetch gave.
      */
     const retireModel = async (): Promise<void> => {
       await refreshCatalog(
         (async () =>
-          Response.json({
-            opencode: { models: { [MODEL]: { status: "deprecated" } } },
-            "opencode-go": { models: { [MODEL]: { status: "deprecated" } } },
-          })) as unknown as typeof fetch,
+          Response.json(
+            registryOf(shippedShimData(), {
+              retire: { go: [MODEL], zen: [MODEL] },
+            })
+          )) as unknown as typeof fetch,
         true
       );
     };

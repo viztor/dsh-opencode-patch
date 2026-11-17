@@ -2,9 +2,9 @@
  * The purge action: it deletes the deployment's own declaration entries, and it
  * says which of the several ways it can refuse happened.
  *
- * The catalog is the only source of "retired" — `extractSpecs` records a
- * `status: "deprecated"` id and drops it from the active set — so these tests
- * seed the module through the parser rather than inventing a second list.
+ * The catalog is the only source of "retired": the purge judges by the
+ * retired ids its own forced refresh answers (`CatalogRefresh.deprecated`), so
+ * each case stubs `fetch` with the registry it means and seeds nothing else.
  */
 import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +12,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ModelPurgeService,
   parseModelsDevCatalog,
+  purgeEntryConfig,
+  refreshCatalog,
+  replaceHostModuleSource,
   stripRetiredReferences,
 } from "./support/src.ts";
 
@@ -81,7 +84,6 @@ afterEach(() => {
 
 describe("purge: deleting what the catalog retired", () => {
   it("removes the retired ids and leaves every live one", async () => {
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const editor = editorWith({
       zen: [{ id: "fledge-alpha-free" }, { id: "mimo-v2.6-flash-free" }],
@@ -103,7 +105,6 @@ describe("purge: deleting what the catalog retired", () => {
   });
 
   it("writes nothing when the deployment declares no retired model", async () => {
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const editor = editorWith({
       zen: [{ id: "mimo-v2.6-flash-free" }],
@@ -116,18 +117,26 @@ describe("purge: deleting what the catalog retired", () => {
     expect(editor.entry.options.config.providers.opencode.models).toEqual([
       { id: "mimo-v2.6-flash-free" },
     ]);
+    // Not even a no-op write: on the real host one still validates, rewrites
+    // the profile document and reconciles.
+    expect(editor.edit).not.toHaveBeenCalled();
   });
   it("judges each plane route on its own plane: an id retired on Go only stays declared on Zen", async () => {
     // One id, live on Zen and retired on Go, declared on both routes. The
     // route-to-plane table decides which plane's retirement applies, so a
-    // swapped or constant plane fails one way or the other.
+    // swapped or constant plane fails one way or the other. Go carries a live
+    // row beside the retired one: a plane lands only with an active row (L12).
     const split = {
       opencode: {
         models: { "split-probe": { name: "Probe", limit: { context: 1000 } } },
       },
-      "opencode-go": { models: { "split-probe": { status: "deprecated" } } },
+      "opencode-go": {
+        models: {
+          "go-live": { name: "Live" },
+          "split-probe": { status: "deprecated" },
+        },
+      },
     };
-    parseModelsDevCatalog(split);
     vi.stubGlobal("fetch", () =>
       Promise.resolve({ json: async () => split, ok: true })
     );
@@ -179,16 +188,67 @@ describe("purge: the refusals it can report", () => {
     vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
     const { ModelPurgeService: Fresh } =
       await import("../src/purge-service.ts");
-    const editor = editorWith({
-      zen: [{ id: "mimo-v2.6-flash-free" }],
-      go: [],
-    });
+    // A made-up id, so a regenerated shim's own retirements cannot touch it.
+    const editor = editorWith({ zen: [{ id: "offline-probe-model" }], go: [] });
 
     const result = await new Fresh(ctxWith(editor)).purge();
 
     expect(result.catalogRead).toBe(false);
     expect(result.removed).toEqual([]);
   });
+  it("a shim that carries retired ids seeds a cold start with them, and an offline purge removes them", async () => {
+    // The shipped shim carries no `OPENCODE_DEPRECATED_IDS` until CI
+    // regenerates it, so the export is planted here: the runtime reader's
+    // export name, `shimState`'s seeding and the offline purge, performed.
+    vi.resetModules();
+    vi.doMock("../src/catalog-data.ts", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../src/catalog-data.ts")>()),
+      OPENCODE_DEPRECATED_IDS: {
+        go: ["shim-retired-go"],
+        zen: ["shim-retired-zen", 7],
+      },
+    }));
+    try {
+      vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+      const catalog = await import("../src/models-catalog.ts");
+      expect(catalog.shippedDeprecatedIds()).toEqual({
+        go: ["shim-retired-go"],
+        zen: ["shim-retired-zen"],
+      });
+      expect(catalog.isDeprecatedModelOn("go", "shim-retired-go")).toBe(true);
+      expect(catalog.isDeprecatedModelOn("zen", "shim-retired-zen")).toBe(true);
+      expect(catalog.isDeprecatedModelOn("zen", "shim-retired-go")).toBe(false);
+      const failed = await catalog.refreshCatalog(undefined, true);
+      expect(failed.ok).toBe(false);
+      expect(failed.deprecated).toEqual({
+        go: ["shim-retired-go"],
+        zen: ["shim-retired-zen"],
+      });
+
+      const { ModelPurgeService: Fresh } =
+        await import("../src/purge-service.ts");
+      const editor = editorWith({
+        go: [{ id: "shim-retired-go" }, { id: "kept-go" }],
+        zen: [{ id: "shim-retired-zen" }],
+      });
+      const result = await new Fresh(ctxWith(editor)).purge();
+      expect(result).toEqual({
+        catalogRead: false,
+        removed: [
+          { id: "shim-retired-zen", provider: "opencode" },
+          { id: "shim-retired-go", provider: "opencode-go" },
+        ],
+      });
+      expect(editor.edit).toHaveBeenCalledTimes(1);
+      expect(
+        editor.entry.options.config.providers["opencode-go"].models
+      ).toEqual([{ id: "kept-go" }]);
+    } finally {
+      vi.doUnmock("../src/catalog-data.ts");
+      vi.resetModules();
+    }
+  });
+
   it("reports nothing when the edit was rejected", async () => {
     // `configEditor.edit` throws after the change has been computed — "Profile
     // patch must be a YAML sequence" on a damaged document, "Configuration
@@ -196,7 +256,12 @@ describe("purge: the refusals it can report", () => {
     // inside the callback meant those ids were reported as purged for an edit
     // that never landed.
     answersRegistry();
-    const { entry } = editorWith({ zen: [{ id: "ll-alpha-free" }], go: [] });
+    // A retired id, so the entry is judged to change and the edit is made:
+    // an entry with nothing retired is never edited at all.
+    const { entry } = editorWith({
+      zen: [{ id: "fledge-alpha-free" }],
+      go: [],
+    });
     const editor = {
       edit: vi.fn(() =>
         Promise.reject(new Error("Profile patch must be a YAML sequence"))
@@ -237,7 +302,6 @@ describe("purge: the refusals it can report", () => {
 
 describe("purge: the shapes a profile row can take", () => {
   it("skips a provider block with no models and a row with no id", async () => {
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const entry = {
       options: {
@@ -309,7 +373,6 @@ describe("purge: the shapes a config editor can take", () => {
   it("skips entries whose options chain is not shaped like a profile row", async () => {
     // Only one entry in a real loader has this shape; the rest must be walked
     // past without throwing. These are the intermediates the filter reads.
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const declared = {
       options: {
@@ -345,7 +408,6 @@ describe("purge: the shapes a config editor can take", () => {
   });
 
   it("handles a provider block with no models array", async () => {
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const entry = {
       options: {
@@ -371,7 +433,6 @@ describe("purge: the shapes a config editor can take", () => {
   it("keeps a model row declared as a bare string", async () => {
     // The profile's rows are objects, but the schema also accepts a bare id.
     // A string row has no `id` field, so the reader must still name it.
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const entry = {
       options: {
@@ -421,7 +482,6 @@ describe("purge: references that are not provider declarations", () => {
   it("drops a subagent entry that names a retired model, and keeps the rest", async () => {
     // The shape that made the button lie: `allowedModels` declares no provider,
     // so the provider sweep never looked at it.
-    parseModelsDevCatalog(twoModelRegistry());
     answers(twoModelRegistry());
     const providerEntry = {
       options: {
@@ -475,7 +535,6 @@ describe("purge: references that are not provider declarations", () => {
   it("clears the compaction summariser PAIR when its model was retired", async () => {
     // Leaving `summarizationProvider` behind would ask for a default model on a
     // named route; both keys go so the entry falls back to its own defaults.
-    parseModelsDevCatalog(twoModelRegistry());
     answers(twoModelRegistry());
     const providerEntry = {
       options: {
@@ -516,7 +575,6 @@ describe("purge: references that are not provider declarations", () => {
 
   it("does not rewrite an entry with nothing to strip", async () => {
     // An unconditional edit would mark every entry dirty on every click.
-    parseModelsDevCatalog(twoModelRegistry());
     answers(twoModelRegistry());
     const providerEntry = {
       options: {
@@ -539,10 +597,10 @@ describe("purge: references that are not provider declarations", () => {
 
     await new ModelPurgeService(ctxWith(editor)).purge();
 
-    // The provider entry is edited once by the provider sweep (it decides inside
-    // the edit). The REFERENCE entry must not be touched at all — an
-    // unconditional edit would mark every entry dirty on every click.
-    expect(edit).toHaveBeenCalledTimes(1);
+    // Neither entry is touched: each is judged before its write, so an entry
+    // with nothing retired is never rewritten — an unconditional edit would
+    // mark every entry dirty on every click.
+    expect(edit).toHaveBeenCalledTimes(0);
     expect(JSON.stringify(untouched.options.config)).toBe(before);
   });
 });
@@ -567,7 +625,6 @@ describe("purge: an entry another plugin owns is left to it (D27)", () => {
   const MARKER = { "x-opencode-plugin": "vendor/1.0.0" } as const;
 
   it("rewrites the unmarked plane and never the marked one beside it, nor a row in a realm the plugin does not share, nor a reference to a route only they declare", async () => {
-    parseModelsDevCatalog(registry());
     answersRegistry();
     // The user's own row: a marked `opencode` beside an unmarked `opencode-go`.
     const split = {
@@ -637,7 +694,6 @@ describe("purge: an entry another plugin owns is left to it (D27)", () => {
   });
 
   it("refuses, writing nothing, when every plane entry is another plugin's", async () => {
-    parseModelsDevCatalog(registry());
     answersRegistry();
     const marked = {
       options: {
@@ -710,5 +766,596 @@ describe("purge: the pure reference stripper", () => {
     const { next, removed } = stripRetiredReferences(config, retired);
     expect(next).toBe(config);
     expect(removed).toEqual([]);
+  });
+});
+
+describe("purge: one edit per entry, judged by its own read", () => {
+  /** An editor whose `edit` applies the change to the entry it is handed. */
+  const applying = (entries: readonly unknown[]) => {
+    const edit = vi.fn(
+      async (
+        entry: unknown,
+        change: (current: Record<string, unknown>) => Record<string, unknown>
+      ) => {
+        const holder = entry as {
+          options: { config: Record<string, unknown> };
+        };
+        holder.options.config = change(holder.options.config);
+      }
+    );
+    return { edit, entries: () => entries };
+  };
+
+  const twoModelRegistry = () => ({
+    opencode: {
+      models: {
+        "live-free": { name: "Live", limit: { context: 1_000 } },
+        "retired-free": { status: "deprecated" },
+      },
+    },
+  });
+
+  it("a retired declaration and two retired references in one entry are one write", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json(twoModelRegistry()))
+    );
+    const entry = {
+      options: {
+        config: {
+          allowedModels: [{ model: "retired-free", provider: "opencode" }],
+          providers: {
+            opencode: { models: [{ id: "retired-free" }, { id: "live-free" }] },
+          },
+          summarizationModel: "retired-free",
+          summarizationProvider: "opencode",
+        },
+      },
+    };
+    const editor = applying([entry]);
+
+    const result = await new ModelPurgeService(ctxWith(editor)).purge();
+
+    expect(editor.edit).toHaveBeenCalledTimes(1);
+    expect(result.removed).toEqual([
+      { id: "retired-free", provider: "opencode" },
+      { id: "retired-free", provider: "opencode", site: "subagent" },
+      { id: "retired-free", provider: "opencode", site: "summarizer" },
+    ]);
+    expect(entry.options.config).toEqual({
+      allowedModels: [],
+      providers: { opencode: { models: [{ id: "live-free" }] } },
+    });
+  });
+
+  it("an entry with nothing retired is not edited", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json(twoModelRegistry()))
+    );
+    const editor = applying([
+      {
+        options: {
+          config: {
+            providers: { opencode: { models: [{ id: "live-free" }] } },
+          },
+        },
+      },
+      {
+        options: {
+          config: {
+            allowedModels: [{ model: "live-free", provider: "opencode" }],
+          },
+        },
+      },
+    ]);
+
+    const result = await new ModelPurgeService(ctxWith(editor)).purge();
+
+    expect(editor.edit).not.toHaveBeenCalled();
+    expect(result.removed).toEqual([]);
+  });
+
+  it("a parse made while the purge runs does not change what it removes", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json(twoModelRegistry()))
+    );
+    const entry = {
+      options: {
+        config: {
+          providers: {
+            opencode: { models: [{ id: "retired-free" }, { id: "live-free" }] },
+          },
+        },
+      },
+    };
+    const editor = applying([entry]);
+    const { entries } = editor;
+    editor.entries = () => {
+      // Any parse — a generator, an e2e file — used to clear the live
+      // retirements the purge was about to judge by.
+      parseModelsDevCatalog({ opencode: { models: { x: { name: "x" } } } });
+      return entries();
+    };
+
+    const result = await new ModelPurgeService(ctxWith(editor)).purge();
+
+    expect(result.removed).toEqual([
+      { id: "retired-free", provider: "opencode" },
+    ]);
+    expect(result.catalogRead).toBe(true);
+  });
+
+  it("a read that fails is judged by what the process already holds, and says the catalog was not read", async () => {
+    await refreshCatalog(
+      async () =>
+        Response.json({
+          opencode: {
+            models: { "r-free": { status: "deprecated" }, "z-live": {} },
+          },
+        }),
+      true
+    );
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+    const editor = editorWith({
+      zen: [{ id: "r-free" }, { id: "z-live" }],
+      go: [],
+    });
+
+    const result = await new ModelPurgeService(ctxWith(editor)).purge();
+
+    expect(result.removed).toEqual([{ id: "r-free", provider: "opencode" }]);
+    expect(result.catalogRead).toBe(false);
+  });
+});
+
+describe("purge: an entry that changed between the judgement and its write", () => {
+  it("writes what the editor hands the change, and reports only what that removed", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        Response.json({
+          opencode: {
+            models: {
+              "live-free": { name: "Live" },
+              "retired-free": { status: "deprecated" },
+            },
+          },
+        })
+      )
+    );
+    const entry = {
+      options: {
+        config: {
+          providers: { opencode: { models: [{ id: "retired-free" }] } },
+        },
+      },
+    };
+    // A reload between the pre-check and the write: the config the editor
+    // hands the change no longer declares the retired id.
+    let written: unknown;
+    const edit = vi.fn(
+      async (
+        _entry: unknown,
+        change: (current: Record<string, unknown>) => Record<string, unknown>
+      ) => {
+        written = change({
+          providers: { opencode: { models: [{ id: "live-free" }] } },
+        });
+      }
+    );
+
+    const result = await new ModelPurgeService(
+      ctxWith({ edit, entries: () => [entry] })
+    ).purge();
+
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(written).toEqual({
+      providers: { opencode: { models: [{ id: "live-free" }] } },
+    });
+    expect(result.removed).toEqual([]);
+  });
+});
+
+describe("purge: the pure rewrite of one entry (purgeEntryConfig)", () => {
+  const retired = (_route: string, id: string): boolean =>
+    id === "retired-free";
+
+  it("answers the config itself when nothing is retired", () => {
+    const config = {
+      allowedModels: [{ model: "live", provider: "opencode" }],
+      providers: { opencode: { models: [{ id: "live" }] } },
+    };
+    const { next, removed } = purgeEntryConfig(config, ["opencode"], retired);
+    expect(next).toBe(config);
+    expect(removed).toEqual([]);
+  });
+
+  it("filters only the routes it owns, declarations before references", () => {
+    const config = {
+      allowedModels: [{ model: "retired-free", provider: "opencode-go" }],
+      providers: {
+        opencode: { models: [{ id: "retired-free" }] },
+        "opencode-go": {
+          api: "x",
+          models: ["retired-free", { name: "no id" }, { id: "live" }],
+        },
+      },
+    };
+    const { next, removed } = purgeEntryConfig(
+      config,
+      ["opencode-go"],
+      retired
+    );
+    expect(removed).toEqual([
+      { id: "retired-free", provider: "opencode-go" },
+      { id: "retired-free", provider: "opencode-go", site: "subagent" },
+    ]);
+    expect(next).toEqual({
+      allowedModels: [],
+      providers: {
+        opencode: { models: [{ id: "retired-free" }] },
+        "opencode-go": {
+          api: "x",
+          models: [{ name: "no id" }, { id: "live" }],
+        },
+      },
+    });
+    // The input is not mutated.
+    expect(config.providers["opencode-go"].models).toHaveLength(3);
+  });
+
+  it("reads past an owned route whose block is not a record", () => {
+    const config = { providers: { opencode: "not a block" } };
+    expect(purgeEntryConfig(config, ["opencode"], retired).next).toBe(config);
+  });
+
+  it("reads past a provider block with no models and a providers value that is not a dict", () => {
+    const bare = { providers: { opencode: { api: "x" } } };
+    expect(purgeEntryConfig(bare, ["opencode"], retired).next).toBe(bare);
+    const odd = { providers: "nope" };
+    expect(purgeEntryConfig(odd, ["opencode"], retired).next).toBe(odd);
+  });
+});
+
+describe("purge: the ids pi cannot serve (review and removeUnserved)", () => {
+  /** The routes the service asked pi's installed catalog for, in order. */
+  const asked: string[] = [];
+
+  /**
+   * Hand the service a pi whose installed catalog is `models` per route, or
+   * none. Each route answers its own list, and a route it does not hold
+   * answers none, so a lookup under the wrong key judges every declared id
+   * unserved and over-lists.
+   */
+  const piCatalog = (
+    models?: Readonly<Record<string, readonly { id: string; api: string }[]>>
+  ): (() => void) => {
+    asked.length = 0;
+    return replaceHostModuleSource({
+      libraries: async () =>
+        models === undefined
+          ? undefined
+          : ({
+              builtinModels: (route: string) => {
+                asked.push(route);
+                return models[route] ?? [];
+              },
+            } as never),
+      piAi: async () => {},
+    });
+  };
+
+  const PI = {
+    opencode: [
+      { api: "a", id: "known" },
+      { api: "b", id: "other" },
+    ],
+    "opencode-go": [
+      { api: "a", id: "go-known" },
+      { api: "b", id: "go-other" },
+    ],
+  };
+
+  const MARKER = { "x-opencode-plugin": "vendor/1.0.0" } as const;
+
+  /** An editor whose `edit` applies the change to the entry it is handed. */
+  const applying = (entries: readonly unknown[]) => {
+    const edit = vi.fn(
+      async (
+        entry: unknown,
+        change: (current: Record<string, unknown>) => Record<string, unknown>
+      ) => {
+        const holder = entry as {
+          options: { config: Record<string, unknown> };
+        };
+        holder.options.config = change(holder.options.config);
+      }
+    );
+    return { edit, entries: () => entries };
+  };
+
+  const declaring = (providers: Record<string, unknown>) => ({
+    options: { config: { providers }, id: "llm-pi-ai" },
+  });
+
+  it("review lists the declared ids pi cannot serve, per owned route, and writes nothing", async () => {
+    const restore = piCatalog(PI);
+    const fetchSpy = vi.fn(() => Promise.reject(new Error("no network")));
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const editor = applying([
+        declaring({
+          opencode: { models: [{ id: "known" }, { id: "gap-1" }] },
+          "opencode-go": { models: ["go-known", "gap-2", "known"] },
+        }),
+        // Another plugin's entry (D27): its ids are not listed.
+        declaring({
+          opencode: {
+            headers: { "x-opencode-plugin": "vendor/1.0.0" },
+            models: [{ id: "theirs" }],
+          },
+        }),
+      ]);
+      const review = await new ModelPurgeService(ctxWith(editor)).review();
+      // Each route judged by its own list: `known` is pi's on `opencode`
+      // only, so it is listed on `opencode-go`, and `go-known` is not.
+      expect(review).toEqual({
+        piRead: true,
+        unserved: [
+          { id: "gap-1", provider: "opencode" },
+          { id: "gap-2", provider: "opencode-go" },
+          { id: "known", provider: "opencode-go" },
+        ],
+      });
+      expect(asked).toEqual(["opencode", "opencode-go"]);
+      expect(editor.edit).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it("review says when pi's catalog could not be read, and carries the catalog's last error", async () => {
+    const restore = piCatalog();
+    try {
+      vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+      await refreshCatalog(undefined, true);
+      const editor = applying([
+        declaring({ opencode: { models: [{ id: "gap-1" }] } }),
+      ]);
+      const review = await new ModelPurgeService(ctxWith(editor)).review();
+      expect(review.piRead).toBe(false);
+      expect(review.unserved).toEqual([]);
+      expect(review.catalogError).toContain("offline");
+    } finally {
+      restore();
+    }
+  });
+
+  it("review reads a pi whose libraries throw as unread", async () => {
+    const restore = replaceHostModuleSource({
+      libraries: () => Promise.reject(new Error("no pi here")),
+      piAi: async () => {},
+    });
+    try {
+      const editor = applying([
+        declaring({ opencode: { models: [{ id: "gap-1" }] } }),
+      ]);
+      await expect(
+        new ModelPurgeService(ctxWith(editor)).review()
+      ).resolves.toEqual({ piRead: false, unserved: [] });
+    } finally {
+      restore();
+    }
+  });
+
+  it("review answers the catalog's last error when no plane entry is the plugin's, and lists nothing", async () => {
+    const restore = piCatalog(PI);
+    try {
+      vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+      await refreshCatalog(undefined, true);
+      const profiles: [string, unknown[]][] = [
+        ["no plane entry", [{ options: { config: { other: 1 } } }]],
+        [
+          "only another plugin's",
+          [
+            declaring({
+              opencode: { headers: { ...MARKER }, models: [{ id: "gap-1" }] },
+            }),
+          ],
+        ],
+      ];
+      for (const [label, entries] of profiles) {
+        const editor = applying(entries);
+        // oxlint-disable-next-line no-await-in-loop -- one profile at a time.
+        const review = await new ModelPurgeService(ctxWith(editor)).review();
+        expect(review.piRead, label).toBe(true);
+        expect(review.unserved, label).toEqual([]);
+        expect(review.catalogError, label).toContain("offline");
+        expect(editor.edit, label).not.toHaveBeenCalled();
+      }
+    } finally {
+      restore();
+    }
+    // The same profile with pi unreadable says so, and still carries the error.
+    const unread = piCatalog();
+    try {
+      const review = await new ModelPurgeService(
+        ctxWith(applying([{ options: { config: {} } }]))
+      ).review();
+      expect(review).toMatchObject({ piRead: false, unserved: [] });
+      expect(review.catalogError).toContain("offline");
+    } finally {
+      unread();
+    }
+  });
+
+  it("review refuses with no editor, as the purge does", async () => {
+    await expect(
+      new ModelPurgeService(ctxWith(undefined)).review()
+    ).rejects.toMatchObject({ code: "opencode/purge-unavailable" });
+  });
+
+  it("removeUnserved removes those ids and references to them, one edit per entry, with no catalog read", async () => {
+    const restore = piCatalog(PI);
+    const fetchSpy = vi.fn(() => Promise.reject(new Error("no network")));
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const a = declaring({
+        opencode: { models: [{ id: "known" }, { id: "gap-1" }] },
+      });
+      const b = {
+        options: {
+          config: {
+            allowedModels: [
+              { model: "gap-1", provider: "opencode" },
+              { model: "known", provider: "opencode" },
+            ],
+          },
+        },
+      };
+      const c = {
+        options: {
+          config: {
+            summarizationModel: "known",
+            summarizationProvider: "opencode",
+          },
+        },
+      };
+      const cBefore = structuredClone(c.options.config);
+      const editor = applying([a, b, c]);
+
+      const result = await new ModelPurgeService(
+        ctxWith(editor)
+      ).removeUnserved();
+
+      expect(result).toEqual({
+        catalogRead: true,
+        removed: [
+          { id: "gap-1", provider: "opencode" },
+          { id: "gap-1", provider: "opencode", site: "subagent" },
+        ],
+      });
+      expect(editor.edit).toHaveBeenCalledTimes(2);
+      expect(editor.edit.mock.calls.map(([entry]) => entry)).toEqual([a, b]);
+      expect(c.options.config).toEqual(cBefore);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it("removeUnserved judges each entry's declarations by its own block, and review lists an id two entries declare once", async () => {
+    const restore = piCatalog(PI);
+    try {
+      const a = declaring({
+        opencode: { models: [{ id: "known" }, { id: "gap-1" }] },
+      });
+      // A route-level `api`: pi-ai serves every id on it, so it lists none
+      // and keeps `gap-1`, which `a` and `c` cannot serve.
+      const b = declaring({
+        opencode: { api: "openai-completions", models: [{ id: "gap-1" }] },
+      });
+      const c = declaring({ opencode: { models: ["gap-1"] } });
+      // The subagent's reference goes although `b` keeps `gap-1`: three owned
+      // entries on one route is a composition the host's registry refuses
+      // (DUPLICATE_ADAPTER), so which one serves `opencode` once the plugin
+      // is gone depends on apply order, and a reference, which names a route
+      // and not an entry, is judged route-wide.
+      const subagent = {
+        options: {
+          config: { allowedModels: [{ model: "gap-1", provider: "opencode" }] },
+        },
+      };
+      const bBefore = structuredClone(b.options.config);
+      const editor = applying([a, b, c, subagent]);
+      const service = new ModelPurgeService(ctxWith(editor));
+
+      await expect(service.review()).resolves.toEqual({
+        piRead: true,
+        unserved: [{ id: "gap-1", provider: "opencode" }],
+      });
+
+      const result = await service.removeUnserved();
+
+      expect(result).toEqual({
+        catalogRead: true,
+        removed: [
+          { id: "gap-1", provider: "opencode" },
+          { id: "gap-1", provider: "opencode" },
+          { id: "gap-1", provider: "opencode", site: "subagent" },
+        ],
+      });
+      expect(editor.edit.mock.calls.map(([entry]) => entry)).toEqual([
+        a,
+        c,
+        subagent,
+      ]);
+      expect(b.options.config).toEqual(bBefore);
+      expect(a.options.config.providers).toEqual({
+        opencode: { models: [{ id: "known" }] },
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("removeUnserved leaves another plugin's entry and a reference to a route only it declares alone (D27)", async () => {
+    const restore = piCatalog(PI);
+    try {
+      const marked = declaring({
+        opencode: { headers: { ...MARKER }, models: [{ id: "gap-1" }] },
+      });
+      const owned = declaring({ "opencode-go": { models: [{ id: "gap-1" }] } });
+      const subagent = {
+        options: {
+          config: {
+            allowedModels: [
+              { model: "gap-1", provider: "opencode" },
+              { model: "gap-1", provider: "opencode-go" },
+            ],
+          },
+        },
+      };
+      const markedBefore = structuredClone(marked.options.config);
+      const editor = applying([marked, owned, subagent]);
+
+      const result = await new ModelPurgeService(
+        ctxWith(editor)
+      ).removeUnserved();
+
+      expect(result).toEqual({
+        catalogRead: true,
+        removed: [
+          { id: "gap-1", provider: "opencode-go" },
+          { id: "gap-1", provider: "opencode-go", site: "subagent" },
+        ],
+      });
+      expect(marked.options.config).toEqual(markedBefore);
+      expect(editor.edit.mock.calls.map(([entry]) => entry)).toEqual([
+        owned,
+        subagent,
+      ]);
+      expect(subagent.options.config.allowedModels).toEqual([
+        { model: "gap-1", provider: "opencode" },
+      ]);
+      expect(asked).toEqual(["opencode-go"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("removeUnserved removes nothing when pi's catalog cannot be read", async () => {
+    const restore = piCatalog();
+    try {
+      const editor = applying([
+        declaring({ opencode: { models: [{ id: "gap-1" }] } }),
+      ]);
+      const result = await new ModelPurgeService(
+        ctxWith(editor)
+      ).removeUnserved();
+      expect(result).toEqual({ catalogRead: false, removed: [] });
+      expect(editor.edit).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
   });
 });

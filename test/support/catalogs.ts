@@ -24,12 +24,16 @@
  * @module test/support/catalogs
  */
 
+import type { ShimData } from "../../scripts/catalog-shim.ts";
 import {
   type CatalogModelSpec,
+  OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
+  OPENCODE_PLANE_API,
   OPENCODE_ZEN_CATALOG,
   protocolForSdk,
   refreshCatalog,
+  shippedDeprecatedIds,
 } from "./src.ts";
 
 /** The two plane routes the shims describe. */
@@ -255,9 +259,10 @@ export const GO_FREE_PROBE = "go-probe";
  *
  * A request-path test needs the world installed where the shipped lookup reads
  * it, so this goes through `refreshCatalog` (the stubbed fetch never touches the
- * network). `refreshCatalog` merges into the live maps, and
- * `test/support/reset-process-state.ts` restores the shim after every test, so
- * a case seeds its own world.
+ * network). The refresh REPLACES each plane it carries rows for, so the two
+ * probes are the whole live catalog of both planes until
+ * `test/support/reset-process-state.ts` restores the shim after the test; a
+ * case seeds its own world.
  *
  * @returns once the live maps carry both probes.
  */
@@ -273,4 +278,102 @@ export const seedDivergentCatalog = async (): Promise<void> => {
     ],
   });
   await refreshCatalog(async () => Response.json(body), true);
+};
+
+/**
+ * What the shipped shim exports, in the shape the generator's staleness rule
+ * compares (`scripts/catalog-shim.ts`'s `ShimData`), its retired ids included.
+ *
+ * Read through the door's names, so the retired ids come through the same
+ * tolerant read the runtime seeds from: an empty list per plane until the
+ * generated file carries them.
+ *
+ * @returns the five values.
+ */
+export const shippedShimData = (): ShimData => ({
+  deprecated: shippedDeprecatedIds(),
+  familyApi: OPENCODE_FAMILY_API,
+  go: OPENCODE_GO_CATALOG,
+  planeApi: OPENCODE_PLANE_API,
+  zen: OPENCODE_ZEN_CATALOG,
+});
+
+/**
+ * A models.dev payload that reproduces `data`, changed as a case says.
+ *
+ * Every row carries the fields the parser reads (its limits, cost, modalities
+ * and reasoning) and its family's endpoint as its own `provider.api`; each
+ * plane's endpoint is the provider's `api`; and every id in
+ * `data.deprecated[plane]` is a `status: "deprecated"` row. A family no live
+ * row names is carried by one of those retired rows, so the family map is the
+ * shipped one and no retired id is added that the data does not hold. The
+ * payload reproduces the data only when every such family has a retired id to
+ * carry it, which a generated shim always has (the generator reads families
+ * off retired rows too); data that has a family left over throws rather than
+ * invent a row. The inverse of `parseModelsDevCatalog` then `shimData`, which
+ * the generator's "current" cases hold.
+ *
+ * @param data - the shim to reproduce (`shippedShimData()` for the shipped one).
+ * @param changes - ids moved to `status: "deprecated"`, and rows added, per plane.
+ * @returns the payload the parser reads.
+ */
+export const registryOf = (
+  data: ShimData,
+  changes: {
+    retire?: Partial<Record<"go" | "zen", readonly string[]>>;
+    add?: { go?: readonly SpecInput[]; zen?: readonly SpecInput[] };
+  } = {}
+): Record<string, unknown> => {
+  const provider = (plane: "go" | "zen"): Record<string, unknown> => {
+    const families = data.familyApi[plane];
+    const retire = new Set(changes.retire?.[plane]);
+    const live = data[plane].filter((row) => !retire.has(row.id));
+    const models: Record<string, unknown> = {};
+    for (const row of live) {
+      const npm = row.provider_npm ?? "";
+      const api = families[npm];
+      models[row.id] = {
+        ...(row.cost === undefined ? {} : { cost: row.cost }),
+        id: row.id,
+        limit: { context: row.context_window, output: row.max_output_tokens },
+        modalities: { input: row.input_modalities },
+        name: row.name,
+        provider: {
+          ...(api === undefined ? {} : { api }),
+          ...(npm === "" ? {} : { npm }),
+        },
+        ...(row.reasoning === undefined ? {} : { reasoning: row.reasoning }),
+        ...(row.reasoning_options === undefined
+          ? {}
+          : { reasoning_options: row.reasoning_options }),
+      };
+    }
+    const retired = [...new Set([...data.deprecated[plane], ...retire])];
+    const named = new Set(live.map((row) => row.provider_npm ?? ""));
+    const orphans = Object.entries(families).filter(([npm]) => !named.has(npm));
+    for (const id of retired) {
+      const [family] = orphans.splice(0, 1);
+      models[id] = {
+        ...(family === undefined
+          ? {}
+          : {
+              provider: {
+                api: family[1],
+                ...(family[0] === "" ? {} : { npm: family[0] }),
+              },
+            }),
+        status: "deprecated",
+      };
+    }
+    if (orphans.length > 0) {
+      throw new Error(
+        `registryOf: ${plane} family ${orphans.map(([npm]) => JSON.stringify(npm)).join(", ")} has no live or retired row to carry it`
+      );
+    }
+    for (const row of changes.add?.[plane] ?? []) {
+      models[row.id] = modelEntry(row);
+    }
+    return { api: data.planeApi[plane], models };
+  };
+  return { "opencode-go": provider("go"), opencode: provider("zen") };
 };

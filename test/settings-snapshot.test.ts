@@ -264,6 +264,7 @@ const CHOICE_KEYS = {
 
 /** Every copy key that stays, in both languages. */
 const LIVE_KEYS = [
+  "catalogLastError",
   "description",
   "endpoint",
   "endpointAuto",
@@ -333,6 +334,14 @@ const LIVE_KEYS = [
   "storeInspectUnavailable",
   "storeInspectValid",
   "unavailable",
+  "unservedAction",
+  "unservedBusy",
+  "unservedHint",
+  "unservedNothing",
+  "unservedPiUnread",
+  "unservedPiUnreadReview",
+  "unservedRemoved",
+  "unservedTitle",
   "usageAuthRejected",
   "usageConsole",
   "usageEnabled",
@@ -733,7 +742,9 @@ describe("the settings, as the plugin derives them", () => {
   });
 
   it("the copy keys: the full list, in both languages", () => {
-    expect(LIVE_KEYS).toHaveLength(104);
+    // 104 through P10a; P10b adds the review's nine (`catalogLastError` and
+    // the eight `unserved*` keys).
+    expect(LIVE_KEYS).toHaveLength(113);
     const expected = [...LIVE_KEYS, "appliesOnReapply"].toSorted();
     expect(Object.keys(en).toSorted()).toStrictEqual(expected);
     expect(Object.keys(zh).toSorted()).toStrictEqual(expected);

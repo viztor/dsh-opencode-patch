@@ -1,6 +1,21 @@
 /**
  * Host-side "purge deprecated models": rewrites the deployment's own provider
- * declaration, deleting the model entries the live catalog has retired.
+ * declaration, deleting the model entries the catalog has retired. Its
+ * sibling, the ids pi cannot serve (`review`, `removeUnserved`), runs the
+ * same rewrite with another judge: the ids declared on the plugin's planes
+ * that pi's installed catalog does not describe, which pi-ai drops from the
+ * composer, and refuses the next Settings edit of, once the plugin is gone.
+ *
+ * **What "retired" is judged by.** The forced refresh's own answer
+ * (`CatalogRefresh.deprecated`): the registry's retired ids when the read
+ * lands, and what the process already holds when it does not — the shipped
+ * shim's own retirements, or an earlier refresh's. `catalogRead` says which.
+ *
+ * **One write per entry.** Every entry is judged before its write, and an
+ * entry with nothing to remove is not edited at all: on the real host a no-op
+ * edit still validates, rewrites the profile document and reconciles. An
+ * entry with something to remove gets exactly one edit, declarations and
+ * references together (`purgeEntryConfig`).
  *
  * **Why it edits the profile instead of filtering at read time.** A filter keeps
  * a second list of "what the user really means", and that list is invisible: the
@@ -35,22 +50,21 @@ import {
   PURGE_UNAVAILABLE,
   purgeRemote,
   type PurgeResult,
+  type PurgeReview,
   type PurgedModel,
 } from "./contracts/purge.ts";
+import { loadHostLibraries } from "./cordis-context.ts";
 import { markRemote } from "./host/remote.ts";
-import {
-  didCatalogRefreshSucceed,
-  isDeprecatedModelOn,
-  refreshCatalog,
-} from "./models-catalog.ts";
+import { catalogLastError, refreshCatalog } from "./models-catalog.ts";
 import { isRecord } from "./utils/guards.ts";
 import {
   foreignCredentialsRealm,
   pluginMarkerOf,
   type RealmSide,
 } from "./utils/plane-ownership.ts";
+import { piUnservedIds } from "./utils/plane-profile.ts";
 import { type Plane, PLANE_OF_ROUTE } from "./utils/planes.ts";
-import { PLANE_ROUTES } from "./utils/protocols.ts";
+import { PLANE_ROUTES, type PlaneRoute } from "./utils/protocols.ts";
 
 /** A provider route the plugin knows how to read a plane from, in route order. */
 const PLANES: readonly { route: string; plane: Plane }[] = PLANE_ROUTES.map(
@@ -98,6 +112,9 @@ const idOf = (model: unknown): string | undefined => {
   return undefined;
 };
 
+/** Whether one `(route, id)` reference is to be removed. */
+type Judge = (route: string, id: string) => boolean;
+
 /**
  * Whether `id` is retired on a route this plugin owns.
  *
@@ -106,18 +123,28 @@ const idOf = (model: unknown): string | undefined => {
  * That includes a plane route only another plugin's entries declare (D27).
  *
  * @param foreign - the plane routes only another plugin's entries declare.
+ * @param retired - the ids retired on each plane, from one catalog answer.
  * @returns the judge for one `(route, id)` reference.
  */
 const isRetiredOnOwnedRoute =
-  (foreign: ReadonlySet<string>) =>
-  (route: string, id: string): boolean => {
+  (
+    foreign: ReadonlySet<string>,
+    retired: ReadonlyMap<Plane, ReadonlySet<string>>
+  ): Judge =>
+  (route, id) => {
     const plane = PLANES.find((candidate) => candidate.route === route)?.plane;
     return (
       plane !== undefined &&
       !foreign.has(route) &&
-      isDeprecatedModelOn(plane, id)
+      retired.get(plane)?.has(id) === true
     );
   };
+
+/** Rows of `{ id, provider }` as a `(route, id)` judge. */
+const judgeOf =
+  (rows: readonly PurgedModel[]): Judge =>
+  (route, id) =>
+    rows.some((row) => row.provider === route && row.id === id);
 
 /** A property read that a hostile or half-built value cannot throw out of. */
 const readSafely = (value: unknown, key: string): unknown => {
@@ -236,6 +263,135 @@ export const stripRetiredReferences = (
   return { next, removed };
 };
 
+/**
+ * One entry's config with every judged id removed: its declarations on the
+ * routes it owns, then every reference to one (`stripRetiredReferences`).
+ *
+ * PURE, so the purge can judge an entry before writing it and write it with
+ * one edit: the pre-check and the edit's own callback run the same function.
+ *
+ * @param config - the entry's config, verbatim.
+ * @param ownedRoutes - the plane routes this entry declares that the plugin
+ *   may rewrite; a route not listed is never filtered.
+ * @param isRetired - whether `id` is to be removed from `route`'s declaration
+ *   in THIS entry.
+ * @param isReferenced - whether a reference to `(route, id)` is to be
+ *   removed; the declaration judge when omitted. The removal of the ids pi
+ *   cannot serve passes a route-wide judge here, because a reference names a
+ *   route and not the entry that declares it.
+ * @returns the config to write (`config` itself when nothing matched), and
+ *   what went, declarations first.
+ */
+export const purgeEntryConfig = (
+  config: Record<string, unknown>,
+  ownedRoutes: readonly string[],
+  isRetired: Judge,
+  isReferenced: Judge = isRetired
+): { next: Record<string, unknown>; removed: PurgedModel[] } => {
+  const removed: PurgedModel[] = [];
+  let next = config;
+  const providers = isRecord(config.providers) ? config.providers : undefined;
+  if (providers !== undefined) {
+    const rewritten: Record<string, unknown> = { ...providers };
+    for (const { route } of PLANES) {
+      const declared = ownedRoutes.includes(route)
+        ? modelsOf(providers[route])
+        : undefined;
+      if (declared === undefined) {
+        continue;
+      }
+      const kept = declared.filter((model) => {
+        const id = idOf(model);
+        if (id === undefined || !isRetired(route, id)) {
+          return true;
+        }
+        removed.push({ id, provider: route });
+        return false;
+      });
+      if (kept.length !== declared.length) {
+        rewritten[route] = { ...(providers[route] as object), models: kept };
+      }
+    }
+    if (removed.length > 0) {
+      next = { ...config, providers: rewritten };
+    }
+  }
+  const references = stripRetiredReferences(next, isReferenced);
+  return {
+    next: references.next,
+    removed: [...removed, ...references.removed],
+  };
+};
+
+/** The config an editor entry carries, when its options hold one. */
+const configOf = (entry: unknown): Record<string, unknown> | undefined => {
+  const options = readSafely(entry, "options");
+  const config = isRecord(options) ? options.config : undefined;
+  return isRecord(config) ? config : undefined;
+};
+
+/** Which entries' plane routes the plugin may rewrite, and a judge's guard. */
+interface Ownership {
+  /** Each entry that declares an owned plane route, with those routes. */
+  readonly ownedRoutes: ReadonlyMap<unknown, readonly string[]>;
+  /** The plane routes only another plugin's entries declare (D27). */
+  readonly foreignOnly: ReadonlySet<string>;
+}
+
+/** What `rewrite` removes: declarations judged per entry, references per route. */
+interface Judges {
+  /** The judge for one entry's own declarations. */
+  readonly declarations: (entry: unknown) => Judge;
+  /** The judge for a reference, which names a route and not an entry. */
+  readonly references: Judge;
+}
+
+/**
+ * Rewrite every entry the judges find something in: one loop over the
+ * editor's entries, a pure pre-check, and exactly one edit for an entry that
+ * changes.
+ *
+ * @param editor - the config editor.
+ * @param ownership - which entries' plane routes the plugin may rewrite.
+ * @param judges - whether one `(route, id)` declaration or reference is to go.
+ * @returns every reference removed, in entry order.
+ */
+const rewrite = async (
+  editor: ConfigEditorFace,
+  ownership: Ownership,
+  judges: Judges
+): Promise<PurgedModel[]> => {
+  const removed: PurgedModel[] = [];
+  for (const entry of editor.entries()) {
+    const config = configOf(entry);
+    if (config === undefined) {
+      continue;
+    }
+    const routes = ownership.ownedRoutes.get(entry) ?? [];
+    const judge = judges.declarations(entry);
+    const purgeOf = (current: Record<string, unknown>) =>
+      purgeEntryConfig(current, routes, judge, judges.references);
+    // Decided before the write, so an entry with nothing to remove is not
+    // rewritten at all: on the real host a no-op edit still validates,
+    // rewrites the profile document and reconciles.
+    if (purgeOf(config).removed.length === 0) {
+      continue;
+    }
+    // Recomputed on the config the editor hands the change, which is the one
+    // it writes, and appended only once the edit resolved: an edit that
+    // throws propagates before the append, so a rejected edit reports nothing.
+    let entryRemoved: PurgedModel[] = [];
+    // oxlint-disable-next-line no-await-in-loop -- one write at a time, in entry order: each edit locks and rewrites the same profile document.
+    await editor.edit(entry, (current) => {
+      const { next, removed: gone } = purgeOf(current);
+      entryRemoved = gone;
+      return next;
+    });
+    removed.push(...entryRemoved);
+  }
+  return removed;
+};
+
 export class ModelPurgeService extends TypertRemoteService {
   constructor(ctx: unknown) {
     if (!isRecord(ctx)) {
@@ -245,16 +401,8 @@ export class ModelPurgeService extends TypertRemoteService {
     super(ctx as never, PURGE_NAMESPACE);
   }
 
-  /**
-   * Delete every declared model the live catalog marks `deprecated`.
-   *
-   * One network read first, forced: the shipped shim cannot answer this
-   * question, because a retired model is dropped from the active catalog rather
-   * than kept with a flag. `catalogRead` reports whether that read landed, so the
-   * card can say "the catalog reports none" instead of implying it when the
-   * refresh failed.
-   */
-  async purge(): Promise<PurgeResult> {
+  /** The config editor, or the refusal every method answers without one. */
+  private editor(): ConfigEditorFace {
     const editor = asEditor(this.ctx.get?.("configEditor"));
     if (editor === undefined) {
       throw new RemoteError(
@@ -263,15 +411,14 @@ export class ModelPurgeService extends TypertRemoteService {
         { configured: false, retainPrevious: false, retryable: false }
       );
     }
+    return editor;
+  }
 
-    await refreshCatalog(undefined, true);
-    // **Whether THIS attempt read the registry**, not whether one ever did.
-    // `refreshCatalog` never rejects, and `isCatalogFresh()` answers "has this
-    // process refreshed at all?" — true for hours after a failure. Reporting
-    // that as `catalogRead` told the card "nothing is deprecated" for a read
-    // that never happened.
-    const catalogRead = didCatalogRefreshSucceed();
-
+  /**
+   * Which entries' plane routes the plugin may rewrite, or the refusal when it
+   * may rewrite none.
+   */
+  private ownership(editor: ConfigEditorFace): Ownership {
     // The service's own context decides the realm: it resolves `credentials`
     // in the process-wide realm, where the user's own rows do.
     const own: RealmSide = { context: this.ctx };
@@ -300,82 +447,143 @@ export class ModelPurgeService extends TypertRemoteService {
         { configured: false, retainPrevious: false, retryable: false }
       );
     }
-    const isRetired = isRetiredOnOwnedRoute(
-      new Set([...declaredForeign].filter((route) => !declaredOwned.has(route)))
-    );
+    return {
+      foreignOnly: new Set(
+        [...declaredForeign].filter((route) => !declaredOwned.has(route))
+      ),
+      ownedRoutes,
+    };
+  }
 
-    const removed: PurgedModel[] = [];
-    for (const [entry, routes] of ownedRoutes) {
-      // Collected per entry, then appended. NOT a fix for anything: an `edit`
-      // that throws propagates out of `purge()` before the return, so the report
-      // can never describe a rejected edit either way (checked, so this comment
-      // does not claim a failure mode that cannot occur). It is simply the
-      // narrower scope — each entry's removals stay attributable to that entry,
-      // which is what a partial-failure path would need if one is ever added.
-      const entryRemoved: PurgedModel[] = [];
-      await editor.edit(entry, (current) => {
-        const providers = isRecord(current.providers)
-          ? { ...current.providers }
-          : {};
-        for (const { route, plane } of PLANES) {
-          if (!routes.includes(route)) {
-            continue;
-          }
-          const declared = modelsOf(providers[route]);
-          if (declared === undefined) {
-            continue;
-          }
-          const kept = declared.filter((model) => {
-            const id = idOf(model);
-            if (id === undefined || !isDeprecatedModelOn(plane, id)) {
-              return true;
-            }
-            entryRemoved.push({ provider: route, id });
-            return false;
-          });
-          if (kept.length !== declared.length) {
-            providers[route] = {
-              ...(providers[route] as object),
-              models: kept,
-            };
-          }
+  /**
+   * The ids each owned plane route declares that pi's installed catalog cannot
+   * serve, per entry: each entry is judged by its own block (its own `api`
+   * among it), so an id one entry cannot serve is never judged unserved in
+   * another. `undefined` when pi cannot be read.
+   */
+  private async unserved(
+    ownership: Ownership
+  ): Promise<ReadonlyMap<unknown, readonly PurgedModel[]> | undefined> {
+    const libraries = await loadHostLibraries(this.ctx);
+    if (libraries === undefined) {
+      return undefined;
+    }
+    const byEntry = new Map<unknown, readonly PurgedModel[]>();
+    for (const [entry, routes] of ownership.ownedRoutes) {
+      const providers = providersOf(entry);
+      const rows: PurgedModel[] = [];
+      for (const route of routes) {
+        for (const id of piUnservedIds(
+          providers?.[route],
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `routes` holds only `PLANE_ROUTES` members (`planeRoutesOf` filters by them); the cast names that.
+          libraries.builtinModels(route as PlaneRoute)
+        )) {
+          rows.push({ id, provider: route });
         }
-        return { ...current, providers };
-      });
-      removed.push(...entryRemoved);
-    }
-
-    // **Every other surface that names a model by id.** The provider lists above
-    // are what the picker reads; these are what actually CALL a model, and they
-    // live in entries that declare no provider at all — which is why the sweep
-    // above could not see them. A retired id here is worse than a stale picker
-    // row: compaction that cannot resolve its summariser fails the checkpoint,
-    // and the session then ends every turn on `max-tokens`.
-    for (const entry of editor.entries()) {
-      const options = isRecord(entry) ? entry.options : undefined;
-      const config = isRecord(options) ? options.config : undefined;
-      if (!isRecord(config)) {
-        continue;
       }
-      // Decided before the write so an entry with nothing to strip is not
-      // rewritten at all: an unconditional edit would mark every entry dirty on
-      // every click.
-      if (stripRetiredReferences(config, isRetired).removed.length === 0) {
-        continue;
-      }
-      const entryRemoved: PurgedModel[] = [];
-      await editor.edit(entry, (current) => {
-        const { next, removed: gone } = stripRetiredReferences(
-          current,
-          isRetired
-        );
-        entryRemoved.push(...gone);
-        return next;
-      });
-      removed.push(...entryRemoved);
+      byEntry.set(entry, rows);
     }
+    return byEntry;
+  }
 
-    return { removed, catalogRead };
+  /**
+   * Delete every declared model, and every reference to one, that the catalog
+   * marks `deprecated`.
+   *
+   * One network read first, forced, and the removal is judged by that read's
+   * own answer: the registry's retired ids when it lands, and what the
+   * process already holds when it does not (the shipped shim's retirements,
+   * or an earlier refresh's). `catalogRead` reports whether the read landed,
+   * so the card can say "the catalog reports none" only when it did.
+   */
+  async purge(): Promise<PurgeResult> {
+    const editor = this.editor();
+    const refresh = await refreshCatalog(undefined, true);
+    const ownership = this.ownership(editor);
+    const retired = new Map<Plane, ReadonlySet<string>>(
+      PLANES.map(({ plane }) => [plane, new Set(refresh.deprecated[plane])])
+    );
+    const judge = isRetiredOnOwnedRoute(ownership.foreignOnly, retired);
+    const removed = await rewrite(editor, ownership, {
+      declarations: () => judge,
+      references: judge,
+    });
+    return { catalogRead: refresh.ok, removed };
+  }
+
+  /**
+   * The ids declared on the plugin's own plane entries that pi's installed
+   * catalog cannot serve, and the catalog's last refresh error.
+   *
+   * pi-ai refuses such an id once the plugin is gone ("needs an api"), so this
+   * is what the card lists before the plugin is removed. No network, no edit.
+   *
+   * An id two entries declare on one route is listed once. A profile with no
+   * plane entry this plugin owns lists nothing and still answers the
+   * catalog's last error, which does not depend on what the profile declares;
+   * only a composition with no config editor refuses.
+   */
+  async review(): Promise<PurgeReview> {
+    const catalogError = catalogLastError();
+    const ownership = this.ownershipOrNone(this.editor());
+    const byEntry = await this.unserved(ownership);
+    const seen = new Set<string>();
+    const unserved: PurgedModel[] = [];
+    for (const rows of byEntry?.values() ?? []) {
+      for (const row of rows) {
+        const key = `${row.provider}\u0000${row.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unserved.push(row);
+        }
+      }
+    }
+    return {
+      piRead: byEntry !== undefined,
+      unserved,
+      ...(catalogError === undefined ? {} : { catalogError }),
+    };
+  }
+
+  /** {@link ownership}, or no owned entry where it refuses for want of one. */
+  private ownershipOrNone(editor: ConfigEditorFace): Ownership {
+    try {
+      return this.ownership(editor);
+    } catch (error: unknown) {
+      if (error instanceof RemoteError && error.code === PURGE_UNAVAILABLE) {
+        return { foreignOnly: new Set(), ownedRoutes: new Map() };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Remove the ids {@link review} lists, and every reference to one, with one
+   * edit per entry that changes. Nothing is removed when pi's installed
+   * catalog cannot be read, and `catalogRead` then says so. No catalog read.
+   */
+  async removeUnserved(): Promise<PurgeResult> {
+    const editor = this.editor();
+    const ownership = this.ownership(editor);
+    const byEntry = await this.unserved(ownership);
+    if (byEntry === undefined) {
+      return { catalogRead: false, removed: [] };
+    }
+    // A declaration is judged by its own entry's rows: an entry that sets a
+    // route-level `api` lists none, so it keeps an id another entry on the
+    // same route cannot serve. A reference names a route only, so it is
+    // judged by every owned entry's rows; those hold owned routes only, so a
+    // reference to a route only another plugin's entries declare is never
+    // judged (D27). Route-wide on purpose: two owned entries declaring one
+    // route is a composition the host's registry refuses (the second
+    // registration of a provider is a DUPLICATE_ADAPTER), so which entry
+    // serves the route once the plugin is gone depends on apply order, and a
+    // reference cannot be attributed to the one that keeps the id.
+    const removed = await rewrite(editor, ownership, {
+      declarations: (entry) => judgeOf(byEntry.get(entry) ?? []),
+      references: judgeOf([...byEntry.values()].flat()),
+    });
+    return { catalogRead: true, removed };
   }
 }
 

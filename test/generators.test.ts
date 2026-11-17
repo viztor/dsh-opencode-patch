@@ -24,7 +24,9 @@
  *   payload that reproduces the shim) exits 0. The limits generator's `--write` runs too, from a scratch
  *   copy of `scripts/` and `src/` (its target is the `src/go-limits-data.ts`
  *   beside its own folder): it rewrites current data in text that is not
- *   the renderer's, and writes a moved figure. The limits renderer's text is held to the committed file
+ *   the renderer's, and writes a moved figure. The catalog generator's
+ *   `--write` runs on such a copy too: it adds the retired ids, the copy then
+ *   reads current, and its own runtime reader answers them. The limits renderer's text is held to the committed file
  *   by the same render-and-format round trip the catalog renderer has.
  *
  * Every spawned script is offline: each reads `--from` or runs `--offline`,
@@ -50,14 +52,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  render,
+  rewriteShim,
   shimData,
   type ShimData,
   shimStale,
+  shippedShim,
   splice,
-  spliceObject,
-  renderFamilyApi,
-  renderPlaneApi,
+  upsertObject,
 } from "../scripts/catalog-shim.ts";
 import {
   canonical,
@@ -73,7 +74,7 @@ import {
   inBand,
   low12,
 } from "../scripts/session-band.ts";
-import { payload } from "./support/catalogs.ts";
+import { payload, registryOf, shippedShimData } from "./support/catalogs.ts";
 import {
   GO_MODEL_LIMITS,
   OPENCODE_FAMILY_API,
@@ -87,12 +88,7 @@ import {
 const ROOT = join(import.meta.dirname, "..");
 
 /** What the shim ships, in the shape the rule compares. */
-const SHIPPED: ShimData = {
-  familyApi: OPENCODE_FAMILY_API,
-  go: OPENCODE_GO_CATALOG,
-  planeApi: OPENCODE_PLANE_API,
-  zen: OPENCODE_ZEN_CATALOG,
-};
+const SHIPPED: ShimData = shippedShimData();
 
 /** A script under `scripts/`, run to completion by the Node running the suite. */
 const runScript = (
@@ -170,52 +166,6 @@ const goLimitsDoc = (
     .join("\n\n");
 
 /**
- * A models.dev payload that reproduces `data`: every row with the fields the
- * parser reads (its limits, cost, modalities and reasoning) and its family's
- * endpoint as its own `provider.api`, each plane's endpoint as the provider's
- * `api`, and a retired row for any family no live row names, so the family
- * map is the shipped one. The inverse of `parseModelsDevCatalog` then
- * `shimData`, which the current answers below hold.
- */
-const shimPayload = (data: ShimData): Record<string, unknown> => {
-  const provider = (plane: "go" | "zen"): Record<string, unknown> => {
-    const families = data.familyApi[plane];
-    const rows = data[plane];
-    const models: Record<string, unknown> = {};
-    for (const row of rows) {
-      const npm = row.provider_npm ?? "";
-      const api = families[npm];
-      models[row.id] = {
-        ...(row.cost === undefined ? {} : { cost: row.cost }),
-        id: row.id,
-        limit: { context: row.context_window, output: row.max_output_tokens },
-        modalities: { input: row.input_modalities },
-        name: row.name,
-        provider: {
-          ...(api === undefined ? {} : { api }),
-          ...(npm === "" ? {} : { npm }),
-        },
-        ...(row.reasoning === undefined ? {} : { reasoning: row.reasoning }),
-        ...(row.reasoning_options === undefined
-          ? {}
-          : { reasoning_options: row.reasoning_options }),
-      };
-    }
-    const named = new Set(rows.map((row) => row.provider_npm ?? ""));
-    for (const [npm, api] of Object.entries(families)) {
-      if (!named.has(npm)) {
-        models[`retired-${npm || "default"}`] = {
-          provider: { api, ...(npm === "" ? {} : { npm }) },
-          status: "deprecated",
-        };
-      }
-    }
-    return { api: data.planeApi[plane], models };
-  };
-  return { "opencode-go": provider("go"), opencode: provider("zen") };
-};
-
-/**
  * {@link SHIPPED} with one family endpoint moved: the first Zen family the
  * shim names, to an address no vendor serves.
  */
@@ -268,7 +218,7 @@ describe("generators · one staleness rule", () => {
     // The payload the spawned cases feed reproduces the shim, and each moved
     // world differs from it in the endpoint alone, never in an id.
     const parsed = (data: ShimData): ShimData =>
-      shimData(parseModelsDevCatalog(shimPayload(data)));
+      shimData(parseModelsDevCatalog(registryOf(data)));
     expect(shimStale(SHIPPED, parsed(SHIPPED))).toBe(false);
     expect(parsed(planeMoved())).toStrictEqual({
       ...parsed(SHIPPED),
@@ -339,31 +289,38 @@ describe("generators · one staleness rule", () => {
   });
 
   it("the catalog renderer reproduces the shipped shim from its own data, as the nightly formats it", () => {
-    // `--write` on the shipped data, then the formatter the nightly runs:
-    // byte-identical, so a current shim proposes no refresh.
+    // `--write` on the shipped data (`rewriteShim`, the one function the
+    // script runs), then the formatter the nightly runs: byte-identical, so a
+    // current shim proposes no refresh. Until CI regenerates the shim it
+    // carries no retired-ids export, which `rewriteShim` adds: then the
+    // formatted text is the committed file plus that one block.
     const source = readFileSync(join(ROOT, "src", "catalog-data.ts"), "utf8");
     const data = shimData({
       api: OPENCODE_PLANE_API,
+      deprecated: SHIPPED.deprecated,
       familyApi: OPENCODE_FAMILY_API,
       go: OPENCODE_GO_CATALOG,
       zen: OPENCODE_ZEN_CATALOG,
     });
-    let rewritten = splice(source, "OPENCODE_GO_CATALOG", render(data.go));
-    rewritten = splice(rewritten, "OPENCODE_ZEN_CATALOG", render(data.zen));
-    rewritten = spliceObject(
-      rewritten,
-      "OPENCODE_PLANE_API",
-      renderPlaneApi(data.planeApi)
-    );
-    rewritten = spliceObject(
-      rewritten,
-      "OPENCODE_FAMILY_API",
-      renderFamilyApi(data.familyApi)
-    );
+    const rewritten = rewriteShim(source, data);
     // Known answer: the renderer's own text is not the formatted file, so the
     // formatter below has work to do and the comparison is not vacuous.
     expect(rewritten).not.toBe(source);
-    expect(formatted("catalog-data.ts", rewritten)).toBe(source);
+    const shaped = formatted("catalog-data.ts", rewritten);
+    const carries = source.includes("export const OPENCODE_DEPRECATED_IDS: ");
+    if (carries) {
+      expect(shaped).toBe(source);
+    } else {
+      const start = shaped.lastIndexOf(
+        "/**",
+        shaped.indexOf("export const OPENCODE_DEPRECATED_IDS: ")
+      );
+      const end = shaped.indexOf("export const OPENCODE_GO_CATALOG");
+      expect(start).toBeGreaterThan(-1);
+      const block = shaped.slice(start, end);
+      expect(block).toContain(JSON.stringify(SHIPPED.deprecated.go));
+      expect(`${shaped.slice(0, start)}${shaped.slice(end)}`).toBe(source);
+    }
     expect(() => splice(source, "NO_SUCH_EXPORT", "[]")).toThrow(
       /NO_SUCH_EXPORT/u
     );
@@ -384,6 +341,190 @@ describe("generators · one staleness rule", () => {
     });
     expect(moved).not.toBe(source);
     expect(moved).toContain("go: 12345,");
+  });
+});
+
+describe("generators · the retired ids are generated output", () => {
+  it("the parse carries them, and a shim that lacks one is stale", () => {
+    const firstZenId = OPENCODE_ZEN_CATALOG[0]?.id ?? "";
+    expect(firstZenId).not.toBe("");
+    const retired = shimData(
+      parseModelsDevCatalog(
+        registryOf(SHIPPED, { retire: { zen: [firstZenId] } })
+      )
+    ).deprecated.zen;
+    expect(retired).toContain(firstZenId);
+    expect(retired).toEqual(retired.toSorted());
+
+    const shippedRetired = SHIPPED.deprecated;
+    expect(
+      shimStale(SHIPPED, {
+        ...SHIPPED,
+        deprecated: {
+          go: shippedRetired.go,
+          zen: [...shippedRetired.zen, "made-up-retired"],
+        },
+      })
+    ).toBe(true);
+    const twoRetired = {
+      ...SHIPPED,
+      deprecated: { go: shippedRetired.go, zen: ["b-retired", "a-retired"] },
+    };
+    expect(
+      shimStale(twoRetired, {
+        ...twoRetired,
+        deprecated: { go: shippedRetired.go, zen: ["a-retired", "b-retired"] },
+      })
+    ).toBe(false);
+    const exports = {
+      OPENCODE_FAMILY_API,
+      OPENCODE_GO_CATALOG,
+      OPENCODE_PLANE_API,
+      OPENCODE_ZEN_CATALOG,
+    };
+    expect(shippedShim(exports).deprecated).toEqual({ go: [], zen: [] });
+    // Present, the export is read by its name, strings only, as written.
+    const carrying = shippedShim({
+      ...exports,
+      OPENCODE_DEPRECATED_IDS: { go: ["b", "a"], zen: ["z", 1] },
+    });
+    expect(carrying.deprecated).toEqual({ go: ["b", "a"], zen: ["z"] });
+    expect(carrying.go).toBe(OPENCODE_GO_CATALOG);
+    // The same ids in another order are current: order is not data.
+    expect(
+      shimStale(carrying, {
+        ...carrying,
+        deprecated: { go: ["a", "b"], zen: ["z"] },
+      })
+    ).toBe(false);
+    expect(
+      shimStale(carrying, {
+        ...carrying,
+        deprecated: { go: ["a"], zen: ["z"] },
+      })
+    ).toBe(true);
+    // Malformed, it is no retired id on either plane, never a throw.
+    for (const malformed of [null, "x", ["a"], { go: "a", zen: 3 }]) {
+      expect(
+        shippedShim({ ...exports, OPENCODE_DEPRECATED_IDS: malformed })
+          .deprecated,
+        JSON.stringify(malformed)
+      ).toEqual({ go: [], zen: [] });
+    }
+  });
+
+  it("the fixture payload never invents a retired id: a family nothing carries throws", () => {
+    const orphaned: ShimData = {
+      ...SHIPPED,
+      familyApi: {
+        ...SHIPPED.familyApi,
+        zen: {
+          ...SHIPPED.familyApi.zen,
+          "@ai-sdk/orphan": "https://x.invalid",
+        },
+      },
+    };
+    expect(() => registryOf(orphaned)).toThrow(/@ai-sdk\/orphan/u);
+    // A retired id carries it, and the payload reproduces the data.
+    const carried = {
+      ...orphaned,
+      deprecated: {
+        go: SHIPPED.deprecated.go,
+        zen: [...SHIPPED.deprecated.zen, "carrier-retired"],
+      },
+    };
+    expect(
+      shimStale(carried, shimData(parseModelsDevCatalog(registryOf(carried))))
+    ).toBe(false);
+  });
+
+  it("the generator adds the retired-ids export to a shim that has none, and rewrites it in place after", () => {
+    const fixture = [
+      "/** A small shim. */",
+      'import type { ModelCostRate } from "./session-cost.ts";',
+      "",
+      'export const OPENCODE_PLANE_API: Readonly<Record<"go" | "zen", string>> = {',
+      '  go: "",',
+      '  zen: "",',
+      "};",
+      "",
+      "export const OPENCODE_FAMILY_API: Readonly<",
+      '  Record<"go" | "zen", Readonly<Record<string, string>>>',
+      "> = {",
+      "  go: {},",
+      "  zen: {},",
+      "};",
+      "",
+      "export const OPENCODE_GO_CATALOG: readonly CatalogModelSpec[] = [",
+      "];",
+      "",
+      "export const OPENCODE_ZEN_CATALOG: readonly CatalogModelSpec[] = [",
+      "];",
+      "",
+    ].join("\n");
+    const data: ShimData = {
+      deprecated: { go: ["g-retired"], zen: [] },
+      familyApi: {
+        go: { "@ai-sdk/anthropic": "https://example.invalid/go-family" },
+        zen: {},
+      },
+      go: OPENCODE_GO_CATALOG.slice(0, 1),
+      planeApi: {
+        go: "https://example.invalid/go",
+        zen: "https://example.invalid/zen",
+      },
+      // A row on each plane, so the formatted text keeps both array literals
+      // multi-line, as the real shim's are, for the second rewrite to read.
+      // Not the Go row's id, so a Go row rendered into Zen shows.
+      zen: OPENCODE_ZEN_CATALOG.filter(
+        (row) => row.id !== OPENCODE_GO_CATALOG[0]?.id
+      ).slice(0, 1),
+    };
+    const declaration = "export const OPENCODE_DEPRECATED_IDS: ";
+    const once = rewriteShim(fixture, data);
+    expect(once.split(declaration)).toHaveLength(2);
+    expect(once.indexOf(declaration)).toBeLessThan(
+      once.indexOf("export const OPENCODE_GO_CATALOG")
+    );
+    expect(once).toContain('"g-retired"');
+    // Every other value the generator owns is written too, each in its own
+    // export: the plane and family endpoints, and the Go row in the Go
+    // catalog, not the Zen one.
+    expect(once).toContain('go: "https://example.invalid/go"');
+    expect(once).toContain('zen: "https://example.invalid/zen"');
+    expect(once).toContain('"https://example.invalid/go-family"');
+    const goRow = `id: ${JSON.stringify(data.go[0]?.id)}`;
+    const goAt = once.indexOf("export const OPENCODE_GO_CATALOG");
+    const zenAt = once.indexOf("export const OPENCODE_ZEN_CATALOG");
+    expect(once.indexOf(goRow)).toBeGreaterThan(goAt);
+    expect(once.indexOf(goRow)).toBeLessThan(zenAt);
+    expect(once.slice(zenAt)).not.toContain(goRow);
+    // The new block follows a closed declaration, never splits a doc comment
+    // from its export: what precedes it is the family endpoints' `};`.
+    expect(once.slice(0, once.indexOf("/**", once.indexOf("> = {")))).toMatch(
+      /\};\n\n$/u
+    );
+    // The renderer's text is formatter-stable once formatted.
+    const shaped = formatted("catalog-data.ts", once);
+    expect(formatted("catalog-data.ts", shaped)).toBe(shaped);
+    // The nightly's second run reads the FORMATTED file: the export is
+    // rewritten in place there, never added again.
+    const twice = rewriteShim(shaped, {
+      ...data,
+      deprecated: { go: [], zen: ["z-retired"] },
+    });
+    expect(twice.split(declaration)).toHaveLength(2);
+    expect(twice).toContain('"z-retired"');
+    expect(twice).not.toContain('"g-retired"');
+    expect(() =>
+      upsertObject(
+        fixture,
+        "NEW_EXPORT",
+        "export const NEW_EXPORT = {};",
+        "{}",
+        "NO_SUCH_ANCHOR"
+      )
+    ).toThrow(/NO_SUCH_ANCHOR/u);
   });
 });
 
@@ -506,7 +647,7 @@ describe("generators · the generators, spawned", () => {
 
       // The known answer: a payload that reproduces the shim is current.
       const same = join(temp, "same.json");
-      writeFileSync(same, JSON.stringify(shimPayload(SHIPPED)));
+      writeFileSync(same, JSON.stringify(registryOf(SHIPPED)));
       const current = runScript("regenerate-catalog-shim.ts", ["--from", same]);
       expect(current.status, current.stderr).toBe(0);
       expect(current.stdout).toContain("shim is current");
@@ -518,12 +659,36 @@ describe("generators · the generators, spawned", () => {
         ["family", familyMoved()],
       ] as const) {
         const path = join(temp, `${name}-moved.json`);
-        writeFileSync(path, JSON.stringify(shimPayload(moved)));
+        writeFileSync(path, JSON.stringify(registryOf(moved)));
         const run = runScript("regenerate-catalog-shim.ts", ["--from", path]);
         expect(run.status, `${name}: ${run.stderr}`).toBe(1);
         expect(run.stdout, name).toContain("shim is STALE");
         expect(run.stdout, name).not.toMatch(/^ {2}[+-] /mu);
       }
+
+      // A retired id the shim does not hold is staleness too: the base read
+      // only the rows and endpoints, and called this current.
+      const retiring = join(temp, "retiring.json");
+      const withRetired = registryOf(SHIPPED);
+      (withRetired.opencode as { models: Record<string, unknown> }).models[
+        "made-up-retired"
+      ] = { status: "deprecated" };
+      writeFileSync(retiring, JSON.stringify(withRetired));
+      const retiredRun = runScript("regenerate-catalog-shim.ts", [
+        "--from",
+        retiring,
+      ]);
+      expect(retiredRun.status, retiredRun.stderr).toBe(1);
+      expect(retiredRun.stdout).toContain("shim is STALE");
+      expect(retiredRun.stdout).toMatch(
+        /retired opencode\b.*\n {2}\+ 1: made-up-retired/u
+      );
+      const retiredVerify = runScript("verify-catalog.ts", [
+        "--from",
+        retiring,
+      ]);
+      expect(retiredVerify.status, retiredVerify.stdout).toBe(1);
+      expect(retiredVerify.stdout).toContain("shim is stale");
 
       const unread = runScript("regenerate-catalog-shim.ts", [
         "--from",
@@ -531,6 +696,60 @@ describe("generators · the generators, spawned", () => {
       ]);
       expect(unread.status).not.toBe(0);
       expect(unread.stdout).not.toContain("shim is current");
+    } finally {
+      rmSync(temp, { force: true, recursive: true });
+    }
+  });
+
+  it("the catalog generator's --write adds the retired ids on a scratch copy, which then reads current and answers them at runtime", () => {
+    const temp = mkdtempSync(join(tmpdir(), "catalog-shim-write-"));
+    try {
+      // The generator's target is `../src/catalog-data.ts` from its own
+      // file, so a copy of both folders keeps the shipped file untouched.
+      for (const folder of ["scripts", "src"]) {
+        cpSync(join(ROOT, folder), join(temp, folder), { recursive: true });
+      }
+      symlinkSync(join(ROOT, "node_modules"), join(temp, "node_modules"));
+      const node = (args: readonly string[]) => {
+        const run = spawnSync(
+          process.execPath,
+          [
+            "--experimental-strip-types",
+            "--disable-warning=ExperimentalWarning",
+            ...args,
+          ],
+          { cwd: temp, encoding: "utf8", timeout: 60_000 }
+        );
+        return { status: run.status, stderr: run.stderr, stdout: run.stdout };
+      };
+      const generator = join(temp, "scripts", "regenerate-catalog-shim.ts");
+      const retiring = join(temp, "retiring.json");
+      const world = registryOf(SHIPPED);
+      (world.opencode as { models: Record<string, unknown> }).models[
+        "made-up-retired"
+      ] = { status: "deprecated" };
+      writeFileSync(retiring, JSON.stringify(world));
+
+      const write = node([generator, "--write", "--from", retiring]);
+      expect(write.status, write.stderr).toBe(0);
+      expect(write.stdout).toContain("wrote catalog-data.ts");
+      const again = node([generator, "--from", retiring]);
+      expect(again.status, again.stderr).toBe(0);
+      expect(again.stdout).toContain("shim is current");
+
+      // The writer's export name is the runtime reader's.
+      const read = node([
+        "--input-type=module",
+        "-e",
+        `const m = await import(${JSON.stringify(
+          join(temp, "src", "models-catalog.ts")
+        )}); console.log(JSON.stringify(m.shippedDeprecatedIds()));`,
+      ]);
+      expect(read.status, read.stderr).toBe(0);
+      expect(JSON.parse(read.stdout)).toEqual({
+        go: SHIPPED.deprecated.go,
+        zen: [...SHIPPED.deprecated.zen, "made-up-retired"].toSorted(),
+      });
     } finally {
       rmSync(temp, { force: true, recursive: true });
     }
@@ -557,7 +776,7 @@ describe("generators · verify-catalog fails closed", () => {
       // shim, and fails on the same ids with one endpoint moved, which the
       // old rule (id sets) called current.
       const same = join(temp, "same.json");
-      writeFileSync(same, JSON.stringify(shimPayload(SHIPPED)));
+      writeFileSync(same, JSON.stringify(registryOf(SHIPPED)));
       const current = runScript("verify-catalog.ts", ["--from", same]);
       expect(current.status, current.stdout).toBe(0);
       expect(current.stdout).toMatch(
@@ -569,7 +788,7 @@ describe("generators · verify-catalog fails closed", () => {
         ["family", familyMoved()],
       ] as const) {
         const path = join(temp, `${name}-moved.json`);
-        writeFileSync(path, JSON.stringify(shimPayload(moved)));
+        writeFileSync(path, JSON.stringify(registryOf(moved)));
         const run = runScript("verify-catalog.ts", ["--from", path]);
         expect(run.status, `${name}: ${run.stdout}`).toBe(1);
         expect(run.stdout, name).toContain("shim is stale");

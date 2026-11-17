@@ -28,6 +28,7 @@ import {
   OpencodeStoreService,
   parseAccountRef,
   parsePurgeResult,
+  parsePurgeReview,
   parseStoreInspection,
   parseUsageQuery,
   parseUsageReading,
@@ -275,6 +276,24 @@ describe("remote contract · the wire, pinned field for field", () => {
         service: "opencodeModelPurge",
       },
       {
+        id: "dsh-opencode-patch#opencodeModelPurge/review",
+        invocation: { kind: "direct" },
+        method: "review",
+        namespace: "opencodeModelPurge",
+        parameters: [],
+        result: "dsh-opencode-patch#PurgeReview",
+        service: "opencodeModelPurge",
+      },
+      {
+        id: "dsh-opencode-patch#opencodeModelPurge/removeUnserved",
+        invocation: { kind: "direct" },
+        method: "removeUnserved",
+        namespace: "opencodeModelPurge",
+        parameters: [],
+        result: "dsh-opencode-patch#PurgeResult",
+        service: "opencodeModelPurge",
+      },
+      {
         id: "dsh-opencode-patch#opencodeStore/inspect",
         invocation: { kind: "direct" },
         method: "inspect",
@@ -311,7 +330,8 @@ describe("remote contract · the wire, pinned field for field", () => {
         expect(codec.mode).toBe("strict");
       }
     }
-    const [read, readAccount, purge, inspect] = descriptors;
+    const [read, readAccount, purge, review, removeUnserved, inspect] =
+      descriptors;
     expect(Object.keys(readAccount?.parameters[0] ?? {}).toSorted()).toEqual([
       "codec",
       "name",
@@ -328,12 +348,17 @@ describe("remote contract · the wire, pinned field for field", () => {
       parseAccountRef
     );
     expect(purge?.result.schema.parse).toBe(parsePurgeResult);
+    expect(review?.result.schema.parse).toBe(parsePurgeReview);
+    expect(removeUnserved?.result).toBe(purge?.result);
     expect(inspect?.result.schema.parse).toBe(parseStoreInspection);
   });
 
   it.each([
     { methods: ["read", "readAccount"], Service: GoUsageService },
-    { methods: ["purge"], Service: ModelPurgeService },
+    {
+      methods: ["purge", "review", "removeUnserved"],
+      Service: ModelPurgeService,
+    },
     { methods: ["inspect"], Service: OpencodeStoreService },
   ])(
     "pins the Remote marker $Service.name carries, as the host's reader sees it",

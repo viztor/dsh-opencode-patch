@@ -7,7 +7,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  readProfilePatches,
+  reconcileProfilePatches,
+} from "@deepseek-ai/dsh-app-boot";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 
 import {
   appendTo,
@@ -231,3 +236,155 @@ describe("host planes · the route set (tier B)", { timeout: 30_000 }, () => {
     await waitForPlaneOwner(tier.llm, ["opencode"]);
   });
 });
+
+describe(
+  "host planes · removing what pi cannot serve, before the plugin goes (tier B)",
+  { timeout: 30_000 },
+  () => {
+    /** An id no pi and no catalog describes, declared with no route `api`. */
+    const UNSERVED = "not-a-real-model";
+
+    /** The purge service the plugin mounts on the root. */
+    const purgeOf = (
+      tier: TierB
+    ): {
+      readonly review: () => Promise<{
+        readonly unserved: readonly { id: string; provider: string }[];
+        readonly piRead: boolean;
+      }>;
+      readonly removeUnserved: () => Promise<{
+        readonly removed: readonly { id: string; provider: string }[];
+      }>;
+    } => tier.ctx.get("opencodeModelPurge") as never;
+
+    /**
+     * The model ids the profile patch declares on `route`, read with the YAML
+     * parser: every `providers.<route>.models` the patch's rows carry.
+     */
+    const declaredOn = (patch: string, route: string): string[] => {
+      const ids: string[] = [];
+      const walk = (value: unknown): void => {
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            walk(item);
+          }
+          return;
+        }
+        if (typeof value !== "object" || value === null) {
+          return;
+        }
+        const record = value as Record<string, unknown>;
+        const providers = record.providers as
+          | Record<string, { models?: unknown }>
+          | undefined;
+        const models = providers?.[route]?.models;
+        if (Array.isArray(models)) {
+          for (const model of models) {
+            ids.push(
+              typeof model === "string" ? model : (model as { id: string }).id
+            );
+          }
+        }
+        for (const item of Object.values(record)) {
+          walk(item);
+        }
+      };
+      walk(parse(patch));
+      return ids;
+    };
+
+    /** Boot with `opencode` declaring a pi-known id and {@link UNSERVED}. */
+    const boot = async (): Promise<TierB> => {
+      const { deepseek, opencode } = s0Providers();
+      const { tier } = await bootPlanes({
+        providers: {
+          deepseek: deepseek ?? {},
+          opencode: {
+            apiKeyEnv: opencode?.apiKeyEnv,
+            models: [{ id: "deepseek-v4-pro" }, { id: UNSERVED }],
+          },
+        },
+      });
+      await waitForPlaneOwner(tier.llm, ["opencode"]);
+      await settle();
+      return tier;
+    };
+
+    /**
+     * Remove the plugin the way a profile edit reaches a running host: its row
+     * disabled in the profile patch and the profile reloaded, so the loader
+     * disposes its fiber and pi-ai serves the plane again.
+     */
+    const handBack = async (tier: TierB): Promise<void> => {
+      const { pluginEntry } = tier;
+      if (pluginEntry === undefined) {
+        throw new Error("no plugin row");
+      }
+      // YAML, not JSON: a config editor write leaves the patch in YAML, and
+      // JSON is YAML too, so one parser reads either.
+      const rows = parse(
+        readFileSync(tier.profile.patchPath, "utf8")
+      ) as unknown[];
+      writeFileSync(
+        tier.profile.patchPath,
+        `${JSON.stringify([...rows, { disabled: true, id: pluginEntry.options.id }], null, 2)}\n`
+      );
+      await reconcileProfilePatches(
+        tier.ctx as never,
+        readProfilePatches("dsh", tier.profile),
+        "dsh"
+      );
+      await until(
+        () => pluginEntry.fiber === undefined || pluginEntry.fiber.uid === null,
+        "the plugin row is disposed"
+      );
+      await waitForPlaneOwner(tier.llm, ["opencode"], "PiAiAdapter");
+      await settle();
+    };
+
+    it("the card's removal clears what pi cannot serve, in one write, and the handback's next Settings edit is then accepted", async () => {
+      const tier = await boot();
+      const service = purgeOf(tier);
+      const review = await service.review();
+      // Exactly the unknown id: `deepseek-v4-pro` is in pi's installed
+      // catalog on every cell, so a review or removal that over-lists (a
+      // lookup under the wrong route among them) fails here.
+      expect(review.piRead).toBe(true);
+      expect(review.unserved).toEqual([{ id: UNSERVED, provider: "opencode" }]);
+
+      const edits = vi.spyOn(tier.ctx.configEditor, "edit");
+      const before = readFileSync(tier.profile.patchPath, "utf8");
+      const result = await service.removeUnserved();
+      expect(result.removed).toEqual([{ id: UNSERVED, provider: "opencode" }]);
+      expect(edits).toHaveBeenCalledTimes(1);
+      const after = readFileSync(tier.profile.patchPath, "utf8");
+      expect(after).not.toBe(before);
+      expect(after).not.toContain(UNSERVED);
+      expect(declaredOn(after, "opencode")).toEqual(["deepseek-v4-pro"]);
+      await until(async () => {
+        const listed = await tier.llm.listModels("opencode");
+        return !listed.some((model) => model.id === UNSERVED);
+      }, "the removed id leaves the listing");
+      edits.mockRestore();
+
+      await handBack(tier);
+      await expect(
+        tier.ctx.configEditor.edit(
+          tier.piEntry,
+          appendTo("opencode", "gpt-5.4")
+        )
+      ).resolves.not.toThrow();
+    });
+
+    it("the control: without the removal, the handback's next Settings edit is refused in pi-ai's words", async () => {
+      const tier = await boot();
+      await handBack(tier);
+      await expect(
+        tier.ctx.configEditor.edit(
+          tier.piEntry,
+          appendTo("opencode", "gpt-5.4")
+        )
+      ).rejects.toThrow(/needs an api/u);
+    });
+  }
+);

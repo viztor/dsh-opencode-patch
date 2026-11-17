@@ -10,10 +10,10 @@
  * the shipped one: a `models.dev` payload → the parser → the active maps → the
  * lookup. Nothing here reaches a synthetic consumer of the plugin's internals.
  *
- * **The installation is per TEST.** `refreshCatalog` merges by id and cannot
- * remove rows, but the suite's setup file (`test/support/reset-process-state.ts`)
- * resets the live catalog after every test, so a world installed once per file
- * would be gone by the second case. Installing before each one keeps every case
+ * **The installation is per TEST.** `refreshCatalog` replaces each plane the
+ * payload carries an active row for, and the suite's setup file
+ * (`test/support/reset-process-state.ts`) resets the live catalog after every
+ * test, so a world installed once per file would be gone by the second case. Installing before each one keeps every case
  * independent of the order it runs in; the rows still carry ids no other test
  * names.
  *

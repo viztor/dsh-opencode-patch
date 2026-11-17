@@ -134,6 +134,19 @@ export const en = {
     "Nothing removed, but the catalog could not be read — try again when online.",
   purgeUnavailable: "Unavailable: this composition has no config editor.",
   purgeFailed: "Purge failed",
+  catalogLastError: "The last catalog refresh failed",
+  unservedTitle: "Models llm-pi-ai cannot serve",
+  unservedHint:
+    "These ids are declared on opencode or opencode-go and are missing from pi's installed catalog. This plugin serves them; without it, llm-pi-ai drops them from the composer and refuses the next Settings edit of that provider until they are removed. Remove them before removing the plugin.",
+  unservedAction: "Remove",
+  unservedBusy: "Removing…",
+  unservedRemoved: "model reference(s) removed from your configuration",
+  unservedNothing:
+    "Nothing to remove — pi's installed catalog serves every declared id.",
+  unservedPiUnread:
+    "Nothing was removed: pi's installed catalog could not be read.",
+  unservedPiUnreadReview:
+    "pi's installed catalog could not be read, so the ids it cannot serve are not listed.",
   usageSummaryTitle: "Go usage",
   usageSummaryStatusOk: "Healthy",
   usageSummaryStatusLimited: "Limit reached",
@@ -266,6 +279,17 @@ export const zh: Record<keyof typeof en, string> = {
   purgeCatalogUnread: "没有移除任何条目，但目录读取失败——联网后重试。",
   purgeUnavailable: "不可用：此组合没有 config editor。",
   purgeFailed: "清理失败",
+  catalogLastError: "上次目录刷新失败",
+  unservedTitle: "llm-pi-ai 无法提供的模型",
+  unservedHint:
+    "这些 id 声明在 opencode 或 opencode-go 上，但 pi 已安装的目录里没有。本插件可以提供它们；没有本插件时，llm-pi-ai 会把它们从输入区移除，并拒绝该 provider 的下一次设置编辑，直到它们被移除。请在移除插件之前先移除它们。",
+  unservedAction: "移除",
+  unservedBusy: "移除中…",
+  unservedRemoved: "处模型引用已从配置中移除",
+  unservedNothing: "没有需要移除的内容——pi 已安装的目录能提供每个声明的 id。",
+  unservedPiUnread: "没有移除任何条目：读不到 pi 已安装的目录。",
+  unservedPiUnreadReview:
+    "读不到 pi 已安装的目录，所以无法列出它不能提供的 id。",
   usageSummaryTitle: "Go 用量",
   usageSummaryStatusOk: "状态正常",
   usageSummaryStatusLimited: "已达限额",
