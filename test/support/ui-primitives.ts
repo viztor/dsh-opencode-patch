@@ -16,25 +16,31 @@
  */
 import { createElement } from "react";
 
-const pass = (props: { children?: React.ReactNode }) => props.children;
-
-/** A `Button` that renders its label inside a real `<button>`. */
-export const Button = (props: {
-  children?: React.ReactNode;
-  disabled?: boolean;
-  onClick?: () => void;
-  type?: string;
-}) =>
-  createElement(
-    "button",
-    {
-      disabled: props.disabled,
-      "data-kind": props.type,
-      onClick: props.onClick,
-      type: "button",
-    },
-    props.children
-  );
+/**
+ * The stand-ins that render real elements, shared with the tree-walk stub
+ * rather than copied, so a test cannot pass in one family and not the other:
+ * `Button` (the host's markup, attributes passed through and the `icon` in a
+ * slot before the label), `Tag` (a span with its `data-tone`), `StateDot` (a
+ * span carrying its `data-state`, so a pin can read which state a row shows),
+ * the two icons (an `svg` keeping `className` and `size`), `Tooltip` (it
+ * CLONES its child and renders a `role="tooltip"` bubble as a sibling while
+ * shown, so a tooltip around a component instead of a DOM node fails a
+ * mounted test), the host's `useDismissOnOutsidePointer` body (with its
+ * `portal`) and its `SegmentedControl` markup (honouring an option's
+ * `disabled` and `title`, `aria-controls` and the `className`). `SettingsForm`
+ * and `Switch` stay separate below: the tree-walk stub returns `{props, type}`
+ * objects for them, which a mounted test cannot render.
+ */
+export {
+  Button,
+  IconInfoOutlineRegular,
+  IconRefreshOutlineRegular,
+  SegmentedControl,
+  StateDot,
+  Tag,
+  Tooltip,
+  useDismissOnOutsidePointer,
+} from "../primitives-stub.tsx";
 
 /** A `SettingsForm` that renders its children and exposes the shell it got. */
 export const SettingsForm = (props: {
@@ -60,20 +66,5 @@ export const Switch = (props: {
     readOnly: true,
     type: "checkbox",
   });
-
-/** A `Tag` that renders its text. */
-export const Tag = (props: { children?: React.ReactNode }) =>
-  createElement("span", { "data-tag": "true" }, props.children);
-
-/** Anything else the card reaches for and asserts nothing about. */
-export const IconInfoOutlineRegular = () =>
-  createElement("span", { "data-icon": "info" });
-
-export const IconRefreshOutlineRegular = () =>
-  createElement("span", { "data-icon": "refresh" });
-
-export const StateDot = () => createElement("i", { "data-dot": "true" });
-
-export const Tooltip = pass;
 
 export const __esModule = true;

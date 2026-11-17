@@ -374,8 +374,17 @@ try {
  * requires only react and the UI primitives, and no catalog row reaches it) —
  * the client measured 156038 bytes against the old line, from 146953 on the
  * base. 155 keeps about 2.6 KB of the ~3 KB of room this line is meant to have.
+ *
+ * Raised 155 -> 158 KB when P11 moved the card and the meter onto the host's
+ * primitives: the card's inline styles became its own stylesheet
+ * (`src/settings-css.ts`, every declaration kept with its comment), the three
+ * action rows one component (`src/settings-action-row.tsx`), and the meter
+ * refuses a reading its parser rejects. Source and its comments, not a
+ * dependency (the bundle still requires only react and the UI primitives) —
+ * the client measured 159305 bytes against the old line, from 156038 on the
+ * base. 158 keeps about 2.4 KB of the ~3 KB of room this line is meant to have.
  */
-const CLIENT_BUDGET = 155 * 1024;
+const CLIENT_BUDGET = 158 * 1024;
 const clientPath = join(ROOT, "lib/client.js");
 if (existsSync(clientPath)) {
   const clientStat = statSync(clientPath);

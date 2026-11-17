@@ -30,6 +30,7 @@ import {
 import {
   childrenOf,
   collectText,
+  elementName,
   findAll,
   findAllOf,
   findAllWhere,
@@ -148,7 +149,7 @@ const triggerProps = (
   isZen: false,
   onClick: () => {},
   open: false,
-  ringColor: "var(--ring)",
+  ringState: "warning",
   strokeDasharray: "3 34",
   t,
   tooltipLabel: "42% of Weekly used",
@@ -189,7 +190,9 @@ describe("UsageTrigger", () => {
     const [fill] = byClass(tree, "dsh-oc-usage-ring-fill");
     assert.ok(fill, "expected a ring fill");
     expect(fill.props.strokeDasharray).toBe("3 34");
-    expect(fill.props.style).toEqual({ stroke: "var(--ring)" });
+    // The state, not a colour: the sheet strokes each state in its token.
+    expect(fill.props["data-state"]).toBe("warning");
+    expect(fill.props.style).toBeUndefined();
     expect(collectText(tree)).toContain("42%");
   });
 
@@ -564,10 +567,18 @@ describe("UsagePanel", () => {
     const tree = UsagePanel(panelProps({ usage: usage() }));
     const [refresh] = byClass(tree, "dsh-oc-usage-refresh");
     expect(refresh?.props["aria-label"]).toBe("t:usageRetry");
-    expect(refresh?.props.type).toBe("button");
+    // The host's own Button, ghost and small, with the glyph in its icon slot
+    // rather than as a label: the host renders a `<button type="button">`.
+    assert.ok(refresh, "expected a refresh control");
+    expect(elementName(refresh.type)).toBe("Button");
+    expect(refresh.props.variant).toBe("ghost");
+    expect(refresh.props.size).toBe("sm");
+    expect(refresh.props.children).toBeUndefined();
     // The glyph is a component, not a raw <svg>: the panel is invoked as a
     // plain function in these tests, so nothing renders it out.
-    expect(findAllOf(tree, new Set(["RefreshIcon"]))).toHaveLength(1);
+    expect(
+      findAllOf(refresh.props.icon, new Set(["RefreshIcon"]))
+    ).toHaveLength(1);
 
     // While a read is in flight the control says so and stops accepting clicks.
     const busy = UsagePanel(panelProps({ refreshing: true, usage: usage() }));
@@ -602,6 +613,20 @@ describe("UsagePanel", () => {
     expect(track).toContain("--dsw-alias-border-l4");
     const fill = /\.dsh-oc-usage-bar-fill \{[^}]*\}/.exec(STYLES)?.[0];
     expect(fill).toContain("transition:");
+    // The width is the reading's, handed over as a custom property.
+    expect(fill).toContain("width: var(--dsh-oc-usage-fill)");
+    // And each state's fill, as a longhand, in the state's own token.
+    for (const [state, token] of [
+      ["done", "--dsw-alias-state-success-primary"],
+      ["warning", "--dsw-alias-state-warn-primary"],
+      ["error", "--dsw-alias-state-error-primary"],
+    ] as const) {
+      const rule = new RegExp(
+        `\\.dsh-oc-usage-bar-fill\\[data-state="${state}"\\] \\{[^}]*\\}`,
+        "u"
+      ).exec(STYLES)?.[0];
+      expect(rule, state).toContain(`background-color: var(${token})`);
+    }
   });
 
   it("renders through the host's MenuSurface rather than hand-rolling the material", () => {
@@ -685,9 +710,9 @@ describe("UsagePanel", () => {
 
   it("puts the refresh control AFTER the timestamp it refreshes", () => {
     // Leading with the icon read as a lone button with a caption beside it, and
-    // the 20px hit box plus a 5px gap left a hole where the sentence should be.
+    // the hit box plus a 5px gap left a hole where the sentence should be.
     // A value followed by the thing that refreshes it reads like any "as of"
-    // field — and the 20px target stays, because the gap was not its padding.
+    // field — and the target stays, because the gap was not its padding.
     const cell = UsagePanel(panelProps({ updatedAt: 1_700_000_000_000 }));
     const order = classOrder(cell).filter(
       (name) =>
@@ -695,9 +720,10 @@ describe("UsagePanel", () => {
     );
     expect(order).toEqual(["dsh-oc-usage-updated", "dsh-oc-usage-refresh"]);
 
-    // The target keeps its 20px box; only the gap tightened.
-    const rule = /\.dsh-oc-usage-refresh \{[^}]*\}/.exec(STYLES)?.[0];
-    expect(rule).toContain("width: 20px");
+    // The host Button's 28px box, square, and placed by an element-qualified
+    // rule so it wins over the Button module's own size rule.
+    const rule = /button\.dsh-oc-usage-refresh \{[^}]*\}/.exec(STYLES)?.[0];
+    expect(rule).toContain("width: 28px");
     expect(rule).toContain("padding: 0");
     const cellRule = /\.dsh-oc-usage-updated \{[^}]*\}/.exec(STYLES)?.[0];
     expect(cellRule).toContain("gap: 1px");

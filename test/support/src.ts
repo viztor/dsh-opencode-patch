@@ -365,6 +365,9 @@ export { en, withBundleCopy, zh } from "../../src/settings-copy.ts";
 export { SettingsFieldShell } from "../../src/settings-field-shell.tsx";
 export type { FieldShellProps } from "../../src/settings-field-shell.tsx";
 
+// settings-css.ts
+export { CARD_STYLES } from "../../src/settings-css.ts";
+
 // settings-fields.ts
 export { CARD_FIELDS, SPECS } from "../../src/settings-fields.ts";
 
@@ -462,7 +465,7 @@ export type {
 export {
   CIRCUMFERENCE,
   getAffectingWindow,
-  getWindowColorFor,
+  getRingState,
   matchesAny,
   ringGeometry,
 } from "../../src/usage-state.ts";

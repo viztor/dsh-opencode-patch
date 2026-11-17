@@ -106,6 +106,7 @@ const evaluateBundle = (): {
         },
         SettingsSecretField: () => null,
         SettingsValueField: () => null,
+        useDismissOnOutsidePointer: () => {},
         Switch: () => null,
         settingsBooleanField: (field: string) => ({
           field,
@@ -195,6 +196,7 @@ describe("client-bundle: artifact & VM loader boundary", () => {
             }
           },
           SettingsValueField: () => null,
+          useDismissOnOutsidePointer: () => {},
           settingsBooleanField: (field: string) => ({ field }),
           settingsTextField: (field: string) => ({ field }),
         };
@@ -258,6 +260,7 @@ describe("client-bundle: artifact & VM loader boundary", () => {
             }
           },
           SettingsValueField: () => null,
+          useDismissOnOutsidePointer: () => {},
           settingsBooleanField: (field: string) => ({ field }),
           settingsTextField: (field: string) => ({ field }),
         };

@@ -15,7 +15,6 @@ export interface BooleanFieldProps {
   disabled: boolean;
   /** One-line explanation rendered under the control. */
   hint?: string;
-  id: string;
   /** True when the draft is not a value this field accepts. */
   invalid: boolean;
   /** Copy shown in place of the hint while the draft is invalid. */
@@ -35,7 +34,6 @@ export const SettingsBooleanField: React.FC<BooleanFieldProps> = (
   <SettingsFieldShell
     disabled={props.disabled}
     hint={props.hint}
-    id={props.id}
     invalid={props.invalid}
     invalidLabel={props.invalidLabel}
     label={props.label}

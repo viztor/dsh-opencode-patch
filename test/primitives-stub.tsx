@@ -196,8 +196,29 @@ export function SettingsValueField(props: KitProps) {
   return { props, type: "SettingsValueField" };
 }
 
-export function Button(props: KitProps) {
-  return { props, type: "Button" };
+/**
+ * A real element, like `Tag` below: the meter's footer and the card's
+ * summary RENDER their refresh as a host `Button`, so a `{props, type}` object
+ * would fail as "Objects are not valid as a React child" the moment either
+ * mounts. Mirrors the host on what a test observes: a `<button type="button">`
+ * that passes its attributes through, with the `icon` in a slot before the
+ * children. A named function, so a tree walk still finds it as `Button`.
+ */
+export function Button({
+  children,
+  icon,
+  size: _size,
+  variant: _variant,
+  ...rest
+}: KitProps & { icon?: ReactNode; size?: string; variant?: string }) {
+  return (
+    <button type="button" {...rest}>
+      {icon === undefined || icon === null ? null : (
+        <span className="dsh-stub-button-icon">{icon}</span>
+      )}
+      {children}
+    </button>
+  );
 }
 
 export function Switch(props: KitProps) {
@@ -294,8 +315,104 @@ export function IconRefreshOutlineRegular({ className, size = 16 }: IconProps) {
   );
 }
 
-export function SegmentedControl(props: KitProps) {
-  return { props, type: "SegmentedControl" };
+/** One segment, as the host's `SegmentedControlOption` spells it. */
+export interface SegmentOption {
+  disabled?: boolean;
+  label: string;
+  title?: string;
+  value: string;
+}
+
+/**
+ * A real tablist, because the card's choice fields RENDER the host's control.
+ * Mirrors the host's markup on what a test observes: a `[role=tablist]` named
+ * by `label`, one `[role=tab]` button per option id'd `<id>-<value>` and
+ * naming its panel `<id>-<value>-panel` in `aria-controls` (a panel the card
+ * does not render: a host gap, recorded in the plan's P11 row), the
+ * selected one `aria-selected` and the only one in the tab order, every one
+ * disabled with the control, and `onChange` called only for a segment that is
+ * not already selected. The arrow-key walk and the sliding indicator are left
+ * out: they need focus management and layout, and no test asserts either.
+ */
+export function SegmentedControl({
+  className,
+  disabled = false,
+  id,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  className?: string;
+  disabled?: boolean;
+  id: string;
+  label: string;
+  onChange: (next: string) => void;
+  options: readonly SegmentOption[];
+  value: string;
+}) {
+  return (
+    <div aria-label={label} className={className} role="tablist">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            aria-controls={`${id}-${option.value}-panel`}
+            aria-selected={active}
+            disabled={disabled || option.disabled === true}
+            id={`${id}-${option.value}`}
+            key={option.value}
+            onClick={() => {
+              if (!active) {
+                onChange(option.value);
+              }
+            }}
+            role="tab"
+            tabIndex={active ? 0 : -1}
+            title={option.title}
+            type="button"
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The host's outside-press dismissal, with its body: while `open`, a
+ * `pointerdown` on the document whose target is outside `root` (and outside
+ * `portal`, when one is given) calls `setOpen(false)`. The meter's mount
+ * tests drive it, so a stand-in that did nothing would let a broken dismissal
+ * pass.
+ */
+export function useDismissOnOutsidePointer(
+  root: { current: HTMLElement | null },
+  open: boolean,
+  setOpen: (open: boolean) => void,
+  portal?: { current: HTMLElement | null }
+): void {
+  useEffect(() => {
+    if (!open) {
+      return () => {
+        // Nothing was attached.
+      };
+    }
+    const closeOutside = (event: Event): void => {
+      if (
+        event.target instanceof Node &&
+        root.current?.contains(event.target) !== true &&
+        portal?.current?.contains(event.target) !== true
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+    };
+  }, [root, open, setOpen, portal]);
 }
 
 /**
