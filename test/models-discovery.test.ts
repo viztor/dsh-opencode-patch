@@ -16,6 +16,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { registryOf, shippedShimData } from "./support/catalogs.ts";
 import {
   type CatalogModelSpec,
   complementDiscoveredModels,
@@ -29,7 +30,6 @@ import {
   mergeDiscoveredModels,
   OPENCODE_GO_CATALOG,
   OPENCODE_ZEN_CATALOG,
-  parseModelsDevCatalog,
   type PlaneRoute,
   refreshCatalog,
   resolveConfig,
@@ -169,24 +169,29 @@ describe("resolveDiscoveryProvider", () => {
 });
 
 describe("mergeDiscoveredModels", () => {
-  it("drops an adapter row the registry has retired", () => {
+  it("drops an adapter row the registry has retired", async () => {
     // The adapter's installed snapshot is older than the live catalog and still
     // lists ids the vendor has retired — measured: 5 of pi's 85 opencode ids are
     // deprecated in the live catalog, and 6 live-active ids it lacks. Our own
     // catalog drops the retired ones during parse, so without this filter the
     // MERGE is what puts them back, and the picker leads with models that no
-    // longer answer.
-    parseModelsDevCatalog({
-      opencode: {
-        api: "https://opencode.ai/zen/v1",
-        models: {
-          "still-here": { name: "Still Here" },
-          "retired-one": { name: "Retired One", status: "deprecated" },
-        },
-      },
-    });
+    // longer answer. Seeded through the refresh: the parse is pure, and the
+    // refresh is what installs a payload's retirements.
+    await refreshCatalog(
+      (async () =>
+        Response.json({
+          opencode: {
+            api: "https://opencode.ai/zen/v1",
+            models: {
+              "still-here": { name: "Still Here" },
+              "retired-one": { name: "Retired One", status: "deprecated" },
+            },
+          },
+        })) as unknown as typeof fetch,
+      true
+    );
 
-    // The parser saw the retirement…
+    // The refresh installed the retirement…
     expect(isDeprecatedModelOn("zen", "retired-one")).toBe(true);
     expect(isDeprecatedModelOn("zen", "still-here")).toBe(false);
 
@@ -990,19 +995,21 @@ describe("complementDiscoveredModels", () => {
   it("a catalog model the registry retired since the shim, or whose SDK nothing serves, is not offered; pi's retired row is dropped too", async () => {
     const retired = servableIds(OPENCODE_ZEN_CATALOG)[0] ?? "";
     expect(retired.length).toBeGreaterThan(0);
+    // The shipped Zen world with `retired` moved to retired and a row no SDK
+    // serves added: the refresh replaces the plane, so the payload carries
+    // every row the expectation below reads.
     await refreshCatalog(
       vi.fn().mockResolvedValue(
-        Response.json({
-          opencode: {
-            models: {
-              [retired]: { status: "deprecated" },
-              "cohere-x": {
-                name: "Cohere X",
-                provider: { npm: "@ai-sdk/cohere" },
-              },
+        Response.json(
+          registryOf(shippedShimData(), {
+            add: {
+              zen: [
+                { id: "cohere-x", name: "Cohere X", sdk: "@ai-sdk/cohere" },
+              ],
             },
-          },
-        })
+            retire: { zen: [retired] },
+          })
+        )
       ) as unknown as typeof fetch,
       true
     );

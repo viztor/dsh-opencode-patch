@@ -651,3 +651,39 @@ const resolveModels = (
   }
   return models;
 };
+
+/**
+ * The ids a plane entry declares that pi-ai cannot serve without the plugin:
+ * the mirror of its "needs an api" check (`llm-pi-ai` `resolveEntry`: the
+ * route's `api`, else the installed entry's, else the one api the installed
+ * catalog shares), the one refusal the plugin lifts (D15) and pi-ai brings
+ * back once the plugin is gone.
+ *
+ * @param entry - the raw provider entry.
+ * @param piModels - pi's installed catalog for the route.
+ * @returns each declared id pi's list lacks, once, in declaration order; none
+ *   when the entry names an api or pi's models all share one.
+ */
+export const piUnservedIds = (
+  entry: unknown,
+  piModels: readonly PlanePiModel[]
+): string[] => {
+  if (!isRecord(entry) || !Array.isArray(entry.models)) {
+    return [];
+  }
+  if (typeof entry.api === "string" && entry.api.length > 0) {
+    return [];
+  }
+  if (new Set(piModels.map((model) => model.api)).size === 1) {
+    return [];
+  }
+  const known = new Set(piModels.map((model) => model.id));
+  const unserved = new Set<string>();
+  for (const model of entry.models) {
+    const id: unknown = isRecord(model) ? model.id : model;
+    if (typeof id === "string" && !known.has(id)) {
+      unserved.add(id);
+    }
+  }
+  return [...unserved];
+};

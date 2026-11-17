@@ -20,7 +20,11 @@ import { USAGE_NAMESPACE, usageRemote } from "./contracts/usage.ts";
 import { OpencodeCard } from "./settings-card.tsx";
 import { en, withBundleCopy, zh, type CopyKey } from "./settings-copy.ts";
 import { SPECS } from "./settings-fields.ts";
-import { purgeDeprecatedModels } from "./settings-purge.ts";
+import {
+  purgeDeprecatedModels,
+  removeUnservedModels,
+  reviewPurge,
+} from "./settings-purge.ts";
 import {
   callUsageRead,
   findRemoteCall,
@@ -662,6 +666,10 @@ export const apply = (ctx: ClientContext): void => {
                 // The profile rewrite: needs the host's config editor, so it is a
                 // Remote, and the card shows its outcome rather than assuming one.
                 purgeDeprecated: () => purgeDeprecatedModels(ctx),
+                // Beside it, the declared ids pi cannot serve without this
+                // plugin, and their removal: the step before removing it.
+                reviewPurge: () => reviewPurge(ctx),
+                removeUnserved: () => removeUnservedModels(ctx),
                 // What the readOpencodeStore switch would actually read: the
                 // host inspects its own OpenCode store and answers a sanitized
                 // summary, so the card can show the account without the secret.

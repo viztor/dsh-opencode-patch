@@ -5,7 +5,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { purgeDeprecatedModels } from "../src/settings-purge.ts";
+import {
+  purgeDeprecatedModels,
+  removeUnservedModels,
+  reviewPurge,
+} from "../src/settings-purge.ts";
 
 const scopeWith = (purge: unknown): unknown => ({
   remote: { opencodeModelPurge: { purge } },
@@ -263,5 +267,110 @@ describe("purgeDeprecatedModels: the one unwrap (P9), on shapes the host does no
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("reviewPurge and removeUnservedModels: the one unwrap", () => {
+  const scope = (methods: Record<string, unknown>): unknown => ({
+    remote: { opencodeModelPurge: methods },
+  });
+
+  it("reviewPurge answers the host's review, parsed", async () => {
+    const review = vi.fn(async (..._args: unknown[]) => ({
+      ok: true,
+      value: { piRead: true, unserved: [] },
+    }));
+    await expect(reviewPurge(scope({ review }))).resolves.toEqual({
+      kind: "review",
+      review: { piRead: true, unserved: [] },
+    });
+    expect(review).toHaveBeenCalledWith();
+  });
+
+  it("reviewPurge says nothing in the console when the service is absent", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(reviewPurge({ remote: {} })).resolves.toEqual({
+        kind: "unavailable",
+      });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("reviewPurge names a refusal, a rejection and a value that is not a review", async () => {
+    await expect(
+      reviewPurge(
+        scope({ review: async () => ({ error: { message: "m" }, ok: false }) })
+      )
+    ).resolves.toEqual({ kind: "failed", message: "m" });
+    await expect(
+      reviewPurge(scope({ review: () => Promise.reject(new Error("gone")) }))
+    ).resolves.toEqual({ kind: "failed", message: "gone" });
+    await expect(
+      reviewPurge(scope({ review: async () => ({ ok: true, value: {} }) }))
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host answered something that is not a purge review",
+    });
+    await expect(
+      // oxlint-disable-next-line prefer-promise-reject-errors -- the case is a rejection that is not an Error.
+      reviewPurge(scope({ review: () => Promise.reject("down") }))
+    ).resolves.toEqual({ kind: "failed", message: "down" });
+  });
+
+  it("removeUnservedModels answers a purge result", async () => {
+    const result = {
+      catalogRead: true,
+      removed: [{ id: "gap", provider: "opencode" }],
+    };
+    const removeUnserved = vi.fn(async (..._args: unknown[]) => ({
+      ok: true,
+      value: result,
+    }));
+    await expect(
+      removeUnservedModels(scope({ removeUnserved }))
+    ).resolves.toEqual({ kind: "purged", result });
+    expect(removeUnserved).toHaveBeenCalledWith();
+  });
+
+  it("removeUnservedModels names an absent service, a refusal and a value that is not a purge result, in the purge's words", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(removeUnservedModels({ remote: {} })).resolves.toEqual({
+        kind: "unavailable",
+      });
+      // The purge row's own call names a missing service; this one does not.
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+    await expect(
+      removeUnservedModels(
+        scope({
+          removeUnserved: async () => ({
+            error: { message: "no config editor" },
+            ok: false,
+          }),
+        })
+      )
+    ).resolves.toEqual({ kind: "failed", message: "no config editor" });
+    await expect(
+      removeUnservedModels(
+        scope({ removeUnserved: async () => ({ error: {}, ok: false }) })
+      )
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host refused the purge",
+    });
+    await expect(
+      removeUnservedModels(
+        scope({ removeUnserved: async () => ({ ok: true, value: {} }) })
+      )
+    ).resolves.toEqual({
+      kind: "failed",
+      message: "the host answered something that is not a purge result",
+    });
   });
 });

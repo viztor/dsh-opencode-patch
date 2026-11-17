@@ -37,13 +37,36 @@ export interface PurgeResult {
   /** Every id removed, in declaration order. Empty when nothing was retired. */
   readonly removed: readonly PurgedModel[];
   /**
-   * Whether the catalog had anything to say at all.
+   * Whether the list the removal judged by was read: the live catalog for
+   * `purge`, pi's installed catalog for `removeUnserved`.
    *
-   * `false` means the refresh did not land (offline, or a rejected reply) — the
-   * distinction matters because "nothing was deprecated" and "the catalog could
-   * not be read" otherwise produce the same empty list and the same sentence.
+   * `false` means that read did not land (offline, a rejected reply, a pi that
+   * cannot be loaded) — the distinction matters because "nothing was removed"
+   * and "the list could not be read" otherwise produce the same empty list and
+   * the same sentence.
    */
   readonly catalogRead: boolean;
+}
+
+/**
+ * What the card lists beside the purge row: the ids declared on the plugin's
+ * planes that pi's installed catalog cannot serve, and the catalog's last
+ * refresh error.
+ */
+export interface PurgeReview {
+  /**
+   * One row per declared id pi cannot serve, in entry then route order, an id
+   * two entries declare on one route once; empty when the profile declares no
+   * plane entry this plugin owns.
+   */
+  readonly unserved: readonly PurgedModel[];
+  /**
+   * Whether pi's installed catalog was read; `false` lists nothing, and the
+   * card says the catalog could not be read.
+   */
+  readonly piRead: boolean;
+  /** Why the catalog's last refresh did not land, when it did not. */
+  readonly catalogError?: string;
 }
 
 /** The remote namespace the host mounts and the card calls. */
@@ -92,6 +115,48 @@ export const parsePurgeResult = (value: unknown): PurgeResult | undefined => {
   return { catalogRead, removed: rows };
 };
 
+/** The longest catalog error the card renders. */
+const CATALOG_ERROR_MAX = 200;
+
+/**
+ * Parse a review, rejecting anything that is not one: rows through the same
+ * row check as a purge result, kept as `{ id, provider }`; `piRead` must be a
+ * boolean; `catalogError` is kept only when a string, cut to 200 characters.
+ *
+ * @param value - the decoded wire value.
+ * @returns the review, or `undefined` when it is not one.
+ */
+export const parsePurgeReview = (value: unknown): PurgeReview | undefined => {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const { catalogError, piRead, unserved } = value as {
+    catalogError?: unknown;
+    piRead?: unknown;
+    unserved?: unknown;
+  };
+  if (!Array.isArray(unserved) || typeof piRead !== "boolean") {
+    return undefined;
+  }
+  const rows: PurgedModel[] = [];
+  for (const row of unserved) {
+    if (!isPurgedModel(row)) {
+      return undefined;
+    }
+    rows.push({ id: row.id, provider: row.provider });
+  }
+  return {
+    piRead,
+    unserved: rows,
+    ...(typeof catalogError === "string"
+      ? { catalogError: catalogError.slice(0, CATALOG_ERROR_MAX) }
+      : {}),
+  };
+};
+
+/** One result codec for the two methods that rewrite the profile. */
+const purgeResult = remoteValue("PurgeResult", parsePurgeResult);
+
 /**
  * The purge namespace, as a contribution the client mounts.
  *
@@ -103,7 +168,9 @@ export const parsePurgeResult = (value: unknown): PurgeResult | undefined => {
  * every contract under one package name (`REMOTE_CONTRACTS`).
  */
 export const purgeRemote = defineRemote(PURGE_NAMESPACE, {
-  purge: { result: remoteValue("PurgeResult", parsePurgeResult) },
+  purge: { result: purgeResult },
+  review: { result: remoteValue("PurgeReview", parsePurgeReview) },
+  removeUnserved: { result: purgeResult },
 });
 
 /** The one failure a purge reports: the profile cannot be rewritten here. */
@@ -125,6 +192,8 @@ declare module "@deepseek-ai/dsh-typert-protocol" {
   interface TypertRemoteNamespaceMap {
     opencodeModelPurge: {
       purge: () => Promise<RemoteResult<PurgeResult>>;
+      review: () => Promise<RemoteResult<PurgeReview>>;
+      removeUnserved: () => Promise<RemoteResult<PurgeResult>>;
     };
   }
 }

@@ -34,10 +34,13 @@ import {
   OpencodeStoreService,
   ModelPurgeService,
   parseFailure,
-  parseModelsDevCatalog,
   purgeDeprecatedModels,
   readGoUsage,
   recordTurnUsage,
+  refreshCatalog,
+  removeUnservedModels,
+  replaceHostModuleSource,
+  reviewPurge,
 } from "./support/src.ts";
 import {
   okBody,
@@ -255,7 +258,6 @@ describe("remote seam · purge: a result and the host's refusal reach the card a
   });
 
   it("carries the service's result, with every site it reports", async () => {
-    parseModelsDevCatalog(registry);
     vi.stubGlobal("fetch", async () => ({
       json: async () => registry,
       ok: true,
@@ -317,5 +319,110 @@ describe("remote seam · purge: a result and the host's refusal reach the card a
       kind: "failed",
       message: (error as Error).message,
     });
+  });
+});
+
+describe("remote seam · the ids pi cannot serve: the service's review and removal reach the card whole", () => {
+  /** A pi whose installed catalog knows `known` on both plane routes. */
+  const piKnowing = (): (() => void) =>
+    replaceHostModuleSource({
+      libraries: async () =>
+        ({
+          builtinModels: () => [
+            { api: "openai-completions", id: "known" },
+            { api: "anthropic-messages", id: "other" },
+          ],
+        }) as never,
+      piAi: async () => {},
+    });
+
+  /** A context whose config editor declares one gap per route and a reference. */
+  const declaring = (): Context => {
+    const entries = [
+      {
+        options: {
+          config: {
+            providers: {
+              opencode: { models: [{ id: "known" }, { id: "gap-1" }] },
+              "opencode-go": { models: ["gap-2"] },
+            },
+          },
+        },
+      },
+      {
+        options: {
+          config: {
+            allowedModels: [{ model: "gap-1", provider: "opencode" }],
+          },
+        },
+      },
+    ];
+    const ctx = new Context();
+    ctx.provide(
+      "configEditor" as never,
+      {
+        edit: async (
+          entry: unknown,
+          change: (current: Record<string, unknown>) => Record<string, unknown>
+        ) => {
+          const holder = entry as {
+            options: { config: Record<string, unknown> };
+          };
+          holder.options.config = change(holder.options.config);
+        },
+        entries: () => entries,
+      } as never
+    );
+    return ctx;
+  };
+
+  it("carries a review with rows and the catalog's last error", async () => {
+    const restore = piKnowing();
+    try {
+      vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+      await refreshCatalog(undefined, true);
+      const answer = await new ModelPurgeService(declaring()).review();
+      // Every field the card reads is set, so a parser that drops one fails.
+      expect(answer.piRead).toBe(true);
+      expect(answer.unserved).toHaveLength(2);
+      expect(answer.catalogError).toContain("offline");
+      await expect(
+        reviewPurge({
+          remote: {
+            opencodeModelPurge: {
+              review: async () => ({ ok: true, value: overTheWire(answer) }),
+            },
+          },
+        })
+      ).resolves.toEqual({ kind: "review", review: overTheWire(answer) });
+    } finally {
+      restore();
+    }
+  });
+
+  it("carries a removal with every site it reports", async () => {
+    const restore = piKnowing();
+    try {
+      const result = await new ModelPurgeService(declaring()).removeUnserved();
+      expect(result.removed.map((row) => row.site)).toEqual([
+        undefined,
+        undefined,
+        "subagent",
+      ]);
+      await expect(
+        removeUnservedModels({
+          remote: {
+            opencodeModelPurge: {
+              removeUnserved: async () => ({
+                ok: true,
+                value: overTheWire(result),
+              }),
+            },
+          },
+        })
+      ).resolves.toEqual({ kind: "purged", result: overTheWire(result) });
+    } finally {
+      restore();
+    }
   });
 });

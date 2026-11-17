@@ -81,6 +81,7 @@ export { REMOTE_CONTRACTS } from "../../src/contracts/all.ts";
 // contracts/purge.ts
 export {
   parsePurgeResult,
+  parsePurgeReview,
   PURGE_NAMESPACE,
   purgeRemote,
 } from "../../src/contracts/purge.ts";
@@ -121,6 +122,7 @@ export type {
 
 // cordis-context.ts
 export {
+  loadHostLibraries,
   loadHostModules,
   loaderOfContext,
   PI_AI_RUNTIME,
@@ -253,7 +255,9 @@ export { apply } from "../../src/lifecycle.ts";
 // models-catalog.ts
 export {
   catalogGeneration,
+  catalogLastError,
   catalogListenerCount,
+  deprecatedIdsOf,
   enrichModelsResponse,
   findModelSpec,
   findModelSpecOn,
@@ -269,9 +273,11 @@ export {
   refreshCatalog,
   resetCatalogState,
   sanitizeModalities,
+  shippedDeprecatedIds,
   specFor,
   specOn,
 } from "../../src/models-catalog.ts";
+export type { CatalogRefresh } from "../../src/models-catalog.ts";
 
 // opencode-paths.ts
 export {
@@ -293,6 +299,7 @@ export {
 // purge-service.ts
 export {
   ModelPurgeService,
+  purgeEntryConfig,
   stripRetiredReferences,
 } from "../../src/purge-service.ts";
 
@@ -340,7 +347,12 @@ export { SettingsBooleanField } from "../../src/settings-boolean-field.tsx";
 export type { BooleanFieldProps } from "../../src/settings-boolean-field.tsx";
 
 // settings-card.tsx
-export { OpencodeCard, purgeLine } from "../../src/settings-card.tsx";
+export {
+  OpencodeCard,
+  purgeLine,
+  reviewLines,
+  unservedLine,
+} from "../../src/settings-card.tsx";
 
 // settings-choice-field.tsx
 export { SettingsChoiceField } from "../../src/settings-choice-field.tsx";
@@ -367,7 +379,11 @@ export {
 } from "../../src/settings-page.tsx";
 
 // settings-purge.ts
-export { purgeDeprecatedModels } from "../../src/settings-purge.ts";
+export {
+  purgeDeprecatedModels,
+  removeUnservedModels,
+  reviewPurge,
+} from "../../src/settings-purge.ts";
 
 // settings-remote.ts
 export {
@@ -545,6 +561,7 @@ export {
   hasPlaneEntries,
   planeEntriesOf,
   planeProfileFor,
+  piUnservedIds,
   withoutPlaneProviders,
 } from "../../src/utils/plane-profile.ts";
 export type { PlaneProfileInput } from "../../src/utils/plane-profile.ts";

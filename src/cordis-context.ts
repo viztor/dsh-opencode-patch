@@ -496,6 +496,25 @@ export const loadHostModules = async (
   }
 };
 
+/**
+ * The libraries pi-ai runs on alone, or `undefined` while they cannot be read:
+ * the half of {@link loadHostModules} a caller that needs no pi-ai module uses
+ * (the purge's review reads pi's installed catalog), behind the same
+ * replaceable source.
+ *
+ * @param ctx - the plugin context.
+ */
+export const loadHostLibraries = async (
+  ctx: unknown
+): Promise<HostLibraries | undefined> => {
+  const source = replacementSource ?? defaultHostModuleSource;
+  try {
+    return await source.libraries(ctx);
+  } catch {
+    return undefined;
+  }
+};
+
 /** One value of a launch-environment snapshot. */
 export interface LaunchEnvironmentLike {
   readonly get: (name: string) => { readonly value?: string } | undefined;

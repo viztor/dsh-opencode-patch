@@ -15,7 +15,12 @@ import { describe, expect, it, vi } from "vitest";
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-import { OpencodeCard, purgeLine } from "../src/settings-card.tsx";
+import {
+  OpencodeCard,
+  purgeLine,
+  reviewLines,
+  unservedLine,
+} from "../src/settings-card.tsx";
 import { en } from "../src/settings-copy.ts";
 
 /**
@@ -360,6 +365,334 @@ describe("settings-card: the states that only exist after an interaction", () =>
       expect(line?.style.color).toBe("var(--dsw-alias-label-caption)");
     } finally {
       cleanup();
+    }
+  });
+});
+
+describe("settings-card: the ids pi cannot serve, beside the purge row", () => {
+  const t = (key: string): string => key;
+
+  it("says what the review found, grouped by provider in first-seen order", () => {
+    expect(
+      reviewLines(t, {
+        catalogError: "offline",
+        piRead: true,
+        unserved: [
+          { id: "a", provider: "opencode" },
+          { id: "c", provider: "opencode-go" },
+          { id: "b", provider: "opencode" },
+        ],
+      })
+    ).toEqual({
+      error: "catalogLastError: offline",
+      unserved: "opencode: a, b · opencode-go: c",
+    });
+    expect(reviewLines(t, { piRead: true, unserved: [] })).toEqual({});
+    // A review that could not read pi lists nothing, and says so.
+    expect(reviewLines(t, { piRead: false, unserved: [] })).toEqual({
+      piUnread: "unservedPiUnreadReview",
+    });
+  });
+
+  it("says what one removal did", () => {
+    expect(
+      unservedLine(t, {
+        kind: "purged",
+        result: {
+          catalogRead: true,
+          removed: [{ id: "a", provider: "opencode" }],
+        },
+      })
+    ).toEqual({ line: "1 unservedRemoved", warn: false });
+    expect(
+      unservedLine(t, {
+        kind: "purged",
+        result: { catalogRead: true, removed: [] },
+      })
+    ).toEqual({ line: "unservedNothing", warn: false });
+    expect(
+      unservedLine(t, {
+        kind: "purged",
+        result: { catalogRead: false, removed: [] },
+      })
+    ).toEqual({ line: "unservedPiUnread", warn: true });
+    expect(unservedLine(t, { kind: "failed", message: "boom" })).toEqual({
+      line: "purgeFailed: boom",
+      warn: true,
+    });
+    expect(unservedLine(t, { kind: "unavailable" })).toEqual({
+      line: "purgeUnavailable",
+      warn: true,
+    });
+  });
+
+  const mount = async (extra: Record<string, unknown>) => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const settle = async (): Promise<void> => {
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      });
+    };
+    const render = (next: Record<string, unknown>): void => {
+      act(() => {
+        root.render(createElement(OpencodeCard, props(next) as never));
+      });
+    };
+    render(extra);
+    await settle();
+    const cleanup = (): void => {
+      act(() => {
+        root.unmount();
+      });
+      host.remove();
+    };
+    const button = (label: string) =>
+      [...host.querySelectorAll("button")].find((b) =>
+        (b.textContent ?? "").includes(label)
+      );
+    return { act, button, cleanup, host, render, settle };
+  };
+
+  /** A review answer listing `ids` on `opencode`. */
+  const listing = (...ids: string[]) => ({
+    kind: "review",
+    review: {
+      piRead: true,
+      unserved: ids.map((id) => ({ id, provider: "opencode" })),
+    },
+  });
+
+  const purgeDeprecated = async () => ({
+    kind: "purged",
+    result: { catalogRead: true, removed: [] },
+  });
+
+  it("lists the ids and removes them on request, then reads the review again and shows what it answers", async () => {
+    const reviewPurge = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: "review",
+        review: {
+          piRead: true,
+          unserved: [
+            { id: "gap-1", provider: "opencode" },
+            { id: "gap-2", provider: "opencode-go" },
+          ],
+        },
+      })
+      .mockResolvedValue({
+        kind: "review",
+        review: {
+          piRead: true,
+          unserved: [{ id: "gap-2", provider: "opencode-go" }],
+        },
+      });
+    let finish: (value: unknown) => void = () => {};
+    const removeUnserved = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const { act, button, cleanup, host, settle } = await mount({
+      purgeDeprecated,
+      removeUnserved,
+      reviewPurge,
+    });
+    try {
+      expect(host.textContent).toContain(
+        "opencode: gap-1 · opencode-go: gap-2"
+      );
+      expect(host.textContent).toContain(en.unservedTitle);
+      const remove = button(en.unservedAction);
+      expect(remove, "the removal button is rendered").toBeDefined();
+      act(() => {
+        remove?.click();
+      });
+      await settle();
+      expect(removeUnserved).toHaveBeenCalledTimes(1);
+      expect(button(en.unservedBusy)).toBeDefined();
+      act(() => {
+        finish({
+          kind: "purged",
+          result: {
+            catalogRead: true,
+            removed: [{ id: "gap-1", provider: "opencode" }],
+          },
+        });
+      });
+      await settle();
+      expect(host.textContent).toContain(`1 ${en.unservedRemoved}`);
+      expect(reviewPurge).toHaveBeenCalledTimes(2);
+      // The second answer is what the card shows: gap-1 is gone.
+      expect(host.textContent).toContain("opencode-go: gap-2");
+      expect(host.textContent).not.toContain("gap-1");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("reads the review again after a purge, and not again for a parent render with a fresh closure", async () => {
+    const reviewPurge = vi.fn(async () => listing("gap-1"));
+    const { act, button, cleanup, render, settle } = await mount({
+      purgeDeprecated,
+      removeUnserved: vi.fn(),
+      reviewPurge,
+    });
+    try {
+      expect(reviewPurge).toHaveBeenCalledTimes(1);
+      // The page builds new closures on every `inject()`: a re-render with
+      // one is not a reason to review again.
+      const fresh = vi.fn(async () => listing("gap-1"));
+      render({ purgeDeprecated, removeUnserved: vi.fn(), reviewPurge: fresh });
+      await settle();
+      expect(reviewPurge).toHaveBeenCalledTimes(1);
+      expect(fresh).not.toHaveBeenCalled();
+      // A purge that settles reads it again, through the latest closure.
+      act(() => {
+        button(en.purgeAction)?.click();
+      });
+      await settle();
+      expect(fresh).toHaveBeenCalledTimes(1);
+      expect(reviewPurge).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("drops a review answer that arrives after a newer round's", async () => {
+    let late: (value: unknown) => void = () => {};
+    const reviewPurge = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            late = resolve;
+          })
+      )
+      .mockResolvedValue(listing("gap-new"));
+    const { act, button, cleanup, host, settle } = await mount({
+      purgeDeprecated,
+      removeUnserved: vi.fn(),
+      reviewPurge,
+    });
+    try {
+      act(() => {
+        button(en.purgeAction)?.click();
+      });
+      await settle();
+      expect(reviewPurge).toHaveBeenCalledTimes(2);
+      expect(host.textContent).toContain("opencode: gap-new");
+      act(() => {
+        late(listing("gap-old"));
+      });
+      await settle();
+      expect(host.textContent).toContain("opencode: gap-new");
+      expect(host.textContent).not.toContain("gap-old");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("says, in the warn colour, when the review could not read pi's catalog", async () => {
+    const { button, cleanup, host } = await mount({
+      purgeDeprecated,
+      removeUnserved: vi.fn(),
+      reviewPurge: async () => ({
+        kind: "review",
+        review: { piRead: false, unserved: [] },
+      }),
+    });
+    try {
+      expect(button(en.unservedAction)).toBeUndefined();
+      const line = [...host.querySelectorAll("div")].find(
+        (d) => d.textContent === en.unservedPiUnreadReview
+      );
+      expect(line, "the pi-unread caption").toBeDefined();
+      expect(line?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("tells a removal that could not read pi apart from a review that could not, each line once", async () => {
+    // A review lists an id, the removal's own read of pi fails, and the
+    // review read again cannot read pi either: the outcome and the review's
+    // state are two different sentences, and each is said once.
+    const reviewPurge = vi
+      .fn()
+      .mockResolvedValueOnce(listing("gap-1"))
+      .mockResolvedValue({
+        kind: "review",
+        review: { piRead: false, unserved: [] },
+      });
+    const removeUnserved = vi.fn(async () => ({
+      kind: "purged",
+      result: { catalogRead: false, removed: [] },
+    }));
+    const { act, button, cleanup, host, settle } = await mount({
+      purgeDeprecated,
+      removeUnserved,
+      reviewPurge,
+    });
+    try {
+      expect(host.textContent).not.toContain(en.unservedPiUnreadReview);
+      act(() => {
+        button(en.unservedAction)?.click();
+      });
+      await settle();
+      expect(removeUnserved).toHaveBeenCalledTimes(1);
+      expect(reviewPurge).toHaveBeenCalledTimes(2);
+      const lines = (text: string) =>
+        [...host.querySelectorAll("div")].filter((d) => d.textContent === text);
+      expect(lines(en.unservedPiUnread)).toHaveLength(1);
+      expect(lines(en.unservedPiUnreadReview)).toHaveLength(1);
+      expect(en.unservedPiUnreadReview).not.toBe(en.unservedPiUnread);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("renders no removal when the review lists nothing, and the catalog's error in the warn colour", async () => {
+    const { button, cleanup, host } = await mount({
+      purgeDeprecated,
+      removeUnserved: vi.fn(),
+      reviewPurge: async () => ({
+        kind: "review",
+        review: { catalogError: "offline", piRead: true, unserved: [] },
+      }),
+    });
+    try {
+      expect(button(en.unservedAction)).toBeUndefined();
+      const line = [...host.querySelectorAll("div")].find((d) =>
+        (d.textContent ?? "").startsWith(en.catalogLastError)
+      );
+      expect(line?.textContent).toBe(`${en.catalogLastError}: offline`);
+      expect(line?.style.color).toBe("var(--dsw-alias-state-warn-label)");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("renders the row as before with no review, and nothing extra for an outcome that is not a review", async () => {
+    for (const extra of [
+      { purgeDeprecated },
+      { purgeDeprecated, reviewPurge: async () => ({ kind: "unavailable" }) },
+    ]) {
+      const { cleanup, host } = await mount(extra);
+      try {
+        expect(host.textContent).toContain(en.purgeAction);
+        expect(host.textContent).not.toContain(en.unservedTitle);
+        expect(host.textContent).not.toContain(en.catalogLastError);
+      } finally {
+        cleanup();
+      }
     }
   });
 });

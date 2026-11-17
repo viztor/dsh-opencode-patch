@@ -1,5 +1,6 @@
 /**
- * Regenerate `src/catalog-data.ts`'s two catalogs from models.dev.
+ * Regenerate `src/catalog-data.ts` from models.dev: its two catalogs, the
+ * plane and family endpoints, and the ids each plane has retired.
  *
  * The shim is the catalog DSH sees **before the first successful refresh** — and
  * if a refresh never succeeds. That makes it load-bearing in a way a normal
@@ -20,21 +21,17 @@
  *
  * Without `--write` it only reports what would change, so it is safe to run in CI
  * or by hand to answer "is the shim stale?". Stale is decided by the one rule
- * the generators share (`generator-kit.ts`) over everything the file exports:
- * both catalogs, the plane endpoints and the family endpoints
- * (`catalog-shim.ts`, the pure half). With `--write`, a current shim is left
- * untouched.
+ * the generators share (`generator-kit.ts`) over everything the file exports,
+ * read through one function (`shippedShim`): both catalogs, the plane
+ * endpoints, the family endpoints and the retired ids (`catalog-shim.ts`, the
+ * pure half). With `--write`, a current shim is left untouched, and a shim
+ * that predates the retired ids gains their export (`rewriteShim`).
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 
-import {
-  OPENCODE_FAMILY_API,
-  OPENCODE_GO_CATALOG,
-  OPENCODE_PLANE_API,
-  OPENCODE_ZEN_CATALOG,
-} from "../src/catalog-data.ts";
+import * as shipped from "../src/catalog-data.ts";
 import {
   type CatalogModelSpec,
   MODELS_DEV_TIMEOUT_MS,
@@ -42,13 +39,10 @@ import {
   parseModelsDevCatalog,
 } from "../src/models-catalog.ts";
 import {
-  render,
-  renderFamilyApi,
-  renderPlaneApi,
+  rewriteShim,
   shimData,
   shimStale,
-  splice,
-  spliceObject,
+  shippedShim,
 } from "./catalog-shim.ts";
 import { generatorArgs, outcome, readSource } from "./generator-kit.ts";
 
@@ -61,17 +55,16 @@ const payload = await readSource({
   url: MODELS_OPENCODE_URL,
 });
 const next = shimData(parseModelsDevCatalog(JSON.parse(payload)));
+const current = shippedShim(shipped);
 
-/** What the shim holds now, for the report. */
+/** What the shim holds now against what it would hold, for the report. */
 const report = (
   label: string,
-  before: readonly CatalogModelSpec[],
-  after: readonly CatalogModelSpec[]
+  before: readonly string[],
+  after: readonly string[]
 ) => {
-  const ids = (specs: readonly CatalogModelSpec[]) =>
-    new Set(specs.map((s) => s.id));
-  const had = ids(before);
-  const has = ids(after);
+  const had = new Set(before);
+  const has = new Set(after);
   const added = [...has].filter((id) => !had.has(id));
   const removed = [...had].filter((id) => !has.has(id));
   console.log(`${label}: ${before.length} -> ${after.length}`);
@@ -86,37 +79,17 @@ const report = (
 console.log(
   `source: ${fromPath ?? MODELS_OPENCODE_URL} (${payload.length} bytes${fromPath === undefined ? "" : ", local"})`
 );
-report("opencode-go", OPENCODE_GO_CATALOG, next.go);
-report("opencode  ", OPENCODE_ZEN_CATALOG, next.zen);
+const ids = (specs: readonly CatalogModelSpec[]): string[] =>
+  specs.map((spec) => spec.id);
+report("opencode-go", ids(current.go), ids(next.go));
+report("opencode  ", ids(current.zen), ids(next.zen));
+report("retired opencode-go", current.deprecated.go, next.deprecated.go);
+report("retired opencode  ", current.deprecated.zen, next.deprecated.zen);
 
-const decided = outcome({
-  stale: shimStale(
-    {
-      familyApi: OPENCODE_FAMILY_API,
-      go: OPENCODE_GO_CATALOG,
-      planeApi: OPENCODE_PLANE_API,
-      zen: OPENCODE_ZEN_CATALOG,
-    },
-    next
-  ),
-  write,
-});
+const decided = outcome({ stale: shimStale(current, next), write });
 
 if (decided.action === "write") {
-  let source = readFileSync(TARGET, "utf8");
-  source = splice(source, "OPENCODE_GO_CATALOG", render(next.go));
-  source = splice(source, "OPENCODE_ZEN_CATALOG", render(next.zen));
-  source = spliceObject(
-    source,
-    "OPENCODE_PLANE_API",
-    renderPlaneApi(next.planeApi)
-  );
-  source = spliceObject(
-    source,
-    "OPENCODE_FAMILY_API",
-    renderFamilyApi(next.familyApi)
-  );
-  writeFileSync(TARGET, source);
+  writeFileSync(TARGET, rewriteShim(readFileSync(TARGET, "utf8"), next));
   console.log(`\nwrote ${basename(TARGET.pathname)}`);
 } else {
   console.log(
