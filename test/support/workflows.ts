@@ -23,6 +23,7 @@ const ROOT = join(import.meta.dirname, "..", "..");
 
 /** One step of a job or of a composite action, as parsed. */
 export interface Step {
+  readonly "continue-on-error"?: boolean | string;
   readonly env?: Readonly<Record<string, unknown>>;
   readonly id?: string;
   readonly if?: string;
@@ -35,9 +36,11 @@ export interface Step {
 
 /** One job, as parsed. */
 export interface Job {
+  readonly "continue-on-error"?: boolean | string;
   readonly env?: Readonly<Record<string, unknown>>;
   readonly if?: string;
   readonly name?: string;
+  readonly needs?: string | readonly string[];
   readonly permissions?: Readonly<Record<string, string>>;
   readonly steps?: readonly Step[];
   readonly strategy?: {

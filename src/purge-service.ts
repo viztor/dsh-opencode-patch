@@ -294,10 +294,9 @@ export const purgeEntryConfig = (
   if (providers !== undefined) {
     const rewritten: Record<string, unknown> = { ...providers };
     for (const { route } of PLANES) {
-      const declared = ownedRoutes.includes(route)
-        ? modelsOf(providers[route])
-        : undefined;
-      if (declared === undefined) {
+      const entry = ownedRoutes.includes(route) ? providers[route] : undefined;
+      const declared = modelsOf(entry);
+      if (!isRecord(entry) || declared === undefined) {
         continue;
       }
       const kept = declared.filter((model) => {
@@ -309,7 +308,7 @@ export const purgeEntryConfig = (
         return false;
       });
       if (kept.length !== declared.length) {
-        rewritten[route] = { ...(providers[route] as object), models: kept };
+        rewritten[route] = { ...entry, models: kept };
       }
     }
     if (removed.length > 0) {

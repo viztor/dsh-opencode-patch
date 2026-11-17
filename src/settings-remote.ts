@@ -28,8 +28,11 @@ import type { RemoteMethod } from "./contracts/remote.ts";
 /** One call on a remote namespace, as the seam exposes it. */
 export type RemoteCall = (query?: unknown) => Promise<unknown>;
 
-/** The reachable calls of one namespace, or `undefined` when it is not. */
-export type RemoteNamespace = Record<string, RemoteCall | undefined>;
+/**
+ * The reachable members of one namespace; a member is a call only once
+ * {@link isRemoteCall} says so.
+ */
+export type RemoteNamespace = Readonly<Record<string, unknown>>;
 
 /**
  * Whether a value is an object, narrowed without an assertion.
@@ -64,11 +67,9 @@ export const remoteNamespace = (
     if (!isObject(face)) {
       return undefined;
     }
-    // The one cast, and it is a widening of a value already known to be a plain
-    // object: the seam's own shape, whose members are checked at the call site
-    // by `isRemoteCall`. Narrowing each key here would validate the whole
-    // namespace to read one function off it.
-    return face as RemoteNamespace;
+    // Typed as what was proven, an object: each member is checked at the call
+    // site by `isRemoteCall`, so no member is validated here.
+    return face;
   } catch {
     // The guarded-access throw. Ordinary, and exactly what this is for.
     return undefined;
@@ -117,7 +118,7 @@ export const callUsageRead = async (
     if (!ARITY_REFUSAL.test(message)) {
       throw error;
     }
-    return await call();
+    return call();
   }
 };
 
@@ -159,7 +160,7 @@ export const remoteNamespaceOf = (
   }
   try {
     const face: unknown = get.call(ctx, `remote.${namespace}`);
-    return isObject(face) ? (face as RemoteNamespace) : undefined;
+    return isObject(face) ? face : undefined;
   } catch {
     return undefined;
   }

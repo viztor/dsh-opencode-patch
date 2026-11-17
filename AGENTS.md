@@ -148,7 +148,7 @@ pnpm run test:shuffle  # the unit suite in random order; CI runs it on Node 24
 pnpm run test:mock     # gateway mock suite: offline, no key, runs in CI
 pnpm run test:e2e:host # opt-in: the published host binary with the probe (CONTRIBUTING, "The e2e-host job")
 vp test run --coverage # with the coverage ratchet (thresholds in vite.config.ts)
-vp check               # format, lint, types
+pnpm run check         # format, lint, types; a lint warning fails it (vp check --deny-warnings)
 vp fmt --write         # rewrite formatting
 pnpm run build         # build lib/ (host bundle + client bundle)
 # `vp pack` alone is NOT enough: it emits lib/client.cjs for a type:module

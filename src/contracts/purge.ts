@@ -72,7 +72,11 @@ export interface PurgeReview {
 /** The remote namespace the host mounts and the card calls. */
 export const PURGE_NAMESPACE = "opencodeModelPurge";
 
-/** Whether a value is one `PurgedModel` row. */
+/**
+ * Whether a value is one `PurgedModel` row, judged by `id` and `provider`.
+ * `site` is not checked here: the codec keeps it only when it is a string,
+ * and does not narrow that string to the `PurgedSite` union.
+ */
 const isPurgedModel = (value: unknown): value is PurgedModel =>
   typeof value === "object" &&
   value !== null &&
@@ -107,9 +111,7 @@ export const parsePurgeResult = (value: unknown): PurgeResult | undefined => {
     rows.push({
       id: row.id,
       provider: row.provider,
-      ...(typeof (row as { site?: unknown }).site === "string"
-        ? { site: (row as { site: PurgedSite }).site }
-        : {}),
+      ...(typeof row.site === "string" ? { site: row.site } : {}),
     });
   }
   return { catalogRead, removed: rows };
