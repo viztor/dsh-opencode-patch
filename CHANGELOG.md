@@ -6,6 +6,26 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.10.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.2...v1.10.0) (2026-11-18)
+
+
+### Features
+
+* Settings offers the catalog's models pi does not list ([#115](https://github.com/viztor/dsh-opencode-patch/issues/115)) ([2f474b2](https://github.com/viztor/dsh-opencode-patch/commit/2f474b21efe5470aad5ac6006a0b7039b38c80ab))
+* the plugin owns the opencode and opencode-go routes ([#113](https://github.com/viztor/dsh-opencode-patch/issues/113)) ([c7820b4](https://github.com/viztor/dsh-opencode-patch/commit/c7820b4e8c5fbdf47bbee336f14ad7ea13f25a82))
+
+
+### Fixes
+
+* catalog state and the purge ([#187](https://github.com/viztor/dsh-opencode-patch/issues/187)) ([56725be](https://github.com/viztor/dsh-opencode-patch/commit/56725be15f448988dee322579748f42a72a097d7))
+* disabling or reloading the plugin restores the host methods it wrapped ([#112](https://github.com/viztor/dsh-opencode-patch/issues/112)) ([1b4ebf0](https://github.com/viztor/dsh-opencode-patch/commit/1b4ebf00cff1f83e4fe25f5b47153540a5ff68d1))
+* **limits:** read the Go allowances from the models endpoint ([#192](https://github.com/viztor/dsh-opencode-patch/issues/192)) ([efe3d1b](https://github.com/viztor/dsh-opencode-patch/commit/efe3d1ba853c393416a4cdd43724614e23ad49aa))
+* report the gateway's refusals honestly ([#175](https://github.com/viztor/dsh-opencode-patch/issues/175)) ([630da90](https://github.com/viztor/dsh-opencode-patch/commit/630da90762e8fe1f88c45b85bfca6eca761d4c53))
+* the card says when its settings apply, over one settings table ([#184](https://github.com/viztor/dsh-opencode-patch/issues/184)) ([3264a81](https://github.com/viztor/dsh-opencode-patch/commit/3264a810db8f72d93e7b4c05a821dbdc99be7662))
+* the fetch patch's credential fill ([#180](https://github.com/viztor/dsh-opencode-patch/issues/180)) ([54c6e83](https://github.com/viztor/dsh-opencode-patch/commit/54c6e831efa91f6aa46b46833cc162673280cf8c))
+* the remote services follow the plugin's latest activation and go with its last ([#176](https://github.com/viztor/dsh-opencode-patch/issues/176)) ([346d972](https://github.com/viztor/dsh-opencode-patch/commit/346d97203dba5a667d3db91bda5bb874701789b3))
+* UI on the primitives, and the meter refuses a reading it cannot read ([#188](https://github.com/viztor/dsh-opencode-patch/issues/188)) ([9d7d39d](https://github.com/viztor/dsh-opencode-patch/commit/9d7d39d17640412f79701d804e5aaea55931e1be))
+
 ## [1.9.2](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.1...v1.9.2) (2026-11-12)
 
 
