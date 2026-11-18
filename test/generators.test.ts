@@ -135,35 +135,33 @@ const formatted = (name: string, text: string): string => {
 };
 
 /**
- * The vendor's Go page, as the doc parser reads it, made from `rows`: one
- * table per tier, each row's label the model's name and its last cell the
- * tier's allowance (`$NaN` for a model with no figure, which parses back to
- * `NaN`).
+ * The gateway's models payload, made from `rows`: one entry per model with its
+ * `go.monthly_usage` pair (the third tier is carried and ignored, as the live
+ * endpoint carries it). `NaN` goes over JSON as `null`, so a row the source
+ * does not price is written as an entry with no `go.monthly_usage` at all.
  */
-const goLimitsDoc = (
+const goLimitsPayload = (
   rows: Readonly<Record<string, { go: number; goPlus: number; name: string }>>
 ): string =>
-  (
-    [
-      ["go", "Go"],
-      ["goPlus", "Go Plus"],
-    ] as const
-  )
-    .map(([tier, label]) =>
-      [
-        `<TabItem label="${label}">`,
-        "",
-        "| Model | Input | Output | Cached | Write | Monthly limit |",
-        "| --- | --- | --- | --- | --- | --- |",
-        ...Object.values(rows).map(
-          (row) =>
-            `| ${row.name} | $1 | $2 | $0.1 | - | $${String(row[tier])} |`
-        ),
-        "",
-        "</TabItem>",
-      ].join("\n")
-    )
-    .join("\n\n");
+  JSON.stringify({
+    object: "list",
+    data: Object.entries(rows).map(([id, row]) => ({
+      id,
+      object: "model",
+      name: row.name,
+      ...(Number.isNaN(row.go) || Number.isNaN(row.goPlus)
+        ? {}
+        : {
+            go: {
+              monthly_usage: {
+                go: row.go,
+                "go-plus": row.goPlus,
+                "go-teams": row.go + 5,
+              },
+            },
+          }),
+    })),
+  });
 
 /**
  * {@link SHIPPED} with one family endpoint moved: the first Zen family the
@@ -205,7 +203,7 @@ describe("generators · one staleness rule", () => {
     expect(stale({ a: 1, b: [1, 2] }, { a: 1, b: [1, 2] })).toBe(false);
     expect(stale({ a: 1, b: [1, 2] }, { b: [1, 2], a: 1 })).toBe(false);
     expect(stale({ a: 1 }, { a: 2 })).toBe(true);
-    // A model the vendor's page gives no figure is NaN in the limits table.
+    // A row the source gives no figure is NaN in the limits table.
     expect(stale({ x: Number.NaN }, { x: Number.NaN })).toBe(false);
     expect(canonical({ b: 1, a: { d: 2, c: 3 } })).toBe(
       '{"a":{"c":3,"d":2},"b":1}'
@@ -529,20 +527,20 @@ describe("generators · the retired ids are generated output", () => {
 });
 
 describe("generators · the generators, spawned", () => {
-  it("the limits generator answers current on a doc made from the shipped table, and stale when one figure moved", () => {
+  it("the limits generator answers current on a payload made from the shipped table, and stale when one figure moved", () => {
     const temp = mkdtempSync(join(tmpdir(), "go-limits-"));
     try {
-      const same = join(temp, "same.md");
-      writeFileSync(same, goLimitsDoc(GO_MODEL_LIMITS));
+      const same = join(temp, "same.json");
+      writeFileSync(same, goLimitsPayload(GO_MODEL_LIMITS));
       const current = runScript("generate-go-limits.ts", ["--from", same]);
       expect(current.status, current.stderr).toBe(0);
       expect(current.stdout).toContain("go-limits-data.ts is up to date");
 
       const [first, row] = firstLimit();
-      const changed = join(temp, "changed.md");
+      const changed = join(temp, "changed.json");
       writeFileSync(
         changed,
-        goLimitsDoc({ ...GO_MODEL_LIMITS, [first]: { ...row, go: 12_345 } })
+        goLimitsPayload({ ...GO_MODEL_LIMITS, [first]: { ...row, go: 12_345 } })
       );
       const behind = runScript("generate-go-limits.ts", ["--from", changed]);
       expect(behind.status, behind.stdout).toBe(1);
@@ -576,8 +574,8 @@ describe("generators · the generators, spawned", () => {
         );
         return { status: run.status, stderr: run.stderr, stdout: run.stdout };
       };
-      const same = join(temp, "same.md");
-      writeFileSync(same, goLimitsDoc(GO_MODEL_LIMITS));
+      const same = join(temp, "same.json");
+      writeFileSync(same, goLimitsPayload(GO_MODEL_LIMITS));
       // Whether a spawn wrote the target at all, bytes aside: its mtime is
       // set to a fixed past first. A byte-identical rewrite is not harmless,
       // since the lib freshness check in `scripts/check.ts` reads src/ mtimes.
@@ -612,8 +610,8 @@ describe("generators · the generators, spawned", () => {
       // A moved figure: written, with the renderer's text.
       const [first, row] = firstLimit();
       const moved = { ...GO_MODEL_LIMITS, [first]: { ...row, go: 12_345 } };
-      const changed = join(temp, "changed.md");
-      writeFileSync(changed, goLimitsDoc(moved));
+      const changed = join(temp, "changed.json");
+      writeFileSync(changed, goLimitsPayload(moved));
       const write = writes(["--write", "--from", changed]);
       expect(write.status, write.stderr).toBe(0);
       expect(write.touched).toBe(true);

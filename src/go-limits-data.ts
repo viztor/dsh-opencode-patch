@@ -3,10 +3,10 @@
  *
  * The Go plan's monthly allowance per model, in whole US dollars, for both tiers:
  * `go` is the $10/month plan, `goPlus` the $40/month one. Source of truth is
- * OpenCode's own Go documentation; `pnpm run limits:shim` reports staleness and
- * `--write` rewrites this file.
+ * the gateway's models endpoint (`go.monthly_usage`); `pnpm run limits:shim`
+ * reports staleness and `--write` rewrites this file.
  *
- * 30 models.
+ * 28 models.
  */
 
 import type { ModelAllowance } from "./go-limits.ts";
@@ -15,22 +15,22 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
   "claude-haiku-5-5": {
     go: 15,
     goPlus: 60,
-    name: "Claude Haiku 5.5 (≤ 100K tokens)",
+    name: "Claude Haiku 5.5",
   },
   "deepseek-v4-pro": {
     go: 15,
     goPlus: 60,
-    name: "DeepSeek V4 Pro (Off-Peak)",
+    name: "DeepSeek V4 Pro",
   },
   "deepseek-v4.1-flash": {
     go: 100,
     goPlus: 200,
-    name: "DeepSeek V4.1 Flash (Off-Peak)",
+    name: "DeepSeek V4.1 Flash 1017",
   },
   "gemini-4-argon": {
     go: 30,
     goPlus: 120,
-    name: "Gemini 4 Argon (50% off)",
+    name: "Gemini 4 Argon",
   },
   "glm-5.2": {
     go: 60,
@@ -38,8 +38,8 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     name: "GLM-5.2",
   },
   "glm-5.3": {
-    go: 15,
-    goPlus: 120,
+    go: 500,
+    goPlus: 1000,
     name: "GLM-5.3",
   },
   "glm-5.3-flash": {
@@ -50,17 +50,17 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
   "gpt-5.6-luna": {
     go: 15,
     goPlus: 60,
-    name: "GPT 5.6 Luna (≤ 272K tokens)",
+    name: "GPT-5.6 Luna",
   },
   "gpt-6-luna": {
     go: 15,
     goPlus: 60,
-    name: "GPT 6 Luna (≤ 272K tokens)",
+    name: "GPT-6 Luna",
   },
   "grok-4.7": {
     go: 15,
     goPlus: 60,
-    name: "Grok 4.7 (≤ 200K tokens)",
+    name: "Grok 4.7",
   },
   hy3: {
     go: 60,
@@ -97,16 +97,6 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     goPlus: 240,
     name: "LongCat-2.0",
   },
-  "mimo-v2.5": {
-    go: 60,
-    goPlus: 120,
-    name: "MiMo-V2.5",
-  },
-  "mimo-v2.5-pro": {
-    go: 15,
-    goPlus: 60,
-    name: "MiMo-V2.5-Pro",
-  },
   "mimo-v2.6-flash": {
     go: 60,
     goPlus: 120,
@@ -120,7 +110,7 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
   "minimax-m3": {
     go: 60,
     goPlus: 180,
-    name: "MiniMax M3 (≤ 512K tokens)",
+    name: "MiniMax-M3",
   },
   "minimax-m3.1-flash": {
     go: 20,
@@ -140,7 +130,7 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
   "qwen3.7-plus": {
     go: 60,
     goPlus: 180,
-    name: "Qwen3.7 Plus (≤ 256K tokens)",
+    name: "Qwen3.7 Plus",
   },
   "qwen3.8-flash": {
     go: 30,

@@ -5,136 +5,9 @@ import {
   GO_PLAN_TIERS,
   WINDOW_SHARE,
   allowanceFor,
-  normalizeModelLabel,
-  parseGoLimitsDoc,
 } from "./support/src.ts";
 
-/** The two tier tables, trimmed to what the parser reads. */
-const doc = (go: string, plus: string): string => `
-## Usage limits
-
-<Tabs syncKey="go-plan">
-  <TabItem label="Go">
-
-    | Model                                   | Input  | Output | Cached Read | Cached Write | Monthly limit |
-    | --------------------------------------- | ------ | ------ | ----------- | ------------ | ------------- |
-${go}
-  </TabItem>
-  <TabItem label="Go Plus">
-
-    | Model                                   | Input  | Output | Cached Read | Cached Write | Monthly limit |
-    | --------------------------------------- | ------ | ------ | ----------- | ------------ | ------------- |
-${plus}
-  </TabItem>
-</Tabs>
-`;
-
-const rowOf = (name: string, limit: string): string =>
-  `    | ${name.padEnd(40)} | $0.15 | $0.50 | $0.03 | - | ${limit} |`;
-
-describe("go-limits: the doc table", () => {
-  it("reads both tiers, and keys rows by model id", () => {
-    const { limits } = parseGoLimitsDoc(
-      doc(
-        rowOf("MiMo-V2.6-Flash", "**$60**"),
-        rowOf("MiMo-V2.6-Flash", "**$120**")
-      )
-    );
-    expect(limits.get("mimo-v2.6-flash")).toEqual({
-      go: 60,
-      goPlus: 120,
-      name: "MiMo-V2.6-Flash",
-    });
-  });
-
-  it("collapses a model's variants onto one allowance", () => {
-    // Peak/off-peak and "> N tokens" rows are the same allowance stated twice.
-    const { limits } = parseGoLimitsDoc(
-      doc(
-        [
-          rowOf("DeepSeek V4.1 Flash (Off-Peak)", "**$60**"),
-          rowOf("DeepSeek V4.1 Flash (Peak)", "**$60**"),
-        ].join("\n"),
-        [
-          rowOf("DeepSeek V4.1 Flash (Off-Peak)", "**$120**"),
-          rowOf("DeepSeek V4.1 Flash (Peak)", "**$120**"),
-        ].join("\n")
-      )
-    );
-    expect(limits.size).toBe(1);
-    expect(limits.get("deepseek-v4.1-flash")?.go).toBe(60);
-    expect(limits.get("deepseek-v4.1-flash")?.goPlus).toBe(120);
-  });
-
-  it("treats 'Unlimited' as no allowance rather than a failure", () => {
-    // The free model carries no dollar figure. Rendering nothing for it is the
-    // honest outcome; a zero would read as "you get nothing".
-    const { limits, unmapped } = parseGoLimitsDoc(
-      doc(
-        [
-          rowOf("Space Bunny", "**$30**"),
-          rowOf("LongCat 2.5 Preview Free", "Unlimited limited time"),
-        ].join("\n"),
-        rowOf("Space Bunny", "**$120**")
-      )
-    );
-    expect(limits.get("space-bunny")?.go).toBe(30);
-    expect(limits.has("longcat-2.5-preview-free")).toBe(false);
-    expect(unmapped).toEqual([]);
-  });
-
-  it("stops at the tab's end, so the request table below is not read", () => {
-    // The estimates table repeats model names with no dollar column. Reading past
-    // `</TabItem>` would invent an allowance out of a request count.
-    const { limits } = parseGoLimitsDoc(
-      `${doc(rowOf("Space Bunny", "**$30**"), rowOf("Space Bunny", "**$120**"))}
-Requests per month for Space Bunny | 3,130 | 7,810 | 15,630 |`
-    );
-    expect(limits.size).toBe(1);
-    expect(limits.get("space-bunny")?.go).toBe(30);
-  });
-
-  it("throws rather than shipping a table with holes when a tier is missing", () => {
-    const half = doc(rowOf("Space Bunny", "**$30**"), "");
-    expect(() => parseGoLimitsDoc(half)).toThrow(
-      /goPlus table parsed to zero rows/
-    );
-    // The Go tab is present and readable; the Plus tab is simply gone.
-    expect(() =>
-      parseGoLimitsDoc(
-        '<TabItem label="Go">\n' +
-          "| Model | Input | Output | Cached Read | Cached Write | Monthly limit |\n" +
-          "| Space Bunny | $0.15 | $0.30 | $0.03 | - | **$30** |\n  </TabItem>\n"
-      )
-    ).toThrow(/no <TabItem label="Go Plus">/);
-  });
-
-  it("reports a named row it cannot read", () => {
-    // One unreadable row beside readable ones: the tier still parses, so the row
-    // is reported rather than thrown — the generator turns that into a failure.
-    const { unmapped } = parseGoLimitsDoc(
-      doc(
-        [
-          rowOf("Mystery Model", "**see pricing page**"),
-          rowOf("Space Bunny", "**$30**"),
-        ].join("\n"),
-        rowOf("Space Bunny", "**$120**")
-      )
-    );
-    expect(unmapped).toHaveLength(1);
-    expect(unmapped[0]).toContain("Mystery Model");
-  });
-});
-
-describe("go-limits: labels and formatting", () => {
-  it("slugifies a label, dropping the variant parenthetical", () => {
-    expect(normalizeModelLabel("GPT 5.6 Luna (≤ 272K tokens)")).toBe(
-      "gpt-5.6-luna"
-    );
-    expect(normalizeModelLabel("MiMo-V2.6-Flash")).toBe("mimo-v2.6-flash");
-    expect(normalizeModelLabel("  ")).toBeUndefined();
-  });
-
+describe("go-limits: the allowance lookup", () => {
   it("looks a model up regardless of case or padding", () => {
     const limits = new Map([
       ["mimo-v2.6-flash", { go: 60, goPlus: 120, name: "x" }],
@@ -168,12 +41,12 @@ describe("go-limits: the generated table", () => {
   });
 
   it("has a positive allowance in both tiers for every model", () => {
-    // A zero means the parser read one tier and not the other — which is how a
-    // plan figure could read as $0 without anything looking wrong.
-    // `NaN` is the third state and not a fourth kind of zero: it is a model the
-    // vendor's page does not list yet, which the meter renders as no allowance
-    // rather than as a figure. Asserting positivity for those would make the
-    // parser invent one.
+    // A zero means one tier was read and not the other — which is how a plan
+    // figure could read as $0 without anything looking wrong.
+    // `NaN` is the third state and not a fourth kind of zero: it is a row the
+    // source does not price, which the meter renders as no allowance rather
+    // than as a figure. Asserting positivity for those would make the reader
+    // invent one.
     let priced = 0;
     for (const [id, row] of Object.entries(GO_MODEL_LIMITS)) {
       const published = !Number.isNaN(row.go);
