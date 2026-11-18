@@ -29,7 +29,7 @@ export const jsKey = (id: string): string =>
 /**
  * A number as TypeScript source.
  *
- * A model the vendor's page does not list has no published allowance, which the
+ * A model the source does not price has no published allowance, which the
  * table records as `NaN`. The bare `NaN` identifier is a lint error, so the
  * literal is written as `Number.NaN`; it stays `NaN` at runtime, which is the
  * point - a model with no figure must not read as `$0`.
@@ -70,8 +70,8 @@ export const renderGoLimits = (
  *
  * The Go plan's monthly allowance per model, in whole US dollars, for both tiers:
  * \`go\` is the $10/month plan, \`goPlus\` the $40/month one. Source of truth is
- * OpenCode's own Go documentation; \`pnpm run limits:shim\` reports staleness and
- * \`--write\` rewrites this file.
+ * the gateway's models endpoint (\`go.monthly_usage\`); \`pnpm run limits:shim\`
+ * reports staleness and \`--write\` rewrites this file.
  *
  * ${entries.length} models.
  */

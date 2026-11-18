@@ -126,10 +126,14 @@ describe("freshness scope · the walk reads the real generators", () => {
     const { read } = diskReader();
     const inputs = inputsOf("limits:shim", read);
     expect(inputs).toContain("scripts/generate-go-limits.ts");
-    expect(inputs).toContain("src/go-limits.ts");
+    expect(inputs).toContain("scripts/go-limits-endpoint.ts");
     expect(inputs).toContain("scripts/generator-kit.ts");
     expect(inputs).toContain("scripts/go-limits-render.ts");
     expect(inputs).not.toContain("scripts/catalog-shim.ts");
+    // `src/go-limits.ts` is reached by `import type` only (the generator and
+    // the renderer name `ModelAllowance`), and a type import loads nothing, so
+    // a change to it is not an input: its runtime code cannot move the table.
+    expect(inputs).not.toContain("src/go-limits.ts");
     // The renderer's source holds `import type … from "./go-limits.ts"`, but
     // as template text: the line it writes into the file it emits, not an
     // import of the renderer. The premise is checked first, so the second
@@ -424,10 +428,15 @@ describe("freshness scope · the decision", () => {
   });
 
   it("gates one check without gating the others", () => {
-    const changed = ["src/go-limits.ts"];
+    const changed = ["scripts/go-limits-endpoint.ts"];
     expect(scopeFor(changed, inputs["limits:shim"])).toBe("gate");
     expect(scopeFor(changed, inputs["catalog:shim"])).toBe("report");
     expect(scopeFor(changed, inputs["cli:version"])).toBe("report");
+    // A module the generator names only in `import type` loads nothing, so a
+    // change to it reports for the limits check rather than gating it.
+    expect(scopeFor(["src/go-limits.ts"], inputs["limits:shim"])).toBe(
+      "report"
+    );
   });
 
   it("names a generated file changed without its generator, and only then", () => {

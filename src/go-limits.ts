@@ -18,13 +18,15 @@
  * feedback."* A hand-typed table would be wrong within a release, and a wrong
  * dollar figure is worse than none: it looks authoritative.
  *
- * So it is GENERATED from the vendor's own machine-readable doc
- * (`https://opencode.ai/docs/go.md`, which is the page's markdown source, not a
- * scrape of rendered HTML) by `scripts/generate-go-limits.ts`, and CI checks it
- * for drift — the same arrangement as `catalog-data.ts` / models.dev, for the
- * same reason: a pull request that changes the generator (or a module it
- * loads) fails on a stale table; any other pull request, and a push to main,
- * warns, and the nightly run proposes the refresh.
+ * So it is GENERATED from the gateway's own models endpoint
+ * (`https://opencode.ai/inference/go/v1/models`, whose `go.monthly_usage`
+ * carries each tier's figure; until 2026-11-18 the figures came from the
+ * docs page's allowance table, which the page no longer carries) by
+ * `scripts/generate-go-limits.ts`, and CI checks it for drift — the same
+ * arrangement as `catalog-data.ts` / models.dev, for the same reason: a pull
+ * request that changes the generator (or a module it loads) fails on a stale
+ * table; any other pull request, and a push to main, warns, and the nightly
+ * run proposes the refresh.
  *
  * ## What still cannot be shown, and why that is not an oversight
  *
@@ -50,7 +52,7 @@ export interface ModelAllowance {
   go: number;
   /** Go Plus, the $40/month plan. */
   goPlus: number;
-  /** The vendor's display name, as the doc table spells it. */
+  /** The model's display name, as the models endpoint spells it. */
   name: string;
 }
 
@@ -78,124 +80,3 @@ export const allowanceFor = (
   limits: ReadonlyMap<string, ModelAllowance>,
   model: string
 ): ModelAllowance | undefined => limits.get(model.trim().toLowerCase());
-
-/**
- * Normalize a doc-table row label to a model id.
- *
- * The doc distinguishes variants in the label — `DeepSeek V4.1 Flash (Off-Peak)`,
- * `GPT 5.6 Luna (> 272K tokens)` — and those variants share their base model's
- * allowance. Parentheticals and `Preview`/spacing noise come off; what is left is
- * slugified and matched against the catalog's own ids.
- *
- * Returning `undefined` means "row I could not map", and the generator reports
- * those rather than dropping them: an unmapped row is either a new model (the
- * table is stale) or a parsing bug, and both need a human.
- */
-export const normalizeModelLabel = (label: string): string | undefined => {
-  const base = label
-    .replace(/\s*\([^)]*\)\s*$/u, "")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
-  if (base.length === 0) {
-    return undefined;
-  }
-  return base
-    .toLowerCase()
-    .replaceAll(/[‐-―]/gu, "-")
-    .replaceAll(/[^a-z0-9.]+/gu, "-")
-    .replaceAll(/^-+|-+$/gu, "");
-};
-
-/**
- * The old doc URL, the page's own markdown source. The docs moved to
- * `/docs/console/go/` (this URL redirects there, measured 2026-11-12), so the
- * generator asks this one second
- * (`GO_LIMITS_SOURCES` in `scripts/go-limits-html.ts`).
- */
-export const GO_LIMITS_DOC_URL = "https://opencode.ai/docs/go.md";
-export const GO_LIMITS_DOC_TIMEOUT_MS = 20_000;
-
-/**
- * Parse both tier tables out of `go.md`.
- *
- * Deliberately narrow: it looks for the two `<TabItem label="Go">` /
- * `label="Go Plus">` table headers and reads the LAST column of each body row.
- * Anything it cannot read it reports in `unmapped` instead of guessing, so the
- * generator fails loudly on a layout change rather than shipping a table with
- * holes in it.
- */
-export const parseGoLimitsDoc = (
-  markdown: string
-): { limits: Map<string, ModelAllowance>; unmapped: string[] } => {
-  const limits = new Map<string, ModelAllowance>();
-  const unmapped: string[] = [];
-  const tiers: [GoPlanTier, string][] = [
-    ["go", '<TabItem label="Go">'],
-    ["goPlus", '<TabItem label="Go Plus">'],
-  ];
-
-  for (const [tier, tab] of tiers) {
-    const start = markdown.indexOf(tab);
-    if (start === -1) {
-      throw new Error(`go-limits: no ${tab} section in the doc`);
-    }
-    // Stop at the tab's closing tag: the request-estimates table below repeats
-    // model names with no dollar column at all, and reading past it would
-    // invent allowances out of request counts.
-    const close = markdown.indexOf("</TabItem>", start);
-    const body = markdown.slice(start, close === -1 ? undefined : close);
-
-    let matched = 0;
-    for (const line of body.split("\n")) {
-      if (!line.trimStart().startsWith("|")) {
-        continue;
-      }
-      // Cells are split, not regexed: the last one is `**$60**`, bold in the
-      // source, and the separator row is dashes.
-      const cells = line
-        .split("|")
-        .slice(1, -1)
-        .map((cell) => cell.trim());
-      if (cells.length < 6) {
-        continue;
-      }
-      const label = cells.at(0) ?? "";
-      const last = cells.at(-1) ?? "";
-      // The amount is what the row's last cell says once its emphasis is off:
-      // `**$60**` in the source. Reading the cell beats a column-counting regex,
-      // which cannot tell a variant row from a header.
-      if (!last.replaceAll("*", "").startsWith("$")) {
-        // `Unlimited limited time`, and the header and separator rows, land here.
-        // A model with no allowance is not an error; a NAMED row we failed to
-        // read is, and it is reported rather than skipped.
-        const ignored =
-          /^-+$/u.test(label) ||
-          /unlimited|monthly limit/iu.test(last) ||
-          label.length === 0;
-        if (!ignored) {
-          unmapped.push(`${tier}: ${label} → ${last}`);
-        }
-        continue;
-      }
-      const id = normalizeModelLabel(label);
-      if (id === undefined || id.length === 0) {
-        unmapped.push(`${tier}: ${label}`);
-        continue;
-      }
-      const amount = Number(
-        last.replaceAll("*", "").replace("$", "").replaceAll(",", "")
-      );
-      // A variant row (peak/off-peak, `> N tokens`) states the same allowance
-      // again: the first row's label is the one kept.
-      const entry = limits.get(id) ?? { go: 0, goPlus: 0, name: label };
-      entry[tier] = amount;
-      limits.set(id, entry);
-      matched += 1;
-    }
-    if (matched === 0) {
-      throw new Error(`go-limits: the ${tier} table parsed to zero rows`);
-    }
-  }
-
-  return { limits, unmapped };
-};

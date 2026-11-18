@@ -173,8 +173,6 @@ export { GO_MODEL_LIMITS } from "../../src/go-limits-data.ts";
 export {
   allowanceFor,
   GO_PLAN_TIERS,
-  normalizeModelLabel,
-  parseGoLimitsDoc,
   WINDOW_SHARE,
 } from "../../src/go-limits.ts";
 
