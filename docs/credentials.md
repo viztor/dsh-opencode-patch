@@ -4,7 +4,7 @@ The plugin's default is the deployment's own credential: whatever `apiKeyEnv` th
 
 **This build carries the API key path only.** The Console login — device flow, the token store, the session reader, the multi-key pool — is `v2` work and is deliberately not in `main`, together with the tests and the settings row that carried it. Nothing here depends on a login service existing, and no request path consults one.
 
-**The login material below is kept as record, not as description.** Sections whose heading carries "(`v2` record)" describe an arrangement that this branch does not implement; they are kept because the measurements in them — an OAuth token is not an API key on the Zen endpoint, the free tier's refusals, the store's schema — remain true and cost real time to establish. Read them as history.
+**The login material below is kept as record, not as description.** Sections whose heading carries "(`v2` record)" describe an arrangement that this branch does not implement; they are kept because the measurements in them — the free tier's refusals, the store's schema, and an OAuth token's treatment on the model endpoints, re-measured on 2026-11-19 and corrected below — cost real time to establish. Read them as history.
 
 ## Current request wiring
 
@@ -54,11 +54,13 @@ Where a route names no reference at all, the chain continues into the login and 
 
 Zen credentials serve Zen calls, Go credentials serve Go calls: the planes are different accounts with different keys, different endpoints and different catalogs. On a plane turn that holds when each entry names its own reference; an entry that names none takes pi's `OPENCODE_API_KEY` on either plane (above), which is why the Go entry should name `OPENCODE_GO_API_KEY`.
 
-A route's credential is an **API key** — a reference in the credential store, or the environment — and that is a measured constraint rather than a first choice: the section below shows a login token is refused by the model endpoints the same way a wrong key is.
+A route's credential is a reference in the credential store or the environment, and the plugin puts no shape test on its value: an API key and an account's own access token both authenticate the gateway today (re-measured 2026-11-19, below), so the endpoint's answer is what decides.
 
-## An OAuth token is not an API key on the Zen model endpoint (measured)
+## The two credential kinds on the model endpoints (measured 2026-10, re-measured 2026-11-19)
 
-The login flows produce an access token. Whether that token can authenticate a MODEL call is a separate question, and the gateway answers it plainly. Three requests to `/chat/completions` on the Zen base, differing only in the credential:
+The login flows produce an access token. Whether that token can authenticate a MODEL call is not a question the plugin has to answer by guessing — the gateway answers it, and the answer has moved.
+
+The first measurement (2026-10) varied only the credential on `POST /zen/v1/chat/completions` and concluded that the slot reads an API key and nothing else:
 
 | Credential sent                  | Answer                            |
 | :------------------------------- | :-------------------------------- |
@@ -66,11 +68,25 @@ The login flows produce an access token. Whether that token can authenticate a M
 | `Bearer not-a-real-token-abc123` | `401 AuthError: Invalid API key.` |
 | `Bearer <a JWT-shaped string>`   | `401 AuthError: Invalid API key.` |
 
-The last two are indistinguishable. The Bearer slot on that endpoint reads an API key and nothing else, so a token presented there is an invalid API key. **This is about `/chat/completions` on the Zen base and nothing wider** — measured later, the account's own token does authenticate on `/inference/openai/v1`, which is a different endpoint with a different credential slot. Read the two together: an API-key slot refuses a login token, and the account plane accepts it.
+That is still what an unrecognised string answers. But it was a JWT-_shaped_ string, not the account's real token, and the real token was only measured on the modern family at the time. Re-measured on 2026-11-19, the device-flow access token authenticates a real completion on **both** families. The Go plane is the clean test, because the controls are unambiguous (`beam-free`, with the turn's `x-opencode-session` header as the client sends it):
 
-So the credential a model endpoint wants is an API key, and a login is not one of them. What a login IS good for is the Console's own API — the per-account catalog at `/api/config`, the account and organization context at `/api/user` and `/api/orgs` — and a deployment that wants a login's models needs the Console to exchange it for a key, which is the vendor's flow, not this plugin's.
+| Credential sent | `POST /zen/go/v1/chat/completions` (legacy) | `POST /inference/go/v1/chat/completions` (modern) |
+| :-- | :-- | :-- |
+| none | `401 OpenCode Go requires an API key` | `401 OpenCode Go requires an API key` |
+| `Bearer garbage-token` | `401 Invalid credential` | `401 Invalid credential` |
+| `Bearer <the account's access token>` | **`200`, a completion** | **`200`, a completion** |
 
-Recording this because the alternative is wiring a login's token into a model request that answers "Invalid API key" for it, and debugging that as a routing fault.
+The same token answers the Console API (`GET /console/api/user` and `GET /console/api/orgs`: `200`; garbage and no credential: `401 Unauthorized`), and the Go quota endpoint on both families (`200` with three windows). The Zen free rows answer `429 FreeUsageLimitError` with the token and keyless alike — both reach the entitlement check, the free limit does not distinguish them — while garbage stays `401`.
+
+So the current facts are:
+
+- The account's own access token is a working credential on **both endpoint families** and on the Console API.
+- An unrecognised string is refused (`401 Invalid credential`).
+- Keyless requests are allowed only where the tier allows them (the Zen free rows) and refused where it does not (`401 OpenCode Go requires an API key` on the Go plane).
+
+The 2026-10 conclusion — that a login is not an API key, so a deployment that wants a login's models needs the Console to exchange it for one — is superseded: no exchange is needed, and the plugin needs no credential-kind test before sending a token. It filters placeholders (`usableKey`), sends the value in the wire's own slot, and reads the answer (`401` auth, `403 EntitlementError`, `429` free tier). A prefix tells it nothing either ("A credential prefix is not an entitlement").
+
+What still holds from that section is scope: the token is one credential for one account, the Console API remains the vendor's surface for account and org context rather than this plugin's, and the endpoint's own answer — not the shape of the string — decides what a credential can do. The org header is not required for the token measured here: the token authenticates without it, and `credentialOrg` remains an explicit override rather than a second credential.
 
 ## (`v2` record) What the logins are (measured from OpenCode's own source)
 
@@ -317,7 +333,7 @@ Four things about that are decisions rather than details.
 
 **An expired stored token is used anyway.** Nothing here can refresh an OpenCode account — that would mean writing to their store or calling their refresh endpoint — so `token_expiry` is deliberately not consulted. The gateway's answer is the truth about a token, and the alternative, treating it as absent, would tell a signed-in user they have no credential when they have one that is merely old. The test pins it with an expiry in 1970.
 
-One consequence worth stating plainly rather than discovering later: on an endpoint whose credential slot reads an API key, an account token is refused — measured for `/chat/completions` at the top of this file. A deployment that has BOTH a session in the installation's `account` table and a key in its `credential` table therefore now prefers the account token on this route, where before it used the key. That is the precedence this file sets out, and it matches OpenCode's own behaviour — when it is signed in, the session credential is the one it sends — but it is a behaviour change on a machine that has both, and it is not measured for the Google endpoint this bridge serves.
+One consequence worth stating plainly rather than discovering later, and superseded by the 2026-11-19 re-measurement above: in that build an endpoint whose credential slot read an API key refused an account token — measured for `/chat/completions` at the top of this file. What remains true is the precedence this file sets out: a deployment that has BOTH a session in the installation's `account` table and a key in its `credential` table prefers the account token on this route, where before it used the key. That matches OpenCode's own behaviour — when it is signed in, the session credential is the one it sends — but it is a behaviour change on a machine that has both, and it is not measured for the Google endpoint this bridge serves.
 
 ## (`v2` record) The handoff: free and paid authentication, stated plainly
 
