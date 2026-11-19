@@ -6,6 +6,13 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.10.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.10.0...v1.10.1) (2026-11-19)
+
+
+### Documentation
+
+* **credentials:** re-measure the account token on both gateway families ([#193](https://github.com/viztor/dsh-opencode-patch/issues/193)) ([4460500](https://github.com/viztor/dsh-opencode-patch/commit/4460500f98f2a401e2eeee4a80bafa705559e20e))
+
 ## [1.10.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.2...v1.10.0) (2026-11-18)
 
 
