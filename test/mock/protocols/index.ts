@@ -1,3 +1,6 @@
+// oxlint-disable no-barrel-file -- the mock protocols are deliberately re-exported
+// from one place so a test imports whichever wire protocol it exercises; splitting
+// this file would not change how many modules load.
 /**
  * Wire Protocols & Fixtures Library.
  *
