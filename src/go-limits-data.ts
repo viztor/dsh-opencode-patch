@@ -6,7 +6,7 @@
  * the gateway's models endpoint (`go.monthly_usage`); `pnpm run limits:shim`
  * reports staleness and `--write` rewrites this file.
  *
- * 28 models.
+ * 27 models.
  */
 
 import type { ModelAllowance } from "./go-limits.ts";
@@ -31,11 +31,6 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     go: 30,
     goPlus: 120,
     name: "Gemini 4 Argon",
-  },
-  "glm-5.2": {
-    go: 60,
-    goPlus: 180,
-    name: "GLM-5.2",
   },
   "glm-5.3": {
     go: 500,
