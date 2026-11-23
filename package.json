@@ -114,8 +114,8 @@
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "@types/semver": "^7.8.0",
-    "@vitest/coverage-v8": "5.1.0",
-    "es-module-lexer": "3.0.4",
+    "@vitest/coverage-v8": "5.1.1",
+    "es-module-lexer": "3.0.5",
     "jsdom": "^31.0.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -123,7 +123,7 @@
     "typescript": "^7.0.2",
     "ultracite": "^8.1.1",
     "vite-plus": "catalog:",
-    "vitest": "5.1.0",
+    "vitest": "5.1.1",
     "yaml": "2.9.1"
   },
   "peerDependencies": {
