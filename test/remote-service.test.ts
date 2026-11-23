@@ -276,6 +276,35 @@ const heldFiber = ({
 };
 
 describe("installRemoteService · stand-in compositions", () => {
+  it("mounts on the root cordis 4.2 exposes by symbol, never reading its removed property", async () => {
+    // A cordis 4.2 activation: the root is reachable only through
+    // `Symbol.for("cordis.root")`, and reading the old property throws. The
+    // installer must follow the symbol; a fallback to the activation's own
+    // context would find no `plugin` and report the service unmounted.
+    const plugin = vi.fn();
+    const root = {
+      get: () => ({ typertRemote: { namespace: "probeRemote" } }),
+      plugin,
+    };
+    const host = standIn({ plugin });
+    Object.defineProperty(host.ctx, Symbol.for("cordis.root"), {
+      configurable: true,
+      value: root,
+    });
+    Object.defineProperty(host.ctx, "root", {
+      configurable: true,
+      get() {
+        throw new Error('cannot get property "root" without inject');
+      },
+    });
+    await expect(
+      installRemoteService(host.ctx, Probe, contract)
+    ).resolves.toBeUndefined();
+    expect(plugin).toHaveBeenCalledTimes(1);
+    expect(host.infos.join(" ")).toContain("probeRemote is reachable");
+    expect(host.warned).toEqual([]);
+  });
+
   it("reports a throwing plugin, and tries again on the next install", async () => {
     const plugin = vi.fn(() => {
       throw new Error("refused");

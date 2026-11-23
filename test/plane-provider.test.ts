@@ -31,6 +31,7 @@ import {
   OPENCODE_FAMILY_API,
   OPENCODE_ZEN_CATALOG,
   type PiAiModule,
+  piAiRecordKeyFor,
   planeApiKeyResolver,
   planeAuth,
   planeProfileFor,
@@ -99,7 +100,7 @@ const adapterOver = async (
 ): Promise<AdapterLike> => {
   const host = await modules();
   return createPlaneAdapter({
-    auth: planeAuth({}, host.piAi.recordKeyFor, host.libraries),
+    auth: planeAuth({}, piAiRecordKeyFor, host.libraries),
     effortNames: () => names,
     modules: host,
     profiles: () => profiles,
@@ -880,7 +881,7 @@ describe("plane-provider · planeRequestHeaders (OC4, OC5)", () => {
   it("createPlaneAdapter hands pi-ai the option when given one, and leaves it absent otherwise", async () => {
     const host = await modules();
     const base = {
-      auth: planeAuth({}, host.piAi.recordKeyFor, host.libraries),
+      auth: planeAuth({}, piAiRecordKeyFor, host.libraries),
       effortNames: () => ({}),
       modules: host,
       profiles: () => new Map(),

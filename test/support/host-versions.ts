@@ -4,8 +4,10 @@
  *
  * - `rc` is the newest build on the rc line, which the harness publishes
  *   under `next` ahead of `latest` (today `dsh@next`); `alpha` is
- *   `@deepseek-ai/dsh@alpha`. Both run the host core cordis 4.0.6-alpha.2
- *   and 4.1.0 share.
+ *   `@deepseek-ai/dsh@alpha`. The rc channel runs the host core cordis
+ *   4.0.6-alpha.2 and 4.1.0 share; alpha runs 4.2.0-alpha.1, which moved the
+ *   root context from `ctx.root` to `Symbol.for("cordis.root")` (the plugin
+ *   reads either through `rootOfContext`).
  *   Each record names the `@deepseek-ai` cluster's tag and the cordis family
  *   the published host installs (`cordisFamily`: cordis, its loader, include,
  *   group and timer plugins, cosmokit and schemastery), each at the FLOOR of
@@ -106,31 +108,31 @@ export interface ChannelRecord {
 
 export const CHANNELS: Readonly<Record<Channel, ChannelRecord>> = {
   alpha: {
-    cordis: "4.0.6-alpha.2",
-    cosmokit: "1.8.7-alpha.2",
+    cordis: "4.2.0-alpha.1",
+    cosmokit: "1.10.0-alpha.1",
     distTag: "alpha",
-    dsh: "0.2.2-alpha.3",
-    group: "1.0.6-alpha.2",
-    include: "1.0.11-alpha.2",
-    loader: "1.0.7-alpha.2",
+    dsh: "0.2.3-alpha.2",
+    group: "1.2.0-alpha.1",
+    include: "1.2.0-alpha.1",
+    loader: "1.2.0-alpha.1",
     lockfile: "pnpm-lock.yaml",
-    pi: "1.5.2",
+    pi: "1.6.0",
     piFloor: "1.3.0",
     piRange: "^1.3.0",
-    schemastery: "3.18.6-alpha.2",
-    timer: "1.1.8-alpha.2",
+    schemastery: "3.20.0-alpha.1",
+    timer: "1.3.0-alpha.1",
   },
   rc: {
     cordis: "4.1.0",
     cosmokit: "1.9.0",
     distTag: "next",
-    dsh: "0.2.2-rc.3",
+    dsh: "0.2.2-rc.5",
     graduatesUnder: "latest",
     group: "1.1.0",
     include: "1.1.0",
     loader: "1.1.0",
     lockfile: "channels/rc/pnpm-lock.yaml",
-    pi: "1.5.2",
+    pi: "1.6.0",
     piFloor: "1.3.0",
     piRange: "^1.3.0",
     schemastery: "3.19.0",

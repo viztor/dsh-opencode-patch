@@ -2,6 +2,16 @@
 
 Design decisions and protocol findings behind this plugin, written for someone integrating with OpenCode or writing another DSH plugin. The user-facing description is the [README](../README.md); the protocol internals are [deep-dive](./deep-dive.md) and [protocol routing and merge](./protocol-routing-and-merge.md).
 
+## DSH 0.2.3 owns two helpers locally
+
+`@deepseek-ai/dsh-llm-pi-ai` exported `recordKeyFor` through 0.2.2 and made it internal in 0.2.3; `@deepseek-ai/dsh-llm` similarly stopped exporting `assertUsableApiKey`. Both were real load-time breaks, not merely type drift: the module detector required `recordKeyFor`, and the API-key check was imported by name on older builds. The plugin now derives the credential address `llm-pi-ai/<route>` in `src/host/pi-record-key.ts` and treats `assertUsableApiKey` as optional (falling back to `trim()`), so one bundle links and runs on both generations. `test/host-modules.test.ts` pins the shape without and with the removed exports, and the plugin's 0.2.3 typecheck plus its 2,542 tests pass.
+
+## cordis 4.2 moved the root context to a symbol
+
+`ctx.root` was a property on every context through cordis 4.1 and became `ctx[Symbol.for("cordis.root")]` in 4.2. The old name is not merely absent on the new core: the context proxy resolves an undeclared property as a service and throws `cannot get property "root" without inject`, so the route claim failed the whole activation before it could register anything. Symbol reads go through the proxy's special-property path, which the inject guard does not cover, so `rootOfContext` (`src/cordis-context.ts`) tries the symbol first and falls back to the property for the older cores; a host that refuses the fallback has no root, never an error. The remote-service mount and the capture store's per-root keying read the same answer, so one composition still shares one store. `test/route-claim.test.ts` drives a stand-in whose property read throws, and `test/remote-service.test.ts` mounts through a symbol-only root.
+
+The same release changed the bridge's image-budget profile: `requestImageMaxBytes` became an input-only option (converted to the internal `maxImageBytes`) and `requestImageBudgetCount` is resolved in its place. `planeProfileFor` reads which of those fields the installed bridge's `Config` filled instead of copying either generation's defaults, and `test/host-shapes.test.ts` holds one expectation per channel. A route-level `api: google-generative-ai` also became acceptable to the alpha bridge, so the suite's host-limitation row is a baseline on both channels.
+
 ## The session id is the vendor's, character for character
 
 `ses_<12 hex><14 base62>`, read off the vendor's own generator rather than inferred:

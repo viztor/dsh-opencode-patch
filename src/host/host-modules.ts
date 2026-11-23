@@ -520,13 +520,18 @@ const librariesByWrapper = new Map<
   Promise<HostLibraries | undefined>
 >();
 
-/** A record carrying pi-ai's three exports, or `undefined`. */
+/**
+ * A record carrying pi-ai's public adapter exports, or `undefined`.
+ *
+ * `recordKeyFor` is deliberately not required: 0.2.3 made it internal, and
+ * this module detection must keep working on both generations. The plugin
+ * derives the same record address locally.
+ */
 export const asPiAiModule = (value: unknown): PiAiModule | undefined =>
   isRecord(value) &&
   isFunctionLike(value.PiAiAdapter) &&
-  isFunctionLike(value.Config) &&
-  isFunctionLike(value.recordKeyFor)
-    ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the three export checks above are the runtime guard.
+  isFunctionLike(value.Config)
+    ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the export checks above are the runtime guard.
       (value as unknown as PiAiModule)
     : undefined;
 

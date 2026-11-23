@@ -53,7 +53,7 @@ import {
   type PurgeReview,
   type PurgedModel,
 } from "./contracts/purge.ts";
-import { loadHostLibraries } from "./cordis-context.ts";
+import { loadHostLibraries, rootOfContext } from "./cordis-context.ts";
 import { markRemote } from "./host/remote.ts";
 import { catalogLastError, refreshCatalog } from "./models-catalog.ts";
 import { isRecord } from "./utils/guards.ts";
@@ -421,7 +421,7 @@ export class ModelPurgeService extends TypertRemoteService {
     // The service's own context decides the realm: it resolves `credentials`
     // in the process-wide realm, where the user's own rows do.
     const own: RealmSide = { context: this.ctx };
-    const root = readSafely(this.ctx, "root");
+    const root = rootOfContext(this.ctx);
     const ownedRoutes = new Map<unknown, readonly string[]>();
     const declaredOwned = new Set<string>();
     const declaredForeign = new Set<string>();

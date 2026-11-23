@@ -227,7 +227,8 @@ describe("harness channel alignment · declarations", () => {
     // and `apply` plus the remote-service symbols exist on each. The delta
     // between them is purely ADDITIVE.
     //
-    // The range is `>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0`. The first
+    // The range is `>=0.2.1-alpha.1 <0.3.0 || >=0.2.2-0 <0.3.0 ||
+    // >=0.2.3-alpha.2 <0.2.4-0`. The first
     // clause covers the 0.2.1 line on both channels — its lower bound alpha.1
     // sorts below every rc of that line, so rc needs no separate entry. The
     // second is not redundant: semver excludes a prerelease unless a comparator
@@ -264,7 +265,11 @@ describe("harness channel alignment · declarations", () => {
         "0.2.2-rc.1",
         "0.2.2-rc.2",
         "0.2.2-rc.3",
+        "0.2.2-rc.4",
+        "0.2.2-rc.5",
         "0.2.2",
+        // 0.2.3 line (alpha-only so far).
+        "0.2.3-alpha.2",
         ...Object.values(CHANNELS).map((record) => record.dsh),
       ]),
     ];
@@ -316,6 +321,9 @@ describe("harness channel alignment · declarations", () => {
       "4.0.6-alpha.1",
       "4.0.6-alpha.2",
       "4.1.0",
+      "4.2.0-alpha.1",
+      "4.2.0-alpha.2",
+      "4.2.0",
     ];
     const CORDIS_PEER_OF_TYPERT: Record<string, string> = {
       "0.2.1-alpha.1": "~4.0.5-alpha.1",
@@ -333,6 +341,9 @@ describe("harness channel alignment · declarations", () => {
       "0.2.2-rc.1": "~4.1.0",
       "0.2.2-rc.2": "~4.1.0",
       "0.2.2-rc.3": "~4.1.0",
+      "0.2.2-rc.4": "~4.1.0",
+      "0.2.2-rc.5": "~4.1.0",
+      "0.2.3-alpha.2": "~4.2.0-alpha.1",
     };
     const peers = manifest().peerDependencies ?? {};
     const typertPeer = peers["@deepseek-ai/dsh-typert-protocol"] ?? "";
@@ -371,26 +382,40 @@ describe("harness channel alignment · declarations", () => {
       "typert@0.2.2-rc.1 -> cordis@4.1.0",
       "typert@0.2.2-rc.2 -> cordis@4.1.0",
       "typert@0.2.2-rc.3 -> cordis@4.1.0",
+      "typert@0.2.2-rc.4 -> cordis@4.1.0",
+      "typert@0.2.2-rc.5 -> cordis@4.1.0",
+      "typert@0.2.3-alpha.2 -> cordis@4.2.0-alpha.1",
+      "typert@0.2.3-alpha.2 -> cordis@4.2.0-alpha.2",
+      "typert@0.2.3-alpha.2 -> cordis@4.2.0",
     ]);
     expect(refused("~4.0.4 || >=4.0.5-0 <4.1.0 || ~4.1.0")).toEqual(
       expect.arrayContaining(["typert@0.2.2-alpha.3 -> cordis@4.0.6-alpha.2"])
     );
 
-    // The concrete cordis each channel ships is admitted, and the range still
-    // stops at the next tuple: a 4.1.x prerelease or 4.2 is a reviewed
-    // widening, not a silent one.
+    // The concrete cordis each channel ships is admitted, along with every
+    // later prerelease of the 4.2.0 tuple; a prerelease of the NEXT tuple is
+    // a reviewed widening, not a silent one.
     for (const version of [
       "4.0.5",
       "4.0.6-alpha.1",
       "4.0.6-alpha.2",
       "4.1.0",
+      "4.2.0-alpha.1",
+      "4.2.0-alpha.2",
+      "4.2.0-rc.1",
+      "4.2.0",
     ]) {
       expect(
         semver.satisfies(version, cordisPeer),
         `cordis ${version} is admitted`
       ).toBe(true);
     }
-    for (const version of ["4.1.1-alpha.1", "4.2.0", "5.0.0"]) {
+    for (const version of [
+      "4.1.1-alpha.1",
+      "4.2.1-alpha.1",
+      "4.3.0-alpha.1",
+      "5.0.0",
+    ]) {
       expect(
         semver.satisfies(version, cordisPeer),
         `cordis ${version} is outside the peer`

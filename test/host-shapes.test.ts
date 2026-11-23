@@ -2,9 +2,9 @@
  * The host shapes and exports the plane provider (P-R1) is built from, pinned
  * on the installed packages.
  *
- * The design reaches into pi-ai's private profile shape, its exported `Config`
- * and `recordKeyFor`, the loader's exported `interpolate` and pi's public
- * per-protocol exports (docs/improvement-plan.md, "Target architecture"). None
+ * The design reaches into pi-ai's private profile shape, its exported `Config`,
+ * the loader's exported `interpolate` and pi's public per-protocol exports
+ * (docs/improvement-plan.md, "Target architecture"). None
  * of that is a promise the host made, so each piece is pinned here against the
  * real package, with the host file and line it reads. A host bump that moves
  * one turns this file red before any routing code depends on it.
@@ -56,6 +56,7 @@ import {
   buildPlaneProvider,
   OPENCODE_FAMILY_API,
   OPENCODE_ZEN_CATALOG,
+  piAiRecordKeyFor,
   planeProfileFor,
 } from "./support/src.ts";
 
@@ -99,10 +100,11 @@ const FLOOR_CATALOG: { zen: ByProtocol; go: ByProtocol } = {
 /**
  * F1/F2, measured per cell: a model-less plane resolves pi's whole catalog.
  * The bases moved under the plugin from the root `/inference(/go)/v1` on pi
- * 1.3.0 (both channels' floor) to per-protocol roots on 1.5, where the
- * per-protocol counts moved too. A pi bump whose catalog moved re-measures
- * the `newest` column in its own pull request, as a reviewed change
- * (CONTRIBUTING, release step 3).
+ * 1.3.0 (both channels' floor) to per-protocol roots on 1.5, and the
+ * per-protocol counts moved again on 1.6 (which dropped Zen's
+ * `gemini-3-flash`). A pi bump whose catalog moved re-measures the `newest`
+ * column in its own pull request, as a reviewed change (CONTRIBUTING, release
+ * step 3).
  */
 const WHOLE_CATALOG: Readonly<
   Record<
@@ -115,7 +117,7 @@ const WHOLE_CATALOG: Readonly<
     go: {
       "anthropic-messages": {
         bases: [`${ZEN_BASE}/inference/go/anthropic`],
-        count: 5,
+        count: 6,
       },
       "google-generative-ai": {
         bases: [`${ZEN_BASE}/inference/go/google/v1beta`],
@@ -137,15 +139,15 @@ const WHOLE_CATALOG: Readonly<
       },
       "google-generative-ai": {
         bases: [`${ZEN_BASE}/inference/google/v1beta`],
-        count: 8,
+        count: 9,
       },
       "openai-completions": {
         bases: [`${ZEN_BASE}/inference/openai/v1`],
-        count: 28,
+        count: 24,
       },
       "openai-responses": {
         bases: [`${ZEN_BASE}/inference/openai/v1`],
-        count: 31,
+        count: 33,
       },
     },
   },
@@ -306,7 +308,13 @@ describe("host · pi-ai's Config (llm-pi-ai/src/config.ts)", () => {
       maxRequestImages: 50,
       modelOverrides: {},
       models: [],
-      requestImageMaxBytes: 1_048_576,
+      // The per-image cap's home moved between bridge generations: 0.2.2
+      // resolves `requestImageMaxBytes`; 0.2.3 resolves a count budget and
+      // keeps a set cap as the internal `maxImageBytes`.
+      ...forChannel({
+        alpha: { requestImageBudgetCount: 20 },
+        rc: { requestImageMaxBytes: 1_048_576 },
+      }),
       requestImagePixelBudget: 4_194_304,
       streamIdleTimeoutMs: 300_000,
       thinkingBudgets: {},
@@ -383,56 +391,110 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
     expect(start).toBeGreaterThan(-1);
     const block = text.slice(start, text.indexOf("\n}", start));
     // The heritage clause names what is inherited; the body what is resolved.
-    expect(block).toContain(
-      "extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'>"
-    );
+    // 0.2.3 omits the input-only per-image cap and resolves a count budget.
+    const expected = forChannel({
+      alpha: {
+        fields: [
+          "provider",
+          "displayName",
+          "apiKeyEnv?",
+          "streamIdleTimeoutMs",
+          "maxRequestImageBytes",
+          "maxRequestImages",
+          "imageOffloadCountQuantum",
+          "requestImageBudgetCount",
+          "requestImagePixelBudget",
+          "maxImageBytes?",
+          "retryPolicy",
+          "piProvider?",
+          "catalogError?",
+          "modelErrors",
+          "configuredMaxTokens",
+        ],
+        heritage:
+          "extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName' | 'requestImageMaxBytes'>",
+      },
+      rc: {
+        fields: [
+          "provider",
+          "displayName",
+          "apiKeyEnv?",
+          "streamIdleTimeoutMs",
+          "maxRequestImageBytes",
+          "maxRequestImages",
+          "imageOffloadCountQuantum",
+          "requestImagePixelBudget",
+          "requestImageMaxBytes",
+          "retryPolicy",
+          "piProvider?",
+          "catalogError?",
+          "modelErrors",
+          "configuredMaxTokens",
+        ],
+        heritage:
+          "extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'>",
+      },
+    } as const);
+    expect(block).toContain(expected.heritage);
     const fields = [...block.matchAll(/^ {4}(\w+\??):/gmu)].map(
       (match) => match[1]
     );
-    expect(fields).toEqual([
-      "provider",
-      "displayName",
-      "apiKeyEnv?",
-      "streamIdleTimeoutMs",
-      "maxRequestImageBytes",
-      "maxRequestImages",
-      "imageOffloadCountQuantum",
-      "requestImagePixelBudget",
-      "requestImageMaxBytes",
-      "retryPolicy",
-      "piProvider?",
-      "catalogError?",
-      "modelErrors",
-      "configuredMaxTokens",
-    ]);
+    expect(fields).toEqual(expected.fields);
   });
 
   it("resolves a profile with these keys at runtime, models destructured out; F4 — a stored id pi cannot place is deferred to modelErrors and catalogError (config.ts:487)", async () => {
     tier = await mountTierA({ providers: s0Providers() });
     const profile = profileOf(tier, "opencode");
-    expect(Object.keys(profile).toSorted()).toEqual([
-      "apiKeyEnv",
-      "catalogError",
-      "compat",
-      "configuredMaxTokens",
-      "defaultContextWindow",
-      "defaultInput",
-      "defaultMaxTokens",
-      "displayName",
-      "headers",
-      "imageOffloadCountQuantum",
-      "maxRequestImageBytes",
-      "maxRequestImages",
-      "modelErrors",
-      "modelOverrides",
-      "piProvider",
-      "provider",
-      "requestImageMaxBytes",
-      "requestImagePixelBudget",
-      "retryPolicy",
-      "streamIdleTimeoutMs",
-      "thinkingBudgets",
-    ]);
+    expect(Object.keys(profile).toSorted()).toEqual(
+      forChannel({
+        alpha: [
+          "apiKeyEnv",
+          "catalogError",
+          "compat",
+          "configuredMaxTokens",
+          "defaultContextWindow",
+          "defaultInput",
+          "defaultMaxTokens",
+          "displayName",
+          "headers",
+          "imageOffloadCountQuantum",
+          "maxRequestImageBytes",
+          "maxRequestImages",
+          "modelErrors",
+          "modelOverrides",
+          "piProvider",
+          "provider",
+          "requestImageBudgetCount",
+          "requestImagePixelBudget",
+          "retryPolicy",
+          "streamIdleTimeoutMs",
+          "thinkingBudgets",
+        ].toSorted(),
+        rc: [
+          "apiKeyEnv",
+          "catalogError",
+          "compat",
+          "configuredMaxTokens",
+          "defaultContextWindow",
+          "defaultInput",
+          "defaultMaxTokens",
+          "displayName",
+          "headers",
+          "imageOffloadCountQuantum",
+          "maxRequestImageBytes",
+          "maxRequestImages",
+          "modelErrors",
+          "modelOverrides",
+          "piProvider",
+          "provider",
+          "requestImageMaxBytes",
+          "requestImagePixelBudget",
+          "retryPolicy",
+          "streamIdleTimeoutMs",
+          "thinkingBudgets",
+        ].toSorted(),
+      } as const)
+    );
     expect(profile.modelErrors).toBeInstanceOf(Map);
     expect(profile.configuredMaxTokens).toBeInstanceOf(Map);
     // A stored gap id is a deferred diagnostic, not a refusal (config.ts:487).
@@ -535,50 +597,32 @@ describe("host · ResolvedPiAiProviderProfile (llm-pi-ai/src/config.ts:186-219,4
 });
 
 /**
- * The protocols a route-level `api` may name are the bridge's, not pi's, and
- * the two supported bridges differ: rc's `dsh-llm-pi-ai` serves
- * `google-generative-ai` on a route, alpha's validates `api` against a union
- * that ends at `anthropic-messages` and refuses it at the schema. pi-ai's
- * Config defaults agree on both (the case above), so this is the one row the
- * cluster decides per channel (`forChannel`). On alpha it is a host
- * limitation (D26): P-R1's protocol order reads the route's `api` (D16), and
- * a channel whose bridge cannot serve Google on a route is the host's to fix,
- * never the plugin's to work around.
+ * The protocols a route-level `api` may name are the bridge's, not pi's —
+ * P-R1's protocol order reads the route's `api` (D16). Every supported bridge
+ * now serves `google-generative-ai` on a route (alpha's `0.2.3` bridge added
+ * it; rc's `0.2.2` line already had it), so this is a baseline row, not a
+ * host limitation.
  */
-const ROUTE_GOOGLE = forChannel({
-  alpha: { tag: "HOST_LIMITATION", verdict: "refuses" },
-  rc: { tag: "BASELINE", verdict: "serves" },
-} as const);
-
-describe("host · the route-level api set is the bridge's (llm-pi-ai lib/index.js PROTOCOLS and profile api: rc 843-848,1061; alpha 835-839,1053)", () => {
-  it(`[${ROUTE_GOOGLE.tag}] ${HOST_VERSIONS.channel} ${HOST_VERSIONS.dsh} (${HOST_CELL} cell): its bridge ${ROUTE_GOOGLE.verdict} a route-level api of google-generative-ai`, async () => {
+describe("host · the route-level api set is the bridge's (llm-pi-ai lib/index.js PROTOCOLS and profile api)", () => {
+  it(`[BASELINE] ${HOST_VERSIONS.channel} ${HOST_VERSIONS.dsh} (${HOST_CELL} cell): its bridge serves a route-level api of google-generative-ai`, async () => {
     const providers = { opencode: { api: "google-generative-ai" } };
-    if (ROUTE_GOOGLE.verdict === "serves") {
-      expect(() => LlmPiAi.Config({ providers } as never)).not.toThrow();
-      tier = await mountTierA({ providers });
-      const zen = profileOf(tier, "opencode");
-      expect(zen.catalogError).toBeUndefined();
-      // F5 with Google: every Zen model now speaks Google, on its own base.
-      expect(byProtocol(zen.piProvider)).toEqual(
-        collapsed(forHost(WHOLE_CATALOG).zen, "google-generative-ai")
-      );
-      return;
-    }
-    // The schema names the three protocols this bridge serves, Google not
-    // among them, and the mount fails with the same message: pi-ai's fiber
-    // never applies, so no route registers.
-    const refusal =
-      /\$\.providers\.opencode\.api expected "openai-completions" \| "openai-responses" \| "anthropic-messages" but got "google-generative-ai"/u;
-    expect(() => LlmPiAi.Config({ providers } as never)).toThrow(refusal);
-    await expect(mountTierA({ providers })).rejects.toThrow(refusal);
+    expect(() => LlmPiAi.Config({ providers } as never)).not.toThrow();
+    tier = await mountTierA({ providers });
+    const zen = profileOf(tier, "opencode");
+    expect(zen.catalogError).toBeUndefined();
+    // F5 with Google: every Zen model now speaks Google, on its own base.
+    expect(byProtocol(zen.piProvider)).toEqual(
+      collapsed(forHost(WHOLE_CATALOG).zen, "google-generative-ai")
+    );
   });
 });
 
 describe("host · pi-ai's credential key (llm-pi-ai/src/auth.ts:29-39; credentials/src/index.ts:69-78)", () => {
   it("addresses a route's record as llm-pi-ai/<route>, and refuses a key outside the grammar", () => {
-    expect(LlmPiAi.recordKeyFor("opencode")).toBe("llm-pi-ai/opencode");
-    expect(LlmPiAi.recordKeyFor("opencode-go")).toBe("llm-pi-ai/opencode-go");
-    expect(() => LlmPiAi.recordKeyFor("Not Valid")).toThrow(TypeError);
+    // 0.2.3 made recordKeyFor internal; the plugin owns the same address.
+    expect(piAiRecordKeyFor("opencode")).toBe("llm-pi-ai/opencode");
+    expect(piAiRecordKeyFor("opencode-go")).toBe("llm-pi-ai/opencode-go");
+    expect(() => piAiRecordKeyFor("Not Valid")).toThrow(TypeError);
   });
 });
 

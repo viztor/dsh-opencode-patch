@@ -23,8 +23,9 @@
  *   pi-ai's, passed through as the same object.
  *
  * pi-ai exports neither its credential store nor its auth context (F19), so
- * both are restated here over the same seams, keyed by pi-ai's exported
- * `recordKeyFor`, and the key resolution mirrors pi-ai's exactly (D20).
+ * both are restated here over the same seams, keyed by the same
+ * `llm-pi-ai/<route>` record address pi-ai uses, and the key resolution
+ * mirrors pi-ai's exactly (D20).
  *
  * The adapter is also built with pi-ai's `prepareHeaders` option, as pi-ai's
  * own adapter is ({@link planeRequestHeaders}): per call, the plugin writes
@@ -52,6 +53,7 @@ import {
 import type { PlaneProviderBuilder } from "../utils/plane-profile.ts";
 import { planeOfPlaneRoute } from "../utils/planes.ts";
 import { PROTOCOLS } from "../utils/protocols.ts";
+import { PI_AI_RECORD_SCOPE, piAiRecordKeyFor } from "./pi-record-key.ts";
 
 /** A resolved plane profile, as far as this module reads one. */
 export interface PlaneProfileLike {
@@ -363,7 +365,7 @@ const KEY_SEGMENT = /^[a-z][a-z0-9-]*$/u;
 const REF_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 /** The scope pi-ai stores its records under (`auth.ts` `RECORD_SCOPE`). */
-const RECORD_SCOPE = "llm-pi-ai";
+const RECORD_SCOPE = PI_AI_RECORD_SCOPE;
 
 /** The credentials service, read per call. */
 const credentialsOf = (ctx: unknown): CredentialsLike | undefined => {
@@ -444,7 +446,7 @@ export const hostError = (
  * before the launch environment. OpenCode's auth reads no file.
  *
  * @param ctx - the plugin context.
- * @param recordKeyFor - pi-ai's exported record addressing.
+ * @param recordKeyFor - the host's `llm-pi-ai/<route>` record addressing.
  * @param libraries - for the host's error class.
  */
 export const planeAuth = (
@@ -586,11 +588,7 @@ export const planeApiKeyResolver =
     ctx: unknown,
     modules: HostModules,
     config: Pick<ResolvedPluginConfig, "readOpencodeStore">,
-    auth: PlaneAuth = planeAuth(
-      ctx,
-      modules.piAi.recordKeyFor,
-      modules.libraries
-    )
+    auth: PlaneAuth = planeAuth(ctx, piAiRecordKeyFor, modules.libraries)
   ) =>
   async (
     provider: string,

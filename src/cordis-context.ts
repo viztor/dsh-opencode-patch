@@ -56,13 +56,15 @@ export interface CordisContext {
    */
   waterfall?: (name: string, ...args: unknown[]) => unknown;
   /**
-   * The ROOT context of this composition.
+   * The ROOT context of this composition, on the cores that carry it as a
+   * PROPERTY (through cordis 4.1).
    *
-   * Cordis exposes it on every context (`typert-protocol` reads `ctx.root` to
-   * install its invocation accessor), and it is the only scope whose lifetime is
-   * the process rather than one activation — which is what a service the
-   * Gateway scans has to have. Optional because a stand-in host may not carry it;
-   * the callers fall back to the context they were given.
+   * It is the only scope whose lifetime is the process rather than one
+   * activation — which is what a service the Gateway scans has to have.
+   * Optional because a stand-in host may not carry it, and because cordis 4.2
+   * replaced it with a symbol: read it through {@link rootOfContext}, never
+   * directly. On 4.2 a property read of `root` is an undeclared service and
+   * throws `cannot get property "root" without inject`.
    */
   root?: CordisContext;
   /**
@@ -174,7 +176,52 @@ export type CredentialsResolver = (
 ) => Promise<{ value?: string } | undefined>;
 
 /**
- * The plugin's own cordis entry options (`fiber.entry.options`), when the
+ * Cordis's root-context key on the core that publishes one.
+ *
+ * cordis 4.2 replaced the `root` property with this symbol
+ * (`Context.root = Symbol.for("cordis.root")`). Older cores carry no such
+ * entry, so reading it there answers `undefined` and the property fallback
+ * runs.
+ */
+const CORDIS_ROOT = Symbol.for("cordis.root");
+
+/** Whether a value can be treated as a context (every member is optional). */
+const isContextLike = (value: unknown): value is CordisContext =>
+  isRecord(value);
+
+/**
+ * The ROOT context of this composition, on either cordis core.
+ *
+ * Cordis 4.2 moved the root from a property (`ctx.root`, through 4.1) to a
+ * symbol (`ctx[Context.root]`). The old name is not merely absent on the new
+ * core: the context proxy resolves an undeclared property as a service and
+ * throws `cannot get property "root" without inject`, which failed the whole
+ * plugin at activation. Symbol reads go through the proxy's special-property
+ * path, which the inject guard does not cover, so the symbol is tried first
+ * and the property is the fallback for the older cores. A host that refuses
+ * the fallback has no root, never an error.
+ *
+ * @param ctx - the plugin context, mock or real.
+ * @returns the root context, or `undefined` when the host carries none.
+ */
+export const rootOfContext = (ctx: unknown): CordisContext | undefined => {
+  if (!isRecord(ctx)) {
+    return undefined;
+  }
+  try {
+    const symbolic: unknown = Reflect.get(ctx, CORDIS_ROOT);
+    if (isContextLike(symbolic)) {
+      return symbolic;
+    }
+    const property: unknown = Reflect.get(ctx, "root");
+    return isContextLike(property) ? property : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Read the plugin's own cordis entry options (`fiber.entry.options`), when the
  * context carries them. Used only to detect a legacy row id/name and log the
  * rename notice.
  *
@@ -393,11 +440,16 @@ export const readSessionMetaResolver = (
 // The host's own modules
 // ---------------------------------------------------------------------------
 
-/** pi-ai's three public exports the plane adapter is built from (F19). */
+/**
+ * pi-ai's public exports the plane adapter is built from (F19).
+ *
+ * `recordKeyFor` was exported through 0.2.2 and became internal in 0.2.3, so
+ * the plugin owns that address in `host/pi-record-key.ts` and no longer makes
+ * the module detection depend on it.
+ */
 export interface PiAiModule {
   readonly PiAiAdapter: new (options: Record<string, unknown>) => object;
   readonly Config: (raw: unknown) => unknown;
-  readonly recordKeyFor: (providerId: string) => string;
 }
 
 /**

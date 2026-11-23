@@ -17,6 +17,7 @@ import {
   readCredentialsResolver,
   readEntryOptions,
   readSessionMetaResolver,
+  rootOfContext,
 } from "./support/src.ts";
 
 describe("cordis-context: readEntryOptions", () => {
@@ -88,6 +89,55 @@ describe("cordis-context: loaderOfContext", () => {
       },
     };
     expect(loaderOfContext(nothing)).toBeUndefined();
+  });
+});
+
+describe("cordis-context: rootOfContext", () => {
+  const CORDIS_ROOT = Symbol.for("cordis.root");
+
+  it("reads cordis 4.2's symbol without touching the removed property", () => {
+    const root = { name: "root" };
+    let propertyReads = 0;
+    // The new core's behaviour: `root` is an undeclared service, so the read
+    // throws, while the symbol is answered by the proxy's special path.
+    const ctx = new Proxy(
+      { [CORDIS_ROOT]: root },
+      {
+        get(target, prop, receiver) {
+          if (prop === "root") {
+            propertyReads += 1;
+            throw new Error('cannot get property "root" without inject');
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      }
+    );
+    expect(rootOfContext(ctx)).toBe(root);
+    expect(propertyReads, "the inject-guarded property was read").toBe(0);
+  });
+
+  it("falls back to the property older cores carry, symbol taking precedence", () => {
+    const property = { name: "property" };
+    expect(rootOfContext({ root: property })).toBe(property);
+    const symbolic = { name: "symbolic" };
+    expect(rootOfContext({ [CORDIS_ROOT]: symbolic, root: property })).toBe(
+      symbolic
+    );
+  });
+
+  it("answers undefined for a host that refuses the property and carries no symbol", () => {
+    const refusing = {
+      get root(): never {
+        throw new Error('cannot get property "root" without inject');
+      },
+    };
+    expect(rootOfContext(refusing)).toBeUndefined();
+  });
+
+  it("answers undefined for values that are not a context", () => {
+    for (const value of [null, undefined, "ctx", 1, () => 1]) {
+      expect(rootOfContext(value)).toBeUndefined();
+    }
   });
 });
 

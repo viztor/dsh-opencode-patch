@@ -9,6 +9,7 @@ import {
   createPlaneAdapter,
   OPENCODE_FAMILY_API,
   OPENCODE_GO_CATALOG,
+  piAiRecordKeyFor,
   planeAuth,
   planeProfileFor,
 } from "./support/src.ts";
@@ -43,7 +44,7 @@ const goGeminiAdapter = async (
   // No effort renames: this model's reasoning is not what the case is about.
   const noNames = new Map<string, Readonly<Record<string, string>>>();
   return createPlaneAdapter({
-    auth: planeAuth({}, piAi.recordKeyFor, libraries),
+    auth: planeAuth({}, piAiRecordKeyFor, libraries),
     effortNames: (_provider, model) => noNames.get(model),
     modules: { libraries, piAi },
     profiles: () => profiles,

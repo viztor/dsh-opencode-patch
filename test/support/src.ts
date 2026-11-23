@@ -132,6 +132,7 @@ export {
   readLaunchEnvironment,
   readSessionMetaResolver,
   replaceHostModuleSource,
+  rootOfContext,
 } from "../../src/cordis-context.ts";
 export type {
   CordisContext,
@@ -201,6 +202,12 @@ export {
   wrapperEntryFor,
 } from "../../src/host/host-modules.ts";
 export type { HostPi } from "../../src/host/host-modules.ts";
+
+// host/pi-record-key.ts
+export {
+  PI_AI_RECORD_SCOPE,
+  piAiRecordKeyFor,
+} from "../../src/host/pi-record-key.ts";
 
 // host/plane-provider.ts
 export {

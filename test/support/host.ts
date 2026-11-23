@@ -95,12 +95,7 @@ import {
   readProfilePatches,
 } from "@deepseek-ai/dsh-app-boot";
 import { ConfigEditor } from "@deepseek-ai/dsh-config-editor";
-import {
-  assertUsableApiKey,
-  LlmError,
-  LlmRuntime,
-  resolveRetryPolicy,
-} from "@deepseek-ai/dsh-llm";
+import { LlmError, LlmRuntime, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import * as LlmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
 import Settings from "@deepseek-ai/dsh-settings";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
@@ -456,8 +451,8 @@ export const recordingFetch = (
 
 /**
  * The profile run S0 measured: on each plane one known model per protocol plus
- * the models the floors' pi 1.3.0 lacks (pi 1.5 describes the Go ones, see
- * {@link PI_GAPS}), and a sibling pi-ai route that is not a plane.
+ * the models the floors' pi 1.3.0 lacks (pi 1.5 and 1.6 describe the Go ones,
+ * see {@link PI_GAPS}), and a sibling pi-ai route that is not a plane.
  * `deepseek`'s base is loopback port 9 (discard), so nothing reaches it.
  */
 export const S0_PROFILE = {
@@ -471,7 +466,7 @@ export const S0_PROFILE = {
       { id: "deepseek-v4-pro" },
       { id: "gpt-5.4" },
       { id: "claude-haiku-5-5" },
-      { id: "gemini-3-flash" },
+      { id: "gemini-3.8-flash" },
       { contextWindow: 400_000, id: "gpt-5.3-codex-spark", name: "My Spark" },
     ],
   },
@@ -641,7 +636,8 @@ type PlaneIds = Readonly<Record<Plane, readonly string[]>>;
 /**
  * The declared S0 ids each cell's pi cannot place (its catalog does not
  * describe them, while the plugin's catalog still does), in declaration
- * order. pi 1.5 describes the two Go ones; no supported pi describes Zen's.
+ * order. pi 1.5 and 1.6 describe the two Go ones; no supported pi describes
+ * Zen's.
  */
 export const PI_GAPS_BY_CELL: Readonly<Record<HostCell, PlaneIds>> = {
   "alpha-floor": {
@@ -777,15 +773,15 @@ const s0PluginFor = (channel: Channel) =>
         sent: [`${ZEN}/inference/anthropic/v1/messages?beta=true`],
         tags: tags(B, B, B),
       },
-      "opencode/gemini-3-flash": {
+      "opencode/gemini-3.8-flash": {
         callConfig: "ok",
         info: {
           context: 1_048_576,
-          efforts: ["minimal", "low", "medium", "high"],
+          efforts: ["low", "medium", "high"],
         },
         finish: "PI_AI_ERROR",
         sent: [
-          `${ZEN}/inference/google/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse`,
+          `${ZEN}/inference/google/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse`,
         ],
         tags: tags(B, B, B),
       },
@@ -1201,6 +1197,26 @@ export const piAiRestarts = (
       off();
     },
   };
+};
+
+/**
+ * Test stand-in for `dsh-llm`'s removed `assertUsableApiKey`.
+ *
+ * 0.2.3 stopped exporting it; the plugin treats the library as optional and
+ * trims locally when it is absent. This fixture keeps the same trim + printable
+ * ASCII contract so the wiring tests exercise a real check on older engines.
+ */
+const assertUsableApiKey = (raw: string, pkg: string, ref: string): string => {
+  const value = raw.trim();
+  if (value.length === 0) {
+    throw new Error(`${pkg}: the API key resolved from ${ref} is blank`);
+  }
+  if (!/^[\u0021-\u007E]+$/u.test(value)) {
+    throw new Error(
+      `${pkg}: the API key resolved from ${ref} contains characters no HTTP header can carry`
+    );
+  }
+  return value;
 };
 
 /**
@@ -1750,17 +1766,22 @@ export const bootTierB = async (options: TierBOptions = {}): Promise<TierB> => {
           options.realm?.label
         )
     );
-    const profile: ProfileContext = {
+    // `overlays` is required by 0.2.2's ProfileContext and gone in 0.2.3,
+    // which added `overlayPaths` in its place (`readProfilePatches` flattens
+    // it). Each extra property is inert on the other generation, and the
+    // assertion serves both supported type trees.
+    const profile = {
       cwd: home,
       dir,
       home,
       installAnchor: join(home, "package.json"),
       name: "test",
       overlays: [],
+      overlayPaths: [],
       patchPath,
       startedBundles: ["test-bundle"],
       telemetryDisabledEnv: undefined,
-    };
+    } as unknown as ProfileContext;
     ctx = await boot(
       "dsh",
       join(dir, "cordis.yml"),
