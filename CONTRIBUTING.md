@@ -115,6 +115,13 @@ pnpm run build
 DSH_HOST_E2E=1 DSH_HOST_PREFIX=/home/you/dsh-host pnpm run test:e2e:host --run
 ```
 
+On macOS the suite's temporary HOME lands under `/tmp`, which is a symlink to `/private/tmp`; the profile's relative `link:` dependencies then resolve through the symlink and miss the checkout, and the run fails at `dsh plugin … install` with "cannot resolve profile bundle". Point `TMPDIR` at a directory under the checkout first, so the HOME and the checkout share one real root:
+
+```sh
+mkdir -p node_modules/.e2e-tmp
+TMPDIR="$PWD/node_modules/.e2e-tmp" DSH_HOST_E2E=1 DSH_HOST_PREFIX=/home/you/dsh-host pnpm run test:e2e:host --run
+```
+
 For the `floor` cell, use a fresh prefix whose `package.json` carries the channel's `floorOverrides` (the cordis family at the record's versions and pi with its telemetry package at the range's floor) as `"overrides"` before the install, written the same way the CI job writes it, and run the suite with `DSH_HOST_PI_CELL=floor`:
 
 ```sh
