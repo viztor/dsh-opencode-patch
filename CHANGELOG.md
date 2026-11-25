@@ -6,6 +6,18 @@ This project is an evolution of [**`nobu121/dsh-opencode-session`**](https://git
 
 ---
 
+## [1.10.1](https://github.com/viztor/dsh-opencode-patch/compare/v1.10.0...v1.10.1) (2026-11-25)
+
+
+### Fixes
+
+* run on cordis 4.2 and DSH 0.2.3, and bump both channel records ([#198](https://github.com/viztor/dsh-opencode-patch/issues/198)) ([e808002](https://github.com/viztor/dsh-opencode-patch/commit/e80800298f606f8e2da491852e029dee6e24e824))
+
+
+### Documentation
+
+* **credentials:** re-measure the account token on both gateway families ([#193](https://github.com/viztor/dsh-opencode-patch/issues/193)) ([4460500](https://github.com/viztor/dsh-opencode-patch/commit/4460500f98f2a401e2eeee4a80bafa705559e20e))
+
 ## [1.10.0](https://github.com/viztor/dsh-opencode-patch/compare/v1.9.2...v1.10.0) (2026-11-18)
 
 
