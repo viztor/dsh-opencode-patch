@@ -33,6 +33,7 @@ import {
 import {
   ALPHA_NEXT,
   NEXT_ALPHA,
+  nextPrerelease,
   PATCHED,
   registryOf,
   versions,
@@ -298,11 +299,16 @@ describe("host drift · the rules", () => {
   });
 
   it("scopes graduation to the record whose line graduates: the alpha record never reads `latest`", () => {
-    // `latest` reaches the stable `0.2.2` while `alpha` and `next` have not
-    // moved. The rc record graduates under `latest`; the alpha record does
-    // not, though semver sorts `0.2.2` above every `0.2.2-alpha.N`.
-    // The release the rc record's build leads to (`0.2.2-rc.2` to `0.2.2`).
+    // `latest` reaches the stable `0.2.2` while an alpha record still sits on
+    // that line (alpha has since moved to 0.2.3, so this case uses a record
+    // on the graduating line, which is what the rule is about). The rc record
+    // graduates under `latest`; the alpha record does not, though semver
+    // sorts `0.2.2` above that alpha build.
+    // The release the rc record's build leads to (`0.2.2-rc.5` to `0.2.2`).
     const stable = semver.inc(CHANNELS.rc.dsh, "patch") ?? "";
+    const line = `${semver.major(stable)}.${semver.minor(stable)}.${semver.patch(stable)}-alpha.9`;
+    const olderAlpha: DriftRecord = { ...CHANNELS.alpha, dsh: line };
+    const nextAlpha = nextPrerelease(line);
     // The stable cluster declares the newer core's ranges (the rc ones), so
     // reading it for alpha would report every alpha floor as drift.
     const base = withCut(registryOf(CHANNELS), CHANNELS.rc, stable);
@@ -319,18 +325,22 @@ describe("host drift · the rules", () => {
     // Known answers for the fixture: the stable release outranks the alpha
     // record and its next cut alike.
     expect(semver.prerelease(stable)).toBeNull();
-    expect(semver.gt(stable, CHANNELS.alpha.dsh)).toBe(true);
-    expect(semver.gt(stable, NEXT_ALPHA.dsh)).toBe(true);
+    expect(semver.gt(stable, olderAlpha.dsh)).toBe(true);
+    expect(semver.gt(stable, nextAlpha)).toBe(true);
     expect(CHANNELS.rc.graduatesUnder).toBe("latest");
     expect(CHANNELS.alpha.graduatesUnder).toBeUndefined();
     // Only the rc line graduated: one rc line, nothing for alpha.
-    expect(hostDrift(CHANNELS, view(CHANNELS.alpha.dsh))).toStrictEqual([
+    expect(
+      hostDrift({ ...CHANNELS, alpha: olderAlpha }, view(olderAlpha.dsh))
+    ).toStrictEqual([
       `rc: @deepseek-ai/dsh@latest is ${stable} on the registry; the record says ${CHANNELS.rc.dsh}`,
     ]);
     // A real alpha cut on the same tuple is still read under `alpha`, never
     // hidden behind the stable release.
-    expect(hostDrift(CHANNELS, view(NEXT_ALPHA.dsh))).toStrictEqual([
-      `alpha: @deepseek-ai/dsh@alpha is ${NEXT_ALPHA.dsh} on the registry; the record says ${CHANNELS.alpha.dsh}`,
+    expect(
+      hostDrift({ ...CHANNELS, alpha: olderAlpha }, view(nextAlpha))
+    ).toStrictEqual([
+      `alpha: @deepseek-ai/dsh@alpha is ${nextAlpha} on the registry; the record says ${olderAlpha.dsh}`,
       `rc: @deepseek-ai/dsh@latest is ${stable} on the registry; the record says ${CHANNELS.rc.dsh}`,
     ]);
     // A stable release under a tag other than the one the line graduates

@@ -243,6 +243,29 @@ describe("host-modules · the host's tree, found from the context's base URL", (
   });
 });
 
+describe("host-modules · the path guards", () => {
+  it("survives a rootless walk, a manifest that is no record or names no entry, and a loader whose entries yield nothing iterable", async () => {
+    // A walk from the filesystem root reaches its own parent and stops.
+    expect(
+      await loadLibrariesFrom(path.parse(process.cwd()).root)
+    ).toBeUndefined();
+    // A manifest that parses to `null`, and one that names no entry: both are
+    // no module, never a throw.
+    const noRecord = standInInstall({
+      files: { "node_modules/@deepseek-ai/dsh-llm/package.json": "null" },
+    });
+    expect(await loadLibrariesFrom(entryIn(noRecord))).toBeUndefined();
+    const noEntry = standInInstall({
+      files: { "node_modules/@deepseek-ai/dsh-llm/package.json": pkg({}) },
+    });
+    expect(await loadLibrariesFrom(entryIn(noEntry))).toBeUndefined();
+    // `entries()` answering a non-iterable is no loader entry, not a throw.
+    expect(
+      await defaultHostModuleSource.piAi({ loader: { entries: () => 5 } })
+    ).toBeUndefined();
+  });
+});
+
 describe("host-modules · the default source", () => {
   it("loads pi, dsh-llm and the loader from the wrapper's own tree, once", async () => {
     const libraries = await defaultHostModuleSource.libraries();
@@ -256,7 +279,12 @@ describe("host-modules · the default source", () => {
     ]);
     expect(typeof libraries?.createProvider).toBe("function");
     expect(typeof libraries?.interpolate).toBe("function");
-    expect(typeof libraries?.assertUsableApiKey).toBe("function");
+    // dsh-llm 0.2.3 removed this helper; the plugin treats it as optional and
+    // trims locally when it is absent. Older engines still expose it.
+    expect(
+      libraries?.assertUsableApiKey === undefined ||
+        typeof libraries.assertUsableApiKey === "function"
+    ).toBe(true);
     expect(libraries?.LlmError).toBeTypeOf("function");
     expect(
       libraries
@@ -355,9 +383,15 @@ describe("host-modules · the default source", () => {
     expect(await defaultHostModuleSource.piAi(null)).toBeUndefined();
   });
 
-  it("asPiAiModule answers only a record with pi-ai's three exports", () => {
+  it("asPiAiModule answers a record with the public adapter exports, with or without the removed recordKeyFor", () => {
     expect(asPiAiModule(LlmPiAi)).toBe(LlmPiAi);
-    expect(asPiAiModule({ ...LlmPiAi, recordKeyFor: 1 })).toBeUndefined();
+    // 0.2.3 shape: PiAiAdapter + Config, no recordKeyFor export.
+    const withoutRecordKey = {
+      PiAiAdapter: LlmPiAi.PiAiAdapter,
+      Config: LlmPiAi.Config,
+    };
+    expect(asPiAiModule(withoutRecordKey)).toBe(withoutRecordKey);
+    expect(asPiAiModule({ ...LlmPiAi, Config: 1 })).toBeUndefined();
     expect(asPiAiModule(null)).toBeUndefined();
   });
 });

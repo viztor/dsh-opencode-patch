@@ -100,6 +100,13 @@ describe("plane-profile · pi-ai's image-count bounds", () => {
       )
     ).profile;
 
+  /**
+   * Whether the installed bridge resolves a count budget instead of the
+   * input-only per-image cap (0.2.3), from what its `Config` answered.
+   */
+  const modernImageBudget =
+    "requestImageBudgetCount" in (normalize({}) as Record<string, unknown>);
+
   it("carries pi-ai's maxRequestImages and derives the offload quantum as pi-ai does, where pi-ai's Config defines the bound", () => {
     // pi-ai's default count bound (dsh-llm-pi-ai 0.2.2: `maxRequestImages`
     // defaults to 50, the quantum to min(10, that)).
@@ -130,6 +137,66 @@ describe("plane-profile · pi-ai's image-count bounds", () => {
     ).toMatch(
       /imageOffloadCountQuantum must be a positive safe integer no greater than maxRequestImages/u
     );
+  });
+
+  it("refuses the count budget and the per-image cap in pi-ai's words", () => {
+    expect(withNormal({ requestImageBudgetCount: 0 }).catalogError).toMatch(
+      /requestImageBudgetCount must be a positive safe integer/u
+    );
+    expect(withNormal({ requestImageBudgetCount: "5" }).catalogError).toMatch(
+      /requestImageBudgetCount must be a positive safe integer/u
+    );
+    expect(
+      withNormal({
+        maxRequestImageBytes: 1_000_000,
+        requestImageBudgetCount: 300_000,
+      }).catalogError
+    ).toMatch(/allow four base64 bytes per requestImageBudgetCount/u);
+    if (modernImageBudget) {
+      // 0.2.3 rejects the internal field; 0.2.2's bridge never sees it.
+      expect(withNormal({ maxImageBytes: 1024 }).catalogError).toMatch(
+        /maxImageBytes is internal/u
+      );
+    }
+    expect(withNormal({ requestImageMaxDimension: 0 }).catalogError).toMatch(
+      /requestImageMaxDimension must be a positive safe integer/u
+    );
+    expect(withNormal({ requestImageMaxBytes: 0 }).catalogError).toMatch(
+      /requestImageMaxBytes must be a positive safe integer/u
+    );
+  });
+
+  it("carries a per-image cap under the name the installed resolution uses", () => {
+    const cap = 512 * 1024;
+    const profileFrom = (normalizeEntry: (raw: unknown) => unknown) =>
+      planeProfileFor(
+        input(
+          { models: [{ id: "deepseek-v4-pro" }], requestImageMaxBytes: cap },
+          { normalize: normalizeEntry }
+        )
+      ).profile;
+
+    const current = profileFrom(normalize);
+    if (modernImageBudget) {
+      // 0.2.3 converts the input cap to the internal `maxImageBytes`.
+      expect(current.maxImageBytes).toBe(cap);
+      expect(current).not.toHaveProperty("requestImageMaxBytes");
+    } else {
+      // 0.2.2 resolves `requestImageMaxBytes` itself.
+      expect(current.requestImageMaxBytes).toBe(cap);
+      expect(current).not.toHaveProperty("maxImageBytes");
+    }
+
+    // A legacy-shaped normalized entry keeps the field under its own name on
+    // either install, which is the other arm of the same choice.
+    const legacy = profileFrom((raw) => {
+      const { requestImageBudgetCount: _budget, ...rest } = normalize(
+        raw
+      ) as Record<string, unknown>;
+      return { ...rest, requestImageMaxBytes: cap };
+    });
+    expect(legacy.requestImageMaxBytes).toBe(cap);
+    expect(legacy).not.toHaveProperty("maxImageBytes");
   });
 
   it("sets neither where pi-ai's Config defines no count bound (the 0.2.1 bridges)", () => {
@@ -164,10 +231,12 @@ describe("plane-profile · the field mapping and pi-ai's defaults", () => {
     );
     const { profile } = result;
     // The image-count bounds are the installed pi-ai's: present where its
-    // own Config defines `maxRequestImages`, absent where it does not.
-    const counted =
-      isRecord(normalize({})) &&
-      "maxRequestImages" in (normalize({}) as Record<string, unknown>);
+    // own Config defines `maxRequestImages`, absent where it does not. So is
+    // the per-image cap's home: 0.2.2 resolves `requestImageMaxBytes`, 0.2.3
+    // resolves a `requestImageBudgetCount`.
+    const normalized = normalize({}) as Record<string, unknown>;
+    const counted = "maxRequestImages" in normalized;
+    const modernImageBudget = "requestImageBudgetCount" in normalized;
     // host-shapes' runtime key list, minus catalogError (nothing failed).
     expect(Object.keys(profile).toSorted()).toEqual(
       [
@@ -186,7 +255,9 @@ describe("plane-profile · the field mapping and pi-ai's defaults", () => {
         "modelOverrides",
         "piProvider",
         "provider",
-        "requestImageMaxBytes",
+        ...(modernImageBudget
+          ? ["requestImageBudgetCount"]
+          : ["requestImageMaxBytes"]),
         "requestImagePixelBudget",
         "retryPolicy",
         "streamIdleTimeoutMs",

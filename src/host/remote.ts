@@ -50,9 +50,8 @@
  * @module dsh-opencode-patch/host/remote
  */
 
-import type { CordisContext } from "../cordis-context.ts";
+import { type CordisContext, rootOfContext } from "../cordis-context.ts";
 import { isFunctionLike, isRecord } from "../utils/guards.ts";
-
 /**
  * The client's remote contribution, as far as the installer reads it: the
  * service every descriptor calls (its Cordis key), the namespace the Gateway
@@ -481,7 +480,7 @@ export const installRemoteService = <Options extends object>(
     return Promise.resolve();
   }
   const { service } = target;
-  const root: CordisContext = ctx.root ?? ctx;
+  const root: CordisContext = rootOfContext(ctx) ?? ctx;
   const { plugin } = root;
   if (!isFunctionLike(plugin)) {
     ctx.logger?.warn?.(

@@ -342,7 +342,7 @@ describe(
         }
       }
       expect(piKnows("opencode", "deepseek-v4-pro")).toBe("openai-completions");
-      expect(piKnows("opencode", "gemini-3-flash")).toBe(
+      expect(piKnows("opencode", "gemini-3.8-flash")).toBe(
         "google-generative-ai"
       );
       expect(piKnows("opencode-go", "minimax-m3")).toBe("anthropic-messages");

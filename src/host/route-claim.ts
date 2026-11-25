@@ -102,6 +102,7 @@ import {
   loadHostModules,
   PI_AI_RUNTIME,
   piAiFibers,
+  rootOfContext,
 } from "../cordis-context.ts";
 import {
   catalogGeneration,
@@ -129,6 +130,7 @@ import {
 } from "../utils/plane-profile.ts";
 import { PLANE_OF_ROUTE } from "../utils/planes.ts";
 import { PLANE_ROUTES, type PlaneRoute } from "../utils/protocols.ts";
+import { piAiRecordKeyFor } from "./pi-record-key.ts";
 import {
   buildPlaneProvider,
   createPlaneAdapter,
@@ -357,7 +359,7 @@ export const installRouteClaim = (
     context: ctx,
     options: isRecord(ownEntry) ? ownEntry.options : undefined,
   };
-  const rootContext: unknown = Reflect.get(ctx, "root");
+  const rootContext: unknown = rootOfContext(ctx);
 
   /**
    * A pi-ai row's realm when the plugin does not resolve credentials there,
@@ -519,7 +521,7 @@ export const installRouteClaim = (
     if (state.adapter === undefined) {
       // One auth for both: the resolver asks pi's own lookup through the same
       // seams the adapter hands pi, so the store stays the last resort.
-      const auth = planeAuth(ctx, piAi.recordKeyFor, libraries);
+      const auth = planeAuth(ctx, piAiRecordKeyFor, libraries);
       state.adapter = createPlaneAdapter({
         auth,
         effortNames: (provider, model) =>

@@ -204,6 +204,31 @@ describe("credentials · one store per root", () => {
     await fiber.dispose();
   });
 
+  it("keys on the root cordis 4.2 exposes by symbol, so its activations still share one store", () => {
+    // The new core has no `root` property (the read throws) and publishes the
+    // root under `Symbol.for("cordis.root")` instead. Keying on the activation
+    // context would give the fill and the meter different stores in one
+    // composition.
+    const root = {};
+    const symbolic = (): object => {
+      const ctx = new Proxy(
+        { [Symbol.for("cordis.root")]: root },
+        {
+          get(target, prop, receiver) {
+            if (prop === "root") {
+              throw new Error('cannot get property "root" without inject');
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        }
+      );
+      return ctx;
+    };
+    captureStoreFor(symbolic()).record("k", "opencode-go", GO);
+    expect(captureStoreFor(symbolic()).get(undefined, "go")).toBe("k");
+    expect(captureStoreFor({}).get(undefined, "go")).toBeUndefined();
+  });
+
   it("a stand-in without a root keys on itself, and a non-object gets a store nobody else reads", () => {
     const standIn = {};
     captureStoreFor(standIn).record("k", "opencode-go", GO);

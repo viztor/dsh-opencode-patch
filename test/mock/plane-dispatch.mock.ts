@@ -59,7 +59,7 @@ const PROTOCOL_OF: Readonly<Record<Plane, Readonly<Record<string, Protocol>>>> =
     opencode: {
       "claude-haiku-5-5": "anthropic-messages",
       "deepseek-v4-pro": "openai-completions",
-      "gemini-3-flash": "google-generative-ai",
+      "gemini-3.8-flash": "google-generative-ai",
       "gpt-5.3-codex-spark": "openai-responses",
       "gpt-5.4": "openai-responses",
       "not-in-any-catalog": "openai-completions",

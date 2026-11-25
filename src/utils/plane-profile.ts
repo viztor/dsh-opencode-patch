@@ -53,7 +53,6 @@ const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const DEFAULTS = {
   input: ["text"],
   maxRequestImageBytes: 20 * 1024 * 1024,
-  requestImageMaxBytes: 1024 * 1024,
   requestImagePixelBudget: 2048 * 2048,
   streamIdleTimeoutMs: 300_000,
 } as const;
@@ -256,6 +255,7 @@ const checkRoute = (
   if (typeof image !== "number" || !Number.isInteger(image) || image <= 0) {
     fail("maxRequestImageBytes must be a positive integer");
   }
+  const maxRequestImageBytes = numberOr(image, DEFAULTS.maxRequestImageBytes);
   const counts = imageCountBounds(source);
   if (counts !== undefined) {
     const { imageOffloadCountQuantum: quantum, maxRequestImages: max } = counts;
@@ -272,17 +272,48 @@ const checkRoute = (
       );
     }
   }
-  for (const [key, fallback] of [
-    ["requestImagePixelBudget", DEFAULTS.requestImagePixelBudget],
-    ["requestImageMaxBytes", DEFAULTS.requestImageMaxBytes],
+  const pixelBudget =
+    source.requestImagePixelBudget ?? DEFAULTS.requestImagePixelBudget;
+  if (
+    typeof pixelBudget !== "number" ||
+    !Number.isSafeInteger(pixelBudget) ||
+    pixelBudget <= 0
+  ) {
+    fail("requestImagePixelBudget must be a positive safe integer");
+  }
+  // The per-image cap moved between bridge generations. 0.2.2 fills
+  // `requestImageMaxBytes` (a positive safe integer, its own default); 0.2.3
+  // fills `requestImageBudgetCount` instead, keeps a set cap as input only,
+  // and converts it to the internal `maxImageBytes`. Both are validated where
+  // the installed bridge defines them, detected from what its `Config`
+  // answered, never from a version.
+  const budgetCount = source.requestImageBudgetCount;
+  if (budgetCount !== undefined) {
+    const maxPerCount = Math.floor(maxRequestImageBytes / 4);
+    if (typeof budgetCount !== "number") {
+      fail("requestImageBudgetCount must be a positive safe integer");
+    } else if (!Number.isSafeInteger(budgetCount) || budgetCount <= 0) {
+      fail("requestImageBudgetCount must be a positive safe integer");
+    } else if (budgetCount > maxPerCount) {
+      fail(
+        "maxRequestImageBytes must allow four base64 bytes per requestImageBudgetCount"
+      );
+    } else if (Object.hasOwn(source, "maxImageBytes")) {
+      fail(
+        "must use requestImageMaxBytes to set the per-image cap; maxImageBytes is internal"
+      );
+    }
+  }
+  for (const field of [
+    "requestImageMaxDimension",
+    "requestImageMaxBytes",
   ] as const) {
-    const value = source[key] ?? fallback;
+    const value = source[field];
     if (
-      typeof value !== "number" ||
-      !Number.isSafeInteger(value) ||
-      value <= 0
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
     ) {
-      fail(`${key} must be a positive safe integer`);
+      fail(`${field} must be a positive safe integer`);
     }
   }
   if (Array.isArray(source.defaultInput) && source.defaultInput.length === 0) {
@@ -459,13 +490,25 @@ export const planeProfileFor = (
     retryPolicy: _retry,
     models: _models,
     displayName: _display,
+    requestImageMaxBytes: imageCap,
     ...rest
   } = source;
+  // 0.2.3's resolution turns a set cap into the internal `maxImageBytes` and
+  // carries no `requestImageMaxBytes`; 0.2.2's carries the field itself.
+  const modernImageBudget = source.requestImageBudgetCount !== undefined;
+  /** The cap under the name the installed bridge's resolution uses. */
+  let imageCapField: Readonly<Record<string, unknown>> = {};
+  if (imageCap !== undefined) {
+    imageCapField = modernImageBudget
+      ? { maxImageBytes: imageCap }
+      : { requestImageMaxBytes: imageCap };
+  }
   return {
     effortNames,
     ...(normalized === undefined ? {} : { normalized }),
     profile: {
       ...rest,
+      ...imageCapField,
       provider: route,
       displayName,
       ...(typeof apiKeyEnv === "string" && REF_PATTERN.test(apiKeyEnv)
@@ -483,10 +526,6 @@ export const planeProfileFor = (
       requestImagePixelBudget: numberOr(
         source.requestImagePixelBudget,
         DEFAULTS.requestImagePixelBudget
-      ),
-      requestImageMaxBytes: numberOr(
-        source.requestImageMaxBytes,
-        DEFAULTS.requestImageMaxBytes
       ),
       retryPolicy,
       ...(isRecord(rest.headers) ? { headers: { ...rest.headers } } : {}),

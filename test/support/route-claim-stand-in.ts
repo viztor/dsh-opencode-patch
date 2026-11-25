@@ -181,6 +181,13 @@ export const standIn = (
   options: {
     fibers?: () => readonly object[];
     llm?: Record<string, unknown>;
+    /**
+     * The root context, exposed the way cordis 4.2 exposes it: by the
+     * `Symbol.for("cordis.root")` key, with the removed `root` property
+     * refusing the read (which is what the new core does). Absent, this
+     * composition has no root, as before.
+     */
+    root?: object;
     uid?: number | null;
   } = {}
 ): StandIn => {
@@ -242,6 +249,20 @@ export const standIn = (
       ],
     },
   } as unknown as CordisContext;
+  // cordis 4.2's two halves, so a read of the removed property is the failure
+  // a live activation meets and the symbol is the only way to the root.
+  if (options.root !== undefined) {
+    Object.defineProperty(ctx, Symbol.for("cordis.root"), {
+      configurable: true,
+      value: options.root,
+    });
+  }
+  Object.defineProperty(ctx, "root", {
+    configurable: true,
+    get() {
+      throw new Error('cannot get property "root" without inject');
+    },
+  });
   /**
    * Run `internal/config` the way the NEW core does (cordis 4.0.6-alpha.2,
    * 4.1.0, `events.ts:246-261`): each listener as `(fiber, next)` with `this`

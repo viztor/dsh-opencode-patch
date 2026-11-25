@@ -45,7 +45,11 @@
 import os from "node:os";
 
 import { DEFAULT_USAGE_BASE_URL, DEFAULT_USAGE_KEY_ENV } from "./config.ts";
-import { loaderOfContext, readCredentialsResolver } from "./cordis-context.ts";
+import {
+  loaderOfContext,
+  readCredentialsResolver,
+  rootOfContext,
+} from "./cordis-context.ts";
 import {
   extractApiKeyFromHeaders,
   type KeyTier,
@@ -291,18 +295,13 @@ export const createCaptureStore = (): CaptureStore => {
 /** One store per root; see {@link captureStoreFor}. */
 const stores = new WeakMap<object, CaptureStore>();
 
-/** A property read that a hostile or half-built value cannot throw out of. */
-const rootOf = (ctx: unknown): object | undefined => {
-  if (!isRecord(ctx)) {
-    return undefined;
-  }
-  try {
-    const root: unknown = Reflect.get(ctx, "root");
-    return isRecord(root) ? root : ctx;
-  } catch {
-    return ctx;
-  }
-};
+/**
+ * The key a context's capture store is filed under: its root, or the context
+ * itself when it carries none. Read through {@link rootOfContext}, so cordis
+ * 4.2's symbol and older cores' property both answer.
+ */
+const storeKeyOf = (ctx: unknown): object | undefined =>
+  rootOfContext(ctx) ?? (isRecord(ctx) ? ctx : undefined);
 
 /**
  * The capture store of a context's root: every activation, scope and service
@@ -312,7 +311,7 @@ const rootOf = (ctx: unknown): object | undefined => {
  *   that is not an object gets a store of its own that nothing else reads.
  */
 export const captureStoreFor = (ctx: unknown): CaptureStore => {
-  const root = rootOf(ctx);
+  const root = storeKeyOf(ctx);
   if (root === undefined) {
     return createCaptureStore();
   }
@@ -676,7 +675,7 @@ export const discoverGoConfig = (
       "options"
     ),
   };
-  const root = readSafely(ctx, "root");
+  const root = rootOfContext(ctx);
 
   for (const entry of loader.entries()) {
     if (!isRecord(entry)) {

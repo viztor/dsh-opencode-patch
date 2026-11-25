@@ -376,8 +376,9 @@ describe("host bump · pi, the cordis peer and the dist-tag", () => {
     // while a newer pi publishes. piFloor's new value is pi's OLD one, and
     // pi is decided after piFloor, so a rewrite that reads the paragraph as
     // already edited moves the floor it just wrote on to the new pi.
+    const newerPi = semver.inc(CHANNELS.alpha.pi, "patch") ?? "";
     const raised = {
-      pi: "1.6.0",
+      pi: newerPi,
       piFloor: CHANNELS.alpha.pi,
       piRange: `^${CHANNELS.alpha.pi}`,
     };

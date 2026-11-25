@@ -47,6 +47,33 @@ afterEach(() => {
 
 const config = resolveConfig();
 
+describe("route-claim · the root cordis 4.2 moved to a symbol", () => {
+  /** Cordis's own realm-map key (`plane-ownership.ts` reads the same one). */
+  const CORDIS_ISOLATE = Symbol.for("cordis.isolate");
+
+  it("reads the root off the symbol, so a row sharing the process realm is not foreign", async () => {
+    // A context proxy that answers the symbol but refuses the removed property
+    // is what cordis 4.2 gives the claim. The realm comparison needs the ROOT
+    // context: without it, pi-ai's row (whose key is the process-wide one) is
+    // misread as foreign and every plane is stepped aside.
+    useTestModules();
+    const shared = { credentials: "shared" };
+    const pi = piFiber();
+    Object.defineProperty(pi.ctx, CORDIS_ISOLATE, { value: shared });
+    const host = standIn({
+      fibers: () => [pi],
+      root: { [CORDIS_ISOLATE]: shared },
+    });
+    Object.defineProperty(host.ctx, CORDIS_ISOLATE, { value: shared });
+    const claim = installRouteClaim(host.ctx, config);
+    await claim.mounted;
+    await flush();
+    expect(claim.wouldTake("opencode")).toBe(true);
+    expect([...claim.steppedAside()]).toEqual([]);
+    expect(host.llm.registerAdapter).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("route-claim · standing down", () => {
   it("leaves the planes to pi-ai on a host without the cordis members it needs, and says which", async () => {
     const warn = vi.fn();
