@@ -100,6 +100,13 @@ describe("plane-profile · pi-ai's image-count bounds", () => {
       )
     ).profile;
 
+  /**
+   * Whether the installed bridge resolves a count budget instead of the
+   * input-only per-image cap (0.2.3), from what its `Config` answered.
+   */
+  const modernImageBudget =
+    "requestImageBudgetCount" in (normalize({}) as Record<string, unknown>);
+
   it("carries pi-ai's maxRequestImages and derives the offload quantum as pi-ai does, where pi-ai's Config defines the bound", () => {
     // pi-ai's default count bound (dsh-llm-pi-ai 0.2.2: `maxRequestImages`
     // defaults to 50, the quantum to min(10, that)).
@@ -145,9 +152,12 @@ describe("plane-profile · pi-ai's image-count bounds", () => {
         requestImageBudgetCount: 300_000,
       }).catalogError
     ).toMatch(/allow four base64 bytes per requestImageBudgetCount/u);
-    expect(withNormal({ maxImageBytes: 1024 }).catalogError).toMatch(
-      /maxImageBytes is internal/u
-    );
+    if (modernImageBudget) {
+      // 0.2.3 rejects the internal field; 0.2.2's bridge never sees it.
+      expect(withNormal({ maxImageBytes: 1024 }).catalogError).toMatch(
+        /maxImageBytes is internal/u
+      );
+    }
     expect(withNormal({ requestImageMaxDimension: 0 }).catalogError).toMatch(
       /requestImageMaxDimension must be a positive safe integer/u
     );
@@ -158,8 +168,6 @@ describe("plane-profile · pi-ai's image-count bounds", () => {
 
   it("carries a per-image cap under the name the installed resolution uses", () => {
     const cap = 512 * 1024;
-    const modern =
-      "requestImageBudgetCount" in (normalize({}) as Record<string, unknown>);
     const profileFrom = (normalizeEntry: (raw: unknown) => unknown) =>
       planeProfileFor(
         input(
@@ -169,7 +177,7 @@ describe("plane-profile · pi-ai's image-count bounds", () => {
       ).profile;
 
     const current = profileFrom(normalize);
-    if (modern) {
+    if (modernImageBudget) {
       // 0.2.3 converts the input cap to the internal `maxImageBytes`.
       expect(current.maxImageBytes).toBe(cap);
       expect(current).not.toHaveProperty("requestImageMaxBytes");
