@@ -6,7 +6,7 @@
  * the gateway's models endpoint (`go.monthly_usage`); `pnpm run limits:shim`
  * reports staleness and `--write` rewrites this file.
  *
- * 28 models.
+ * 33 models.
  */
 
 import type { ModelAllowance } from "./go-limits.ts";
@@ -32,14 +32,19 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     goPlus: 120,
     name: "Gemini 4 Argon",
   },
-  "glm-5.2": {
-    go: 60,
-    goPlus: 180,
-    name: "GLM-5.2",
+  "gemini-decision-1": {
+    go: 10,
+    goPlus: 40,
+    name: "Gemini Decision 1",
+  },
+  "gemini-embedding-2": {
+    go: 10,
+    goPlus: 40,
+    name: "Gemini Embedding 2",
   },
   "glm-5.3": {
-    go: 500,
-    goPlus: 1000,
+    go: 200,
+    goPlus: 400,
     name: "GLM-5.3",
   },
   "glm-5.3-flash": {
@@ -56,6 +61,11 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     go: 15,
     goPlus: 60,
     name: "GPT-6 Luna",
+  },
+  "gpt-6-luna-decision": {
+    go: 10,
+    goPlus: 40,
+    name: "GPT-6 Luna Decision",
   },
   "grok-4.7": {
     go: 15,
@@ -77,6 +87,11 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     goPlus: 120,
     name: "Hy4 preview",
   },
+  "jev-1.14": {
+    go: 10,
+    goPlus: 40,
+    name: "Jev 1.14",
+  },
   "kimi-k2.7-code": {
     go: 60,
     goPlus: 180,
@@ -88,14 +103,14 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     name: "Kimi K3",
   },
   "kimi-k3.1-pro": {
-    go: 15,
-    goPlus: 60,
+    go: 60,
+    goPlus: 120,
     name: "Kimi K3.1 Pro",
   },
-  "longcat-2.0": {
+  "longcat-2.5": {
     go: 60,
     goPlus: 240,
-    name: "LongCat-2.0",
+    name: "LongCat-2.5",
   },
   "mimo-v2.6-flash": {
     go: 60,
@@ -127,6 +142,11 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     goPlus: 120,
     name: "Muse Spark 1.3 Contributor",
   },
+  "qwen3-embedding-8b": {
+    go: 10,
+    goPlus: 40,
+    name: "Qwen3 Embedding 8B",
+  },
   "qwen3.7-plus": {
     go: 60,
     goPlus: 180,
@@ -151,5 +171,10 @@ export const GO_MODEL_LIMITS: Readonly<Record<string, ModelAllowance>> = {
     go: 15,
     goPlus: 60,
     name: "Step 5 Preview",
+  },
+  "text-embedding-3-small": {
+    go: 10,
+    goPlus: 40,
+    name: "text-embedding-3-small",
   },
 };
